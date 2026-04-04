@@ -6,22 +6,29 @@ defmodule Seshat.Commands.Parser do
   alias Seshat.Commands.Command
   require Logger
 
-  @valid_commands ~w(pan volume mute solo)
+  @valid_commands ~w(pan volume mute solo create_track)
 
   @system_prompt """
   You are an Ableton Live controller. Parse the user's natural language input into a JSON command.
 
-  Return ONLY valid JSON with exactly this shape:
+  For mixer commands, return:
   {"command": "<command>", "track": <integer>, "value": <number>}
 
+  For creating a new track, return:
+  {"command": "create_track", "track_type": "midi" or "audio", "name": "<instrument/purpose>"}
+
   Rules:
-  - command: one of "pan", "volume", "mute", "solo"
-  - track: 0-indexed integer. "track 1" = 0, "track 2" = 1, etc.
-  - value:
-    - pan: -1.0 (full left) to 1.0 (full right). "left" = -1.0, "center" = 0.0, "right" = 1.0
-    - volume: 0.0 to 1.0. "full"/"max" = 1.0, "half" = 0.5, "off"/"silent" = 0.0
-    - mute: 1 (muted) or 0 (unmuted)
-    - solo: 1 (on) or 0 (off)
+  - command: one of "pan", "volume", "mute", "solo", "create_track"
+  - For pan/volume/mute/solo:
+    - track: 0-indexed integer. "track 1" = 0, "track 2" = 1, etc.
+    - value:
+      - pan: -1.0 (full left) to 1.0 (full right). "left" = -1.0, "center" = 0.0, "right" = 1.0
+      - volume: 0.0 to 1.0. "full"/"max" = 1.0, "half" = 0.5, "off"/"silent" = 0.0
+      - mute: 1 (muted) or 0 (unmuted)
+      - solo: 1 (on) or 0 (off)
+  - For create_track:
+    - track_type: "midi" for software instruments (synths, samplers, drum machines, keys, pads) or "audio" for recording external sources (vocals, guitar, bass guitar, field recordings, samples)
+    - name: a short, descriptive label for the track (e.g. "Drums", "Lead Synth", "Vocals")
 
   If the input is ambiguous or cannot be parsed, return:
   {"error": "<brief reason>"}
@@ -94,17 +101,35 @@ defmodule Seshat.Commands.Parser do
      }}
   end
 
+  defp build_command(%{"command" => "create_track", "track_type" => type, "name" => name})
+       when type in ["midi", "audio"] and is_binary(name) do
+    {:ok,
+     %Command{
+       command: :create_track,
+       track_type: String.to_atom(type),
+       name: name
+     }}
+  end
+
   defp build_command(%{"error" => reason}), do: {:error, reason}
   defp build_command(_), do: {:error, "LLM returned an unrecognized command shape"}
 
   defp history_messages(history) do
     Enum.flat_map(history, fn %{input: input, command: command} ->
-      json = Jason.encode!(%{command: command.command, track: command.track, value: command.value})
+      json = encode_command_for_history(command)
       [
         %{role: "user", content: input},
         %{role: "assistant", content: json}
       ]
     end)
+  end
+
+  defp encode_command_for_history(%Command{command: :create_track} = cmd) do
+    Jason.encode!(%{command: cmd.command, track_type: cmd.track_type, name: cmd.name})
+  end
+
+  defp encode_command_for_history(cmd) do
+    Jason.encode!(%{command: cmd.command, track: cmd.track, value: cmd.value})
   end
 
   defp strip_markdown(text) do
