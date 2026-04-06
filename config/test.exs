@@ -39,3 +39,10 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Don't start OSC transport or session state in tests (no Ableton)
+config :seshat, :start_osc, false
+
+# Stub Anthropic API calls in tests
+config :seshat, :anthropic_api_key, "test-key"
+config :seshat, :agent_req_options, plug: {Req.Test, Seshat.Agent}

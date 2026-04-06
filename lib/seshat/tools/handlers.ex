@@ -75,6 +75,9 @@ defmodule Seshat.Tools.Handlers do
 
       {:ok, summary}
     end
+  catch
+    :exit, _ ->
+      {:ok, "No tracks in current session (Ableton may not be connected)"}
   end
 
   def call(name, _params), do: {:error, "Unknown tool: #{name}"}

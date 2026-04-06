@@ -127,19 +127,25 @@ defmodule Seshat.Agent do
   defp assistant_message(content), do: %{role: "assistant", content: content}
 
   defp call_api(api_key, messages, tools) do
-    Req.post(
-      "https://api.anthropic.com/v1/messages",
-      headers: [
-        {"x-api-key", api_key},
-        {"anthropic-version", "2023-06-01"}
-      ],
-      json: %{
-        model: "claude-sonnet-4-5-20250514",
-        max_tokens: 1024,
-        system: @system_prompt,
-        tools: tools,
-        messages: messages
-      }
-    )
+    extra_opts = Application.get_env(:seshat, :agent_req_options, [])
+
+    opts =
+      [
+        url: "https://api.anthropic.com/v1/messages",
+        headers: [
+          {"x-api-key", api_key},
+          {"anthropic-version", "2023-06-01"}
+        ],
+        json: %{
+          model: "claude-sonnet-4-5-20250514",
+          max_tokens: 1024,
+          system: @system_prompt,
+          tools: tools,
+          messages: messages
+        }
+      ]
+      |> Keyword.merge(extra_opts)
+
+    Req.post(opts)
   end
 end
