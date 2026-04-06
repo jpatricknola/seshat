@@ -6,7 +6,7 @@ defmodule Seshat.Commands.Parser do
   alias Seshat.Commands.Command
   require Logger
 
-  @valid_commands ~w(pan volume mute solo create_track)
+  @valid_commands ~w(pan volume mute solo create_track new_project)
 
   @system_prompt """
   You are an Ableton Live controller. Parse the user's natural language input into a JSON command.
@@ -17,8 +17,11 @@ defmodule Seshat.Commands.Parser do
   For creating a new track, return:
   {"command": "create_track", "track_type": "midi" or "audio", "name": "<instrument/purpose>"}
 
+  For starting a new project, return:
+  {"command": "new_project", "tracks": [{"track_type": "midi" or "audio", "name": "<label>"}, ...]}
+
   Rules:
-  - command: one of "pan", "volume", "mute", "solo", "create_track"
+  - command: one of "pan", "volume", "mute", "solo", "create_track", "new_project"
   - For pan/volume/mute/solo:
     - track: 0-indexed integer. "track 1" = 0, "track 2" = 1, etc.
     - value:
@@ -29,6 +32,9 @@ defmodule Seshat.Commands.Parser do
   - For create_track:
     - track_type: "midi" for software instruments (synths, samplers, drum machines, keys, pads) or "audio" for recording external sources (vocals, guitar, bass guitar, field recordings, samples)
     - name: a short, descriptive label for the track (e.g. "Drums", "Lead Synth", "Vocals")
+  - For new_project:
+    - tracks: an array of objects, each with "track_type" ("midi" or "audio") and "name" (short label)
+    - Same track_type rules as create_track: software instruments → "midi", external sources → "audio"
 
   If the input is ambiguous or cannot be parsed, return:
   {"error": "<brief reason>"}
@@ -67,7 +73,7 @@ defmodule Seshat.Commands.Parser do
         ],
         json: %{
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 128,
+          max_tokens: 256,
           system: system,
           messages: history_messages(history) ++ [%{role: "user", content: input}]
         }
@@ -111,6 +117,19 @@ defmodule Seshat.Commands.Parser do
      }}
   end
 
+  defp build_command(%{"command" => "new_project", "tracks" => tracks})
+       when is_list(tracks) and tracks != [] do
+    parsed_tracks =
+      Enum.map(tracks, fn %{"track_type" => type, "name" => name}
+                           when type in ["midi", "audio"] and is_binary(name) ->
+        %{track_type: String.to_atom(type), name: name}
+      end)
+
+    {:ok, %Command{command: :new_project, tracks: parsed_tracks}}
+  rescue
+    _ -> {:error, "Invalid track list in new_project command"}
+  end
+
   defp build_command(%{"error" => reason}), do: {:error, reason}
   defp build_command(_), do: {:error, "LLM returned an unrecognized command shape"}
 
@@ -126,6 +145,11 @@ defmodule Seshat.Commands.Parser do
 
   defp encode_command_for_history(%Command{command: :create_track} = cmd) do
     Jason.encode!(%{command: cmd.command, track_type: cmd.track_type, name: cmd.name})
+  end
+
+  defp encode_command_for_history(%Command{command: :new_project} = cmd) do
+    tracks = Enum.map(cmd.tracks, fn t -> %{track_type: t.track_type, name: t.name} end)
+    Jason.encode!(%{command: cmd.command, tracks: tracks})
   end
 
   defp encode_command_for_history(cmd) do

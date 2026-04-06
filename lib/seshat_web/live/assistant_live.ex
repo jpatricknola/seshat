@@ -1,10 +1,10 @@
 defmodule SeshatWeb.AssistantLive do
   use SeshatWeb, :live_view
 
-  alias Seshat.Commands.{Parser, Registry}
+  alias Seshat.Agent
 
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, input: "", log: [], status: :idle, last_input: "")}
+    {:ok, assign(socket, input: "", log: [], status: :idle, last_input: "", history: [])}
   end
 
   def handle_event("submit", %{"input" => input}, socket) do
@@ -13,19 +13,32 @@ defmodule SeshatWeb.AssistantLive do
     if input == "" do
       {:noreply, socket}
     else
-      log = socket.assigns.log
+      history = socket.assigns.history
 
       socket =
         socket
         |> assign(status: :thinking, input: "", last_input: input)
-        |> start_async(:parse_and_send, fn -> run(input, log) end)
+        |> start_async(:parse_and_send, fn -> Agent.run(input, history) end)
 
       {:noreply, socket}
     end
   end
 
-  def handle_async(:parse_and_send, {:ok, result}, socket) do
-    entry = Map.put(result, :input, socket.assigns.last_input)
+  def handle_async(:parse_and_send, {:ok, {:ok, result}}, socket) do
+    entry = %{
+      input: socket.assigns.last_input,
+      result: :ok,
+      response: result.response,
+      commands_executed: result.commands_executed
+    }
+
+    history = Map.get(result, :messages, socket.assigns.history)
+
+    {:noreply, assign(socket, status: :idle, log: [entry | socket.assigns.log], history: history)}
+  end
+
+  def handle_async(:parse_and_send, {:ok, {:error, reason}}, socket) do
+    entry = %{input: socket.assigns.last_input, result: :error, message: reason}
     {:noreply, assign(socket, status: :idle, log: [entry | socket.assigns.log])}
   end
 
@@ -34,16 +47,22 @@ defmodule SeshatWeb.AssistantLive do
     {:noreply, assign(socket, status: :idle, log: [entry | socket.assigns.log])}
   end
 
-  defp run(input, log) do
-    tracks = Seshat.Session.State.tracks()
-    history = log |> Enum.filter(&(&1.result == :ok)) |> Enum.take(5) |> Enum.reverse()
+  defp format_success(entry) do
+    parts = []
 
-    with {:ok, command} <- Parser.parse(input, tracks, history),
-         :ok <- Registry.execute(command) do
-      %{result: :ok, command: command}
-    else
-      {:error, reason} -> %{result: :error, message: reason}
-    end
+    parts =
+      case entry.commands_executed do
+        [] -> parts
+        cmds -> parts ++ Enum.map(cmds, fn c -> "#{c.tool}(#{inspect(c.input)}): #{c.result}" end)
+      end
+
+    parts =
+      case entry.response do
+        nil -> parts
+        text -> parts ++ [text]
+      end
+
+    Enum.join(parts, "\n")
   end
 
   def render(assigns) do
@@ -81,7 +100,7 @@ defmodule SeshatWeb.AssistantLive do
             <div class="flex flex-col gap-1">
               <span class="font-mono text-sm">{entry.input}</span>
               <span class="text-xs opacity-60">
-                {if entry.result == :ok, do: inspect(entry.command), else: entry.message}
+                {if entry.result == :ok, do: format_success(entry), else: entry.message}
               </span>
             </div>
           </div>
