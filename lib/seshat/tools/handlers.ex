@@ -65,7 +65,7 @@ defmodule Seshat.Tools.Handlers do
     playing = if song.is_playing, do: "playing", else: "stopped"
 
     song_line =
-      "#{song.name} — #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, #{playing}"
+      "#{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, #{playing}"
 
     if tracks == [] do
       {:ok, "#{song_line}\n\nNo tracks in current session (Ableton may not be connected)"}

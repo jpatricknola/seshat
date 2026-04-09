@@ -37,7 +37,6 @@ defmodule Seshat.Session.State do
       tempo: 120.0,
       time_sig_numerator: 4,
       time_sig_denominator: 4,
-      name: "Untitled",
       is_playing: false
     }
 
@@ -110,11 +109,10 @@ defmodule Seshat.Session.State do
       tempo: query_song_float(Transport, "/live/song/get/tempo", 120.0),
       time_sig_numerator: query_song_int(Transport, "/live/song/get/signature_numerator", 4),
       time_sig_denominator: query_song_int(Transport, "/live/song/get/signature_denominator", 4),
-      name: query_song_string(Transport, "/live/song/get/name", "Untitled"),
       is_playing: query_song_int(Transport, "/live/song/get/is_playing", 0) |> to_bool()
     }
 
-    Logger.info("Song: #{song.name} — #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}")
+    Logger.info("Song: #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}")
 
     case Transport.query("/live/song/get/num_tracks", []) do
       {:ok, {_addr, [count]}} ->
@@ -213,13 +211,6 @@ defmodule Seshat.Session.State do
       {:ok, {_addr, [v]}} when is_integer(v) -> v
       {:ok, {_addr, [true]}} -> 1
       {:ok, {_addr, [false]}} -> 0
-      _ -> default
-    end
-  end
-
-  defp query_song_string(transport, address, default) do
-    case transport.query(address, []) do
-      {:ok, {_addr, [s]}} when is_binary(s) -> s
       _ -> default
     end
   end
