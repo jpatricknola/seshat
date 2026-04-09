@@ -19,6 +19,11 @@ defmodule Seshat.Application do
         else
           []
         end ++
+        if Application.get_env(:seshat, :start_mcp, true) do
+          [Hermes.Server.Registry, mcp_supervisor_spec()]
+        else
+          []
+        end ++
         [SeshatWeb.Endpoint]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -33,5 +38,23 @@ defmodule Seshat.Application do
   def config_change(changed, _new, removed) do
     SeshatWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  defp mcp_supervisor_spec do
+    %{
+      id: Seshat.MCP.Supervisor,
+      start: {Supervisor, :start_link, [
+        [
+          %{
+            id: Seshat.MCP.Server,
+            start: {Hermes.Server.Supervisor, :start_link, [Seshat.MCP.Server, [transport: :streamable_http]]},
+            type: :supervisor
+          }
+        ],
+        [strategy: :one_for_one]
+      ]},
+      type: :supervisor,
+      restart: :temporary
+    }
   end
 end

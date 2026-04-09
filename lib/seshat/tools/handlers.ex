@@ -32,7 +32,7 @@ defmodule Seshat.Tools.Handlers do
 
   def call("create_track", %{"track_type" => type, "name" => name})
       when type in ["midi", "audio"] do
-    command = %Command{command: :create_track, track_type: String.to_existing_atom(type), name: name}
+    command = %Command{command: :create_track, track_type: to_track_type(type), name: name}
 
     case Registry.execute(command) do
       :ok -> {:ok, "Created #{type} track '#{name}'"}
@@ -43,7 +43,7 @@ defmodule Seshat.Tools.Handlers do
   def call("create_project", %{"tracks" => tracks}) when is_list(tracks) do
     parsed_tracks =
       Enum.map(tracks, fn %{"track_type" => type, "name" => name} ->
-        %{track_type: String.to_existing_atom(type), name: name}
+        %{track_type: to_track_type(type), name: name}
       end)
 
     command = %Command{command: :new_project, tracks: parsed_tracks}
@@ -81,6 +81,9 @@ defmodule Seshat.Tools.Handlers do
   end
 
   def call(name, _params), do: {:error, "Unknown tool: #{name}"}
+
+  defp to_track_type("midi"), do: :midi
+  defp to_track_type("audio"), do: :audio
 
   defp execute(%Command{} = command) do
     case Registry.execute(command) do

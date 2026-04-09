@@ -40,8 +40,9 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
-# Don't start OSC transport or session state in tests (no Ableton)
+# Don't start OSC transport, session state, or MCP server in tests
 config :seshat, :start_osc, false
+config :seshat, :start_mcp, false
 
 # Stub Anthropic API calls in tests
 config :seshat, :anthropic_api_key, "test-key"
