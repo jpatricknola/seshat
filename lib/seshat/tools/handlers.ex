@@ -59,12 +59,18 @@ defmodule Seshat.Tools.Handlers do
   end
 
   def call("get_session_state", _params) do
+    song = State.song()
     tracks = State.tracks()
 
+    playing = if song.is_playing, do: "playing", else: "stopped"
+
+    song_line =
+      "#{song.name} — #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, #{playing}"
+
     if tracks == [] do
-      {:ok, "No tracks in current session (Ableton may not be connected)"}
+      {:ok, "#{song_line}\n\nNo tracks in current session (Ableton may not be connected)"}
     else
-      summary =
+      track_summary =
         Enum.map_join(tracks, "\n", fn t ->
           mute = if t.mute, do: " [muted]", else: ""
           solo = if t.solo, do: " [solo]", else: ""
@@ -73,7 +79,7 @@ defmodule Seshat.Tools.Handlers do
             "volume=#{Float.round(t.volume, 2)}#{mute}#{solo}"
         end)
 
-      {:ok, summary}
+      {:ok, "#{song_line}\n\n#{track_summary}"}
     end
   catch
     :exit, _ ->
