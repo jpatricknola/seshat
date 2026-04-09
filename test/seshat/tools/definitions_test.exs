@@ -7,7 +7,7 @@ defmodule Seshat.Tools.DefinitionsTest do
     test "returns a list of tool definitions" do
       tools = Definitions.all()
       assert is_list(tools)
-      assert length(tools) == 8
+      assert length(tools) == 32
     end
 
     test "each tool has required fields" do
@@ -20,16 +20,23 @@ defmodule Seshat.Tools.DefinitionsTest do
     end
 
     test "includes all expected tool names" do
+      expected = ~w(
+        set_track_pan set_track_volume set_track_mute set_track_solo
+        create_track create_project write_midi_notes
+        delete_track duplicate_track set_track_name
+        set_tempo start_playing stop_playing set_metronome set_track_arm
+        undo redo
+        fire_clip stop_clip delete_clip duplicate_clip set_clip_name
+        fire_scene create_scene delete_scene duplicate_scene set_scene_name
+        set_loop select_track select_scene remove_notes
+        get_session_state
+      )
+
       names = Enum.map(Definitions.all(), & &1.name)
 
-      assert "set_track_pan" in names
-      assert "set_track_volume" in names
-      assert "set_track_mute" in names
-      assert "set_track_solo" in names
-      assert "create_track" in names
-      assert "create_project" in names
-      assert "write_midi_notes" in names
-      assert "get_session_state" in names
+      for tool <- expected do
+        assert tool in names, "missing tool: #{tool}"
+      end
     end
   end
 

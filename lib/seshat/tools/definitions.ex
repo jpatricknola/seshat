@@ -172,6 +172,291 @@ defmodule Seshat.Tools.Definitions do
       }
     },
     %{
+      name: "delete_track",
+      description:
+        "Delete a track from the Ableton Live session. " <>
+          "Track indices are 0-based: 'track 1' = index 0. " <>
+          "Use get_session_state first to confirm the track index.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number to delete"}
+        },
+        required: ["track"]
+      }
+    },
+    %{
+      name: "duplicate_track",
+      description:
+        "Duplicate a track in the Ableton Live session (copies the track and all its clips/devices). " <>
+          "Track indices are 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number to duplicate"}
+        },
+        required: ["track"]
+      }
+    },
+    %{
+      name: "set_track_name",
+      description: "Rename a track in Ableton Live. Track indices are 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "name" => %{type: "string", description: "New name for the track"}
+        },
+        required: ["track", "name"]
+      }
+    },
+    %{
+      name: "set_tempo",
+      description:
+        "Set the song tempo in Ableton Live. " <>
+          "Value is in BPM (beats per minute). Typical range: 20-999.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "bpm" => %{type: "number", minimum: 20.0, maximum: 999.0, description: "Tempo in BPM"}
+        },
+        required: ["bpm"]
+      }
+    },
+    %{
+      name: "start_playing",
+      description: "Start playback in Ableton Live.",
+      parameters: %{type: "object", properties: %{}, required: []}
+    },
+    %{
+      name: "stop_playing",
+      description: "Stop playback in Ableton Live.",
+      parameters: %{type: "object", properties: %{}, required: []}
+    },
+    %{
+      name: "set_metronome",
+      description: "Turn the metronome on or off in Ableton Live.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "enabled" => %{type: "boolean", description: "true = on, false = off"}
+        },
+        required: ["enabled"]
+      }
+    },
+    %{
+      name: "set_track_arm",
+      description:
+        "Arm or disarm a track for recording in Ableton Live. " <>
+          "Track indices are 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "armed" => %{type: "boolean", description: "true = armed, false = disarmed"}
+        },
+        required: ["track", "armed"]
+      }
+    },
+    # --- Undo / Redo ---
+    %{
+      name: "undo",
+      description: "Undo the last action in Ableton Live.",
+      parameters: %{type: "object", properties: %{}, required: []}
+    },
+    %{
+      name: "redo",
+      description: "Redo the last undone action in Ableton Live.",
+      parameters: %{type: "object", properties: %{}, required: []}
+    },
+    # --- Clip control ---
+    %{
+      name: "fire_clip",
+      description:
+        "Launch/fire a clip in Ableton Live. " <>
+          "Track indices are 0-based. Clip slot (scene) is 0-based: scene 1 = 0.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+        },
+        required: ["track", "clip_slot"]
+      }
+    },
+    %{
+      name: "stop_clip",
+      description:
+        "Stop a playing clip in Ableton Live. " <>
+          "Track indices are 0-based. Clip slot (scene) is 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+        },
+        required: ["track", "clip_slot"]
+      }
+    },
+    %{
+      name: "delete_clip",
+      description: "Delete a clip from a clip slot in Ableton Live.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+        },
+        required: ["track", "clip_slot"]
+      }
+    },
+    %{
+      name: "duplicate_clip",
+      description:
+        "Duplicate a clip to another slot in Ableton Live.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "Source track (0-indexed)"},
+          "clip_slot" => %{type: "integer", description: "Source scene/clip slot (0-indexed)"},
+          "target_track" => %{type: "integer", description: "Target track (0-indexed)"},
+          "target_clip_slot" => %{type: "integer", description: "Target scene/clip slot (0-indexed)"}
+        },
+        required: ["track", "clip_slot", "target_track", "target_clip_slot"]
+      }
+    },
+    %{
+      name: "set_clip_name",
+      description: "Rename a clip in Ableton Live.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"},
+          "name" => %{type: "string", description: "New name for the clip"}
+        },
+        required: ["track", "clip_slot", "name"]
+      }
+    },
+    # --- Scene control ---
+    %{
+      name: "fire_scene",
+      description:
+        "Launch/fire an entire scene (row of clips) in Ableton Live. " <>
+          "Scene indices are 0-based: scene 1 = 0.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "scene" => %{type: "integer", description: "0-indexed scene number"}
+        },
+        required: ["scene"]
+      }
+    },
+    %{
+      name: "create_scene",
+      description: "Create a new scene in Ableton Live. Use index -1 to append at the end.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "index" => %{type: "integer", description: "Position to insert scene (-1 = end)"}
+        },
+        required: ["index"]
+      }
+    },
+    %{
+      name: "delete_scene",
+      description: "Delete a scene from the Ableton Live session. Scene indices are 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "scene" => %{type: "integer", description: "0-indexed scene number to delete"}
+        },
+        required: ["scene"]
+      }
+    },
+    %{
+      name: "duplicate_scene",
+      description: "Duplicate a scene in Ableton Live. Scene indices are 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "scene" => %{type: "integer", description: "0-indexed scene number to duplicate"}
+        },
+        required: ["scene"]
+      }
+    },
+    %{
+      name: "set_scene_name",
+      description: "Rename a scene in Ableton Live. Scene indices are 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "scene" => %{type: "integer", description: "0-indexed scene number"},
+          "name" => %{type: "string", description: "New name for the scene"}
+        },
+        required: ["scene", "name"]
+      }
+    },
+    # --- Loop control ---
+    %{
+      name: "set_loop",
+      description:
+        "Turn looping on or off and optionally set the loop range in Ableton Live. " <>
+          "Loop start and length are in beats (e.g. bar 5 in 4/4 = beat 16.0, 4 bars = 16.0 beats).",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "enabled" => %{type: "boolean", description: "true = loop on, false = loop off"},
+          "start" => %{type: "number", description: "Loop start position in beats (optional)"},
+          "length" => %{type: "number", description: "Loop length in beats (optional)"}
+        },
+        required: ["enabled"]
+      }
+    },
+    # --- View selection ---
+    %{
+      name: "select_track",
+      description: "Select a track in Ableton Live's UI. Track indices are 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"}
+        },
+        required: ["track"]
+      }
+    },
+    %{
+      name: "select_scene",
+      description: "Select a scene in Ableton Live's UI. Scene indices are 0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "scene" => %{type: "integer", description: "0-indexed scene number"}
+        },
+        required: ["scene"]
+      }
+    },
+    # --- Notes ---
+    %{
+      name: "remove_notes",
+      description:
+        "Remove MIDI notes from a clip in Ableton Live. " <>
+          "With no range specified, removes ALL notes. " <>
+          "Optionally specify a pitch and time range to remove specific notes.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot (default 0)"},
+          "start_pitch" => %{type: "integer", description: "Lowest pitch to remove (default 0)"},
+          "pitch_span" => %{type: "integer", description: "Number of pitches to span (default 128 = all)"},
+          "start_time" => %{type: "number", description: "Start time in beats (default 0.0)"},
+          "time_span" => %{type: "number", description: "Time span in beats (default: entire clip)"}
+        },
+        required: ["track"]
+      }
+    },
+    %{
       name: "get_session_state",
       description:
         "Get the current state of all tracks in the Ableton Live session. " <>
