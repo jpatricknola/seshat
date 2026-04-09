@@ -58,6 +58,39 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  def call("write_midi_notes", %{"track" => track, "notes" => notes} = params)
+      when is_list(notes) and notes != [] do
+    slot = Map.get(params, "clip_slot", 0)
+    clip_length = Map.get(params, "clip_length", 4.0)
+
+    parsed_notes =
+      Enum.map(notes, fn n ->
+        %{
+          pitch: n["pitch"],
+          start_beat: n["start_beat"] / 1.0,
+          duration: n["duration"] / 1.0,
+          velocity: n["velocity"]
+        }
+      end)
+
+    command = %Command{
+      command: :write_notes,
+      track: track,
+      clip_slot: slot,
+      clip_length: clip_length,
+      notes: parsed_notes
+    }
+
+    case Registry.execute(command) do
+      :ok ->
+        note_count = length(parsed_notes)
+        {:ok, "Wrote #{note_count} note(s) to track #{track}, clip slot #{slot}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  end
+
   def call("get_session_state", _params) do
     tracks = State.tracks()
 

@@ -7,7 +7,7 @@ defmodule Seshat.Tools.DefinitionsTest do
     test "returns a list of tool definitions" do
       tools = Definitions.all()
       assert is_list(tools)
-      assert length(tools) == 7
+      assert length(tools) == 8
     end
 
     test "each tool has required fields" do
@@ -28,6 +28,7 @@ defmodule Seshat.Tools.DefinitionsTest do
       assert "set_track_solo" in names
       assert "create_track" in names
       assert "create_project" in names
+      assert "write_midi_notes" in names
       assert "get_session_state" in names
     end
   end

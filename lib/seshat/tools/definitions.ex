@@ -129,12 +129,55 @@ defmodule Seshat.Tools.Definitions do
       }
     },
     %{
+      name: "write_midi_notes",
+      description:
+        "Write MIDI notes into a clip on a track in Ableton Live. " <>
+          "Creates a new clip in the specified slot if one doesn't exist. " <>
+          "Notes are added to the clip (existing notes are preserved). " <>
+          "Track indices are 0-based. Clip slot defaults to 0 (first scene). " <>
+          "Pitch is MIDI note number (0-127): C4 (middle C) = 60, D4 = 62, E4 = 64, F4 = 65, G4 = 67, A4 = 69, B4 = 71. Each octave = 12 semitones. Sharps = +1, flats = -1. " <>
+          "start_beat is position in beats from clip start: beat 1 = 0.0, beat 2 = 1.0, 'and of 1' = 0.5, 'e of 1' = 0.25. " <>
+          "duration is length in beats: whole = 4.0, half = 2.0, quarter = 1.0, eighth = 0.5, sixteenth = 0.25, dotted quarter = 1.5. " <>
+          "velocity is 1-127: ghost note = 30, soft = 50, normal = 100, loud/accent = 120, max = 127. " <>
+          "For chords, add multiple notes with the same start_beat and duration. " <>
+          "Common chord intervals from root: major [0,4,7], minor [0,3,7], 7th [0,4,7,10], m7 [0,3,7,10], maj7 [0,4,7,11]. " <>
+          "Use get_session_state first to resolve track names to indices and to check the current time signature.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number (must be a MIDI track)"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot. Defaults to 0 if omitted."},
+          "clip_length" => %{
+            type: "number",
+            description:
+              "Clip length in beats. E.g. 4.0 = one bar of 4/4, 3.0 = one bar of 3/4. " <>
+                "Only used when creating a new clip. Should be >= the latest note end time."
+          },
+          "notes" => %{
+            type: "array",
+            items: %{
+              type: "object",
+              properties: %{
+                "pitch" => %{type: "integer", minimum: 0, maximum: 127, description: "MIDI note number. C4 = 60."},
+                "start_beat" => %{type: "number", minimum: 0.0, description: "Start position in beats from clip start. Beat 1 = 0.0."},
+                "duration" => %{type: "number", minimum: 0.01, description: "Note length in beats. Quarter note = 1.0."},
+                "velocity" => %{type: "integer", minimum: 1, maximum: 127, description: "Note velocity. Normal = 100."}
+              },
+              required: ["pitch", "start_beat", "duration", "velocity"]
+            },
+            description: "Array of MIDI notes to write"
+          }
+        },
+        required: ["track", "notes"]
+      }
+    },
+    %{
       name: "get_session_state",
       description:
         "Get the current state of all tracks in the Ableton Live session. " <>
-          "Returns track names, indices, volume, pan, mute, and solo status. " <>
-          "Use this before making relative adjustments ('turn it up a bit') " <>
-          "or when you need to know what tracks exist.",
+          "Returns tempo, time signature, track names, indices, volume, pan, mute, and solo status. " <>
+          "Use this before making relative adjustments ('turn it up a bit'), " <>
+          "when you need to know what tracks exist, or before writing MIDI notes.",
       parameters: %{
         type: "object",
         properties: %{},

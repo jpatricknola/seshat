@@ -41,6 +41,14 @@ defmodule Seshat.Commands.Registry do
     end
   end
 
+  def execute(%Command{command: :write_notes, track: track, clip_slot: slot, clip_length: length, notes: notes}) do
+    with :ok <- ensure_clip(track, slot, length),
+         :ok <- add_notes(track, slot, notes) do
+      Logger.info("Wrote #{Enum.count(notes)} notes to track #{track}, clip slot #{slot}")
+      :ok
+    end
+  end
+
   def execute(%Command{command: :new_project, tracks: tracks}) do
     with :ok <- open_new_set(),
          :ok <- wait_for_ableton(),
@@ -49,6 +57,27 @@ defmodule Seshat.Commands.Registry do
       Seshat.Session.State.refresh()
       :ok
     end
+  end
+
+  # --- Private helpers: MIDI notes ---
+
+  defp ensure_clip(track, slot, length) do
+    case Transport.query("/live/clip_slot/get/has_clip", [track, slot]) do
+      {:ok, {_addr, [_t, _s, 1]}} -> :ok
+      {:ok, {_addr, [_t, _s, true]}} -> :ok
+      {:ok, {_addr, [_t, _s, 0]}} -> Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
+      {:ok, {_addr, [_t, _s, false]}} -> Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp add_notes(track, slot, notes) do
+    note_args =
+      Enum.flat_map(notes, fn n ->
+        [n.pitch, n.start_beat / 1.0, n.duration / 1.0, n.velocity, 0]
+      end)
+
+    Transport.send_message("/live/clip/add/notes", [track, slot | note_args])
   end
 
   # --- Private helpers ---
