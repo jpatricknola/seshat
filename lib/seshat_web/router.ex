@@ -20,10 +20,12 @@ defmodule SeshatWeb.Router do
     live "/", AssistantLive
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", SeshatWeb do
-  #   pipe_through :api
-  # end
+  scope "/mcp" do
+    pipe_through :api
+
+    forward "/", Hermes.Server.Transport.StreamableHTTP.Plug,
+      server: Seshat.MCP.Server
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:seshat, :dev_routes) do
