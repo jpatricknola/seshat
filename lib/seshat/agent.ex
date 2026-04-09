@@ -20,9 +20,22 @@ defmodule Seshat.Agent do
   Rules:
   - Track indices are 0-based. When the user says "track 1", that's index 0.
   - Use get_session_state to check current values before making relative adjustments like "a bit more" or "turn it down".
+  - get_session_state also returns tempo and time signature — use these when writing MIDI notes.
   - For ambiguous requests, use your best judgment rather than asking for clarification.
   - You can call multiple tools to fulfill a single request.
   - When the user refers to a track by name (e.g. "the drums"), use get_session_state to find its index.
+
+  MIDI note writing:
+  - Use write_midi_notes to add notes to a clip. Always call get_session_state first to know the time signature and resolve track names.
+  - Pitch: MIDI note numbers. C4 (middle C) = 60. Each octave = 12 semitones. Sharp = +1, flat = -1.
+    Common notes: C=0, D=2, E=4, F=5, G=7, A=9, B=11 (add 12*octave). "Low E" = E2 (40). "High C" = C5 (72).
+  - Beat positions: beat 1 = 0.0, beat 2 = 1.0, etc. "And of 1" = 0.5. "E of 1" = 0.25. "A of 1" = 0.75.
+  - Durations: whole = 4.0, half = 2.0, quarter = 1.0, eighth = 0.5, sixteenth = 0.25, dotted quarter = 1.5, triplet quarter = 0.667.
+  - Velocity: ghost = 30, soft = 50, normal = 100, loud/accent = 120, max = 127.
+  - Chords: add multiple notes at the same start_beat. Major = [root, root+4, root+7], minor = [root, root+3, root+7].
+  - Set clip_length based on time signature: one bar of 4/4 = 4.0, one bar of 3/4 = 3.0. Extend if notes span multiple bars.
+  - Default to clip_slot 0 unless the user specifies a scene.
+  - When the user says "bar 2", offset start_beat by one bar length (e.g. +4.0 in 4/4).
   """
 
   @type result :: %{
