@@ -97,7 +97,9 @@ defmodule Seshat.Tools.Handlers do
       :ok ->
         State.refresh()
         {:ok, "Deleted track #{track}"}
-      {:error, reason} -> {:error, inspect(reason)}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
@@ -106,7 +108,9 @@ defmodule Seshat.Tools.Handlers do
       :ok ->
         State.refresh()
         {:ok, "Duplicated track #{track}"}
-      {:error, reason} -> {:error, inspect(reason)}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
@@ -140,6 +144,7 @@ defmodule Seshat.Tools.Handlers do
 
   def call("set_metronome", %{"enabled" => enabled}) do
     value = if enabled, do: 1, else: 0
+
     case Transport.send_message("/live/song/set/metronome", [value]) do
       :ok -> {:ok, "Metronome #{if enabled, do: "on", else: "off"}"}
       {:error, reason} -> {:error, inspect(reason)}
@@ -148,6 +153,7 @@ defmodule Seshat.Tools.Handlers do
 
   def call("set_track_arm", %{"track" => track, "armed" => armed}) do
     value = if armed, do: 1, else: 0
+
     case Transport.send_message("/live/track/set/arm", [track, value]) do
       :ok -> {:ok, "#{if armed, do: "Armed", else: "Disarmed"} track #{track}"}
       {:error, reason} -> {:error, inspect(reason)}
@@ -193,7 +199,12 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  def call("duplicate_clip", %{"track" => t, "clip_slot" => s, "target_track" => tt, "target_clip_slot" => ts}) do
+  def call("duplicate_clip", %{
+        "track" => t,
+        "clip_slot" => s,
+        "target_track" => tt,
+        "target_clip_slot" => ts
+      }) do
     case Transport.send_message("/live/clip_slot/duplicate_clip_to", [t, s, tt, ts]) do
       :ok -> {:ok, "Duplicated clip from track #{t}/slot #{s} to track #{tt}/slot #{ts}"}
       {:error, reason} -> {:error, inspect(reason)}
@@ -283,7 +294,14 @@ defmodule Seshat.Tools.Handlers do
     start_time = Map.get(params, "start_time", 0.0)
     time_span = Map.get(params, "time_span", 9999.0)
 
-    case Transport.send_message("/live/clip/remove/notes", [track, slot, start_pitch, pitch_span, start_time / 1.0, time_span / 1.0]) do
+    case Transport.send_message("/live/clip/remove/notes", [
+           track,
+           slot,
+           start_pitch,
+           pitch_span,
+           start_time / 1.0,
+           time_span / 1.0
+         ]) do
       :ok -> {:ok, "Removed notes from track #{track}, clip slot #{slot}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
@@ -332,13 +350,19 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp maybe_set_loop_start(%{"start" => start}), do: Transport.send_message("/live/song/set/loop_start", [start / 1.0])
+  defp maybe_set_loop_start(%{"start" => start}),
+    do: Transport.send_message("/live/song/set/loop_start", [start / 1.0])
+
   defp maybe_set_loop_start(_), do: :ok
 
-  defp maybe_set_loop_length(%{"length" => length}), do: Transport.send_message("/live/song/set/loop_length", [length / 1.0])
+  defp maybe_set_loop_length(%{"length" => length}),
+    do: Transport.send_message("/live/song/set/loop_length", [length / 1.0])
+
   defp maybe_set_loop_length(_), do: :ok
 
-  defp loop_range_summary(%{"start" => start, "length" => length}), do: " — start: #{start}, length: #{length} beats"
+  defp loop_range_summary(%{"start" => start, "length" => length}),
+    do: " — start: #{start}, length: #{length} beats"
+
   defp loop_range_summary(%{"start" => start}), do: " — start: #{start}"
   defp loop_range_summary(%{"length" => length}), do: " — length: #{length} beats"
   defp loop_range_summary(_), do: ""

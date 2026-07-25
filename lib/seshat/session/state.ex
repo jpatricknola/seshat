@@ -112,7 +112,9 @@ defmodule Seshat.Session.State do
       is_playing: query_song_int(Transport, "/live/song/get/is_playing", 0) |> to_bool()
     }
 
-    Logger.info("Song: #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}")
+    Logger.info(
+      "Song: #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}"
+    )
 
     case Transport.query("/live/song/get/num_tracks", []) do
       {:ok, {_addr, [count]}} ->

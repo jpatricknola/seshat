@@ -6,8 +6,8 @@ defmodule Seshat.MCP.Tools.SetTrackMute do
   alias Hermes.Server.Response
 
   schema do
-    field :track, {:required, :integer}, description: "0-indexed track number. 'Track 1' = 0."
-    field :muted, {:required, :boolean}, description: "true = muted, false = unmuted"
+    field(:track, {:required, :integer}, description: "0-indexed track number. 'Track 1' = 0.")
+    field(:muted, {:required, :boolean}, description: "true = muted, false = unmuted")
   end
 
   @impl true

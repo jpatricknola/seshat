@@ -80,7 +80,13 @@ defmodule Seshat.Agent do
     case stop_reason do
       "end_turn" ->
         text = extract_text(content)
-        {:ok, %{response: text, commands_executed: executed, messages: messages ++ [assistant_message(content)]}}
+
+        {:ok,
+         %{
+           response: text,
+           commands_executed: executed,
+           messages: messages ++ [assistant_message(content)]
+         }}
 
       "tool_use" ->
         {tool_results, newly_executed} = execute_tool_calls(content)
@@ -94,7 +100,13 @@ defmodule Seshat.Agent do
 
       other ->
         text = extract_text(content)
-        {:ok, %{response: text || "Unexpected stop reason: #{other}", commands_executed: executed, messages: messages}}
+
+        {:ok,
+         %{
+           response: text || "Unexpected stop reason: #{other}",
+           commands_executed: executed,
+           messages: messages
+         }}
     end
   end
 

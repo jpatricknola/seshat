@@ -93,7 +93,8 @@ defmodule Seshat.Tools.Definitions do
           },
           "name" => %{
             type: "string",
-            description: "Short descriptive label for the track (e.g. 'Drums', 'Lead Synth', 'Vocals')"
+            description:
+              "Short descriptive label for the track (e.g. 'Drums', 'Lead Synth', 'Vocals')"
           }
         },
         required: ["track_type", "name"]
@@ -145,8 +146,14 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number (must be a MIDI track)"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot. Defaults to 0 if omitted."},
+          "track" => %{
+            type: "integer",
+            description: "0-indexed track number (must be a MIDI track)"
+          },
+          "clip_slot" => %{
+            type: "integer",
+            description: "0-indexed scene/clip slot. Defaults to 0 if omitted."
+          },
           "clip_length" => %{
             type: "number",
             description:
@@ -158,10 +165,28 @@ defmodule Seshat.Tools.Definitions do
             items: %{
               type: "object",
               properties: %{
-                "pitch" => %{type: "integer", minimum: 0, maximum: 127, description: "MIDI note number. C4 = 60."},
-                "start_beat" => %{type: "number", minimum: 0.0, description: "Start position in beats from clip start. Beat 1 = 0.0."},
-                "duration" => %{type: "number", minimum: 0.01, description: "Note length in beats. Quarter note = 1.0."},
-                "velocity" => %{type: "integer", minimum: 1, maximum: 127, description: "Note velocity. Normal = 100."}
+                "pitch" => %{
+                  type: "integer",
+                  minimum: 0,
+                  maximum: 127,
+                  description: "MIDI note number. C4 = 60."
+                },
+                "start_beat" => %{
+                  type: "number",
+                  minimum: 0.0,
+                  description: "Start position in beats from clip start. Beat 1 = 0.0."
+                },
+                "duration" => %{
+                  type: "number",
+                  minimum: 0.01,
+                  description: "Note length in beats. Quarter note = 1.0."
+                },
+                "velocity" => %{
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 127,
+                  description: "Note velocity. Normal = 100."
+                }
               },
               required: ["pitch", "start_beat", "duration", "velocity"]
             },
@@ -312,15 +337,17 @@ defmodule Seshat.Tools.Definitions do
     },
     %{
       name: "duplicate_clip",
-      description:
-        "Duplicate a clip to another slot in Ableton Live.",
+      description: "Duplicate a clip to another slot in Ableton Live.",
       parameters: %{
         type: "object",
         properties: %{
           "track" => %{type: "integer", description: "Source track (0-indexed)"},
           "clip_slot" => %{type: "integer", description: "Source scene/clip slot (0-indexed)"},
           "target_track" => %{type: "integer", description: "Target track (0-indexed)"},
-          "target_clip_slot" => %{type: "integer", description: "Target scene/clip slot (0-indexed)"}
+          "target_clip_slot" => %{
+            type: "integer",
+            description: "Target scene/clip slot (0-indexed)"
+          }
         },
         required: ["track", "clip_slot", "target_track", "target_clip_slot"]
       }
@@ -449,9 +476,15 @@ defmodule Seshat.Tools.Definitions do
           "track" => %{type: "integer", description: "0-indexed track number"},
           "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot (default 0)"},
           "start_pitch" => %{type: "integer", description: "Lowest pitch to remove (default 0)"},
-          "pitch_span" => %{type: "integer", description: "Number of pitches to span (default 128 = all)"},
+          "pitch_span" => %{
+            type: "integer",
+            description: "Number of pitches to span (default 128 = all)"
+          },
           "start_time" => %{type: "number", description: "Start time in beats (default 0.0)"},
-          "time_span" => %{type: "number", description: "Time span in beats (default: entire clip)"}
+          "time_span" => %{
+            type: "number",
+            description: "Time span in beats (default: entire clip)"
+          }
         },
         required: ["track"]
       }

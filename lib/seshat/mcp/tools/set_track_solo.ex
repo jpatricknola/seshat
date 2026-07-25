@@ -6,8 +6,8 @@ defmodule Seshat.MCP.Tools.SetTrackSolo do
   alias Hermes.Server.Response
 
   schema do
-    field :track, {:required, :integer}, description: "0-indexed track number. 'Track 1' = 0."
-    field :soloed, {:required, :boolean}, description: "true = soloed, false = unsoloed"
+    field(:track, {:required, :integer}, description: "0-indexed track number. 'Track 1' = 0.")
+    field(:soloed, {:required, :boolean}, description: "true = soloed, false = unsoloed")
   end
 
   @impl true

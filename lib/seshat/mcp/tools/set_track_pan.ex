@@ -6,8 +6,11 @@ defmodule Seshat.MCP.Tools.SetTrackPan do
   alias Hermes.Server.Response
 
   schema do
-    field :track, {:required, :integer}, description: "0-indexed track number. 'Track 1' = 0."
-    field :value, {:required, :float}, description: "Pan position. -1.0 = full left, 0.0 = center, 1.0 = full right"
+    field(:track, {:required, :integer}, description: "0-indexed track number. 'Track 1' = 0.")
+
+    field(:value, {:required, :float},
+      description: "Pan position. -1.0 = full left, 0.0 = center, 1.0 = full right"
+    )
   end
 
   @impl true

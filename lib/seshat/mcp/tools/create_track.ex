@@ -6,8 +6,13 @@ defmodule Seshat.MCP.Tools.CreateTrack do
   alias Hermes.Server.Response
 
   schema do
-    field :track_type, {:required, :string}, description: "midi = software instruments, audio = external recording"
-    field :name, {:required, :string}, description: "Short descriptive label for the track (e.g. 'Drums', 'Lead Synth')"
+    field(:track_type, {:required, :string},
+      description: "midi = software instruments, audio = external recording"
+    )
+
+    field(:name, {:required, :string},
+      description: "Short descriptive label for the track (e.g. 'Drums', 'Lead Synth')"
+    )
   end
 
   @impl true

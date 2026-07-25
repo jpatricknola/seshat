@@ -65,7 +65,10 @@ defmodule Seshat.AgentTest do
           "role" => "assistant",
           "stop_reason" => "end_turn",
           "content" => [
-            %{"type" => "text", "text" => "I can help you with mixing. What would you like to do?"}
+            %{
+              "type" => "text",
+              "text" => "I can help you with mixing. What would you like to do?"
+            }
           ]
         })
       end)
