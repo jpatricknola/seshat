@@ -1,15 +1,18 @@
 defmodule Seshat.Commands.Registry do
   @moduledoc """
-  Maps Command structs to OSC messages and dispatches them via Transport.
+  Executes multi-step Command sequences via Transport.
+
+  Single-message tools call `Seshat.OSC.Transport` directly from
+  `Seshat.Tools.Handlers` — a Command only exists for operations that need
+  ordering: query-then-create, ensure-then-write, clear-then-rebuild.
 
   OSC addresses per AbletonOSC:
-    /live/track/set/panning       [track_index, value]  (-1.0 left, 1.0 right)
-    /live/track/set/volume        [track_index, value]  (0.0–1.0)
-    /live/track/set/mute          [track_index, value]  (1 = muted, 0 = unmuted)
-    /live/track/set/solo          [track_index, value]  (1 = solo, 0 = unsolo)
     /live/song/create_midi_track  [index]               (-1 = append)
     /live/song/create_audio_track [index]               (-1 = append)
     /live/track/set/name          [track_index, name]
+    /live/clip_slot/create_clip   [track_index, slot, length]
+    /live/clip/add/notes          [track_index, slot, pitch, start, dur, vel, mute, ...]
+    /live/song/delete_track       [track_index]
   """
 
   alias Seshat.Commands.Command
@@ -18,22 +21,6 @@ defmodule Seshat.Commands.Registry do
   require Logger
 
   @spec execute(Command.t()) :: :ok | {:error, term()}
-  def execute(%Command{command: :pan, track: track, value: value}) do
-    Transport.send_message("/live/track/set/panning", [track, value / 1.0])
-  end
-
-  def execute(%Command{command: :volume, track: track, value: value}) do
-    Transport.send_message("/live/track/set/volume", [track, value / 1.0])
-  end
-
-  def execute(%Command{command: :mute, track: track, value: value}) do
-    Transport.send_message("/live/track/set/mute", [track, trunc(value)])
-  end
-
-  def execute(%Command{command: :solo, track: track, value: value}) do
-    Transport.send_message("/live/track/set/solo", [track, trunc(value)])
-  end
-
   def execute(%Command{command: :create_track, track_type: type, name: name}) do
     with :ok <- create_and_name_track(type, name) do
       Seshat.Session.State.refresh()

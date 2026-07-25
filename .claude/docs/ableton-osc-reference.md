@@ -8,10 +8,15 @@
 
 ## This is one bridge, not the architecture
 
-[ableton-lom.md](ableton-lom.md) describes *what* Ableton exposes. AbletonOSC is
-one way to reach it; a Max for Live WebSocket device may replace it later. Keep
-AbletonOSC specifics inside `Seshat.OSC.Transport` and `Seshat.Commands.Registry`
-so the rest of the app doesn't care.
+[ableton-lom.md](ableton-lom.md) describes *what* Ableton exposes; AbletonOSC
+is one way to reach it, and the deliberate choice — see
+[docs/bridge-options.md](../../docs/bridge-options.md) for the trade-off
+against the Max for Live WebSocket alternative. `Seshat.OSC.Transport`
+isolates the wire mechanics (UDP, encoding, reply correlation); the
+`/live/...` address strings themselves live inline in the handler clauses,
+Registry, and Session.State — deliberately unabstracted, all sites greppable
+via `"/live/`. A bridge swap would keep the tool contract in
+`Seshat.Tools.Definitions` and reimplement everything below `Handlers`.
 
 ## Ports
 

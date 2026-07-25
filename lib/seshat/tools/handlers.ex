@@ -3,10 +3,10 @@ defmodule Seshat.Tools.Handlers do
   Dispatches tool calls to their implementations.
 
   Shared by both MCP and API key modes. Takes a tool name and input map and
-  returns a result suitable for sending back to the LLM. Most tools talk to
-  `Seshat.OSC.Transport` directly; mixer sets and multi-step sequences
-  (create_track, write_midi_notes, create_project) build a `%Command{}` and
-  execute it via `Seshat.Commands.Registry`.
+  returns a result suitable for sending back to the LLM. Single-message tools
+  talk to `Seshat.OSC.Transport` directly; multi-step sequences (create_track,
+  write_midi_notes, create_project) build a `%Command{}` and execute it via
+  `Seshat.Commands.Registry`.
   """
 
   alias Seshat.Commands.{Command, Registry}
@@ -158,21 +158,35 @@ defmodule Seshat.Tools.Handlers do
   defp format_number(value), do: value
 
   defp do_call("set_track_pan", %{"track" => track, "value" => value}) do
-    execute(%Command{command: :pan, track: track, value: value / 1.0})
+    case Transport.send_message("/live/track/set/panning", [track, value / 1.0]) do
+      :ok -> {:ok, "Set pan on track #{track} to #{value}"}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
   end
 
   defp do_call("set_track_volume", %{"track" => track, "value" => value}) do
-    execute(%Command{command: :volume, track: track, value: value / 1.0})
+    case Transport.send_message("/live/track/set/volume", [track, value / 1.0]) do
+      :ok -> {:ok, "Set volume on track #{track} to #{value}"}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
   end
 
   defp do_call("set_track_mute", %{"track" => track, "muted" => muted}) do
-    value = if muted, do: 1.0, else: 0.0
-    execute(%Command{command: :mute, track: track, value: value})
+    value = if muted, do: 1, else: 0
+
+    case Transport.send_message("/live/track/set/mute", [track, value]) do
+      :ok -> {:ok, "#{if muted, do: "Muted", else: "Unmuted"} track #{track}"}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
   end
 
   defp do_call("set_track_solo", %{"track" => track, "soloed" => soloed}) do
-    value = if soloed, do: 1.0, else: 0.0
-    execute(%Command{command: :solo, track: track, value: value})
+    value = if soloed, do: 1, else: 0
+
+    case Transport.send_message("/live/track/set/solo", [track, value]) do
+      :ok -> {:ok, "#{if soloed, do: "Soloed", else: "Unsoloed"} track #{track}"}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
   end
 
   defp do_call("create_track", %{"track_type" => type, "name" => name})
@@ -655,16 +669,6 @@ defmodule Seshat.Tools.Handlers do
 
   defp to_track_type("midi"), do: :midi
   defp to_track_type("audio"), do: :audio
-
-  defp execute(%Command{} = command) do
-    case Registry.execute(command) do
-      :ok ->
-        {:ok, "OK — #{command.command} track #{command.track} to #{command.value}"}
-
-      {:error, reason} ->
-        {:error, inspect(reason)}
-    end
-  end
 
   defp maybe_set_loop_start(%{"start" => start}),
     do: Transport.send_message("/live/song/set/loop_start", [start / 1.0])

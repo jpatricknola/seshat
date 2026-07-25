@@ -76,3 +76,6 @@ CLI flags that may have drifted) in
 - Return/master-track device loading, device *removal* beyond the audition
   loop above, rack inner chains, parameter listeners (live meters/automation
   following) — revisit if a real workflow needs them.
+- Replacing AbletonOSC with a Max for Live WebSocket bridge — weighed and
+  declined in [bridge-options.md](bridge-options.md); reopen only if a Remote
+  Script fundamentally can't do something we need.
