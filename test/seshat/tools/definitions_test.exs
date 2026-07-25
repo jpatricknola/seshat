@@ -7,7 +7,7 @@ defmodule Seshat.Tools.DefinitionsTest do
     test "returns a list of tool definitions" do
       tools = Definitions.all()
       assert is_list(tools)
-      assert length(tools) == 34
+      assert length(tools) == 37
     end
 
     test "each tool has required fields" do
@@ -30,6 +30,7 @@ defmodule Seshat.Tools.DefinitionsTest do
         fire_scene create_scene delete_scene duplicate_scene set_scene_name
         set_loop select_track select_scene remove_notes
         list_browser_items load_device
+        get_track_devices get_device_parameters set_device_parameter
         get_session_state
       )
 

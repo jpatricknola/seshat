@@ -40,7 +40,7 @@ it via `get_session_state` rather than querying Ableton field by field.
 
 | Path | Role |
 |---|---|
-| [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All 34 tool definitions (name, description, JSON Schema). Single source of truth. |
+| [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All 37 tool definitions (name, description, JSON Schema). Single source of truth. |
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a Command |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
@@ -77,7 +77,7 @@ future address upstream doesn't provide goes there the same way.
 ## Verification
 
 - `mix precommit` — compile with warnings-as-errors, unlock unused deps, format, test. Run before declaring work done.
-- `mix test` — 42 tests, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`.
+- `mix test` — 47 tests, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed. See [README.md](README.md).
 
