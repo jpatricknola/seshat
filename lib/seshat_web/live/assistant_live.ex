@@ -43,7 +43,12 @@ defmodule SeshatWeb.AssistantLive do
   end
 
   def handle_async(:parse_and_send, {:exit, reason}, socket) do
-    entry = %{input: socket.assigns.last_input, result: :error, message: "Crashed: #{inspect(reason)}"}
+    entry = %{
+      input: socket.assigns.last_input,
+      result: :error,
+      message: "Crashed: #{inspect(reason)}"
+    }
+
     {:noreply, assign(socket, status: :idle, log: [entry | socket.assigns.log])}
   end
 

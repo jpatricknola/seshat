@@ -10,7 +10,6 @@ defmodule Seshat.Application do
     children =
       [
         SeshatWeb.Telemetry,
-        Seshat.Repo,
         {DNSCluster, query: Application.get_env(:seshat, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Seshat.PubSub}
       ] ++
@@ -43,16 +42,20 @@ defmodule Seshat.Application do
   defp mcp_supervisor_spec do
     %{
       id: Seshat.MCP.Supervisor,
-      start: {Supervisor, :start_link, [
-        [
-          %{
-            id: Seshat.MCP.Server,
-            start: {Hermes.Server.Supervisor, :start_link, [Seshat.MCP.Server, [transport: :streamable_http]]},
-            type: :supervisor
-          }
-        ],
-        [strategy: :one_for_one]
-      ]},
+      start:
+        {Supervisor, :start_link,
+         [
+           [
+             %{
+               id: Seshat.MCP.Server,
+               start:
+                 {Hermes.Server.Supervisor, :start_link,
+                  [Seshat.MCP.Server, [transport: :streamable_http]]},
+               type: :supervisor
+             }
+           ],
+           [strategy: :one_for_one]
+         ]},
       type: :supervisor,
       restart: :temporary
     }

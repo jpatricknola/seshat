@@ -8,7 +8,6 @@
 import Config
 
 config :seshat,
-  ecto_repos: [Seshat.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configure the endpoint

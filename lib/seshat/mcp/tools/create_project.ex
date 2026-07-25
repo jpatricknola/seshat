@@ -7,8 +7,8 @@ defmodule Seshat.MCP.Tools.CreateProject do
 
   schema do
     embeds_many :tracks, required: true, description: "List of tracks to create" do
-      field :track_type, {:required, :string}, description: "midi or audio"
-      field :name, {:required, :string}, description: "Short descriptive label"
+      field(:track_type, {:required, :string}, description: "midi or audio")
+      field(:name, {:required, :string}, description: "Short descriptive label")
     end
   end
 

@@ -41,7 +41,13 @@ defmodule Seshat.Commands.Registry do
     end
   end
 
-  def execute(%Command{command: :write_notes, track: track, clip_slot: slot, clip_length: length, notes: notes}) do
+  def execute(%Command{
+        command: :write_notes,
+        track: track,
+        clip_slot: slot,
+        clip_length: length,
+        notes: notes
+      }) do
     with :ok <- ensure_clip(track, slot, length),
          :ok <- add_notes(track, slot, notes) do
       Logger.info("Wrote #{Enum.count(notes)} notes to track #{track}, clip slot #{slot}")
@@ -63,11 +69,20 @@ defmodule Seshat.Commands.Registry do
 
   defp ensure_clip(track, slot, length) do
     case Transport.query("/live/clip_slot/get/has_clip", [track, slot]) do
-      {:ok, {_addr, [_t, _s, 1]}} -> :ok
-      {:ok, {_addr, [_t, _s, true]}} -> :ok
-      {:ok, {_addr, [_t, _s, 0]}} -> Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
-      {:ok, {_addr, [_t, _s, false]}} -> Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
-      {:error, reason} -> {:error, reason}
+      {:ok, {_addr, [_t, _s, 1]}} ->
+        :ok
+
+      {:ok, {_addr, [_t, _s, true]}} ->
+        :ok
+
+      {:ok, {_addr, [_t, _s, 0]}} ->
+        Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
+
+      {:ok, {_addr, [_t, _s, false]}} ->
+        Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -107,8 +122,10 @@ defmodule Seshat.Commands.Registry do
 
   defp open_new_set do
     case System.cmd("osascript", [
-           "-e", "tell application \"Ableton Live 12\" to activate",
-           "-e", "tell application \"System Events\" to keystroke \"n\" using command down"
+           "-e",
+           "tell application \"Ableton Live 12\" to activate",
+           "-e",
+           "tell application \"System Events\" to keystroke \"n\" using command down"
          ]) do
       {_output, 0} ->
         Logger.info("Sent Cmd+N to Ableton via AppleScript")

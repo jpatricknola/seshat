@@ -13,5 +13,15 @@ defmodule Seshat.Commands.Command do
           notes: [map()] | nil
         }
 
-  defstruct [:command, :track, :value, :track_type, :name, :tracks, :clip_slot, :clip_length, :notes]
+  defstruct [
+    :command,
+    :track,
+    :value,
+    :track_type,
+    :name,
+    :tracks,
+    :clip_slot,
+    :clip_length,
+    :notes
+  ]
 end

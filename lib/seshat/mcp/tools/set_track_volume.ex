@@ -6,8 +6,11 @@ defmodule Seshat.MCP.Tools.SetTrackVolume do
   alias Hermes.Server.Response
 
   schema do
-    field :track, {:required, :integer}, description: "0-indexed track number. 'Track 1' = 0."
-    field :value, {:required, :float}, description: "Volume level. 0.0 = silence, 1.0 = full volume"
+    field(:track, {:required, :integer}, description: "0-indexed track number. 'Track 1' = 0.")
+
+    field(:value, {:required, :float},
+      description: "Volume level. 0.0 = silence, 1.0 = full volume"
+    )
   end
 
   @impl true

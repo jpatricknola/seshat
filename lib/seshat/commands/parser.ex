@@ -55,6 +55,7 @@ defmodule Seshat.Commands.Parser do
           |> Enum.map(fn t ->
             mute = if t.mute, do: " [muted]", else: ""
             solo = if t.solo, do: " [solo]", else: ""
+
             "  #{t.index}: \"#{t.name}\" — pan=#{Float.round(t.pan, 2)}, volume=#{Float.round(t.volume, 2)}#{mute}#{solo}"
           end)
           |> Enum.join("\n")
@@ -91,9 +92,15 @@ defmodule Seshat.Commands.Parser do
       %{status: status, body: body} ->
         Logger.error("Anthropic API error #{status}: #{inspect(body)}")
         {:error, "API error (HTTP #{status})"}
-      {:error, %Jason.DecodeError{}} -> {:error, "Could not parse LLM response as JSON"}
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      _ -> {:error, "Unexpected error parsing command"}
+
+      {:error, %Jason.DecodeError{}} ->
+        {:error, "Could not parse LLM response as JSON"}
+
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason}
+
+      _ ->
+        {:error, "Unexpected error parsing command"}
     end
   end
 
@@ -121,7 +128,7 @@ defmodule Seshat.Commands.Parser do
        when is_list(tracks) and tracks != [] do
     parsed_tracks =
       Enum.map(tracks, fn %{"track_type" => type, "name" => name}
-                           when type in ["midi", "audio"] and is_binary(name) ->
+                          when type in ["midi", "audio"] and is_binary(name) ->
         %{track_type: String.to_atom(type), name: name}
       end)
 
@@ -136,6 +143,7 @@ defmodule Seshat.Commands.Parser do
   defp history_messages(history) do
     Enum.flat_map(history, fn %{input: input, command: command} ->
       json = encode_command_for_history(command)
+
       [
         %{role: "user", content: input},
         %{role: "assistant", content: json}
