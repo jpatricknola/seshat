@@ -25,6 +25,15 @@ defmodule Mix.Tasks.Mcp do
 
   `MIX_QUIET=1` keeps Mix's own output (e.g. "Compiling 3 files") off stdout,
   which must carry only JSON-RPC.
+
+  ## Do not run alongside `mix phx.server`
+
+  AbletonOSC sends all replies to a fixed UDP port (11001). Whichever Seshat
+  instance binds it first hears Ableton; any other instance falls back to an
+  ephemeral port and can send commands but never receives state. If the
+  Phoenix server is running, point MCP clients at its streamable HTTP endpoint
+  (`http://localhost:4000/mcp`, e.g. via `npx mcp-remote`) instead of
+  spawning this task.
   """
 
   use Mix.Task
