@@ -489,6 +489,88 @@ defmodule Seshat.Tools.Definitions do
         required: ["track"]
       }
     },
+    # --- Browser / device loading ---
+    %{
+      name: "list_browser_items",
+      description:
+        "Search Ableton Live's browser for instruments, effects, sounds, or samples that can be " <>
+          "loaded onto a track. Returns each match as a name plus a `uri` — the uri is what " <>
+          "load_device needs. " <>
+          "A MIDI track makes no sound until an instrument is loaded onto it, so a normal " <>
+          "workflow is: create_track (midi) → list_browser_items (instruments) → load_device → " <>
+          "write_midi_notes → fire_clip. " <>
+          "ALWAYS call this before load_device and use a uri from the results — never guess or " <>
+          "invent a uri, and never reuse one from an earlier session. " <>
+          "Categories: 'instruments' = Live's synths and samplers (Operator, Wavetable, Analog, " <>
+          "Drum Rack, Simpler); 'sounds' = ready-made instrument presets grouped by kind of " <>
+          "sound (Bass, Pad, Lead, Keys); 'drums' = drum kits and drum-rack presets; " <>
+          "'audio_effects' = effects for shaping audio (Reverb, Delay, EQ Eight, Compressor); " <>
+          "'midi_effects' = effects that transform MIDI before the instrument (Arpeggiator, " <>
+          "Chord, Scale); 'plugins' = installed third-party VST/AU plugins; 'samples' = raw " <>
+          "audio samples; 'user_library' = the user's own saved presets and racks. " <>
+          "Pass a filter to keep the result list small and relevant — an unfiltered search of a " <>
+          "big category returns only the first max_results of many. " <>
+          "The first search of a large category (samples, sounds, plugins) can take several " <>
+          "seconds while Live indexes it; later searches are fast.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "category" => %{
+            type: "string",
+            enum: [
+              "instruments",
+              "sounds",
+              "drums",
+              "audio_effects",
+              "midi_effects",
+              "plugins",
+              "samples",
+              "user_library"
+            ],
+            description: "Which part of Live's browser to search"
+          },
+          "filter" => %{
+            type: "string",
+            description:
+              "Case-insensitive substring match on the item name (e.g. 'operator', 'reverb', " <>
+                "'808'). Omit or pass \"\" to list everything in the category."
+          },
+          "max_results" => %{
+            type: "integer",
+            minimum: 1,
+            maximum: 100,
+            description: "Maximum items to return. Defaults to 25."
+          }
+        },
+        required: ["category"]
+      }
+    },
+    %{
+      name: "load_device",
+      description:
+        "Load a browser item (instrument, effect, or preset) onto a track in Ableton Live. " <>
+          "The uri MUST come from a list_browser_items call — there is no way to construct one. " <>
+          "Track indices are 0-based: 'track 1' = index 0. " <>
+          "Loading an instrument onto a MIDI track is what makes its MIDI notes audible. " <>
+          "Loading an audio effect appends it to the end of the track's device chain, after the " <>
+          "instrument, so effects can be stacked by calling this repeatedly. " <>
+          "The reply names the device that actually landed on the track — check it matches what " <>
+          "you asked for before telling the user it worked.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{
+            type: "integer",
+            description: "0-indexed track number to load onto"
+          },
+          "uri" => %{
+            type: "string",
+            description: "Browser item uri, exactly as returned by list_browser_items"
+          }
+        },
+        required: ["track", "uri"]
+      }
+    },
     %{
       name: "get_session_state",
       description:

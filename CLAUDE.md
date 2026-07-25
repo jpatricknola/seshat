@@ -40,7 +40,7 @@ it via `get_session_state` rather than querying Ableton field by field.
 
 | Path | Role |
 |---|---|
-| [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All 32 tool definitions (name, description, JSON Schema). Single source of truth. |
+| [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All 34 tool definitions (name, description, JSON Schema). Single source of truth. |
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a Command |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
@@ -53,6 +53,8 @@ it via `get_session_state` rather than querying Ableton field by field.
 | [lib/seshat/session/state.ex](lib/seshat/session/state.ex) | Mirrored session state |
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
+| [priv/abletonosc/browser.py](priv/abletonosc/browser.py) | Vendored AbletonOSC handler extension — the browser API upstream doesn't have |
+| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies that handler into AbletonOSC and registers it |
 
 ## Adding a tool
 
@@ -68,11 +70,15 @@ canonical list of addresses and their arguments. Do not guess an address or
 infer one from a pattern — AbletonOSC's naming is not fully regular, and a
 wrong address fails silently (it's UDP, with no reply).
 
+`/live/browser/*` is ours, not upstream's: `priv/abletonosc/browser.py` vendors
+a handler that `mix abletonosc.install` copies into the user's AbletonOSC. Any
+future address upstream doesn't provide goes there the same way.
+
 ## Verification
 
 - `mix precommit` — compile with warnings-as-errors, unlock unused deps, format, test. Run before declaring work done.
-- `mix test` — 38 tests, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`.
-- Anything reaching `Transport.query/2` needs a live Ableton and will time out after 5s. Don't write tests at that layer — test the pure layer instead.
+- `mix test` — 42 tests, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`.
+- Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed. See [README.md](README.md).
 
 ## Conventions

@@ -11,6 +11,14 @@ defmodule Seshat.Tools.Handlers do
   alias Seshat.OSC.Transport
   alias Seshat.Session.State
 
+  # Browsing and loading are both far slower than a property read: the first
+  # walk of a big browser category takes seconds, and a heavy plugin can take
+  # tens of seconds to instantiate.
+  @browse_timeout 15_000
+  @load_timeout 30_000
+
+  @default_max_results 25
+
   @spec call(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
   def call(name, params) when is_binary(name) and is_map(params) do
     do_call(name, stringify_keys(params))
@@ -31,6 +39,32 @@ defmodule Seshat.Tools.Handlers do
 
   def stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
   def stringify_keys(value), do: value
+
+  @doc """
+  Formats the flat `[name, uri, name, uri, ...]` tail of a `/live/browser/get/items`
+  reply into one line per item.
+
+  `total` is how many items matched before truncation, so the model can tell
+  "that's all of them" from "there are more, narrow the filter".
+  """
+  @spec format_browser_items(list(), non_neg_integer()) :: String.t()
+  def format_browser_items([], _total) do
+    "No matching browser items. Try a shorter filter, a different spelling, or another category."
+  end
+
+  def format_browser_items(pairs, total) do
+    items = Enum.chunk_every(pairs, 2, 2, :discard)
+    listing = Enum.map_join(items, "\n", fn [name, uri] -> "#{name} — uri: #{uri}" end)
+
+    header =
+      if length(items) < total do
+        "Showing #{length(items)} of #{total} matches — refine the filter to see the rest."
+      else
+        "#{length(items)} match(es):"
+      end
+
+    "#{header}\n\n#{listing}"
+  end
 
   defp do_call("set_track_pan", %{"track" => track, "value" => value}) do
     execute(%Command{command: :pan, track: track, value: value / 1.0})
@@ -324,6 +358,66 @@ defmodule Seshat.Tools.Handlers do
       :ok -> {:ok, "Removed notes from track #{track}, clip slot #{slot}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
+  end
+
+  # --- Browser / device loading ---
+  #
+  # Both addresses are Seshat extensions to AbletonOSC, served by
+  # priv/abletonosc/browser.py — see `mix abletonosc.install`.
+
+  defp do_call("list_browser_items", %{"category" => category} = params) do
+    filter = Map.get(params, "filter", "")
+    max_results = Map.get(params, "max_results", @default_max_results)
+
+    query =
+      Transport.query(
+        "/live/browser/get/items",
+        [category, filter, max_results],
+        @browse_timeout
+      )
+
+    case query do
+      {:ok, {_address, [_category, _filter, "ok", _returned, total | pairs]}} ->
+        {:ok, format_browser_items(pairs, total)}
+
+      {:ok, {_address, [_category, _filter, "error", message]}} ->
+        {:error, message}
+
+      {:ok, {_address, args}} ->
+        {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out searching Live's browser. The first search of a large category " <>
+         "(samples, sounds, plugins) is slow — try again, or narrow it with a filter. " <>
+         "If it keeps timing out, check that Ableton is running with AbletonOSC enabled and " <>
+         "that `mix abletonosc.install` has been run to add the browser handler."}
+  end
+
+  defp do_call("load_device", %{"track" => track, "uri" => uri}) do
+    case Transport.query("/live/browser/load_item", [track, uri], @load_timeout) do
+      {:ok, {_address, [_track, _uri, "ok", name]}} ->
+        {:ok, "Loaded '#{name}' onto track #{track}"}
+
+      {:ok, {_address, [_track, _uri, "error", message]}} ->
+        {:error, message}
+
+      {:ok, {_address, args}} ->
+        {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out loading the device onto track #{track}. A heavy plugin may still be " <>
+         "loading — check Ableton, and use get_session_state before retrying so you don't " <>
+         "load it twice."}
   end
 
   defp do_call("get_session_state", _params) do
