@@ -19,7 +19,7 @@ defmodule Seshat.Application do
           []
         end ++
         if Application.get_env(:seshat, :start_mcp, true) do
-          [Hermes.Server.Registry, mcp_supervisor_spec()]
+          [mcp_supervisor_spec()]
         else
           []
         end ++
@@ -49,7 +49,7 @@ defmodule Seshat.Application do
              %{
                id: Seshat.MCP.Server,
                start:
-                 {Hermes.Server.Supervisor, :start_link,
+                 {Anubis.Server.Supervisor, :start_link,
                   [Seshat.MCP.Server, [transport: :streamable_http]]},
                type: :supervisor
              }

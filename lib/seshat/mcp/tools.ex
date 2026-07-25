@@ -1,10 +1,10 @@
 defmodule Seshat.MCP.Tools do
   @moduledoc """
-  Generates one `Hermes.Server.Component` module per entry in
+  Generates one `Anubis.Server.Component` module per entry in
   `Seshat.Tools.Definitions`, so MCP mode exposes exactly the same tools as
   the API-key mode agent loop.
 
-  `"set_track_pan"` becomes `Seshat.MCP.Tools.SetTrackPan`. Hermes derives the
+  `"set_track_pan"` becomes `Seshat.MCP.Tools.SetTrackPan`. Anubis derives the
   wire name back from the module name (`Macro.underscore/1` of the last
   segment), so that round trip is what keeps the two modes in sync.
   `Seshat.MCP.ToolsTest` asserts it.
@@ -32,11 +32,11 @@ defmodule Seshat.MCP.Tools do
       quote do
         @moduledoc unquote(tool.description)
 
-        use Hermes.Server.Component, type: :tool
+        use Anubis.Server.Component, type: :tool
 
-        alias Hermes.Server.Response
+        alias Anubis.Server.Response
 
-        schema(do: unquote(Macro.escape(Schema.to_hermes(tool.parameters))))
+        schema(do: unquote(Macro.escape(Schema.to_anubis(tool.parameters))))
 
         @impl true
         def execute(params, frame) do

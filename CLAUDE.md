@@ -43,9 +43,9 @@ it via `get_session_state` rather than querying Ableton field by field.
 | [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All 32 tool definitions (name, description, JSON Schema). Single source of truth. |
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a Command |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
-| [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Hermes MCP server |
+| [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
 | [lib/seshat/mcp/tools.ex](lib/seshat/mcp/tools.ex) | Generates one MCP component per tool definition |
-| [lib/seshat/mcp/schema.ex](lib/seshat/mcp/schema.ex) | JSON Schema → Hermes/Peri schema conversion |
+| [lib/seshat/mcp/schema.ex](lib/seshat/mcp/schema.ex) | JSON Schema → Anubis/Peri schema conversion |
 | [lib/seshat/commands/registry.ex](lib/seshat/commands/registry.ex) | Command struct → OSC messages |
 | [lib/seshat/commands/command.ex](lib/seshat/commands/command.ex) | The Command struct |
 | [lib/seshat/osc/transport.ex](lib/seshat/osc/transport.ex) | UDP GenServer — send, query, PubSub broadcast |

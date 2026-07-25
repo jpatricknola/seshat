@@ -20,6 +20,15 @@ if System.get_env("PHX_SERVER") do
   config :seshat, SeshatWeb.Endpoint, server: true
 end
 
+# Set by `mix mcp` (stdio MCP mode): stdout must carry only JSON-RPC, so the
+# default logger handler moves to stderr. The app's streamable-HTTP MCP
+# supervisor is also skipped — Anubis allows one server supervisor per server
+# module, and stdio mode starts its own.
+if System.get_env("SESHAT_MCP_STDIO") do
+  config :logger, :default_handler, config: [type: :standard_error]
+  config :seshat, start_mcp: false
+end
+
 config :seshat, SeshatWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 

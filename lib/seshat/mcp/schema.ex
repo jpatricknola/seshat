@@ -1,8 +1,9 @@
 defmodule Seshat.MCP.Schema do
   @moduledoc """
   Converts the JSON Schema stored in `Seshat.Tools.Definitions` into the raw
-  schema format Hermes components expect (Peri types wrapped in `:mcp_field`
-  tuples, which Hermes turns back into JSON Schema for the MCP wire).
+  schema format Anubis components expect (native Peri types, with descriptions
+  carried in `{:meta, type, opts}` wrappers, which Peri turns back into JSON
+  Schema for the MCP wire).
 
   This runs at compile time, from `Seshat.MCP.Tools`. It exists so that both
   entry points — the Anthropic tool-use loop and the MCP server — describe
@@ -10,20 +11,25 @@ defmodule Seshat.MCP.Schema do
   """
 
   @doc """
-  Converts a tool's `:parameters` JSON Schema into a Hermes raw schema map.
+  Converts a tool's `:parameters` JSON Schema into an Anubis raw schema map.
 
   Returns `%{}` for tools that take no parameters.
   """
-  def to_hermes(%{properties: properties} = schema) do
+  def to_anubis(%{properties: properties} = schema) do
     required = Map.get(schema, :required, [])
 
     Map.new(properties, fn {name, spec} ->
-      type = spec |> peri_type() |> maybe_required(name in required)
-      {String.to_atom(name), {:mcp_field, type, field_opts(spec)}}
+      type =
+        spec
+        |> peri_type()
+        |> with_description(Map.get(spec, :description))
+        |> maybe_required(name in required)
+
+      {String.to_atom(name), type}
     end)
   end
 
-  def to_hermes(_schema), do: %{}
+  def to_anubis(_schema), do: %{}
 
   # Enum first: an enum spec also carries a `:type`, and the enum is the
   # tighter constraint.
@@ -39,7 +45,7 @@ defmodule Seshat.MCP.Schema do
   defp peri_type(%{type: "number"}), do: {:either, {:float, :integer}}
 
   defp peri_type(%{type: "array", items: items}), do: {:list, peri_type(items)}
-  defp peri_type(%{type: "object"} = spec), do: to_hermes(spec)
+  defp peri_type(%{type: "object"} = spec), do: to_anubis(spec)
   defp peri_type(_spec), do: :any
 
   defp with_range(base, %{minimum: min, maximum: max}), do: {base, {:range, {min, max}}}
@@ -47,17 +53,11 @@ defmodule Seshat.MCP.Schema do
   defp with_range(base, %{maximum: max}), do: {base, {:lte, max}}
   defp with_range(base, _spec), do: base
 
+  defp with_description(type, nil), do: type
+  defp with_description(type, description), do: {:meta, type, [description: description]}
+
+  # Required wraps outermost — the shape Peri's encoder and validator expect
+  # (`{:required, {:meta, type, opts}}`).
   defp maybe_required(type, true), do: {:required, type}
   defp maybe_required(type, false), do: type
-
-  defp field_opts(spec) do
-    []
-    |> put_opt(:description, Map.get(spec, :description))
-    # `{:either, ...}` renders as `oneOf`, which drops the type hint. Put it
-    # back so MCP clients still see "number".
-    |> put_opt(:type, if(Map.get(spec, :type) == "number", do: "number"))
-  end
-
-  defp put_opt(opts, _key, nil), do: opts
-  defp put_opt(opts, key, value), do: [{key, value} | opts]
 end
