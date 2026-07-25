@@ -1,0 +1,63 @@
+defmodule Seshat.MCP.Schema do
+  @moduledoc """
+  Converts the JSON Schema stored in `Seshat.Tools.Definitions` into the raw
+  schema format Hermes components expect (Peri types wrapped in `:mcp_field`
+  tuples, which Hermes turns back into JSON Schema for the MCP wire).
+
+  This runs at compile time, from `Seshat.MCP.Tools`. It exists so that both
+  entry points — the Anthropic tool-use loop and the MCP server — describe
+  their tools from one source of truth.
+  """
+
+  @doc """
+  Converts a tool's `:parameters` JSON Schema into a Hermes raw schema map.
+
+  Returns `%{}` for tools that take no parameters.
+  """
+  def to_hermes(%{properties: properties} = schema) do
+    required = Map.get(schema, :required, [])
+
+    Map.new(properties, fn {name, spec} ->
+      type = spec |> peri_type() |> maybe_required(name in required)
+      {String.to_atom(name), {:mcp_field, type, field_opts(spec)}}
+    end)
+  end
+
+  def to_hermes(_schema), do: %{}
+
+  # Enum first: an enum spec also carries a `:type`, and the enum is the
+  # tighter constraint.
+  defp peri_type(%{enum: values}), do: {:enum, values}
+
+  defp peri_type(%{type: "string"}), do: :string
+  defp peri_type(%{type: "boolean"}), do: :boolean
+  defp peri_type(%{type: "integer"} = spec), do: with_range(:integer, spec)
+
+  # Peri's `:float` rejects integers, and models routinely emit `1` where the
+  # schema says number. Accept both rather than failing a well-formed call;
+  # the handlers coerce with `value / 1.0` anyway.
+  defp peri_type(%{type: "number"}), do: {:either, {:float, :integer}}
+
+  defp peri_type(%{type: "array", items: items}), do: {:list, peri_type(items)}
+  defp peri_type(%{type: "object"} = spec), do: to_hermes(spec)
+  defp peri_type(_spec), do: :any
+
+  defp with_range(base, %{minimum: min, maximum: max}), do: {base, {:range, {min, max}}}
+  defp with_range(base, %{minimum: min}), do: {base, {:gte, min}}
+  defp with_range(base, %{maximum: max}), do: {base, {:lte, max}}
+  defp with_range(base, _spec), do: base
+
+  defp maybe_required(type, true), do: {:required, type}
+  defp maybe_required(type, false), do: type
+
+  defp field_opts(spec) do
+    []
+    |> put_opt(:description, Map.get(spec, :description))
+    # `{:either, ...}` renders as `oneOf`, which drops the type hint. Put it
+    # back so MCP clients still see "number".
+    |> put_opt(:type, if(Map.get(spec, :type) == "number", do: "number"))
+  end
+
+  defp put_opt(opts, _key, nil), do: opts
+  defp put_opt(opts, key, value), do: [{key, value} | opts]
+end
