@@ -68,7 +68,8 @@ still has no database of its own.
 
 ## Adding a tool
 
-Follow [.claude/docs/adding-a-tool.md](.claude/docs/adding-a-tool.md). Short
+Use the `/add-tool` skill, or follow
+[.claude/docs/adding-a-tool.md](.claude/docs/adding-a-tool.md) directly. Short
 version: add to `Definitions`, add a `do_call/2` clause to `Handlers`, bump the
 count in `definitions_test.exs`. The MCP component is generated — never write
 one by hand.
@@ -92,7 +93,8 @@ future address upstream doesn't provide goes there the same way.
 - `mix precommit` — compile with warnings-as-errors, unlock unused deps, format, test. Run before declaring work done.
 - `mix test` — full suite, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
-- To exercise the real loop you need Ableton Live running with AbletonOSC installed. See [README.md](README.md).
+- To exercise the real loop you need Ableton Live running with AbletonOSC installed — the `/smoke-test` skill is the checklist for that. See [README.md](README.md).
+- The `audit-osc` workflow ([.claude/workflows/audit-osc.js](.claude/workflows/audit-osc.js)) fans out agents to verify every `/live/` address in `lib/` against the canonical docs — worth running after an AbletonOSC upgrade or a batch of new tools.
 
 ## Conventions
 
@@ -102,7 +104,7 @@ future address upstream doesn't provide goes there the same way.
 - Pan: -1.0 (left) to 1.0 (right). Volume: 0.0–1.0 (Ableton maps to dB internally).
 - Tool params arrive string-keyed from Anthropic and atom-keyed from MCP. `Handlers.call/2` normalises; handler clauses only ever see string keys.
 - No database, no Ecto. Ignore the Ecto section if you read [AGENTS.md](AGENTS.md). `:exqlite` is in the deps only to read *Ableton's* database read-only — it is not a store for us.
-- Standard Phoenix/Elixir conventions otherwise — [AGENTS.md](AGENTS.md) has the full Phoenix/LiveView ruleset.
+- Standard Phoenix/Elixir conventions otherwise — [AGENTS.md](AGENTS.md) has the always-on Elixir/Mix rules; the Phoenix/LiveView/HEEx ruleset lives in [.claude/rules/phoenix-web.md](.claude/rules/phoenix-web.md) and loads when web files are touched (OSC and testing rules likewise in [.claude/rules/](.claude/rules/)).
 
 ## Design decisions worth knowing
 
@@ -114,7 +116,8 @@ future address upstream doesn't provide goes there the same way.
 
 [docs/ROADMAP.md](docs/ROADMAP.md) is the single living list of what's not
 built yet — send levels first, then catalog follow-ups and the rest. Keep it
-current: when something ships, remove it there. [docs/archive/](docs/archive/)
+current: when something ships, run the `/ship` skill (or by hand: remove it
+there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 

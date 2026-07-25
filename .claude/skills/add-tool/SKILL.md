@@ -1,4 +1,5 @@
 ---
+name: add-tool
 description: Add a new Ableton control tool end to end
 argument-hint: [what the tool should do, e.g. "set a send level on a track"]
 allowed-tools: Read, Edit, Write, Bash(mix:*), Bash(grep:*), Bash(rg:*)
@@ -37,4 +38,5 @@ Do **not** create a module under `lib/seshat/mcp/` — MCP components are
 generated from the definitions at compile time.
 
 Report which OSC address you used and what you'd need Ableton running to
-actually confirm.
+actually confirm. If the tool is user-facing enough to smoke-test, suggest
+running `/smoke-test` with Ableton open.

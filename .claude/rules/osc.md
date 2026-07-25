@@ -1,0 +1,41 @@
+---
+paths:
+  - "lib/**"
+  - "priv/abletonosc/**"
+---
+
+# OSC safety rules
+
+Wrong OSC addresses **fail silently** — it's UDP with no reply. These rules
+exist because a typo'd address looks exactly like success.
+
+- **Before using any OSC address**, check
+  [docs/abletonosc-api-docs.md](../../docs/abletonosc-api-docs.md) — the
+  canonical list of addresses and their arguments. Never guess an address or
+  infer one from a similar-looking pattern; AbletonOSC's naming is not fully
+  regular. If the capability isn't in that file, say so instead of inventing
+  an address. Conventions and gotchas (ports, listener pattern, ordering
+  hazards) are in
+  [.claude/docs/ableton-osc-reference.md](../docs/ableton-osc-reference.md).
+- **`/live/browser/*` is ours, not upstream's** — those handlers live in
+  [priv/abletonosc/browser.py](../../priv/abletonosc/browser.py) and are
+  installed by `mix abletonosc.install`. Any new address upstream doesn't
+  provide goes there the same way.
+- **All OSC goes through `Seshat.OSC.Transport`** — nothing sends UDP
+  directly. Address strings deliberately live inline in `Handlers`,
+  `Registry`, and `Session.State` (greppable via `"/live/`) — do not add an
+  abstraction layer over them.
+- **Track indices are 0-based everywhere.** "Track 1" in user speech =
+  index 0. Send IDs likewise (send A = 0).
+- **Ranges**: pan is -1.0 (left) to 1.0 (right); volume and send levels are
+  0.0–1.0 (Ableton maps to dB internally).
+- **Handler params are string-keyed.** `Handlers.call/2` normalises
+  (Anthropic sends strings, MCP sends atoms); `do_call/2` clauses only ever
+  see string keys.
+- **`%Command{}` structs are for multi-step sequences only** (via
+  `Seshat.Commands.Registry`). Single-message tools call `Transport` directly
+  from their handler clause.
+- **Never hand-write a module under `lib/seshat/mcp/` for a tool** — MCP
+  components are generated from `Seshat.Tools.Definitions` at compile time.
+- **No database, no Ecto.** `:exqlite` exists only so
+  `Seshat.Library.AbletonDB` can read *Ableton's* browser database read-only.
