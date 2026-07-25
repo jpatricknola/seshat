@@ -17,12 +17,14 @@ defmodule Mix.Tasks.Mcp do
       {
         "mcpServers": {
           "seshat": {
-            "command": "mix",
-            "args": ["mcp"],
-            "cwd": "/path/to/seshat"
+            "command": "/bin/sh",
+            "args": ["-c", "cd /path/to/seshat && exec env MIX_QUIET=1 mix mcp"]
           }
         }
       }
+
+  `MIX_QUIET=1` keeps Mix's own output (e.g. "Compiling 3 files") off stdout,
+  which must carry only JSON-RPC.
   """
 
   use Mix.Task
@@ -31,10 +33,22 @@ defmodule Mix.Tasks.Mcp do
 
   @impl true
   def run(_args) do
+    # stdio transport: stdout must carry only JSON-RPC, so all logs go to
+    # stderr. The handler swap covers the pre-boot window; the env var makes
+    # runtime.exs re-apply it when the Logger app installs its own handler
+    # during app.start.
+    System.put_env("SESHAT_MCP_STDIO", "true")
+    :logger.remove_handler(:default)
+
+    :logger.add_handler(:default, :logger_std_h, %{
+      config: %{type: :standard_error},
+      formatter: Logger.Formatter.new()
+    })
+
     Mix.Task.run("app.start")
 
     {:ok, _pid} =
-      Hermes.Server.Supervisor.start_link(Seshat.MCP.Server, transport: :stdio)
+      Anubis.Server.Supervisor.start_link(Seshat.MCP.Server, transport: :stdio)
 
     # Keep the process alive
     Process.sleep(:infinity)

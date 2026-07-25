@@ -10,7 +10,7 @@ defmodule Seshat.MCP.Server do
   this server can't drift from the tool definitions.
   """
 
-  use Hermes.Server,
+  use Anubis.Server,
     name: "seshat",
     version: "0.1.0",
     capabilities: [:tools]
