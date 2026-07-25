@@ -12,27 +12,46 @@ defmodule Seshat.Tools.Handlers do
   alias Seshat.Session.State
 
   @spec call(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
+  def call(name, params) when is_binary(name) and is_map(params) do
+    do_call(name, stringify_keys(params))
+  end
 
-  def call("set_track_pan", %{"track" => track, "value" => value}) do
+  @doc """
+  Recursively converts map keys to strings.
+
+  Params arrive string-keyed from the Anthropic API but atom-keyed from MCP,
+  where Peri validates against an atom-keyed schema. Normalising here means the
+  clauses below only ever deal with one shape — an atom-keyed map otherwise
+  falls straight through to the "Unknown tool" clause.
+  """
+  @spec stringify_keys(term()) :: term()
+  def stringify_keys(map) when is_map(map) and not is_struct(map) do
+    Map.new(map, fn {key, value} -> {to_string(key), stringify_keys(value)} end)
+  end
+
+  def stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
+  def stringify_keys(value), do: value
+
+  defp do_call("set_track_pan", %{"track" => track, "value" => value}) do
     execute(%Command{command: :pan, track: track, value: value / 1.0})
   end
 
-  def call("set_track_volume", %{"track" => track, "value" => value}) do
+  defp do_call("set_track_volume", %{"track" => track, "value" => value}) do
     execute(%Command{command: :volume, track: track, value: value / 1.0})
   end
 
-  def call("set_track_mute", %{"track" => track, "muted" => muted}) do
+  defp do_call("set_track_mute", %{"track" => track, "muted" => muted}) do
     value = if muted, do: 1.0, else: 0.0
     execute(%Command{command: :mute, track: track, value: value})
   end
 
-  def call("set_track_solo", %{"track" => track, "soloed" => soloed}) do
+  defp do_call("set_track_solo", %{"track" => track, "soloed" => soloed}) do
     value = if soloed, do: 1.0, else: 0.0
     execute(%Command{command: :solo, track: track, value: value})
   end
 
-  def call("create_track", %{"track_type" => type, "name" => name})
-      when type in ["midi", "audio"] do
+  defp do_call("create_track", %{"track_type" => type, "name" => name})
+       when type in ["midi", "audio"] do
     command = %Command{command: :create_track, track_type: to_track_type(type), name: name}
 
     case Registry.execute(command) do
@@ -41,7 +60,7 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  def call("create_project", %{"tracks" => tracks}) when is_list(tracks) do
+  defp do_call("create_project", %{"tracks" => tracks}) when is_list(tracks) do
     parsed_tracks =
       Enum.map(tracks, fn %{"track_type" => type, "name" => name} ->
         %{track_type: to_track_type(type), name: name}
@@ -59,8 +78,8 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  def call("write_midi_notes", %{"track" => track, "notes" => notes} = params)
-      when is_list(notes) and notes != [] do
+  defp do_call("write_midi_notes", %{"track" => track, "notes" => notes} = params)
+       when is_list(notes) and notes != [] do
     slot = Map.get(params, "clip_slot", 0)
     clip_length = Map.get(params, "clip_length", 4.0)
 
@@ -92,7 +111,7 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  def call("delete_track", %{"track" => track}) do
+  defp do_call("delete_track", %{"track" => track}) do
     case Transport.send_message("/live/song/delete_track", [track]) do
       :ok ->
         State.refresh()
@@ -103,7 +122,7 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  def call("duplicate_track", %{"track" => track}) do
+  defp do_call("duplicate_track", %{"track" => track}) do
     case Transport.send_message("/live/song/duplicate_track", [track]) do
       :ok ->
         State.refresh()
@@ -114,35 +133,35 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  def call("set_track_name", %{"track" => track, "name" => name}) do
+  defp do_call("set_track_name", %{"track" => track, "name" => name}) do
     case Transport.send_message("/live/track/set/name", [track, name]) do
       :ok -> {:ok, "Renamed track #{track} to '#{name}'"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("set_tempo", %{"bpm" => bpm}) do
+  defp do_call("set_tempo", %{"bpm" => bpm}) do
     case Transport.send_message("/live/song/set/tempo", [bpm / 1.0]) do
       :ok -> {:ok, "Set tempo to #{bpm} BPM"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("start_playing", _params) do
+  defp do_call("start_playing", _params) do
     case Transport.send_message("/live/song/start_playing", []) do
       :ok -> {:ok, "Started playback"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("stop_playing", _params) do
+  defp do_call("stop_playing", _params) do
     case Transport.send_message("/live/song/stop_playing", []) do
       :ok -> {:ok, "Stopped playback"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("set_metronome", %{"enabled" => enabled}) do
+  defp do_call("set_metronome", %{"enabled" => enabled}) do
     value = if enabled, do: 1, else: 0
 
     case Transport.send_message("/live/song/set/metronome", [value]) do
@@ -151,7 +170,7 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  def call("set_track_arm", %{"track" => track, "armed" => armed}) do
+  defp do_call("set_track_arm", %{"track" => track, "armed" => armed}) do
     value = if armed, do: 1, else: 0
 
     case Transport.send_message("/live/track/set/arm", [track, value]) do
@@ -162,14 +181,14 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Undo / Redo ---
 
-  def call("undo", _params) do
+  defp do_call("undo", _params) do
     case Transport.send_message("/live/song/undo", []) do
       :ok -> {:ok, "Undone"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("redo", _params) do
+  defp do_call("redo", _params) do
     case Transport.send_message("/live/song/redo", []) do
       :ok -> {:ok, "Redone"}
       {:error, reason} -> {:error, inspect(reason)}
@@ -178,40 +197,40 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Clip control ---
 
-  def call("fire_clip", %{"track" => track, "clip_slot" => slot}) do
+  defp do_call("fire_clip", %{"track" => track, "clip_slot" => slot}) do
     case Transport.send_message("/live/clip/fire", [track, slot]) do
       :ok -> {:ok, "Fired clip on track #{track}, slot #{slot}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("stop_clip", %{"track" => track, "clip_slot" => slot}) do
+  defp do_call("stop_clip", %{"track" => track, "clip_slot" => slot}) do
     case Transport.send_message("/live/clip/stop", [track, slot]) do
       :ok -> {:ok, "Stopped clip on track #{track}, slot #{slot}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("delete_clip", %{"track" => track, "clip_slot" => slot}) do
+  defp do_call("delete_clip", %{"track" => track, "clip_slot" => slot}) do
     case Transport.send_message("/live/clip_slot/delete_clip", [track, slot]) do
       :ok -> {:ok, "Deleted clip on track #{track}, slot #{slot}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("duplicate_clip", %{
-        "track" => t,
-        "clip_slot" => s,
-        "target_track" => tt,
-        "target_clip_slot" => ts
-      }) do
+  defp do_call("duplicate_clip", %{
+         "track" => t,
+         "clip_slot" => s,
+         "target_track" => tt,
+         "target_clip_slot" => ts
+       }) do
     case Transport.send_message("/live/clip_slot/duplicate_clip_to", [t, s, tt, ts]) do
       :ok -> {:ok, "Duplicated clip from track #{t}/slot #{s} to track #{tt}/slot #{ts}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("set_clip_name", %{"track" => track, "clip_slot" => slot, "name" => name}) do
+  defp do_call("set_clip_name", %{"track" => track, "clip_slot" => slot, "name" => name}) do
     case Transport.send_message("/live/clip/set/name", [track, slot, name]) do
       :ok -> {:ok, "Renamed clip on track #{track}, slot #{slot} to '#{name}'"}
       {:error, reason} -> {:error, inspect(reason)}
@@ -220,35 +239,35 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Scene control ---
 
-  def call("fire_scene", %{"scene" => scene}) do
+  defp do_call("fire_scene", %{"scene" => scene}) do
     case Transport.send_message("/live/scene/fire", [scene]) do
       :ok -> {:ok, "Fired scene #{scene}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("create_scene", %{"index" => index}) do
+  defp do_call("create_scene", %{"index" => index}) do
     case Transport.send_message("/live/song/create_scene", [index]) do
       :ok -> {:ok, "Created scene at index #{index}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("delete_scene", %{"scene" => scene}) do
+  defp do_call("delete_scene", %{"scene" => scene}) do
     case Transport.send_message("/live/song/delete_scene", [scene]) do
       :ok -> {:ok, "Deleted scene #{scene}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("duplicate_scene", %{"scene" => scene}) do
+  defp do_call("duplicate_scene", %{"scene" => scene}) do
     case Transport.send_message("/live/song/duplicate_scene", [scene]) do
       :ok -> {:ok, "Duplicated scene #{scene}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("set_scene_name", %{"scene" => scene, "name" => name}) do
+  defp do_call("set_scene_name", %{"scene" => scene, "name" => name}) do
     case Transport.send_message("/live/scene/set/name", [scene, name]) do
       :ok -> {:ok, "Renamed scene #{scene} to '#{name}'"}
       {:error, reason} -> {:error, inspect(reason)}
@@ -257,7 +276,7 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Loop control ---
 
-  def call("set_loop", %{"enabled" => enabled} = params) do
+  defp do_call("set_loop", %{"enabled" => enabled} = params) do
     value = if enabled, do: 1, else: 0
 
     with :ok <- Transport.send_message("/live/song/set/loop", [value]),
@@ -271,14 +290,14 @@ defmodule Seshat.Tools.Handlers do
 
   # --- View selection ---
 
-  def call("select_track", %{"track" => track}) do
+  defp do_call("select_track", %{"track" => track}) do
     case Transport.send_message("/live/view/set/selected_track", [track]) do
       :ok -> {:ok, "Selected track #{track}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
 
-  def call("select_scene", %{"scene" => scene}) do
+  defp do_call("select_scene", %{"scene" => scene}) do
     case Transport.send_message("/live/view/set/selected_scene", [scene]) do
       :ok -> {:ok, "Selected scene #{scene}"}
       {:error, reason} -> {:error, inspect(reason)}
@@ -287,7 +306,7 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Notes ---
 
-  def call("remove_notes", %{"track" => track} = params) do
+  defp do_call("remove_notes", %{"track" => track} = params) do
     slot = Map.get(params, "clip_slot", 0)
     start_pitch = Map.get(params, "start_pitch", 0)
     pitch_span = Map.get(params, "pitch_span", 128)
@@ -307,7 +326,7 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  def call("get_session_state", _params) do
+  defp do_call("get_session_state", _params) do
     song = State.song()
     tracks = State.tracks()
 
@@ -335,7 +354,7 @@ defmodule Seshat.Tools.Handlers do
       {:ok, "No tracks in current session (Ableton may not be connected)"}
   end
 
-  def call(name, _params), do: {:error, "Unknown tool: #{name}"}
+  defp do_call(name, _params), do: {:error, "Unknown tool: #{name}"}
 
   defp to_track_type("midi"), do: :midi
   defp to_track_type("audio"), do: :audio

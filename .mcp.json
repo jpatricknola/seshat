@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "seshat": {
+      "command": "mix",
+      "args": ["mcp"],
+      "cwd": "."
+    }
+  }
+}

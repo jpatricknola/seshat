@@ -1,5 +1,12 @@
 This is a web application written using the Phoenix web framework.
 
+> **Read [CLAUDE.md](CLAUDE.md) first** — it covers what this project actually
+> is and how it's put together. This file is the generic Phoenix/Elixir
+> ruleset that ships with `phx.new`, kept for the framework-level guidance.
+>
+> Seshat has **no database and no Ecto**. Ignore any Ecto guidance you find
+> here or infer from Phoenix conventions.
+
 ## Project guidelines
 
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
@@ -124,13 +131,11 @@ custom classes must fully style the input
 <!-- phoenix:ecto-start -->
 ## Ecto Guidelines
 
-- **Always** preload Ecto associations in queries when they'll be accessed in templates, ie a message that needs to reference the `message.user.email`
-- Remember `import Ecto.Query` and other supporting modules when you write `seeds.exs`
-- `Ecto.Schema` fields always use the `:string` type, even for `:text`, columns, ie: `field :name, :string`
-- `Ecto.Changeset.validate_number/2` **DOES NOT SUPPORT the `:allow_nil` option**. By default, Ecto validations only run if a change for the given field exists and the change value is not nil, so such as option is never needed
-- You **must** use `Ecto.Changeset.get_field(changeset, :field)` to access changeset fields
-- Fields which are set programmatically, such as `user_id`, must not be listed in `cast` calls or similar for security purposes. Instead they must be explicitly set when creating the struct
-- **Always** invoke `mix ecto.gen.migration migration_name_using_underscores` when generating migration files, so the correct timestamp and conventions are applied
+Not applicable — Seshat has no database and no Ecto dependency. Session state
+lives in memory in `Seshat.Session.State`, mirrored from Ableton over OSC.
+
+If you find yourself reaching for a schema, changeset, or migration, stop:
+you've misread the architecture. See [CLAUDE.md](CLAUDE.md).
 <!-- phoenix:ecto-end -->
 
 <!-- phoenix:html-start -->

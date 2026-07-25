@@ -68,6 +68,36 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "param key normalisation" do
+    # MCP delivers Peri-validated params with atom keys; the Anthropic API
+    # delivers string keys. Both must reach the same clause.
+    test "accepts atom-keyed params" do
+      assert {:ok, msg} = Handlers.call("set_track_pan", %{track: 0, value: -1.0})
+      assert msg =~ "pan"
+    end
+
+    test "normalises atom keys nested inside lists" do
+      notes = [%{pitch: 60, start_beat: 0.0, duration: 1.0, velocity: 100}]
+
+      assert Handlers.stringify_keys(%{track: 0, notes: notes}) == %{
+               "track" => 0,
+               "notes" => [
+                 %{
+                   "pitch" => 60,
+                   "start_beat" => 0.0,
+                   "duration" => 1.0,
+                   "velocity" => 100
+                 }
+               ]
+             }
+    end
+
+    test "leaves string-keyed params untouched" do
+      params = %{"track" => 0, "value" => -1.0}
+      assert Handlers.stringify_keys(params) == params
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})
