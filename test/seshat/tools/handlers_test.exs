@@ -137,6 +137,63 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "format_device_chain/4" do
+    # The do_call clauses for the device tools aren't tested here: they go
+    # through Transport.query, which needs a live Ableton.
+    test "formats one line per device with index, type label, and class" do
+      result =
+        Handlers.format_device_chain(
+          0,
+          ["Analog", "Reverb"],
+          [2, 1],
+          ["InstrumentVector", "Reverb"]
+        )
+
+      assert result =~ "2 device(s) on track 0"
+      assert result =~ ~s{Device 0 "Analog" — instrument (InstrumentVector)}
+      assert result =~ ~s{Device 1 "Reverb" — audio effect (Reverb)}
+    end
+
+    test "labels MIDI effects and unknown types" do
+      result = Handlers.format_device_chain(1, ["Arpeggiator", "Weird"], [4, 9], ["Arp", "X"])
+
+      assert result =~ "MIDI effect"
+      assert result =~ "type 9"
+    end
+
+    test "explains an empty chain and points at load_device" do
+      result = Handlers.format_device_chain(2, [], [], [])
+
+      assert result =~ "No devices on track 2"
+      assert result =~ "load_device"
+    end
+  end
+
+  describe "format_device_parameters/7" do
+    test "formats one line per parameter with value and range" do
+      result =
+        Handlers.format_device_parameters(
+          0,
+          1,
+          "Analog",
+          ["Device On", "Filter Freq"],
+          [1.0, 0.8500000238418579],
+          [0.0, 0.0],
+          [1.0, 1.0]
+        )
+
+      assert result =~ ~s{Device 1 "Analog" on track 0 — 2 parameter(s)}
+      assert result =~ "0. Device On = 1.0 (range 0.0–1.0)"
+      assert result =~ "1. Filter Freq = 0.85 (range 0.0–1.0)"
+    end
+
+    test "leaves integer values untouched" do
+      result = Handlers.format_device_parameters(0, 0, "Op", ["Mode"], [3], [0], [7])
+
+      assert result =~ "0. Mode = 3 (range 0–7)"
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})

@@ -66,6 +66,54 @@ defmodule Seshat.Tools.Handlers do
     "#{header}\n\n#{listing}"
   end
 
+  @doc """
+  Formats the parallel name/type/class_name lists of the
+  `/live/track/get/devices/*` replies into one line per device, in chain order.
+  """
+  @spec format_device_chain(integer(), list(), list(), list()) :: String.t()
+  def format_device_chain(track, [], _types, _classes) do
+    "No devices on track #{track}. If this is a MIDI track it will be silent — " <>
+      "load an instrument with list_browser_items + load_device."
+  end
+
+  def format_device_chain(track, names, types, classes) do
+    lines =
+      [names, types, classes]
+      |> Enum.zip()
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {{name, type, class}, index} ->
+        "Device #{index} \"#{name}\" — #{device_type_label(type)} (#{class})"
+      end)
+
+    "#{length(names)} device(s) on track #{track}:\n\n#{lines}"
+  end
+
+  @doc """
+  Formats the parallel parameter name/value/min/max lists of the
+  `/live/device/get/parameters/*` replies into one line per parameter.
+  """
+  @spec format_device_parameters(integer(), integer(), String.t(), list(), list(), list(), list()) ::
+          String.t()
+  def format_device_parameters(track, device, device_name, names, values, mins, maxes) do
+    lines =
+      [names, values, mins, maxes]
+      |> Enum.zip()
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {{name, value, min, max}, index} ->
+        "#{index}. #{name} = #{format_number(value)} (range #{format_number(min)}–#{format_number(max)})"
+      end)
+
+    "Device #{device} \"#{device_name}\" on track #{track} — #{length(names)} parameter(s):\n\n#{lines}"
+  end
+
+  defp device_type_label(1), do: "audio effect"
+  defp device_type_label(2), do: "instrument"
+  defp device_type_label(4), do: "MIDI effect"
+  defp device_type_label(other), do: "type #{other}"
+
+  defp format_number(value) when is_float(value), do: Float.round(value, 4)
+  defp format_number(value), do: value
+
   defp do_call("set_track_pan", %{"track" => track, "value" => value}) do
     execute(%Command{command: :pan, track: track, value: value / 1.0})
   end
@@ -418,6 +466,74 @@ defmodule Seshat.Tools.Handlers do
        "Timed out loading the device onto track #{track}. A heavy plugin may still be " <>
          "loading — check Ableton, and use get_session_state before retrying so you don't " <>
          "load it twice."}
+  end
+
+  # --- Device chain / parameters ---
+
+  defp do_call("get_track_devices", %{"track" => track}) do
+    with {:ok, {_addr, [_track | names]}} <-
+           Transport.query("/live/track/get/devices/name", [track]),
+         {:ok, {_addr, [_track | types]}} <-
+           Transport.query("/live/track/get/devices/type", [track]),
+         {:ok, {_addr, [_track | classes]}} <-
+           Transport.query("/live/track/get/devices/class_name", [track]) do
+      {:ok, format_device_chain(track, names, types, classes)}
+    else
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out reading devices on track #{track}. Check the track index against " <>
+         "get_session_state, and that Ableton is running with AbletonOSC enabled."}
+  end
+
+  defp do_call("get_device_parameters", %{"track" => track, "device" => device}) do
+    with {:ok, {_addr, [_t, _d, device_name]}} <-
+           Transport.query("/live/device/get/name", [track, device]),
+         {:ok, {_addr, [_t, _d | names]}} <-
+           Transport.query("/live/device/get/parameters/name", [track, device]),
+         {:ok, {_addr, [_t, _d | values]}} <-
+           Transport.query("/live/device/get/parameters/value", [track, device]),
+         {:ok, {_addr, [_t, _d | mins]}} <-
+           Transport.query("/live/device/get/parameters/min", [track, device]),
+         {:ok, {_addr, [_t, _d | maxes]}} <-
+           Transport.query("/live/device/get/parameters/max", [track, device]) do
+      {:ok, format_device_parameters(track, device, device_name, names, values, mins, maxes)}
+    else
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out reading device #{device} on track #{track}. Check both indices with " <>
+         "get_track_devices first."}
+  end
+
+  defp do_call("set_device_parameter", %{
+         "track" => track,
+         "device" => device,
+         "parameter" => parameter,
+         "value" => value
+       }) do
+    with :ok <-
+           Transport.send_message(
+             "/live/device/set/parameter/value",
+             [track, device, parameter, value / 1.0]
+           ),
+         {:ok, {_addr, [_t, _d, _p, display]}} <-
+           Transport.query("/live/device/get/parameter/value_string", [track, device, parameter]) do
+      {:ok,
+       "Set parameter #{parameter} of device #{device} on track #{track} to #{value} — " <>
+         "it now reads '#{display}'"}
+    else
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "The set was sent but reading the value back timed out — verify the result with " <>
+         "get_device_parameters."}
   end
 
   defp do_call("get_session_state", _params) do

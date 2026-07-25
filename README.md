@@ -3,7 +3,7 @@
 Natural-language control of Ableton Live. Say "pan the drums left a bit" or
 "write a four-bar minor key bassline on track 2" and it happens in your session.
 
-Seshat is an Elixir/Phoenix app that exposes ~34 Ableton control tools and
+Seshat is an Elixir/Phoenix app that exposes ~37 Ableton control tools and
 sends OSC to a running copy of Ableton Live.
 
 ## Prerequisites
@@ -111,7 +111,7 @@ Both modes drive the same tools through the same handlers.
 
 ```bash
 mix precommit    # compile --warnings-as-errors, deps.unlock --unused, format, test
-mix test         # 42 tests; no Ableton required
+mix test         # 47 tests; no Ableton required
 ```
 
 Tests avoid the live transport — anything reaching `Transport.query/3` needs

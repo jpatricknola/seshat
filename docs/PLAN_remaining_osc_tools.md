@@ -21,11 +21,25 @@ Parameter Control, below).
 
 ---
 
-## Priority 1 — Device Parameter Control
+## ✅ Done — Device Parameter Control
 
 "Turn up the reverb." "Set the filter cutoff to 80%." "Change the attack on the synth."
 
-Most impactful missing feature. Path to tweaking sounds and eventually loading instruments.
+Shipped as three tools (all addresses upstream, no Python needed):
+
+- **`get_track_devices`** — the device chain: index, name, type
+  (instrument/audio effect/MIDI effect), class_name.
+- **`get_device_parameters`** — one device's parameters: index, name, current
+  value, min–max range.
+- **`set_device_parameter`** — sets a value, then reads back
+  `parameter/value_string` so the reply shows the human-readable result
+  ("2.5 kHz", "-12 dB").
+
+Deliberately left out: parameter *listeners* (live meters/automation
+following), rack inner chains, and surfacing device lists in
+`get_session_state` (below).
+
+The original notes for this section follow, kept for the address reference.
 
 ### OSC Addresses
 

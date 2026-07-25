@@ -571,6 +571,80 @@ defmodule Seshat.Tools.Definitions do
         required: ["track", "uri"]
       }
     },
+    # --- Device chain / parameters ---
+    %{
+      name: "get_track_devices",
+      description:
+        "List the device chain on a track in Ableton Live: every instrument, audio effect, and " <>
+          "MIDI effect, in chain order, with its 0-based device index. " <>
+          "Track indices are 0-based: 'track 1' = index 0. " <>
+          "Use this to see what load_device actually put on a track, to resolve a device name " <>
+          "('the reverb') to the device index that get_device_parameters and " <>
+          "set_device_parameter need, or to check whether a track has an instrument at all. " <>
+          "Racks (e.g. an Instrument Rack preset) appear as a single device — their inner " <>
+          "chain is not listed.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"}
+        },
+        required: ["track"]
+      }
+    },
+    %{
+      name: "get_device_parameters",
+      description:
+        "List every parameter of one device on a track: 0-based parameter index, name, current " <>
+          "value, and the min–max range the value must stay within. " <>
+          "Track and device indices are 0-based — call get_track_devices first to find the " <>
+          "device index. " <>
+          "Use this before set_device_parameter to resolve a parameter name ('the filter " <>
+          "cutoff') to its index and to learn the legal value range. " <>
+          "Values are Ableton's internal units — often normalized 0.0–1.0, but not always; " <>
+          "trust the min/max in the output, not an assumption.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "device" => %{
+            type: "integer",
+            description: "0-indexed device on the track, as returned by get_track_devices"
+          }
+        },
+        required: ["track", "device"]
+      }
+    },
+    %{
+      name: "set_device_parameter",
+      description:
+        "Set one parameter of one device on a track in Ableton Live. " <>
+          "All indices are 0-based. ALWAYS call get_device_parameters first — it gives the " <>
+          "parameter index and the min–max range the value must stay within; values outside " <>
+          "the range are clamped by Live. " <>
+          "The reply echoes the parameter's new human-readable display value (e.g. '2.5 kHz', " <>
+          "'-12 dB') — check it against what the user asked for. " <>
+          "For relative changes ('a bit brighter'), read the current value first and move it " <>
+          "a small fraction of the range.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "device" => %{
+            type: "integer",
+            description: "0-indexed device on the track, as returned by get_track_devices"
+          },
+          "parameter" => %{
+            type: "integer",
+            description: "0-indexed parameter, as returned by get_device_parameters"
+          },
+          "value" => %{
+            type: "number",
+            description: "New value, within the min–max range reported by get_device_parameters"
+          }
+        },
+        required: ["track", "device", "parameter", "value"]
+      }
+    },
     %{
       name: "get_session_state",
       description:
