@@ -21,11 +21,12 @@ Seshat.MCP.Server                      Seshat.Agent
         └──────────────┬──────────────────────┘
                        ▼
             Seshat.Tools.Handlers      ← the only place tool names are dispatched
-                       │
-                       ▼
-            Seshat.Commands.Registry   ← Command struct → OSC address(es)
-                       │
-                       ▼
+                  │           │
+                  │           │ mixer sets + multi-step sequences
+                  │           ▼ (create_track, write_midi_notes, create_project)
+                  │    Seshat.Commands.Registry
+                  │           │ ← Command struct → OSC message(s)
+                  ▼           ▼
             Seshat.OSC.Transport       ← GenServer over :gen_udp
                        │
                        ▼
@@ -47,8 +48,8 @@ still has no database of its own.
 
 | Path | Role |
 |---|---|
-| [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All 39 tool definitions (name, description, JSON Schema). Single source of truth. |
-| [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a Command |
+| [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All tool definitions (name, description, JSON Schema). Single source of truth. |
+| [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Most clauses hit Transport directly; a few go via Registry. |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
 | [lib/seshat/mcp/tools.ex](lib/seshat/mcp/tools.ex) | Generates one MCP component per tool definition |
@@ -78,6 +79,9 @@ Check [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md). It is the
 canonical list of addresses and their arguments. Do not guess an address or
 infer one from a pattern — AbletonOSC's naming is not fully regular, and a
 wrong address fails silently (it's UDP, with no reply).
+[.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md)
+collects the conventions and gotchas the address tables don't show (ports,
+irregular naming, listener pattern, ordering hazards).
 
 `/live/browser/*` is ours, not upstream's: `priv/abletonosc/browser.py` vendors
 a handler that `mix abletonosc.install` copies into the user's AbletonOSC. Any
@@ -86,7 +90,7 @@ future address upstream doesn't provide goes there the same way.
 ## Verification
 
 - `mix precommit` — compile with warnings-as-errors, unlock unused deps, format, test. Run before declaring work done.
-- `mix test` — 83 tests, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
+- `mix test` — full suite, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed. See [README.md](README.md).
 
@@ -108,11 +112,11 @@ future address upstream doesn't provide goes there the same way.
 
 ## Current focus
 
-Send levels and the remaining OSC surface — see
-[docs/PLAN_remaining_osc_tools.md](docs/PLAN_remaining_osc_tools.md). Sound
-selection is covered by [docs/PLAN_sound_catalog.md](docs/PLAN_sound_catalog.md);
-its follow-ups (LLM enrichment for untagged third-party items, user XMP tags,
-`samples` in the export, the Windows database location) are still open.
+[docs/ROADMAP.md](docs/ROADMAP.md) is the single living list of what's not
+built yet — send levels first, then catalog follow-ups and the rest. Keep it
+current: when something ships, remove it there. [docs/archive/](docs/archive/)
+holds superseded point-in-time plans and decision records; never treat those
+as current documentation.
 
 ## Framework rules
 

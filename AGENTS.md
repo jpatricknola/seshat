@@ -6,6 +6,13 @@ This is a web application written using the Phoenix web framework.
 >
 > Seshat has **no database and no Ecto**. Ignore any Ecto guidance you find
 > here or infer from Phoenix conventions.
+>
+> The generated `phx.new` UI scaffolding has been removed: there is no
+> `Layouts.app`, no `CoreComponents` (`<.input>`, `<.icon>`, `<.flash_group>`,
+> etc.), no Gettext, no Swoosh mailer, and no heroicons. `AssistantLive`
+> renders its own full-page shell using daisyUI classes directly. Ignore the
+> rules below that reference those components (including the daisyUI
+> prohibition — daisyUI is what the UI actually uses).
 
 ## Project guidelines
 
@@ -373,7 +380,7 @@ Where the server handled it via:
 
 ### LiveView tests
 
-- `Phoenix.LiveViewTest` module and `LazyHTML` (included) for making your assertions
+- `Phoenix.LiveViewTest` module and `LazyHTML` for making your assertions (the `:lazy_html` test dep was removed as unused — re-add it to mix.exs before writing `Phoenix.LiveViewTest`-based tests)
 - Form tests are driven by `Phoenix.LiveViewTest`'s `render_submit/2` and `render_change/2` functions
 - Come up with a step-by-step test plan that splits major test cases into small, isolated files. You may start with simpler tests that verify content exists, gradually add interaction tests
 - **Always reference the key element IDs you added in the LiveView templates in your tests** for `Phoenix.LiveViewTest` functions like `element/2`, `has_element/2`, selectors, etc

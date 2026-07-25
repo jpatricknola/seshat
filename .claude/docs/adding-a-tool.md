@@ -64,7 +64,7 @@ sequences live (create-then-name a track, ensure-clip-then-add-notes).
 
 ### 3. Update the count — `test/seshat/tools/definitions_test.exs`
 
-`assert length(tools) == 37` is a deliberate tripwire. Bump it.
+The `assert length(tools) == N` there is a deliberate tripwire. Bump it.
 
 ### 4. Verify
 

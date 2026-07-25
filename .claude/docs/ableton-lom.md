@@ -54,8 +54,9 @@ The LOM supports subscribing to property changes. When subscribed, any change to
 
 ## Track Indexing
 
-Tracks are **0-indexed** in the LOM. The parser's system prompt tells the LLM:
-> "track 1" = index 0, "track 2" = index 1, etc.
+Tracks are **0-indexed** in the LOM. The LLM is told ("track 1" = index 0,
+"track 2" = index 1, etc.) via the tool descriptions in MCP mode and
+`Seshat.Agent`'s system prompt in API-key mode.
 
 This mapping happens in the LLM, not in application code.
 

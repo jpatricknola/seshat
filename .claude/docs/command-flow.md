@@ -60,7 +60,8 @@ Seshat.Commands.Registry.execute/1
 Seshat.OSC.Transport (GenServer)
   → encodes via Seshat.OSC.Message
   → send_message/2 is fire-and-forget UDP to port 11000
-  → query/2 sends and awaits a reply on 11001 (5s timeout)
+  → query/3 sends and awaits a reply on 11001 (5s default timeout;
+    callers pass 15s for browsing, 30s for device loading)
   → broadcasts all inbound messages on the "osc:in" PubSub topic
         ▼
 AbletonOSC (Python MIDI Remote Script) → Ableton Live
@@ -81,8 +82,8 @@ the mode-specific layers. See [adding-a-tool.md](adding-a-tool.md).
 
 - **Wrong OSC address** — silent. UDP, no reply, no error. Always check
   [docs/abletonosc-api-docs.md](../../docs/abletonosc-api-docs.md).
-- **Ableton not running** — `Transport.query/2` blocks then exits after 5s.
-  `send_message/2` returns `:ok` regardless; it can't know.
+- **Ableton not running** — `Transport.query/3` blocks then exits at the
+  timeout. `send_message/2` returns `:ok` regardless; it can't know.
 - **Port 11001 in use** — Transport falls back to an ephemeral port and logs a
   warning, which means replies never arrive. Queries then time out while sends
   appear fine.

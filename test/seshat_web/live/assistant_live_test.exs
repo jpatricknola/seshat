@@ -1,4 +1,4 @@
-defmodule SeshatWeb.PageControllerTest do
+defmodule SeshatWeb.AssistantLiveTest do
   use SeshatWeb.ConnCase
 
   test "GET /", %{conn: conn} do

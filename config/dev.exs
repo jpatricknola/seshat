@@ -49,15 +49,13 @@ config :seshat, SeshatWeb.Endpoint,
     patterns: [
       # Static assets, except user uploads
       ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$",
-      # Gettext translations
-      ~r"priv/gettext/.*\.po$",
       # Router, Controllers, LiveViews and LiveComponents
       ~r"lib/seshat_web/router\.ex$",
       ~r"lib/seshat_web/(controllers|live|components)/.*\.(ex|heex)$"
     ]
   ]
 
-# Enable dev routes for dashboard and mailbox
+# Enable dev routes for dashboard
 config :seshat, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
@@ -77,9 +75,6 @@ config :phoenix_live_view,
   debug_attributes: true,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
-
-# Disable swoosh api client as it is only required for production adapters.
-config :swoosh, :api_client, false
 
 # Anthropic API key for intent parsing
 config :seshat, :anthropic_api_key, System.get_env("ANTHROPIC_API_KEY")

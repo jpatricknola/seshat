@@ -1,3 +1,8 @@
+> **Archived 2026-07-26 — never built.** A designed-but-unimplemented feature:
+> `AssistantLive` still has only the API-key backend. The idea is tracked in
+> [ROADMAP.md](../ROADMAP.md). If picked up, re-verify the "verified facts"
+> section — it was tested against claude CLI 2.1.114 and may have drifted.
+
 # Implementation Plan: MCP Mode in the Browser UI
 
 Add a second reasoning backend to `SeshatWeb.AssistantLive`: instead of calling

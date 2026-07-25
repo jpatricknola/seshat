@@ -20,7 +20,6 @@ defmodule Seshat.Session.State do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  def get, do: GenServer.call(__MODULE__, :get)
   def tracks, do: GenServer.call(__MODULE__, :tracks)
   def song, do: GenServer.call(__MODULE__, :song)
 
@@ -49,7 +48,6 @@ defmodule Seshat.Session.State do
   end
 
   @impl true
-  def handle_call(:get, _from, state), do: {:reply, state, state}
   def handle_call(:tracks, _from, state), do: {:reply, state.tracks, state}
   def handle_call(:song, _from, state), do: {:reply, state.song, state}
 
