@@ -98,6 +98,45 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "format_browser_items/2" do
+    # The do_call clauses for list_browser_items/load_device aren't tested here:
+    # they go through Transport.query, which needs a live Ableton.
+    test "formats name/uri pairs one per line" do
+      pairs = ["Operator", "query:Instruments#Operator", "Analog", "query:Instruments#Analog"]
+
+      result = Handlers.format_browser_items(pairs, 2)
+
+      assert result =~ "2 match(es)"
+      assert result =~ "Operator — uri: query:Instruments#Operator"
+      assert result =~ "Analog — uri: query:Instruments#Analog"
+      refute result =~ "refine the filter"
+    end
+
+    test "flags truncation when total exceeds what was returned" do
+      pairs = ["Operator", "query:Instruments#Operator"]
+
+      result = Handlers.format_browser_items(pairs, 87)
+
+      assert result =~ "Showing 1 of 87 matches"
+      assert result =~ "refine the filter"
+    end
+
+    test "returns a friendly message when there are no matches" do
+      result = Handlers.format_browser_items([], 0)
+
+      assert result =~ "No matching browser items"
+      refute result =~ "uri:"
+    end
+
+    test "ignores a dangling name with no uri" do
+      pairs = ["Operator", "query:Instruments#Operator", "Truncated"]
+
+      result = Handlers.format_browser_items(pairs, 2)
+
+      refute result =~ "Truncated"
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})

@@ -29,10 +29,21 @@ defmodule Seshat.OSC.Transport do
     GenServer.call(__MODULE__, {:send, address, args})
   end
 
-  @doc "Send an OSC message and wait for a response matching the same address."
-  @spec query(String.t(), list()) :: {:ok, {String.t(), list()}} | {:error, term()}
-  def query(address, args) do
-    GenServer.call(__MODULE__, {:query, address, args}, 5000)
+  @doc """
+  Send an OSC message and wait for a response matching the same address.
+
+  `timeout` is per call because how long a reply takes varies wildly: reading a
+  track property is instant, while walking Live's device browser for the first
+  time can take many seconds. Defaults to 5s.
+
+  On timeout the caller exits (standard `GenServer.call/3` behaviour) and its
+  `from` is left behind in `pending`. Nothing needs cleaning up: the next query
+  overwrites `pending`, and a late `GenServer.reply/2` to a caller that already
+  gave up is a no-op.
+  """
+  @spec query(String.t(), list(), timeout()) :: {:ok, {String.t(), list()}} | {:error, term()}
+  def query(address, args, timeout \\ 5000) do
+    GenServer.call(__MODULE__, {:query, address, args}, timeout)
   end
 
   @impl true

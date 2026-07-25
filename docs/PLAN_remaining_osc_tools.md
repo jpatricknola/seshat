@@ -4,6 +4,23 @@ Everything below is what's NOT yet implemented.
 
 ---
 
+## ✅ Done — Browser + Device Loading
+
+`list_browser_items` + `load_device` shipped. A MIDI track is no longer silent:
+the agent can search Live's browser and load instruments, effects, and presets
+onto a track.
+
+Needed a Python half, since upstream AbletonOSC has no browser API —
+`priv/abletonosc/browser.py`, installed by `mix abletonosc.install`. See
+[PLAN_browser_device_loading.md](PLAN_browser_device_loading.md) and the
+Browser API section of [abletonosc-api-docs.md](abletonosc-api-docs.md).
+
+Deliberately left out: return/master tracks, device *removal*, and surfacing
+loaded devices in `get_session_state` (that last one is part of Device
+Parameter Control, below).
+
+---
+
 ## Priority 1 — Device Parameter Control
 
 "Turn up the reverb." "Set the filter cutoff to 80%." "Change the attack on the synth."

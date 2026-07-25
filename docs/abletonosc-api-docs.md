@@ -410,6 +410,41 @@ Listen for parameter changes via `/live/device/start_listen/parameter/value <tra
 
 ---
 
+## Browser API (Seshat extension — not in upstream AbletonOSC)
+
+⚠️ These two addresses do **not** exist in stock AbletonOSC. They are served by
+`priv/abletonosc/browser.py` in this repo, installed with
+`mix abletonosc.install` (restart Live afterwards). Without that install both
+addresses are unknown and queries time out.
+
+Unlike the rest of AbletonOSC, these always reply — including on every error
+path — so a query resolves instead of hanging.
+
+| Address | Query Params | Response Params | Description |
+|---|---|---|---|
+| `/live/browser/get/items` | `category, filter, max_results` | `category, filter, 'ok', returned, total, [name, uri, ...]` | Search a browser category |
+| `/live/browser/get/items` | | `category, filter, 'error', message` | Unknown category, or indexing failed |
+| `/live/browser/load_item` | `track_id, uri` | `track_id, uri, 'ok', device_name` | Load a browser item onto a track |
+| `/live/browser/load_item` | | `track_id, uri, 'error', message` | Bad track index, unknown uri, or load failed |
+
+- `category`: `instruments`, `sounds`, `drums`, `audio_effects`, `midi_effects`,
+  `plugins`, `samples`, `user_library`
+- `filter`: case-insensitive substring match on the item name. `""` = no filter.
+- `max_results`: clamped to 1–100 by the Python handler.
+- `returned` is how many name/uri pairs follow; `total` is how many matched
+  before truncation.
+- `uri` values come from `get/items` and are stable within a Live session —
+  never construct one.
+- The first walk of a large category takes seconds (it runs on Live's UI
+  thread, capped at 20,000 nodes / depth 6); the result is cached per category
+  for the rest of the Live session.
+- `load_item` selects the target track and loads in one operation, then reads
+  the track's device list back so `device_name` reflects what actually landed.
+- Regular tracks only (`song.tracks`) — return and master tracks aren't
+  addressable here.
+
+---
+
 ## MidiMap API
 
 Assign MIDI CC to Live parameters. Note: channels are 0-indexed (MIDI channel 1 = index 0).

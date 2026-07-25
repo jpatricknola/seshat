@@ -3,7 +3,7 @@
 Natural-language control of Ableton Live. Say "pan the drums left a bit" or
 "write a four-bar minor key bassline on track 2" and it happens in your session.
 
-Seshat is an Elixir/Phoenix app that exposes ~32 Ableton control tools and
+Seshat is an Elixir/Phoenix app that exposes ~34 Ableton control tools and
 sends OSC to a running copy of Ableton Live.
 
 ## Prerequisites
@@ -21,7 +21,40 @@ No database required.
 
 ```bash
 mix setup
+mix abletonosc.install     # adds the browser handler to AbletonOSC
 ```
+
+`mix abletonosc.install` is what makes `list_browser_items` and `load_device`
+work — loading instruments and effects needs a browser API that upstream
+AbletonOSC doesn't have, so Seshat vendors one in
+[priv/abletonosc/browser.py](priv/abletonosc/browser.py). The task probes for
+your AbletonOSC install (pass the path if it can't find it), copies the file
+in, and registers the handler. **Restart Ableton Live afterwards** — the
+`/live/api/reload` hot-reload doesn't pick up a brand new module.
+
+Everything else works without it.
+
+<details>
+<summary>Manual install (if the task can't patch your AbletonOSC)</summary>
+
+Copy `priv/abletonosc/browser.py` to `<AbletonOSC>/abletonosc/browser.py`, then:
+
+1. In `<AbletonOSC>/abletonosc/__init__.py`, alongside the other handler
+   imports, add:
+
+   ```python
+   from .browser import BrowserHandler
+   ```
+
+2. In `<AbletonOSC>/manager.py`, inside the `self.handlers = [` list in
+   `init_api`, add:
+
+   ```python
+   abletonosc.BrowserHandler(self),
+   ```
+
+Restart Ableton Live.
+</details>
 
 For API-key mode, set an Anthropic key — either an env var:
 
@@ -78,11 +111,11 @@ Both modes drive the same tools through the same handlers.
 
 ```bash
 mix precommit    # compile --warnings-as-errors, deps.unlock --unused, format, test
-mix test         # 38 tests; no Ableton required
+mix test         # 42 tests; no Ableton required
 ```
 
-Tests avoid the live transport — anything reaching `Transport.query/2` needs
-Ableton running and will time out after 5 seconds.
+Tests avoid the live transport — anything reaching `Transport.query/3` needs
+Ableton running and will time out (5 seconds by default).
 
 ## Docs
 
@@ -109,3 +142,7 @@ replies never arrive. Look for a "Port 11001 already in use" warning at startup.
 
 **`get_session_state` says no tracks.** AbletonOSC isn't enabled as a Control
 Surface, or Ableton isn't running.
+
+**`list_browser_items` times out.** Either `mix abletonosc.install` hasn't been
+run (or Live wasn't restarted after it), or you're doing the first unfiltered
+search of a huge category — retry with a filter.
