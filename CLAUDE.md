@@ -22,10 +22,10 @@ Seshat.MCP.Server                      Seshat.Agent
                        ▼
             Seshat.Tools.Handlers      ← the only place tool names are dispatched
                   │           │
-                  │           │ mixer sets + multi-step sequences
+                  │           │ multi-step sequences only
                   │           ▼ (create_track, write_midi_notes, create_project)
                   │    Seshat.Commands.Registry
-                  │           │ ← Command struct → OSC message(s)
+                  │           │ ← Command struct → ordered OSC messages
                   ▼           ▼
             Seshat.OSC.Transport       ← GenServer over :gen_udp
                        │
@@ -49,13 +49,13 @@ still has no database of its own.
 | Path | Role |
 |---|---|
 | [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All tool definitions (name, description, JSON Schema). Single source of truth. |
-| [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Most clauses hit Transport directly; a few go via Registry. |
+| [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Single-message tools hit Transport directly; multi-step ones go via Registry. |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
 | [lib/seshat/mcp/tools.ex](lib/seshat/mcp/tools.ex) | Generates one MCP component per tool definition |
 | [lib/seshat/mcp/schema.ex](lib/seshat/mcp/schema.ex) | JSON Schema → Anubis/Peri schema conversion |
-| [lib/seshat/commands/registry.ex](lib/seshat/commands/registry.ex) | Command struct → OSC messages |
-| [lib/seshat/commands/command.ex](lib/seshat/commands/command.ex) | The Command struct |
+| [lib/seshat/commands/registry.ex](lib/seshat/commands/registry.ex) | Multi-step sequences: Command struct → ordered OSC messages |
+| [lib/seshat/commands/command.ex](lib/seshat/commands/command.ex) | The Command struct (multi-step operations only) |
 | [lib/seshat/osc/transport.ex](lib/seshat/osc/transport.ex) | UDP GenServer — send, query, PubSub broadcast |
 | [lib/seshat/osc/message.ex](lib/seshat/osc/message.ex) | OSC encoding/decoding |
 | [lib/seshat/session/state.ex](lib/seshat/session/state.ex) | Mirrored session state |
@@ -96,7 +96,7 @@ future address upstream doesn't provide goes there the same way.
 
 ## Conventions
 
-- Commands are structs (`%Command{}`), not raw maps.
+- `%Command{}` structs exist only for multi-step sequences (Registry). Single-message tools call Transport directly from their handler clause.
 - All OSC goes through `Seshat.OSC.Transport` — nothing sends UDP directly.
 - Track indices are 0-based everywhere. "Track 1" in user speech = index 0.
 - Pan: -1.0 (left) to 1.0 (right). Volume: 0.0–1.0 (Ableton maps to dB internally).
@@ -106,7 +106,7 @@ future address upstream doesn't provide goes there the same way.
 
 ## Design decisions worth knowing
 
-- **AbletonOSC is one bridge, not the architecture.** A Max for Live WebSocket device may replace it. Keep bridge specifics inside `OSC.Transport` and `Commands.Registry`.
+- **AbletonOSC is one bridge, not the architecture.** `OSC.Transport` isolates the wire mechanics (UDP, OSC encoding, reply correlation); the `/live/...` address strings deliberately live inline in `Handlers`, `Registry`, and `Session.State` — no abstraction layer, all sites greppable via `"/live/`. If the bridge ever changed, the stable seam is the tool contract in `Definitions`: the tool names and schemas stay, everything below `Handlers` gets reimplemented. Alternatives were weighed in [docs/bridge-options.md](docs/bridge-options.md) — staying on AbletonOSC is a decision, not an accident.
 - **MCP mode is primary.** It needs no API key — the user's Claude subscription covers the reasoning. API-key mode exists for dev and for users without an MCP client.
 - **The LLM does the resolving.** Track names → indices, "the reverb" → device index, note names → MIDI numbers. Tools stay dumb and mechanical; the prompt in `Seshat.Agent` carries the music theory.
 

@@ -34,7 +34,7 @@ defmodule Seshat.Tools.HandlersTest do
   describe "set_track_mute" do
     test "mutes a track" do
       assert {:ok, msg} = Handlers.call("set_track_mute", %{"track" => 0, "muted" => true})
-      assert msg =~ "mute"
+      assert msg =~ "Muted track 0"
     end
 
     test "unmutes a track" do
@@ -45,7 +45,7 @@ defmodule Seshat.Tools.HandlersTest do
   describe "set_track_solo" do
     test "solos a track" do
       assert {:ok, msg} = Handlers.call("set_track_solo", %{"track" => 0, "soloed" => true})
-      assert msg =~ "solo"
+      assert msg =~ "Soloed track 0"
     end
 
     test "unsolos a track" do

@@ -1,10 +1,14 @@
 defmodule Seshat.Commands.Command do
-  @moduledoc "Struct representing a parsed Ableton command."
+  @moduledoc """
+  Struct representing a multi-step Ableton operation.
+
+  Only operations that need sequencing become Commands — single-message
+  tools call `Seshat.OSC.Transport` directly from `Seshat.Tools.Handlers`.
+  """
 
   @type t :: %__MODULE__{
-          command: :pan | :volume | :mute | :solo | :create_track | :new_project | :write_notes,
+          command: :create_track | :new_project | :write_notes,
           track: non_neg_integer() | nil,
-          value: float() | nil,
           track_type: :midi | :audio | nil,
           name: String.t() | nil,
           tracks: [%{track_type: :midi | :audio, name: String.t()}] | nil,
@@ -16,7 +20,6 @@ defmodule Seshat.Commands.Command do
   defstruct [
     :command,
     :track,
-    :value,
     :track_type,
     :name,
     :tracks,
