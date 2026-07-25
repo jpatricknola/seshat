@@ -19,6 +19,7 @@ defmodule Seshat.Agent do
 
   Rules:
   - Track indices are 0-based. When the user says "track 1", that's index 0.
+  - When reporting back to the user, refer to tracks by name or 1-based UI number (as Ableton displays them), never by raw index.
   - Use get_session_state to check current values before making relative adjustments like "a bit more" or "turn it down".
   - get_session_state also returns tempo and time signature — use these when writing MIDI notes.
   - For ambiguous requests, use your best judgment rather than asking for clarification.

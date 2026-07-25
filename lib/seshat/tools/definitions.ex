@@ -495,7 +495,9 @@ defmodule Seshat.Tools.Definitions do
         "Get the current state of all tracks in the Ableton Live session. " <>
           "Returns tempo, time signature, track names, indices, volume, pan, mute, and solo status. " <>
           "Use this before making relative adjustments ('turn it up a bit'), " <>
-          "when you need to know what tracks exist, or before writing MIDI notes.",
+          "when you need to know what tracks exist, or before writing MIDI notes. " <>
+          "Indices are 0-based but Ableton's UI numbers tracks from 1 — when talking " <>
+          "to the user, refer to tracks by name or 1-based UI number, never raw index.",
       parameters: %{
         type: "object",
         properties: %{},
