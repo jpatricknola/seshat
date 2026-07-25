@@ -62,6 +62,9 @@ defmodule Seshat.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
+      # Bare SQLite3 NIF — used read-only to read Ableton's own browser
+      # database for preset tags. Not Ecto, not a database for Seshat itself.
+      {:exqlite, "~> 0.27"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"}
     ]

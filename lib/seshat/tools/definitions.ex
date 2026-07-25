@@ -489,13 +489,101 @@ defmodule Seshat.Tools.Definitions do
         required: ["track"]
       }
     },
+    # --- Sound catalog ---
+    %{
+      name: "search_library",
+      description:
+        "Search the sound catalog: a persistent, tag-aware index of every instrument, preset, " <>
+          "drum kit and effect in this user's Ableton Live library. " <>
+          "PREFER THIS OVER list_browser_items — it is instant (no round-trip to Live), it " <>
+          "searches folder paths and tags as well as names, and it works even when Ableton is " <>
+          "closed. Fall back to list_browser_items only when this returns nothing. " <>
+          "Most presets carry tags written by Ableton's own sound designers, which is what " <>
+          "makes character-based search possible. Common character tags: Analog, Digital, " <>
+          "Acoustic, Electric, Bright, Dark, Warm, Soft, Punchy, Distorted, Clean, Sub, " <>
+          "Rhythmic, Evolving, Wide, Mono. Common kind tags: Bass, 808 Bass, Synth Bass, Lead, " <>
+          "Pad, Keys, Piano, Strings, Brass, Kick, Snare, Hi-hat, Clap, Percussion. " <>
+          "Put the kind of sound in `query` and the character in `tags` — 'a warm analog bass' " <>
+          "is query 'bass' + tags ['Analog', 'Warm']. Tag filters are strict (every tag must " <>
+          "match), so start with one or two and loosen if nothing comes back. " <>
+          "WHEN CHOOSING: weigh the musical context — the tempo, the other tracks and the genre " <>
+          "from get_session_state and from what the user has said — and present the top 3–5 " <>
+          "candidates with a one-line reason each, then let the user pick. Only load the first " <>
+          "hit without asking if the user told you to just pick one. " <>
+          "Each result is `name — tags [folder path] (uri)`; the uri goes straight to " <>
+          "load_device. " <>
+          "If the catalog is empty, say so and offer to run reindex_library.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "query" => %{
+            type: "string",
+            description:
+              "Case-insensitive words that must ALL appear somewhere in the item's name, folder " <>
+                "path, tags or description (e.g. 'bass', 'analog lead', '808'). Omit to browse " <>
+                "purely by tag and category."
+          },
+          "tags" => %{
+            type: "array",
+            items: %{type: "string"},
+            description:
+              "Tags the item must ALL carry, e.g. ['Analog', 'Punchy']. Matched " <>
+                "case-insensitively as substrings, so 'bass' also matches '808 Bass'."
+          },
+          "category" => %{
+            type: "string",
+            enum: [
+              "instruments",
+              "sounds",
+              "drums",
+              "audio_effects",
+              "midi_effects",
+              "plugins",
+              "user_library"
+            ],
+            description:
+              "Restrict to one part of the browser. 'sounds' = ready-made instrument presets, " <>
+                "'instruments' = Live's synths and samplers themselves, 'drums' = drum kits, " <>
+                "'audio_effects'/'midi_effects' = effects, 'plugins' = third-party VST/AU, " <>
+                "'user_library' = the user's own saved presets. Omit to search everything. " <>
+                "Raw samples are not in the catalog — use list_browser_items for those."
+          },
+          "max_results" => %{
+            type: "integer",
+            minimum: 1,
+            maximum: 50,
+            description: "Maximum items to return. Defaults to 15."
+          }
+        },
+        required: []
+      }
+    },
+    %{
+      name: "reindex_library",
+      description:
+        "Rebuild the sound catalog that search_library reads: walk Live's whole browser and " <>
+          "merge in the tags from Ableton's own preset database, then save the result to disk. " <>
+          "Run this once before the first search_library call, and again after the user " <>
+          "installs new Packs, adds plugins, or saves their own presets — not otherwise. " <>
+          "Ableton Live must be running. It takes up to a minute and Live's UI may be " <>
+          "unresponsive while it runs, so tell the user before starting it. " <>
+          "The catalog persists across restarts, so this is not something to repeat per session.",
+      parameters: %{
+        type: "object",
+        properties: %{},
+        required: []
+      }
+    },
     # --- Browser / device loading ---
     %{
       name: "list_browser_items",
       description:
-        "Search Ableton Live's browser for instruments, effects, sounds, or samples that can be " <>
-          "loaded onto a track. Returns each match as a name plus a `uri` — the uri is what " <>
-          "load_device needs. " <>
+        "Search Ableton Live's browser directly for instruments, effects, sounds, or samples " <>
+          "that can be loaded onto a track. Returns each match as a name, its folder path, and " <>
+          "a `uri` — the uri is what load_device needs. " <>
+          "TRY search_library FIRST: it covers the same items with tags and no round-trip to " <>
+          "Live. Use this one when search_library comes back empty, when the catalog has never " <>
+          "been built, or for raw samples (which the catalog does not index). " <>
           "A MIDI track makes no sound until an instrument is loaded onto it, so a normal " <>
           "workflow is: create_track (midi) → list_browser_items (instruments) → load_device → " <>
           "write_midi_notes → fire_clip. " <>

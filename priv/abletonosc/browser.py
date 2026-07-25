@@ -1,3 +1,5 @@
+import json
+import os
 from typing import Any, Optional, Tuple
 
 import Live
@@ -8,17 +10,21 @@ from .handler import AbletonOSCHandler
 # Browser API — a Seshat extension to AbletonOSC.
 #
 # Upstream AbletonOSC exposes no browser API at all, so this handler adds the
-# two endpoints Seshat needs in order to load instruments and effects:
+# three endpoints Seshat needs in order to find and load instruments and effects:
 #
 #   /live/browser/get/items   [category, filter, max_results]
-#     -> [category, filter, "ok", returned, total, name, uri, name, uri, ...]
+#     -> [category, filter, "ok", returned, total, name, path, uri, ...]
 #     -> [category, filter, "error", message]
 #
 #   /live/browser/load_item   [track_index, uri]
 #     -> [track_index, uri, "ok", loaded_device_name]
 #     -> [track_index, uri, "error", message]
 #
-# Both endpoints always reply on the address they were called on, including on
+#   /live/browser/export      [dest_path]
+#     -> [dest_path, "ok", total_items]
+#     -> [dest_path, "error", message]
+#
+# All endpoints always reply on the address they were called on, including on
 # every error path — OSC is fire-and-forget UDP, so a client waiting for a
 # matching reply would otherwise hang until its timeout.
 #
@@ -35,6 +41,13 @@ CATEGORIES = (
     "samples",
     "user_library",
 )
+
+#--------------------------------------------------------------------------------
+# `samples` is excluded from the bulk export: it is by far the largest category
+# and raw samples are rarely what a tag-aware search is for. They remain
+# reachable through /live/browser/get/items.
+#--------------------------------------------------------------------------------
+EXPORT_CATEGORIES = tuple(c for c in CATEGORIES if c != "samples")
 
 #--------------------------------------------------------------------------------
 # The browser walk runs on Live's UI thread, which blocks the UI while it runs.
@@ -60,11 +73,12 @@ class BrowserHandler(AbletonOSCHandler):
         # insofar as the handler object does — a fresh handler re-indexes.
         #--------------------------------------------------------------------------------
         if not hasattr(self, "_index_cache"):
-            # category name -> list of (name, uri, BrowserItem)
+            # category name -> list of (name, path, uri, BrowserItem)
             self._index_cache = {}
 
         self.osc_server.add_handler("/live/browser/get/items", self._get_items)
         self.osc_server.add_handler("/live/browser/load_item", self._load_item)
+        self.osc_server.add_handler("/live/browser/export", self._export)
 
     #--------------------------------------------------------------------------------
     # Endpoints
@@ -86,13 +100,20 @@ class BrowserHandler(AbletonOSCHandler):
             return (category, name_filter, "error",
                     "Could not index category '%s': %s" % (category, e))
 
+        #--------------------------------------------------------------------------------
+        # Match against "folder/path/Name" rather than the name alone, so a
+        # filter like "bass" also finds everything filed under a Bass folder.
+        #--------------------------------------------------------------------------------
         needle = name_filter.lower()
-        matches = [(name, uri) for (name, uri, _item) in index if needle in name.lower()]
+        matches = [(name, path, uri)
+                   for (name, path, uri, _item) in index
+                   if needle in ("%s/%s" % (path, name) if path else name).lower()]
         returned = matches[:max_results]
 
         flat = []
-        for name, uri in returned:
+        for name, path, uri in returned:
             flat.append(name)
+            flat.append(path)
             flat.append(uri)
 
         return (category, name_filter, "ok", len(returned), len(matches), *flat)
@@ -139,14 +160,69 @@ class BrowserHandler(AbletonOSCHandler):
 
         return (track_index, uri, "ok", self._loaded_device_name(track, item))
 
+    def _export(self, params: Tuple[Any] = ()) -> Tuple:
+        dest_path = str(params[0]) if len(params) > 0 else ""
+        if not dest_path:
+            return ("", "error", "export requires [dest_path]")
+
+        #--------------------------------------------------------------------------------
+        # This walks every category in one go on Live's UI thread, so the UI can
+        # hitch for several seconds. It is a deliberate trade: one OSC round-trip
+        # and a file on disk, instead of hundreds of datagrams bounded by UDP's
+        # size limit and get/items' 100-item cap.
+        #--------------------------------------------------------------------------------
+        self.logger.info("Browser: exporting %d categories to %s — "
+                         "Live's UI may be unresponsive while this runs"
+                         % (len(EXPORT_CATEGORIES), dest_path))
+
+        #--------------------------------------------------------------------------------
+        # An export always re-walks: its whole purpose is to pick up Packs and
+        # presets added since the last walk, which update Live's browser without
+        # a restart. _load_item tolerates the cleared cache — _find_item lazily
+        # re-indexes whatever it needs.
+        #--------------------------------------------------------------------------------
+        self._index_cache = {}
+
+        export = {}
+        total = 0
+        for category in EXPORT_CATEGORIES:
+            try:
+                index = self._index(category)
+            except Exception as e:
+                self.logger.error("Browser: failed to index category %s: %s" % (category, e))
+                continue
+
+            export[category] = [{"name": name, "path": path, "uri": uri}
+                                for (name, path, uri, _item) in index]
+            total += len(export[category])
+
+        if not export:
+            return (dest_path, "error", "Could not index any browser category")
+
+        try:
+            directory = os.path.dirname(dest_path)
+            if directory and not os.path.isdir(directory):
+                os.makedirs(directory)
+
+            with open(dest_path, "w") as f:
+                json.dump(export, f)
+        except Exception as e:
+            self.logger.error("Browser: failed to write export to %s: %s" % (dest_path, e))
+            return (dest_path, "error", "Could not write '%s': %s" % (dest_path, e))
+
+        self.logger.info("Browser: exported %d item(s) to %s" % (total, dest_path))
+        return (dest_path, "ok", total)
+
     #--------------------------------------------------------------------------------
     # Indexing
     #--------------------------------------------------------------------------------
     def _index(self, category: str):
         """
-        Return a cached list of (name, uri, BrowserItem) for every loadable item
-        under `category`. The BrowserItem is kept so that a later load needs no
-        second walk.
+        Return a cached list of (name, path, uri, BrowserItem) for every loadable
+        item under `category`. `path` is the "/"-joined chain of folder names
+        between the category root and the item ("" for a top-level item); it is
+        what makes an exported catalog searchable by where a preset lives. The
+        BrowserItem is kept so that a later load needs no second walk.
         """
         if category in self._index_cache:
             return self._index_cache[category]
@@ -157,10 +233,10 @@ class BrowserHandler(AbletonOSCHandler):
         items = []
         seen_uris = set()
         scanned = 0
-        stack = [(child, 1) for child in reversed(_children_of(root))]
+        stack = [(child, 1, ()) for child in reversed(_children_of(root))]
 
         while stack:
-            item, depth = stack.pop()
+            item, depth, parents = stack.pop()
 
             scanned += 1
             if scanned > MAX_SCAN_NODES:
@@ -174,11 +250,12 @@ class BrowserHandler(AbletonOSCHandler):
                     uri = item.uri
                     if uri and uri not in seen_uris:
                         seen_uris.add(uri)
-                        items.append((item.name, uri, item))
+                        items.append((item.name, "/".join(parents), uri, item))
 
                 if depth < MAX_DEPTH:
+                    child_parents = parents + (item.name,)
                     for child in reversed(_children_of(item)):
-                        stack.append((child, depth + 1))
+                        stack.append((child, depth + 1, child_parents))
             except RuntimeError:
                 #--------------------------------------------------------------------------------
                 # Live raises RuntimeError when a browser node goes stale
@@ -197,14 +274,14 @@ class BrowserHandler(AbletonOSCHandler):
         # after a get/items call on the same category.
         #--------------------------------------------------------------------------------
         for category in list(self._index_cache.keys()):
-            for (_name, item_uri, item) in self._index_cache[category]:
+            for (_name, _path, item_uri, item) in self._index_cache[category]:
                 if item_uri == uri:
                     return item
 
         for category in CATEGORIES:
             if category in self._index_cache:
                 continue
-            for (_name, item_uri, item) in self._index(category):
+            for (_name, _path, item_uri, item) in self._index(category):
                 if item_uri == uri:
                     return item
 
