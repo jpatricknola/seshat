@@ -38,3 +38,9 @@ npm-debug.log
 # Local secrets — never commit
 /config/dev.secret.exs
 
+# Python bytecode (vendored AbletonOSC handler)
+__pycache__/
+
+# ElixirLS language server artifacts
+/.elixir_ls/
+

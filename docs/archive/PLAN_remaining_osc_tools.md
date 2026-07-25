@@ -1,3 +1,8 @@
+> **Archived 2026-07-26 — superseded by [ROADMAP.md](../ROADMAP.md).** The
+> not-yet-built items were carried over there; the ✅ Done sections below are
+> kept only for their address notes (the canonical reference is
+> [abletonosc-api-docs.md](../abletonosc-api-docs.md)).
+
 # Implementation Plan: Remaining OSC Tools
 
 Everything below is what's NOT yet implemented.

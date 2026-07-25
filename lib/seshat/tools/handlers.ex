@@ -1,10 +1,12 @@
 defmodule Seshat.Tools.Handlers do
   @moduledoc """
-  Dispatches tool calls to the command registry.
+  Dispatches tool calls to their implementations.
 
-  Shared by both MCP and API key modes. Takes a tool name and input map,
-  builds the appropriate Command struct, executes it via Registry, and
-  returns a result suitable for sending back to the LLM.
+  Shared by both MCP and API key modes. Takes a tool name and input map and
+  returns a result suitable for sending back to the LLM. Most tools talk to
+  `Seshat.OSC.Transport` directly; mixer sets and multi-step sequences
+  (create_track, write_midi_notes, create_project) build a `%Command{}` and
+  execute it via `Seshat.Commands.Registry`.
   """
 
   alias Seshat.Commands.{Command, Registry}

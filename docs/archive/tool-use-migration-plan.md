@@ -1,3 +1,7 @@
+> **Archived 2026-07-26 — migration complete.** Both modes exist and are
+> documented in [CLAUDE.md](../../CLAUDE.md). This is the plan as written
+> beforehand; module names and details may differ from the final code.
+
 # Migration Plan: JSON Parsing → Dual-Mode (MCP + API Key)
 
 ## Overview

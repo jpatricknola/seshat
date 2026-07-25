@@ -1,3 +1,7 @@
+> **Archived 2026-07-26 — decision made.** Tool use (Option 3) won and is what
+> runs today; the structured-JSON parser described as "what we have today" no
+> longer exists. Kept for the rationale behind the decision.
+
 # Architecture Evaluation: Option 3 (Tool Use) vs Option 4 (Structured JSON)
 
 ## Context

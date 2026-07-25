@@ -1,3 +1,8 @@
+> **Archived 2026-07-26 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `reindex_library` and
+> `search_library` exist today (`Seshat.Library.Catalog` / `AbletonDB`).
+> The still-open follow-ups from this plan now live in [ROADMAP.md](../ROADMAP.md).
+
 # Implementation Plan: Sound Catalog + Smart Instrument Selection
 
 `reindex_library` + `search_library` — tag-aware instrument search

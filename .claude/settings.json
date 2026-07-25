@@ -27,9 +27,7 @@
       "Bash(touch:*)",
       "Bash(cp:*)",
       "Bash(mv:*)",
-      "Bash(lsof:*)",
-      "Bash(pg_isready)",
-      "Read(//Users/patrick/seshat_web/**)"
+      "Bash(lsof:*)"
     ]
   },
   "hooks": {

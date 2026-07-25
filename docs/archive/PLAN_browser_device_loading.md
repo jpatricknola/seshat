@@ -1,3 +1,8 @@
+> **Archived 2026-07-26 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `list_browser_items` and
+> `load_device` exist today. Do not treat this as current documentation —
+> see [CLAUDE.md](../../CLAUDE.md) and [abletonosc-api-docs.md](../abletonosc-api-docs.md).
+
 # Implementation Plan: Browser + Device Loading Tools
 
 `list_browser_items` + `load_device`
