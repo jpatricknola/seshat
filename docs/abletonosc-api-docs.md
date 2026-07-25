@@ -456,7 +456,9 @@ path — so a query resolves instead of hanging.
   session — never construct one.
 - The first walk of a large category takes seconds (it runs on Live's UI
   thread, capped at 20,000 nodes / depth 6); the result is cached per category
-  for the rest of the Live session.
+  for the rest of the Live session. `export` is the exception: it always drops
+  the cache and re-walks, so a reindex picks up Packs and presets added since
+  the last walk.
 - `load_item` selects the target track and loads in one operation, then reads
   the track's device list back so `device_name` reflects what actually landed.
 - Regular tracks only (`song.tracks`) — return and master tracks aren't

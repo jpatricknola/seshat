@@ -32,7 +32,8 @@ defmodule Seshat.Library.AbletonDB do
   @default_dir "~/Library/Application Support/Ableton/Live Database"
 
   # Live stores metadata keys as opaque integer hashes. This one holds the
-  # preset's author credit, the only free-text field worth surfacing.
+  # preset's free-text annotation — an author credit ("Created by: …"), a
+  # description of the sound, or both. Either way it is worth searching.
   @description_key 1_097_756_271
 
   @type entry :: %{

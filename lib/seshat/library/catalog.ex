@@ -143,8 +143,6 @@ defmodule Seshat.Library.Catalog do
   @spec record_load(String.t(), atom()) :: :ok
   def record_load(uri, server \\ __MODULE__) when is_binary(uri) do
     GenServer.cast(server, {:record_load, uri})
-  catch
-    :exit, _ -> :ok
   end
 
   # --- Merge (pure) ---
@@ -336,6 +334,10 @@ defmodule Seshat.Library.Catalog do
 
     :ets.new(table, [:set, :protected, :named_table, read_concurrency: true])
 
+    # Trap exits so terminate/2 runs on shutdown and can flush a pending
+    # debounced write — otherwise the last few use_count bumps are lost.
+    Process.flag(:trap_exit, true)
+
     state = %{table: table, path: path, persist_timer: nil}
     {:ok, state, {:continue, :load}}
   end
@@ -402,6 +404,14 @@ defmodule Seshat.Library.Catalog do
   def handle_info(:persist, state) do
     write_file(state.path, all_entries(state.table))
     {:noreply, %{state | persist_timer: nil}}
+  end
+
+  # A pending timer means unwritten usage bumps — flush them before dying.
+  @impl true
+  def terminate(_reason, %{persist_timer: nil}), do: :ok
+
+  def terminate(_reason, state) do
+    write_file(state.path, all_entries(state.table))
   end
 
   # --- Private ---

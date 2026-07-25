@@ -19,6 +19,11 @@ defmodule Seshat.OSC.Transport do
   @pubsub Seshat.PubSub
   @topic "osc:in"
 
+  # 64KB buffers: a /live/browser/get/items reply carrying 100 name/path/uri
+  # triples can exceed the ~8KB default, and a datagram bigger than the buffer
+  # is silently truncated — which surfaces as a mystery query timeout.
+  @socket_opts [:binary, active: true, recbuf: 65_536, buffer: 65_536]
+
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -48,7 +53,7 @@ defmodule Seshat.OSC.Transport do
 
   @impl true
   def init(_opts) do
-    case :gen_udp.open(@client_port, [:binary, active: true]) do
+    case :gen_udp.open(@client_port, @socket_opts) do
       {:ok, socket} ->
         {:ok, port} = :inet.port(socket)
         Logger.info("OSC Transport listening on UDP port #{port}")
@@ -57,7 +62,7 @@ defmodule Seshat.OSC.Transport do
       {:error, :eaddrinuse} ->
         Logger.warning("Port #{@client_port} already in use, binding to ephemeral port")
 
-        case :gen_udp.open(0, [:binary, active: true]) do
+        case :gen_udp.open(0, @socket_opts) do
           {:ok, socket} ->
             {:ok, port} = :inet.port(socket)
             Logger.info("OSC Transport listening on UDP port #{port}")

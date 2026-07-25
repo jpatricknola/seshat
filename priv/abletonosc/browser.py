@@ -175,6 +175,14 @@ class BrowserHandler(AbletonOSCHandler):
                          "Live's UI may be unresponsive while this runs"
                          % (len(EXPORT_CATEGORIES), dest_path))
 
+        #--------------------------------------------------------------------------------
+        # An export always re-walks: its whole purpose is to pick up Packs and
+        # presets added since the last walk, which update Live's browser without
+        # a restart. _load_item tolerates the cleared cache — _find_item lazily
+        # re-indexes whatever it needs.
+        #--------------------------------------------------------------------------------
+        self._index_cache = {}
+
         export = {}
         total = 0
         for category in EXPORT_CATEGORIES:
