@@ -21,8 +21,12 @@ defmodule Mix.Tasks.Abletonosc.Install do
   has drifted and a patch anchor can't be found, the task prints the exact
   manual edit rather than guessing where the line belongs.
 
-  Restart Ableton Live afterwards. `/live/api/reload` reloads *existing*
-  modules and won't pick up a brand new one.
+  Restart Ableton Live afterwards — or toggle AbletonOSC off and back on under
+  Preferences > Link/Tempo/MIDI > Control Surface. `/live/api/reload` is not a
+  shortcut here: `reload_imports` names the modules it reloads and
+  `abletonosc.browser` isn't among them, so it never picks up an edit to this
+  file, new module or not. It can also leave AbletonOSC with no handlers at all
+  — see the warning in docs/abletonosc-api-docs.md.
   """
 
   use Mix.Task

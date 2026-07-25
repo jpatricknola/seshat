@@ -101,21 +101,28 @@ defmodule Seshat.Tools.HandlersTest do
   describe "format_browser_items/2" do
     # The do_call clauses for list_browser_items/load_device aren't tested here:
     # they go through Transport.query, which needs a live Ableton.
-    test "formats name/uri pairs one per line" do
-      pairs = ["Operator", "query:Instruments#Operator", "Analog", "query:Instruments#Analog"]
+    test "formats name/path/uri triples one per line" do
+      triples = [
+        "Operator",
+        "",
+        "query:Instruments#Operator",
+        "808 Drifter",
+        "Bass/808 & Sub",
+        "query:Sounds#Bass:FileId_5200"
+      ]
 
-      result = Handlers.format_browser_items(pairs, 2)
+      result = Handlers.format_browser_items(triples, 2)
 
       assert result =~ "2 match(es)"
       assert result =~ "Operator — uri: query:Instruments#Operator"
-      assert result =~ "Analog — uri: query:Instruments#Analog"
+      assert result =~ "808 Drifter [Bass/808 & Sub] — uri: query:Sounds#Bass:FileId_5200"
       refute result =~ "refine the filter"
     end
 
     test "flags truncation when total exceeds what was returned" do
-      pairs = ["Operator", "query:Instruments#Operator"]
+      triples = ["Operator", "", "query:Instruments#Operator"]
 
-      result = Handlers.format_browser_items(pairs, 87)
+      result = Handlers.format_browser_items(triples, 87)
 
       assert result =~ "Showing 1 of 87 matches"
       assert result =~ "refine the filter"
@@ -128,12 +135,71 @@ defmodule Seshat.Tools.HandlersTest do
       refute result =~ "uri:"
     end
 
-    test "ignores a dangling name with no uri" do
-      pairs = ["Operator", "query:Instruments#Operator", "Truncated"]
+    test "ignores a trailing partial triple" do
+      triples = ["Operator", "", "query:Instruments#Operator", "Truncated"]
 
-      result = Handlers.format_browser_items(pairs, 2)
+      result = Handlers.format_browser_items(triples, 2)
 
       refute result =~ "Truncated"
+    end
+  end
+
+  describe "format_catalog_entries/2" do
+    defp entry(overrides) do
+      Map.merge(
+        %{
+          uri: "query:Sounds#Bass:FileId_5200",
+          name: "808 Drifter.adg",
+          category: "sounds",
+          path: "Bass/808 & Sub",
+          tags: ["808 Bass", "Punchy", "Sub"],
+          tag_source: :ableton,
+          description: nil,
+          use_count: 0,
+          last_loaded_at: nil
+        },
+        overrides
+      )
+    end
+
+    test "leads with the tags, since they are what the model picks on" do
+      result = Handlers.format_catalog_entries([entry(%{})], 1)
+
+      assert result =~ "1 match(es)"
+
+      assert result =~
+               "808 Drifter.adg — 808 Bass, Punchy, Sub [Bass/808 & Sub] " <>
+                 "(query:Sounds#Bass:FileId_5200)"
+    end
+
+    test "says so when an item has no tags at all" do
+      result = Handlers.format_catalog_entries([entry(%{tags: [], path: ""})], 1)
+
+      assert result =~ "808 Drifter.adg — no tags (query:Sounds#Bass:FileId_5200)"
+    end
+
+    test "flags truncation" do
+      result = Handlers.format_catalog_entries([entry(%{})], 42)
+
+      assert result =~ "Showing 1 of 42 matches"
+    end
+
+    test "tells the model how to loosen a search that found nothing" do
+      result = Handlers.format_catalog_entries([], 0)
+
+      assert result =~ "No catalog matches"
+      assert result =~ "reindex_library"
+    end
+  end
+
+  describe "search_library" do
+    test "explains itself when the catalog has never been built" do
+      # The catalog is not started in the test env, so this is exactly the
+      # first-run case a user hits.
+      assert {:error, msg} = Handlers.call("search_library", %{"query" => "bass"})
+
+      assert msg =~ "empty"
+      assert msg =~ "reindex_library"
     end
   end
 

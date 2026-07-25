@@ -27,9 +27,11 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
-# Don't start OSC transport, session state, or MCP server in tests
+# Don't start OSC transport, session state, MCP server, or the library catalog
+# in tests — catalog tests start their own with an isolated table and path.
 config :seshat, :start_osc, false
 config :seshat, :start_mcp, false
+config :seshat, :start_catalog, false
 
 # Stub Anthropic API calls in tests
 config :seshat, :anthropic_api_key, "test-key"

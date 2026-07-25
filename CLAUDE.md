@@ -36,11 +36,18 @@ Seshat.MCP.Server                      Seshat.Agent
 track state (names, volume, pan, mute, solo, tempo, time signature). Tools read
 it via `get_session_state` rather than querying Ableton field by field.
 
+`Seshat.Library.Catalog` sits beside it: a tag-aware index of everything
+loadable in Live's browser, kept in ETS and persisted to `~/.seshat/catalog.json`
+so `search_library` answers instantly and with Ableton closed. It is built by
+`reindex_library`, which merges a browser export with the preset tags read out
+of Ableton's own SQLite database. That file is read-only source data — Seshat
+still has no database of its own.
+
 ## Module map
 
 | Path | Role |
 |---|---|
-| [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All 37 tool definitions (name, description, JSON Schema). Single source of truth. |
+| [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All 39 tool definitions (name, description, JSON Schema). Single source of truth. |
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a Command |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
@@ -51,6 +58,8 @@ it via `get_session_state` rather than querying Ableton field by field.
 | [lib/seshat/osc/transport.ex](lib/seshat/osc/transport.ex) | UDP GenServer — send, query, PubSub broadcast |
 | [lib/seshat/osc/message.ex](lib/seshat/osc/message.ex) | OSC encoding/decoding |
 | [lib/seshat/session/state.ex](lib/seshat/session/state.ex) | Mirrored session state |
+| [lib/seshat/library/catalog.ex](lib/seshat/library/catalog.ex) | Tag-aware sound catalog — ETS + `~/.seshat/catalog.json`, merge and search |
+| [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
 | [priv/abletonosc/browser.py](priv/abletonosc/browser.py) | Vendored AbletonOSC handler extension — the browser API upstream doesn't have |
@@ -77,7 +86,7 @@ future address upstream doesn't provide goes there the same way.
 ## Verification
 
 - `mix precommit` — compile with warnings-as-errors, unlock unused deps, format, test. Run before declaring work done.
-- `mix test` — 47 tests, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`.
+- `mix test` — 83 tests, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed. See [README.md](README.md).
 
@@ -88,7 +97,7 @@ future address upstream doesn't provide goes there the same way.
 - Track indices are 0-based everywhere. "Track 1" in user speech = index 0.
 - Pan: -1.0 (left) to 1.0 (right). Volume: 0.0–1.0 (Ableton maps to dB internally).
 - Tool params arrive string-keyed from Anthropic and atom-keyed from MCP. `Handlers.call/2` normalises; handler clauses only ever see string keys.
-- No database, no Ecto. Ignore the Ecto section if you read [AGENTS.md](AGENTS.md).
+- No database, no Ecto. Ignore the Ecto section if you read [AGENTS.md](AGENTS.md). `:exqlite` is in the deps only to read *Ableton's* database read-only — it is not a store for us.
 - Standard Phoenix/Elixir conventions otherwise — [AGENTS.md](AGENTS.md) has the full Phoenix/LiveView ruleset.
 
 ## Design decisions worth knowing
@@ -99,8 +108,11 @@ future address upstream doesn't provide goes there the same way.
 
 ## Current focus
 
-Device parameter control and send levels — see
-[docs/PLAN_remaining_osc_tools.md](docs/PLAN_remaining_osc_tools.md).
+Send levels and the remaining OSC surface — see
+[docs/PLAN_remaining_osc_tools.md](docs/PLAN_remaining_osc_tools.md). Sound
+selection is covered by [docs/PLAN_sound_catalog.md](docs/PLAN_sound_catalog.md);
+its follow-ups (LLM enrichment for untagged third-party items, user XMP tags,
+`samples` in the export, the Windows database location) are still open.
 
 ## Framework rules
 

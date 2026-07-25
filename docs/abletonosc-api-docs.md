@@ -15,10 +15,24 @@
 |---|---|---|---|
 | `/live/test` | | `'ok'` | Confirmation message in Live + OSC reply |
 | `/live/application/get/version` | | `major_version, minor_version` | Live's version |
-| `/live/api/reload` | | | Live reload of AbletonOSC server code (dev only) |
+| `/live/api/reload` | | | Live reload of AbletonOSC server code (dev only — see the warning below) |
 | `/live/api/get/log_level` | | `log_level` | Current log level (default: `info`) |
 | `/live/api/set/log_level` | `log_level` | | Set log level: `debug`, `info`, `warning`, `error`, `critical` |
 | `/live/api/show_message` | `message` | | Show message in Live's status bar |
+
+⚠️ **Don't reach for `/live/api/reload`.** Two problems, both observed:
+
+1. It doesn't reload `abletonosc/browser.py` at all. `reload_imports` in
+   `manager.py` names each module explicitly and our vendored one isn't on the
+   list, so edits to it need Live restarted — or AbletonOSC toggled off and
+   back on under Preferences > Link/Tempo/MIDI > Control Surface — exactly like
+   a brand new module.
+2. It can take the whole API down. `clear_handlers()` runs first, then
+   `clear_api()` raises `KeyError` on any listener registered against a track
+   that no longer exists — leaving zero handlers registered and no way to
+   re-register them over OSC, since `/live/api/reload` has unregistered itself
+   too. Every address then answers "Unknown OSC address" until Live is
+   restarted or the control surface is toggled.
 
 ### Status Messages (sent automatically)
 
@@ -412,29 +426,34 @@ Listen for parameter changes via `/live/device/start_listen/parameter/value <tra
 
 ## Browser API (Seshat extension — not in upstream AbletonOSC)
 
-⚠️ These two addresses do **not** exist in stock AbletonOSC. They are served by
-`priv/abletonosc/browser.py` in this repo, installed with
-`mix abletonosc.install` (restart Live afterwards). Without that install both
-addresses are unknown and queries time out.
+⚠️ These three addresses do **not** exist in stock AbletonOSC. They are served
+by `priv/abletonosc/browser.py` in this repo, installed with
+`mix abletonosc.install` (restart Live afterwards). Without that install all
+three addresses are unknown and queries time out.
 
 Unlike the rest of AbletonOSC, these always reply — including on every error
 path — so a query resolves instead of hanging.
 
 | Address | Query Params | Response Params | Description |
 |---|---|---|---|
-| `/live/browser/get/items` | `category, filter, max_results` | `category, filter, 'ok', returned, total, [name, uri, ...]` | Search a browser category |
+| `/live/browser/get/items` | `category, filter, max_results` | `category, filter, 'ok', returned, total, [name, path, uri, ...]` | Search a browser category |
 | `/live/browser/get/items` | | `category, filter, 'error', message` | Unknown category, or indexing failed |
 | `/live/browser/load_item` | `track_id, uri` | `track_id, uri, 'ok', device_name` | Load a browser item onto a track |
 | `/live/browser/load_item` | | `track_id, uri, 'error', message` | Bad track index, unknown uri, or load failed |
+| `/live/browser/export` | `dest_path` | `dest_path, 'ok', total_items` | Walk every category and write the whole index to a JSON file |
+| `/live/browser/export` | | `dest_path, 'error', message` | Missing path, no category indexable, or the write failed |
 
 - `category`: `instruments`, `sounds`, `drums`, `audio_effects`, `midi_effects`,
   `plugins`, `samples`, `user_library`
-- `filter`: case-insensitive substring match on the item name. `""` = no filter.
+- `filter`: case-insensitive substring match on `"path/name"`, so it matches
+  folder names too. `""` = no filter.
 - `max_results`: clamped to 1–100 by the Python handler.
-- `returned` is how many name/uri pairs follow; `total` is how many matched
-  before truncation.
-- `uri` values come from `get/items` and are stable within a Live session —
-  never construct one.
+- `returned` is how many name/path/uri **triples** follow; `total` is how many
+  matched before truncation.
+- `path` is the `/`-joined chain of browser folder names above the item
+  (`"Bass/808 & Sub"`), `""` for a top-level item.
+- `uri` values come from `get/items` or `export` and are stable within a Live
+  session — never construct one.
 - The first walk of a large category takes seconds (it runs on Live's UI
   thread, capped at 20,000 nodes / depth 6); the result is cached per category
   for the rest of the Live session.
@@ -442,6 +461,33 @@ path — so a query resolves instead of hanging.
   the track's device list back so `device_name` reflects what actually landed.
 - Regular tracks only (`song.tracks`) — return and master tracks aren't
   addressable here.
+
+### `/live/browser/export`
+
+Backs `Seshat.Library.Catalog.reindex/1`. It walks every category except
+`samples` and writes one JSON file, rather than replying over OSC — a full
+index is far past what a UDP datagram (or `get/items`' 100-item cap) can carry,
+and Python and Elixir share a filesystem. Elixir passes a path in its own temp
+directory and deletes the file afterwards.
+
+```json
+{
+  "sounds": [
+    {"name": "808 Drifter.adg", "path": "Bass/808 & Sub", "uri": "query:Sounds#Bass:FileId_5200"}
+  ],
+  "instruments": [ ... ]
+}
+```
+
+- Takes up to a minute on a large library, all of it on Live's UI thread — the
+  UI will hitch. Query it with a generous timeout (Seshat uses 120s).
+- A category that fails to index is logged and skipped; the export still
+  succeeds with the rest. Only a total failure returns `'error'`.
+- `samples` is excluded deliberately: it is by far the largest category and raw
+  samples carry no useful tags. Reach them with `get/items`.
+- The `FileId_<n>` in a preset uri is the primary key of Ableton's own browser
+  database, which is where Seshat gets preset tags — see
+  `Seshat.Library.AbletonDB`.
 
 ---
 

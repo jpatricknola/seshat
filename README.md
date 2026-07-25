@@ -24,15 +24,30 @@ mix setup
 mix abletonosc.install     # adds the browser handler to AbletonOSC
 ```
 
-`mix abletonosc.install` is what makes `list_browser_items` and `load_device`
-work — loading instruments and effects needs a browser API that upstream
-AbletonOSC doesn't have, so Seshat vendors one in
+`mix abletonosc.install` is what makes `search_library`, `list_browser_items`
+and `load_device` work — loading instruments and effects needs a browser API
+that upstream AbletonOSC doesn't have, so Seshat vendors one in
 [priv/abletonosc/browser.py](priv/abletonosc/browser.py). The task probes for
 your AbletonOSC install (pass the path if it can't find it), copies the file
-in, and registers the handler. **Restart Ableton Live afterwards** — the
-`/live/api/reload` hot-reload doesn't pick up a brand new module.
+in, and registers the handler. **Restart Ableton Live afterwards** (or toggle
+AbletonOSC off and back on under Preferences > Link/Tempo/MIDI > Control
+Surface) — `/live/api/reload` never reloads this file, and can leave AbletonOSC
+with no handlers at all.
 
 Everything else works without it.
+
+### Build the sound catalog (once)
+
+With Ableton Live running, ask the assistant to **reindex the library** (the
+`reindex_library` tool). It walks Live's whole browser and merges in the tags
+Ableton's sound designers wrote for every factory and Pack preset, so
+`search_library` can answer "a warm analog bass" rather than handing back 267
+undifferentiated names.
+
+It takes up to a minute and Live's UI will hitch while it runs. The result is
+saved to `~/.seshat/catalog.json` and reused forever after — searching works
+even with Ableton closed. Re-run it after installing new Packs or plugins, or
+after saving your own presets.
 
 <details>
 <summary>Manual install (if the task can't patch your AbletonOSC)</summary>
@@ -111,7 +126,7 @@ Both modes drive the same tools through the same handlers.
 
 ```bash
 mix precommit    # compile --warnings-as-errors, deps.unlock --unused, format, test
-mix test         # 47 tests; no Ableton required
+mix test         # 83 tests; no Ableton required
 ```
 
 Tests avoid the live transport — anything reaching `Transport.query/3` needs
@@ -128,6 +143,7 @@ Ableton running and will time out (5 seconds by default).
 | [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md) | AbletonOSC conventions and gotchas |
 | [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) | Canonical OSC address reference |
 | [docs/PLAN_remaining_osc_tools.md](docs/PLAN_remaining_osc_tools.md) | What's not built yet |
+| [docs/PLAN_sound_catalog.md](docs/PLAN_sound_catalog.md) | How the tag-aware sound catalog works, and its open follow-ups |
 | [docs/architecture-evaluation.md](docs/architecture-evaluation.md) | Why tool use over structured JSON |
 | [docs/tool-use-migration-plan.md](docs/tool-use-migration-plan.md) | How the dual-mode design came about |
 
@@ -146,3 +162,13 @@ Surface, or Ableton isn't running.
 **`list_browser_items` times out.** Either `mix abletonosc.install` hasn't been
 run (or Live wasn't restarted after it), or you're doing the first unfiltered
 search of a huge category — retry with a filter.
+
+**`search_library` says the catalog is empty.** It has never been built — run
+`reindex_library` with Ableton open. If that times out too, it's the same
+browser handler that `list_browser_items` needs.
+
+**`search_library` returns items but almost none have tags.** Ableton's preset
+database wasn't readable at reindex time, so everything fell back to
+folder-derived tags. It lives at
+`~/Library/Application Support/Ableton/Live Database/Live-files-*.db`; the
+reindex logs a warning saying why it couldn't be read.

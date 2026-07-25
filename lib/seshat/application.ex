@@ -7,6 +7,8 @@ defmodule Seshat.Application do
 
   @impl true
   def start(_type, _args) do
+    # The catalog is deliberately independent of OSC: it answers from disk
+    # with Ableton closed, and only needs Live running to reindex.
     children =
       [
         SeshatWeb.Telemetry,
@@ -15,6 +17,11 @@ defmodule Seshat.Application do
       ] ++
         if Application.get_env(:seshat, :start_osc, true) do
           [Seshat.OSC.Transport, Seshat.Session.State]
+        else
+          []
+        end ++
+        if Application.get_env(:seshat, :start_catalog, true) do
+          [Seshat.Library.Catalog]
         else
           []
         end ++

@@ -8,6 +8,7 @@ defmodule Seshat.Tools.Handlers do
   """
 
   alias Seshat.Commands.{Command, Registry}
+  alias Seshat.Library.Catalog
   alias Seshat.OSC.Transport
   alias Seshat.Session.State
 
@@ -18,6 +19,7 @@ defmodule Seshat.Tools.Handlers do
   @load_timeout 30_000
 
   @default_max_results 25
+  @default_catalog_results 15
 
   @spec call(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
   def call(name, params) when is_binary(name) and is_map(params) do
@@ -41,8 +43,8 @@ defmodule Seshat.Tools.Handlers do
   def stringify_keys(value), do: value
 
   @doc """
-  Formats the flat `[name, uri, name, uri, ...]` tail of a `/live/browser/get/items`
-  reply into one line per item.
+  Formats the flat `[name, path, uri, name, path, uri, ...]` tail of a
+  `/live/browser/get/items` reply into one line per item.
 
   `total` is how many items matched before truncation, so the model can tell
   "that's all of them" from "there are more, narrow the filter".
@@ -52,9 +54,13 @@ defmodule Seshat.Tools.Handlers do
     "No matching browser items. Try a shorter filter, a different spelling, or another category."
   end
 
-  def format_browser_items(pairs, total) do
-    items = Enum.chunk_every(pairs, 2, 2, :discard)
-    listing = Enum.map_join(items, "\n", fn [name, uri] -> "#{name} — uri: #{uri}" end)
+  def format_browser_items(triples, total) do
+    items = Enum.chunk_every(triples, 3, 3, :discard)
+
+    listing =
+      Enum.map_join(items, "\n", fn [name, path, uri] ->
+        "#{name}#{format_path(path)} — uri: #{uri}"
+      end)
 
     header =
       if length(items) < total do
@@ -65,6 +71,41 @@ defmodule Seshat.Tools.Handlers do
 
     "#{header}\n\n#{listing}"
   end
+
+  @doc """
+  Formats catalog entries as `name — tags [path] (uri)`, one per line.
+
+  The tags are the whole reason to prefer this over a raw browser listing, so
+  they lead; the uri trails because it is for the next tool call, not the user.
+  """
+  @spec format_catalog_entries([map()], non_neg_integer()) :: String.t()
+  def format_catalog_entries([], _total) do
+    "No catalog matches. Loosen the tags first (they must all match), then the query, then the " <>
+      "category. If the catalog has never been built, run reindex_library."
+  end
+
+  def format_catalog_entries(entries, total) do
+    listing =
+      Enum.map_join(entries, "\n", fn entry ->
+        "#{entry.name} — #{format_tags(entry.tags)}#{format_path(entry.path)} (#{entry.uri})"
+      end)
+
+    header =
+      if length(entries) < total do
+        "Showing #{length(entries)} of #{total} matches — narrow the query or add a tag to see " <>
+          "the most relevant ones."
+      else
+        "#{length(entries)} match(es):"
+      end
+
+    "#{header}\n\n#{listing}"
+  end
+
+  defp format_tags([]), do: "no tags"
+  defp format_tags(tags), do: Enum.join(tags, ", ")
+
+  defp format_path(path) when path in [nil, ""], do: ""
+  defp format_path(path), do: " [#{path}]"
 
   @doc """
   Formats the parallel name/type/class_name lists of the
@@ -408,6 +449,49 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # --- Sound catalog ---
+  #
+  # Answered from ETS, so no Ableton required — see Seshat.Library.Catalog.
+
+  defp do_call("search_library", params) do
+    opts =
+      [
+        query: Map.get(params, "query"),
+        tags: Map.get(params, "tags", []),
+        category: Map.get(params, "category"),
+        max_results: Map.get(params, "max_results", @default_catalog_results)
+      ]
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+    if Catalog.count() == 0 do
+      {:error,
+       "The sound catalog is empty — it has never been built, or the build failed. Run " <>
+         "reindex_library (Ableton must be running; it takes up to a minute), or fall back to " <>
+         "list_browser_items for this search."}
+    else
+      {entries, total} = Catalog.search(opts)
+      {:ok, format_catalog_entries(entries, total)}
+    end
+  end
+
+  defp do_call("reindex_library", _params) do
+    case Catalog.reindex() do
+      {:ok, %{items: items, tagged: tagged}} ->
+        {:ok,
+         "Reindexed the sound catalog: #{items} item(s), #{tagged} of them tagged by Ableton. " <>
+           "search_library is ready."}
+
+      {:error, reason} ->
+        {:error, "Could not reindex the library: #{inspect(reason)}"}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "The browser export timed out. Is Ableton Live running with AbletonOSC enabled, and has " <>
+         "`mix abletonosc.install` been run to add the browser handler? A very large library " <>
+         "can also simply exceed the timeout — try again once Live has finished loading."}
+  end
+
   # --- Browser / device loading ---
   #
   # Both addresses are Seshat extensions to AbletonOSC, served by
@@ -449,6 +533,7 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("load_device", %{"track" => track, "uri" => uri}) do
     case Transport.query("/live/browser/load_item", [track, uri], @load_timeout) do
       {:ok, {_address, [_track, _uri, "ok", name]}} ->
+        Catalog.record_load(uri)
         {:ok, "Loaded '#{name}' onto track #{track}"}
 
       {:ok, {_address, [_track, _uri, "error", message]}} ->
