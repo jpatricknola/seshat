@@ -43,6 +43,10 @@ defmodule Seshat.Tools.Handlers do
                      "track index (get_session_state) and send index (get_track_sends; sends are " <>
                      "0-based, send A = 0)."
 
+  @track_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
+                      "track index with get_session_state; failing that, check Ableton is " <>
+                      "running with AbletonOSC enabled."
+
   # The return/master addresses are Seshat's own, and they always reply — a bad
   # index comes back as an error envelope, not silence. So unlike the upstream
   # families above, a timeout here isn't a bad index at all: it means nothing is
@@ -465,7 +469,9 @@ defmodule Seshat.Tools.Handlers do
 
   `master` is `nil` when `/live/master/get/volume` never answered, which means
   Seshat's AbletonOSC extension isn't installed — say so rather than reporting a
-  set with no returns, which looks identical but isn't.
+  set with no returns, which looks identical but isn't. A single return's
+  `volume` is `nil` on the same principle: one lost reply, and the fader position
+  is unknown rather than 0.85.
   """
   @spec format_return_tracks([map()], map() | nil) :: String.t()
   def format_return_tracks(_return_tracks, nil) do
@@ -481,11 +487,17 @@ defmodule Seshat.Tools.Handlers do
     lines =
       Enum.map_join(return_tracks, "\n", fn r ->
         ~s{Return #{r.index} "#{r.name}" (send #{send_letter(r.index)}): } <>
-          "volume=#{round_volume(r.volume)}"
+          volume_field(r.volume)
       end)
 
     "#{lines}\nMaster: volume=#{round_volume(master.volume)}"
   end
+
+  # A guessed fader position reads as real and the model does relative moves off
+  # it ("turn the delay down a bit" from a fictional 0.85 is an increase), so an
+  # unanswered volume query says so instead.
+  defp volume_field(nil), do: "volume unknown (a reply was lost — try get_session_state again)"
+  defp volume_field(value), do: "volume=#{round_volume(value)}"
 
   @doc """
   Send index → the letter Live's mixer prints on it: send 0 = A, send 1 = B.
@@ -817,10 +829,14 @@ defmodule Seshat.Tools.Handlers do
              @return_extension_hint
            ),
          :ok <- Transport.send_message("/live/return_track/set/volume", [index, value / 1.0]) do
+      # Label first, refresh second: `refresh/0` is a cast, so a `State` call made
+      # after it queues behind the whole re-query and would time out into a blank
+      # label on a slow refresh. The name doesn't change here anyway.
+      label = return_track_label(index)
       State.refresh()
 
       {:ok,
-       "Set volume on return track #{index}#{return_track_label(index)} to #{value} " <>
+       "Set volume on return track #{index}#{label} to #{value} " <>
          "(#{volume_display(value)}) — was #{format_number(old)} (#{volume_display(old)})"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
@@ -1350,7 +1366,16 @@ defmodule Seshat.Tools.Handlers do
 
   # One name query per return plus one send query per return. Tiny replies, and
   # the return count is capped at 12 by Live.
-  defp read_sends(_track, count) when count < 1, do: {:ok, []}
+  #
+  # With no returns there are no sends to read, but the track index still gets
+  # checked: otherwise a typo'd track comes back as "this set has no return
+  # tracks" — true, and not the question that was asked.
+  defp read_sends(track, count) when count < 1 do
+    with {:ok, _name} <-
+           query_echoed("/live/track/get/name", [track], "track #{track}", @track_index_hint) do
+      {:ok, []}
+    end
+  end
 
   defp read_sends(track, count) do
     result =
@@ -1523,7 +1548,7 @@ defmodule Seshat.Tools.Handlers do
         {echoed, payload} = Enum.split(values, length(indices))
 
         if indices_match?(echoed, indices) do
-          case unwrap(payload) do
+          case unwrap_payload(payload) do
             {:ok, value} -> {:ok, value}
             {:error, message} -> {:error, remote_error(message)}
             :unexpected_shape -> reissue_or_give_up(address, indices, subject, hint, reissued?)
@@ -1539,14 +1564,23 @@ defmodule Seshat.Tools.Handlers do
     :exit, _ -> {:error, guard_timeout_error(subject, hint)}
   end
 
-  # Upstream getters reply with the value alone. Seshat's own return/master
-  # getters wrap it in browser.py's ok/error envelope, so an index that doesn't
-  # exist comes back as a message instead of the silence upstream produces —
-  # immediately, and distinguishably from an extension that was never installed.
-  defp unwrap([value]), do: {:ok, value}
-  defp unwrap(["ok", value]), do: {:ok, value}
-  defp unwrap(["error", message]) when is_binary(message), do: {:error, message}
-  defp unwrap(_other), do: :unexpected_shape
+  @doc """
+  Reads the value out of a getter reply, once the echoed indices have been
+  stripped off the front.
+
+  Upstream getters reply with the value alone. Seshat's own return/master getters
+  wrap it in browser.py's ok/error envelope, so an index that doesn't exist comes
+  back as a message instead of the silence upstream produces — immediately, and
+  distinguishably from an extension that was never installed.
+
+  `:unexpected_shape` means the reply is not one this code knows how to read,
+  which the caller treats as a crossed wire rather than an answer.
+  """
+  @spec unwrap_payload(list()) :: {:ok, term()} | {:error, String.t()} | :unexpected_shape
+  def unwrap_payload([value]), do: {:ok, value}
+  def unwrap_payload(["ok", value]), do: {:ok, value}
+  def unwrap_payload(["error", message]) when is_binary(message), do: {:error, message}
+  def unwrap_payload(_other), do: :unexpected_shape
 
   defp remote_error(message) do
     "#{message}. Nothing further was sent — check get_session_state for the indices that " <>

@@ -613,6 +613,53 @@ defmodule Seshat.Tools.HandlersTest do
       assert result =~ "create_return_track"
       assert result =~ "Master: volume=0.6"
     end
+
+    # A guessed fader position reads as real, and the model does relative moves
+    # off it — "turn the delay down a bit" from a fictional 0.85 is an increase.
+    test "a return whose volume query went unanswered says so instead of guessing" do
+      returns = [
+        %{index: 0, name: "A-Reverb", volume: 0.85},
+        %{index: 1, name: "B-Delay", volume: nil}
+      ]
+
+      result = Handlers.format_return_tracks(returns, %{volume: 0.85})
+
+      assert result =~ ~s{Return 0 "A-Reverb" (send A): volume=0.85}
+      assert result =~ ~s{Return 1 "B-Delay" (send B): volume unknown}
+      refute result =~ ~s{"B-Delay" (send B): volume=}
+    end
+  end
+
+  describe "unwrap_payload/1" do
+    test "an upstream getter's bare value" do
+      assert Handlers.unwrap_payload([0.42]) == {:ok, 0.42}
+      assert Handlers.unwrap_payload(["A-Reverb"]) == {:ok, "A-Reverb"}
+    end
+
+    test "the vendored extension's ok envelope" do
+      assert Handlers.unwrap_payload(["ok", 0.85]) == {:ok, 0.85}
+    end
+
+    # This is the whole point of the envelope: a bad index answers immediately
+    # and distinguishably, instead of the silence that would be indistinguishable
+    # from a missing `mix abletonosc.install`.
+    test "the vendored extension's error envelope carries the message back" do
+      assert Handlers.unwrap_payload(["error", "Return track 4 does not exist"]) ==
+               {:error, "Return track 4 does not exist"}
+    end
+
+    # A return track named "ok" must not be mistaken for an envelope, and vice
+    # versa — the arity is what separates them, not the string.
+    test "a value that happens to read like an envelope tag is still a value" do
+      assert Handlers.unwrap_payload(["ok"]) == {:ok, "ok"}
+      assert Handlers.unwrap_payload(["ok", "error"]) == {:ok, "error"}
+    end
+
+    test "anything else is a shape this code can't read, not an answer" do
+      assert Handlers.unwrap_payload([]) == :unexpected_shape
+      assert Handlers.unwrap_payload(["error", 42]) == :unexpected_shape
+      assert Handlers.unwrap_payload([1, 2, 3]) == :unexpected_shape
+    end
   end
 
   # The six sends/returns/master tools each guard Ableton with a

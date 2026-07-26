@@ -915,7 +915,8 @@ defmodule Seshat.Tools.Definitions do
           "return 0 = send A). " <>
           "Live allows at most 12 return tracks; the tool errors at the cap. " <>
           "The new return is empty — Seshat cannot yet load a device onto a return track, so " <>
-          "ask the user to drop the effect onto it in Live.",
+          "ask the user to drop the effect onto it in Live. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
       parameters: %{
         type: "object",
         properties: %{
@@ -935,7 +936,8 @@ defmodule Seshat.Tools.Definitions do
           "Return-track indices are 0-based and separate from regular track indices: return 0 " <>
           "= the first return = send A (see get_session_state). " <>
           "Deleting a return shifts the indices and send letters of the returns after it — " <>
-          "re-check get_session_state afterwards.",
+          "re-check get_session_state afterwards. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
       parameters: %{
         type: "object",
         properties: %{
@@ -956,7 +958,8 @@ defmodule Seshat.Tools.Definitions do
           "A's return (see get_session_state). " <>
           "Same fader scale as set_track_volume: 0.0 = silence, 0.85 = unity gain (0 dB), " <>
           "1.0 = +6 dB. " <>
-          "To change how much one track feeds the effect, use set_track_send instead.",
+          "To change how much one track feeds the effect, use set_track_send instead. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
       parameters: %{
         type: "object",
         properties: %{
@@ -983,7 +986,8 @@ defmodule Seshat.Tools.Definitions do
           "Same fader scale as set_track_volume: 0.0 = silence, 0.85 = unity gain (0 dB, where " <>
           "a new set sits), 1.0 = +6 dB. " <>
           "Lower this if the master is clipping; prefer track volumes and sends for balance " <>
-          "moves.",
+          "moves. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
       parameters: %{
         type: "object",
         properties: %{

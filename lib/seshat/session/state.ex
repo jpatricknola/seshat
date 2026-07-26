@@ -36,7 +36,9 @@ defmodule Seshat.Session.State do
 
   @doc """
   Return tracks, in send order — `%{index, name, volume}`, where return 0 is
-  send A on every regular track. Empty when the extension isn't answering.
+  send A on every regular track. Empty when the extension isn't answering, and a
+  single entry's `volume` is `nil` when that one query went unanswered — never a
+  guessed number.
   """
   def return_tracks, do: GenServer.call(__MODULE__, :return_tracks)
 
@@ -229,7 +231,7 @@ defmodule Seshat.Session.State do
             transport,
             "/live/return_track/get/volume",
             i,
-            0.85,
+            nil,
             @return_probe_timeout
           )
       }
@@ -289,11 +291,19 @@ defmodule Seshat.Session.State do
   # `"error"` payload doesn't match it and falls through to the default, which is
   # right — the only way to ask this extension for an index it doesn't have is to
   # race a return being deleted mid-refresh.
+  #
+  # Every echoed index is checked against the one asked for, the same reason
+  # `Handlers.query_echoed/5` does it: Transport correlates replies by address
+  # alone and holds one query at a time, so a reply abandoned by an earlier
+  # timeout can land while the next index's query is pending. Unchecked, that
+  # hangs return 0's name on return 1 — a wrong answer that looks like a right
+  # one. Compared with `==` rather than pinned, matching Handlers: these callers
+  # always send integers, but a float index would still come back as an integer.
   defp query_string(transport, address, index, default, timeout \\ @query_timeout) do
     case probe(transport, address, [index], timeout) do
       {:ok, [s]} when is_binary(s) -> s
-      {:ok, [_idx, s]} when is_binary(s) -> s
-      {:ok, [_idx, "ok", s]} when is_binary(s) -> s
+      {:ok, [idx, s]} when idx == index and is_binary(s) -> s
+      {:ok, [idx, "ok", s]} when idx == index and is_binary(s) -> s
       _ -> default
     end
   end
@@ -301,8 +311,8 @@ defmodule Seshat.Session.State do
   defp query_float(transport, address, index, default, timeout \\ @query_timeout) do
     case probe(transport, address, [index], timeout) do
       {:ok, [v]} when is_float(v) -> v
-      {:ok, [_idx, v]} when is_float(v) -> v
-      {:ok, [_idx, "ok", v]} when is_float(v) -> v
+      {:ok, [idx, v]} when idx == index and is_float(v) -> v
+      {:ok, [idx, "ok", v]} when idx == index and is_float(v) -> v
       _ -> default
     end
   end
@@ -310,11 +320,11 @@ defmodule Seshat.Session.State do
   defp query_int(transport, address, index, default, timeout \\ @query_timeout) do
     case probe(transport, address, [index], timeout) do
       {:ok, [v]} when is_integer(v) -> v
-      {:ok, [_idx, v]} when is_integer(v) -> v
+      {:ok, [idx, v]} when idx == index and is_integer(v) -> v
       {:ok, [true]} -> 1
       {:ok, [false]} -> 0
-      {:ok, [_idx, true]} -> 1
-      {:ok, [_idx, false]} -> 0
+      {:ok, [idx, true]} when idx == index -> 1
+      {:ok, [idx, false]} when idx == index -> 0
       _ -> default
     end
   end

@@ -27,7 +27,10 @@ exist because a typo'd address looks exactly like success.
   goes there the same way.
 - **A vendored getter always replies, including on its error paths** — an
   `[..., "ok", value]` / `[..., "error", message]` envelope, echoing whatever
-  index it was asked about. Upstream's habit of raising inside the callback and
+  index it was asked about. The exception is a getter that takes no index
+  (`/live/return_track/get/count`, `/live/master/get/volume`): with nothing to
+  look up there is no failure to report, so those reply with the bare value and
+  no envelope. Upstream's habit of raising inside the callback and
   sending nothing is wrong for an *optional* extension: silence would mean both
   "bad index" and "the user never ran `mix abletonosc.install`", and cost a full
   guard timeout to distinguish neither. With the envelope, an error reply is a

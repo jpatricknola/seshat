@@ -179,18 +179,29 @@ defmodule Seshat.Commands.Registry do
       "get_session_state for an unnamed extra return before creating another."
   end
 
-  # Live caps a set at 12 return tracks. Whether the LOM call raises or no-ops at
-  # the cap, the count is the observable truth either way.
-  defp ensure_created(before_count, after_count) when after_count > before_count, do: :ok
+  @doc """
+  Decides whether `/live/song/create_return_track` actually created one, from
+  the return-track count either side of it.
 
-  defp ensure_created(before_count, _after_count) when before_count >= 12 do
+  Live caps a set at 12 return tracks. Whether the LOM call raises or no-ops at
+  the cap is undocumented and version-dependent, so the count is the observable
+  truth either way — and the reason for a non-create matters, because "you're at
+  Live's limit" and "the message didn't land" ask the user for different things.
+
+  Public because it is the pure half of a sequence that otherwise needs a live
+  Ableton to reach.
+  """
+  @spec ensure_created(non_neg_integer(), non_neg_integer()) :: :ok | {:error, String.t()}
+  def ensure_created(before_count, after_count) when after_count > before_count, do: :ok
+
+  def ensure_created(before_count, _after_count) when before_count >= 12 do
     {:error,
      "Ableton did not create a return track — the set is already at Live's limit of 12 " <>
        "return tracks. Nothing was created or renamed. Delete a return you no longer need " <>
        "with delete_return_track first."}
   end
 
-  defp ensure_created(before_count, after_count) do
+  def ensure_created(before_count, after_count) do
     {:error,
      "Ableton did not create a return track — the count went from #{before_count} to " <>
        "#{after_count}, which is below Live's 12-return limit, so the create message may not " <>
