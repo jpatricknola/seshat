@@ -13,7 +13,9 @@ defmodule Seshat.Tools.Definitions do
         "Set the stereo panning position of a track in Ableton Live. " <>
           "Track indices are 0-based: 'track 1' = index 0. " <>
           "Value ranges from -1.0 (full left) through 0.0 (center) to 1.0 (full right). " <>
-          "Common mappings: 'hard left' = -1.0, 'slightly left' = -0.3, 'center' = 0.0, 'hard right' = 1.0.",
+          "Common mappings: 'hard left' = -1.0, 'slightly left' = -0.3, 'center' = 0.0, 'hard right' = 1.0. " <>
+          "The reply echoes the position as Live displays it (50L / C / 50R) — check it against " <>
+          "what the user asked for.",
       parameters: %{
         type: "object",
         properties: %{
@@ -33,8 +35,13 @@ defmodule Seshat.Tools.Definitions do
       description:
         "Set the volume level of a track in Ableton Live. " <>
           "Track indices are 0-based: 'track 1' = index 0. " <>
-          "Value ranges from 0.0 (silence) to 1.0 (full volume). " <>
-          "Common mappings: 'off'/'silent' = 0.0, 'half' = 0.5, 'full'/'max' = 1.0.",
+          "The 0.0-1.0 range is Live's fader scale, which is NOT linear and does NOT top out at " <>
+          "unity: 0.85 is unity gain (0 dB, where a new track sits) and 1.0 is +6 dB of boost. " <>
+          "Common mappings: 'off'/'silent' = 0.0, 'quiet' = 0.6 (about -10 dB), " <>
+          "'normal'/'unity'/'full' = 0.85 (0 dB), 'max'/'boost' = 1.0 (+6 dB). " <>
+          "Prefer 0.85 for 'turn it up all the way' unless the user actually wants it pushed " <>
+          "past unity. The reply echoes the approximate dB value — check it against what the " <>
+          "user asked for.",
       parameters: %{
         type: "object",
         properties: %{
@@ -43,7 +50,8 @@ defmodule Seshat.Tools.Definitions do
             type: "number",
             minimum: 0.0,
             maximum: 1.0,
-            description: "Volume level. 0.0 = silence, 1.0 = full volume"
+            description:
+              "Fader position. 0.0 = silence, 0.85 = unity gain (0 dB), 1.0 = +6 dB (maximum boost)"
           }
         },
         required: ["track", "value"]
@@ -143,7 +151,9 @@ defmodule Seshat.Tools.Definitions do
           "For chords, add multiple notes with the same start_beat and duration. " <>
           "Common chord intervals from root: major [0,4,7], minor [0,3,7], 7th [0,4,7,10], m7 [0,3,7,10], maj7 [0,4,7,11]. " <>
           "Use get_session_state first to resolve track names to indices and to check the current time signature. " <>
-          "Use get_clip_slots first to pick an empty slot on an actually-MIDI track — this tool fails silently on audio tracks.",
+          "Use get_clip_slots first to pick an empty slot on an actually-MIDI track: writing to " <>
+          "an audio track or a group track is rejected with an error and nothing is written. " <>
+          "Clip slot N sits in scene N — slot 0 is the first scene.",
       parameters: %{
         type: "object",
         properties: %{
@@ -300,9 +310,10 @@ defmodule Seshat.Tools.Definitions do
       name: "fire_clip",
       description:
         "Launch/fire a clip in Ableton Live. " <>
-          "Track indices are 0-based. Clip slot (scene) is 0-based: scene 1 = 0. " <>
-          "Use get_clip_slots first to see which slots actually hold clips — firing an " <>
-          "empty slot just stops the track.",
+          "Track indices are 0-based. Clip slot N sits in scene N, also 0-based: scene 1 = slot 0. " <>
+          "Use get_clip_slots first to see which slots actually hold clips: firing an empty slot " <>
+          "would stop the track rather than start anything, so this tool rejects it with an " <>
+          "error. Use stop_clip if stopping was the intent.",
       parameters: %{
         type: "object",
         properties: %{
@@ -316,7 +327,7 @@ defmodule Seshat.Tools.Definitions do
       name: "stop_clip",
       description:
         "Stop a playing clip in Ableton Live. " <>
-          "Track indices are 0-based. Clip slot (scene) is 0-based. " <>
+          "Track indices are 0-based. Clip slot N sits in scene N, also 0-based: scene 1 = slot 0. " <>
           "Use get_clip_slots first to see which clips are actually playing.",
       parameters: %{
         type: "object",
@@ -331,6 +342,7 @@ defmodule Seshat.Tools.Definitions do
       name: "delete_clip",
       description:
         "Delete a clip from a clip slot in Ableton Live. " <>
+          "Clip slot N sits in scene N, both 0-based: scene 1 = slot 0. " <>
           "Use get_clip_slots first to confirm which slot holds the clip you mean to delete.",
       parameters: %{
         type: "object",
@@ -345,6 +357,7 @@ defmodule Seshat.Tools.Definitions do
       name: "duplicate_clip",
       description:
         "Duplicate a clip to another slot in Ableton Live. " <>
+          "Clip slot N sits in scene N, both 0-based: scene 1 = slot 0. " <>
           "Use get_clip_slots first to find the source clip and an empty target slot — " <>
           "duplicating onto an occupied slot overwrites it.",
       parameters: %{
@@ -363,7 +376,10 @@ defmodule Seshat.Tools.Definitions do
     },
     %{
       name: "set_clip_name",
-      description: "Rename a clip in Ableton Live.",
+      description:
+        "Rename a clip in Ableton Live. " <>
+          "Clip slot N sits in scene N, both 0-based: scene 1 = slot 0. " <>
+          "Use get_clip_slots first to confirm which slot holds the clip.",
       parameters: %{
         type: "object",
         properties: %{
@@ -480,7 +496,8 @@ defmodule Seshat.Tools.Definitions do
       description:
         "Remove MIDI notes from a clip in Ableton Live. " <>
           "With no range specified, removes ALL notes. " <>
-          "Optionally specify a pitch and time range to remove specific notes.",
+          "Optionally specify a pitch and time range to remove specific notes. " <>
+          "Track indices are 0-based, and clip slot N sits in scene N: scene 1 = slot 0.",
       parameters: %{
         type: "object",
         properties: %{
@@ -504,7 +521,9 @@ defmodule Seshat.Tools.Definitions do
       name: "get_clip_notes",
       description:
         "Read the MIDI notes in a clip in Ableton Live. " <>
-          "Track indices are 0-based; clip_slot defaults to 0. " <>
+          "Track indices are 0-based; clip slot N sits in scene N (scene 1 = slot 0) and " <>
+          "clip_slot defaults to 0. When talking to the user, refer to tracks and scenes by " <>
+          "name or by their 1-based numbers as shown in Live, not by these indices. " <>
           "Returns every note as pitch (with note name), start beat, duration in beats, " <>
           "velocity, and whether the note is muted, plus the clip's name and length. " <>
           "ALWAYS call this before editing existing material — transposing, fixing a note, " <>
@@ -715,7 +734,9 @@ defmodule Seshat.Tools.Definitions do
           "('the reverb') to the device index that get_device_parameters and " <>
           "set_device_parameter need, or to check whether a track has an instrument at all. " <>
           "Racks (e.g. an Instrument Rack preset) appear as a single device — their inner " <>
-          "chain is not listed.",
+          "chain is not listed. " <>
+          "When talking to the user, refer to tracks by name or 1-based UI number, never raw " <>
+          "index.",
       parameters: %{
         type: "object",
         properties: %{
@@ -734,7 +755,9 @@ defmodule Seshat.Tools.Definitions do
           "Use this before set_device_parameter to resolve a parameter name ('the filter " <>
           "cutoff') to its index and to learn the legal value range. " <>
           "Values are Ableton's internal units — often normalized 0.0–1.0, but not always; " <>
-          "trust the min/max in the output, not an assumption.",
+          "trust the min/max in the output, not an assumption. " <>
+          "When talking to the user, refer to tracks and devices by name or 1-based UI number, " <>
+          "never raw index.",
       parameters: %{
         type: "object",
         properties: %{
@@ -812,7 +835,9 @@ defmodule Seshat.Tools.Definitions do
           "Track type matters: write_midi_notes only works on MIDI tracks; " <>
           "group tracks hold no clips of their own. " <>
           "Returns only regular tracks (no return/master tracks — those have no " <>
-          "clip slots).",
+          "clip slots). " <>
+          "When talking to the user, refer to tracks and scenes by name or 1-based " <>
+          "UI number, never raw index.",
       parameters: %{type: "object", properties: %{}, required: []}
     }
   ]

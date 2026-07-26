@@ -496,6 +496,58 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "volume_display/1" do
+    # Live's fader is not linear and 1.0 is not the ceiling — the whole point of
+    # echoing dB is that "set it to full" means 0.85, not 1.0.
+    test "0.85 is unity gain" do
+      assert Handlers.volume_display(0.85) == "≈ 0 dB"
+    end
+
+    test "1.0 is +6 dB, not the maximum the raw value suggests" do
+      assert Handlers.volume_display(1.0) == "≈ +6 dB"
+    end
+
+    test "0.4 is the bottom of the near-linear range" do
+      assert Handlers.volume_display(0.4) == "≈ -18 dB"
+    end
+
+    test "below the linear range it gives a bound rather than a wrong number" do
+      assert Handlers.volume_display(0.2) == "≈ below -18 dB"
+    end
+
+    test "zero is silence" do
+      assert Handlers.volume_display(0.0) == "silence"
+      assert Handlers.volume_display(0) == "silence"
+    end
+
+    test "rounds to one decimal" do
+      assert Handlers.volume_display(0.9) == "≈ +2 dB"
+      assert Handlers.volume_display(0.5) == "≈ -14 dB"
+      assert Handlers.volume_display(0.83) == "≈ -0.8 dB"
+    end
+  end
+
+  describe "pan_display/1" do
+    test "hard left and hard right in Live's own notation" do
+      assert Handlers.pan_display(-1.0) == "50L"
+      assert Handlers.pan_display(1.0) == "50R"
+    end
+
+    test "centre" do
+      assert Handlers.pan_display(0.0) == "C"
+      assert Handlers.pan_display(0) == "C"
+    end
+
+    test "partial pans" do
+      assert Handlers.pan_display(-0.5) == "25L"
+      assert Handlers.pan_display(0.5) == "25R"
+    end
+
+    test "a pan too small to register reads as centre, not 0L" do
+      assert Handlers.pan_display(-0.001) == "C"
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})
