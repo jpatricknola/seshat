@@ -40,13 +40,27 @@ measured against a real 8,222-row catalog and ordered by impact.
 - **Ranking has almost no signal.** `score/1` is `name_score(0|2|4) +
   tag_source(0|1) + min(use_count, 3)`, and in practice the middle term is
   always 1 and the last always 0 — so a match set collapses into two score
-  bands. In 5 of 6 realistic searches **zero** slots were decided by score;
-  all 25 came from the alphabetical `&1.name` tie-break among 100–160 tied
-  entries. "electric piano" keeps three Ac Piano Uprights and drops E-Piano
-  Classic, because "Ac" sorts before "E-". Available and unused: how many
-  requested tags matched, whole-token vs substring hits, name vs path vs the
-  `description` credit line, category fit. Make the tie-break deterministic
-  (`uri`) while there — but the goal is to make ties rare.
+  bands. Re-measured *after* the fold, on the folded catalog: in 5 of 6
+  realistic searches **zero** slots were decided by score; all 25 came from
+  the alphabetical `&1.name` tie-break among 47–86 entries tied at the top
+  band. Folding halved the match sets ("electric piano" 294 → 127) but they
+  are still 4–7× the 25-slot cap, so it did not dent this. The effective
+  behaviour is *filter, sort alphabetically, take 25*:
+
+  ```
+  query                    score bands          slots by score / alphabetical
+  electric piano           score5:70 score1:57            0 / 25
+  a distorted guitar amp   score5:70 score1:117           0 / 25
+  an 808 bass              score5:86 score1:10            0 / 25
+  a bright synth lead      score5:49 score1:52            0 / 25
+  a soft evolving pad      score5:47 score1:19            0 / 25
+  plucked strings          score5:1  score1:175           1 / 24
+  ```
+
+  Available and unused: how many requested tags matched, whole-token vs
+  substring hits, name vs path vs the `description` credit line, category fit.
+  Make the tie-break deterministic (`uri`) while there — but the goal is to
+  make ties rare, not merely stable.
 - **Tags filter when they should score.** `matches_tags?` is a strict AND, so
   one tag the library doesn't have zeroes the whole search. Scoring tag
   overlap instead fixes the zero-result failure *and* supplies the signal the
@@ -64,6 +78,13 @@ measured against a real 8,222-row catalog and ordered by impact.
   is an empty library or a broken walk — if the latter, a whole class of
   sounds is invisible. `samples` is excluded by design, so "a vinyl crackle"
   is unfindable.
+
+**Suggested order.** Tag scoring and ranking are one piece of work, not two:
+softening the AND is what supplies the signal the scorer needs, and doing
+ranking first means inventing a tie-break for a match set that a tag score
+would have separated anyway. The vocabulary fix is independent and much
+smaller — a good warm-up, or a standalone if you want the zero-result failure
+gone today. Coverage is a question to answer before it is work to schedule.
 
 Not planned: embeddings or a semantic index. The LLM is already the semantic
 layer and has the musical context; the failure is that truncation and
