@@ -1,11 +1,21 @@
+> **Archived 2026-07-26 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The guards
+> (`ensure_midi_track/1`, the `fire_clip` empty-slot check) and the display
+> helpers (`volume_display/1`, `pan_display/1`) live in
+> `Seshat.Tools.Handlers`, with the description work in
+> `Seshat.Tools.Definitions` — merged in #15. The audit items this plan
+> deliberately declined stay recorded in [TOOL_AUDIT.md](../TOOL_AUDIT.md);
+> the coverage gaps it excluded are tracked on
+> [ROADMAP.md](../ROADMAP.md).
+
 # Plan — Tool audit fixes
 
-Follow-ups from [TOOL_AUDIT.md](TOOL_AUDIT.md) (25 Jul 2026). Scope:
+Follow-ups from [TOOL_AUDIT.md](../TOOL_AUDIT.md) (25 Jul 2026). Scope:
 the correctness and description fixes on **existing** tools — the two silent
 failures, the misleading volume scale, and a small description-consistency
 pass. **No new tools here**: every coverage gap the audit found (sends,
 device removal, record/capture, per-clip properties, quantize, time
-signature, …) is prioritised on [ROADMAP.md](ROADMAP.md) instead.
+signature, …) is prioritised on [ROADMAP.md](../ROADMAP.md) instead.
 
 Explicitly **not** doing (audit calls them optional, declining on purpose):
 
@@ -23,7 +33,7 @@ Explicitly **not** doing (audit calls them optional, declining on purpose):
 
 ## OSC contract
 
-Addresses verified against [abletonosc-api-docs.md](abletonosc-api-docs.md).
+Addresses verified against [abletonosc-api-docs.md](../abletonosc-api-docs.md).
 Both are already used by `Handlers` (`track_data` properties, `ensure_clip/2`).
 
 | Address | Request args | Reply |
@@ -53,7 +63,7 @@ success.
    silently on audio tracks" with the new behavior ("errors if the track is
    an audio track"), keeping the "use get_clip_slots first to pick an empty
    slot on a MIDI track" advice.
-4. Update [validation-script.md](validation-script.md) (~line 461): the
+4. Update [validation-script.md](../validation-script.md) (~line 461): the
    deliberate-misuse step currently expects the *agent* to notice the silent
    failure; after this the *tool* errors — reword the expected outcome.
 
@@ -64,7 +74,7 @@ counting `Registry.ensure_clip/3`'s `has_clip`.) One bulk
 `/live/song/get/track_data` could carry both properties in a single query, but
 its reply is a bare value list with no index echo, so it can't be checked
 against the track asked about — see the reply-correlation note in
-[ableton-osc-reference.md](../.claude/docs/ableton-osc-reference.md). Sub-ms
+[ableton-osc-reference.md](../../.claude/docs/ableton-osc-reference.md). Sub-ms
 loopback round trips are the cheaper thing to spend. Worth it either way — this
 is the tool's only guard.
 

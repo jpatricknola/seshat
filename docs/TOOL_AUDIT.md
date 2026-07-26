@@ -5,7 +5,8 @@ _Living doc · MCP design review · 41 tools reviewed · 25 Jul 2026 — update 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
 > `set_track_volume` states the real scale and echoes dB, as does
-> `set_track_pan` in L/R) — see [PLAN_audit_fixes.md](PLAN_audit_fixes.md).
+> `set_track_pan` in L/R) — see
+> [archive/PLAN_audit_fixes.md](archive/PLAN_audit_fixes.md).
 > The `search_library` ⟷ `list_browser_items` routing note turned out to be
 > already present on both sides. The optional merges were declined on purpose.
 > What remains from this audit is §02, now tracked on
