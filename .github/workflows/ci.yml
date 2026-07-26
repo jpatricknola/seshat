@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  up-to-date:
+    name: Branch up to date with base
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need real history on both sides to test the ancestor relationship.
+          fetch-depth: 0
+
+      - name: Assert base branch is merged into this branch
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          BASE_SHA=$(git rev-parse "origin/$BASE_REF")
+          if git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA"; then
+            echo "Branch contains origin/$BASE_REF ($BASE_SHA) — up to date."
+          else
+            BEHIND=$(git rev-list --count "$HEAD_SHA..$BASE_SHA")
+            echo "::error::This branch is $BEHIND commit(s) behind origin/$BASE_REF."
+            echo "Merge or rebase onto origin/$BASE_REF and push again."
+            exit 1
+          fi
+
+  test:
+    name: Compile, format, test
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read .tool-versions
+        id: versions
+        run: |
+          echo "elixir=$(awk '/^elixir /{print $2}' .tool-versions)" >> "$GITHUB_OUTPUT"
+          echo "otp=$(awk '/^erlang /{print $2}' .tool-versions)" >> "$GITHUB_OUTPUT"
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ steps.versions.outputs.elixir }}
+          otp-version: ${{ steps.versions.outputs.otp }}
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ steps.versions.outputs.otp }}-${{ steps.versions.outputs.elixir }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-${{ steps.versions.outputs.otp }}-${{ steps.versions.outputs.elixir }}-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check for unused deps
+        run: mix deps.unlock --check-unused
+
+      - name: Compile with warnings as errors
+        run: mix compile --warnings-as-errors
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Run tests
+        run: mix test
