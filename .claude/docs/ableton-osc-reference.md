@@ -92,9 +92,13 @@ adding properties.
 ## Queries that raise instead of replying
 
 Some queries make AbletonOSC raise internally, which on UDP looks identical to
-a wrong address: no reply, 5s timeout. Guard rather than diagnose after the
-fact:
+a wrong address: **no reply at all**, then a timeout. Guard rather than diagnose
+after the fact:
 
+- **An index that doesn't exist** — a track, slot, or scene index past the end
+  of the set raises `IndexError` inside the callback and nothing is sent. This is
+  the single most common cause of a query timeout, so guard error messages should
+  lead with "check the index", not "is Ableton running".
 - **Clip queries against an empty slot** (`.clip` is `None` upstream) — check
   `/live/clip_slot/get/has_clip` first, as `get_clip_notes` and
   `Registry.ensure_clip/3` do. Notes queries against an *audio* clip likewise
@@ -102,3 +106,32 @@ fact:
 - **`/live/clip/get/notes` range args are all-or-nothing** — the handler raises
   unless it gets exactly 0 or 4 of `start_pitch, pitch_span, start_time,
   time_span`. If any is given, fill all four (`Handlers.note_range_args/1`).
+
+Guards that exist only to turn a silent failure into an error use a **2s
+timeout** (`@guard_timeout` in `Handlers`, `@slot_query_timeout` in `Registry`),
+not Transport's 5s default: the branch they are protecting is the error branch,
+and a typo'd index shouldn't stall a write for five seconds. Each guard catches
+its own timeout — a `catch` on the calling handler clause would also cover the
+work that runs *after* the guard, so a later failure would come back wearing the
+guard's error message.
+
+## Replies are correlated by address alone
+
+`Transport` keeps **one** pending query and matches an incoming message to it by
+address only — there is no request id on the wire. Two consequences:
+
+- **A timed-out query's reply can answer the next one.** The abandoned `from`
+  stays in `pending` until the next query overwrites it, so a late reply to query
+  A can be handed to query B on the same address. Anything that reads a property
+  per index must check the indices echoed in the reply against the ones it asked
+  about (`Handlers.query_flag/3`, `Registry.ensure_clip/3`), and reissue rather
+  than trust a mismatch. Compare with `==`, not a pin: a float index reaches
+  Ableton fine and comes back as an integer.
+- **Bulk replies can't be checked this way.** `/live/song/get/track_data` answers
+  with a bare value list and no index echo, so it can't be validated against the
+  request. Prefer per-index getters where the answer gates a mutation.
+- **Listener pushes share the getter's address.** `/live/track/start_listen/volume`
+  pushes arrive on `/live/track/get/volume`, so a push can satisfy a pending query
+  for the same property. The properties `Session.State` listens to are in
+  `@listened_properties` / `@listened_song_properties` — keep gating queries off
+  that list where there's a choice.

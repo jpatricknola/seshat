@@ -57,8 +57,16 @@ success.
    deliberate-misuse step currently expects the *agent* to notice the silent
    failure; after this the *tool* errors — reword the expected outcome.
 
-Cost: one extra round-trip per write (~ms, same pattern as
-`get_clip_notes`'s `ensure_clip`). Worth it — this is the tool's only guard.
+Cost: two extra round-trips per write, not one — `has_midi_input` is also true
+for a MIDI *group* track, which owns no clip slots, so `ensure_midi_track/1`
+follows up with `/live/track/get/is_foldable`. (A write is now three queries
+counting `Registry.ensure_clip/3`'s `has_clip`.) One bulk
+`/live/song/get/track_data` could carry both properties in a single query, but
+its reply is a bare value list with no index echo, so it can't be checked
+against the track asked about — see the reply-correlation note in
+[ableton-osc-reference.md](../.claude/docs/ableton-osc-reference.md). Sub-ms
+loopback round trips are the cheaper thing to spend. Worth it either way — this
+is the tool's only guard.
 
 ## Part 2 — `fire_clip` guards the empty slot (Medium)
 

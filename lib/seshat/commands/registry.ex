@@ -65,7 +65,14 @@ defmodule Seshat.Commands.Registry do
   # correlates replies by address alone, so a reply abandoned by an earlier
   # timeout can arrive while a later query for the same address is pending, and
   # acting on another slot's answer would create a clip over the wrong material.
-  defp ensure_clip(track, slot, length) do
+  # A mismatch reissues the query once — consuming the stale reply also clears
+  # Transport's `pending`, so our own answer is usually already on the wire behind
+  # it — and only a second mismatch is reported.
+  #
+  # The timeout is caught here rather than by the calling handler clause, which
+  # can't tell a slot lookup that never answered from a transport that stopped
+  # answering later in the sequence.
+  defp ensure_clip(track, slot, length, reissued? \\ false) do
     case Transport.query("/live/clip_slot/get/has_clip", [track, slot], @slot_query_timeout) do
       {:ok, {_addr, [reply_track, reply_slot, has_clip]}}
       when reply_track == track and reply_slot == slot ->
@@ -76,14 +83,24 @@ defmodule Seshat.Commands.Registry do
           Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
         end
 
+      {:ok, _mismatched} when not reissued? ->
+        ensure_clip(track, slot, length, true)
+
       {:ok, _mismatched} ->
         {:error,
-         "Ableton's reply about slot #{slot} on track #{track} was for a different slot — it " <>
-           "belongs to an earlier query that timed out. Nothing was written; try again."}
+         "Ableton's replies about slot #{slot} on track #{track} were for a different slot, " <>
+           "twice in a row — they belong to an earlier query that timed out. Nothing was " <>
+           "written; try again."}
 
       {:error, reason} ->
         {:error, reason}
     end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out looking up clip slot #{slot} on track #{track}, so no notes were written. A " <>
+         "slot index that doesn't exist gets no reply from Ableton at all, so check the slot " <>
+         "with get_clip_slots."}
   end
 
   defp add_notes(track, slot, notes) do

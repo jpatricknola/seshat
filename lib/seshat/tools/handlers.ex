@@ -434,8 +434,7 @@ defmodule Seshat.Tools.Handlers do
 
   defp format_db(db) do
     rounded = Float.round(db / 1.0, 1)
-    whole = trunc(rounded)
-    magnitude = if rounded == whole * 1.0, do: Integer.to_string(whole), else: "#{rounded}"
+    magnitude = if rounded == trunc(rounded), do: trunc(rounded), else: rounded
     sign = if rounded > 0, do: "+", else: ""
 
     "#{sign}#{magnitude} dB"
@@ -562,17 +561,19 @@ defmodule Seshat.Tools.Handlers do
       {:error, reason} -> {:error, inspect(reason)}
     end
   catch
-    # `ensure_midi_track/1` reports its own timeout, so an exit reaching here
-    # came from the clip lookup inside Registry — the track type already checked
-    # out, which leaves the slot index as the thing to doubt. (`slot` is bound in
-    # the body, which the implicit try can't see; only the head's params are in
-    # scope, so it is read back off `params`.)
+    # `ensure_midi_track/1` and Registry's own clip lookup each report their
+    # timeout, so an exit reaching here came from one of the fire-and-forget
+    # sends — the transport itself has stopped answering. Don't blame the indices
+    # for that; and say what may be left behind, since the clip is created before
+    # the notes are added. (`slot` is bound in the body, which the implicit try
+    # can't see; only the head's params are in scope, so it is read back off
+    # `params`.)
     :exit, _ ->
       {:error,
-       "Timed out looking up clip slot #{Map.get(params, "clip_slot", 0)} on track #{track}, " <>
-         "so no notes were written. The track type checked out, so the likely cause is a slot " <>
-         "index that doesn't exist — Ableton doesn't reply to those at all. Check the slot " <>
-         "with get_clip_slots."}
+       "Lost contact with the OSC transport while writing to clip slot " <>
+         "#{Map.get(params, "clip_slot", 0)} on track #{track}, so the notes were not written " <>
+         "and an empty clip may have been left in the slot. Check that Ableton is running with " <>
+         "AbletonOSC enabled, then try again."}
   end
 
   defp do_call("delete_track", %{"track" => track}) do
@@ -1107,44 +1108,35 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # --- Guards ---
+  #
   # Each guard catches its own timeout rather than leaving it to the caller: a
   # `catch` on the calling clause also covers the work that runs *after* the
   # guard, so a later timeout would come back wearing the guard's error message.
-  #
-  # The echoed indices are checked against the ones we asked about because
-  # Transport correlates replies by address alone and keeps only one query in
-  # flight — a reply abandoned by an earlier timeout can land while a later query
-  # for the same address is pending, and answering a guard for track 3 with track
-  # 0's data is exactly the silent wrong answer these guards exist to prevent.
-  # Compared with `==` rather than pinned: a float index still reaches Ableton
-  # fine (it casts to int) and comes back as an integer, so pinning would reject
-  # a reply that is in fact ours.
+  # All four read a single flag through `query_flag/3`, which is where the
+  # reply-correlation hazard is handled.
 
   # Message stays action-neutral: shared by the readers (get_clip_notes) and by
   # fire_clip. `hint` carries the caller's own advice about what an empty slot
   # means for *that* operation, and is appended only on the empty-slot branch —
   # a transport failure gets the bare reason, not misleading advice.
   defp ensure_clip(track, slot, hint \\ "") do
-    case Transport.query("/live/clip_slot/get/has_clip", [track, slot], @guard_timeout) do
-      {:ok, {_addr, [reply_track, reply_slot, has_clip]}}
-      when reply_track == track and reply_slot == slot ->
-        if truthy?(has_clip) do
-          :ok
-        else
-          {:error,
-           "Slot #{slot} on track #{track} is empty. Clip slots are 0-based, so scene 1 is " <>
-             "slot 0; check the slot and track index with get_clip_slots." <> hint}
-        end
+    case query_flag(
+           "/live/clip_slot/get/has_clip",
+           [track, slot],
+           "whether slot #{slot} on track #{track} holds a clip"
+         ) do
+      {:ok, true} ->
+        :ok
 
-      {:ok, _mismatched} ->
-        {:error, stale_reply_error("slot #{slot} on track #{track}")}
+      {:ok, false} ->
+        {:error,
+         "Slot #{slot} on track #{track} is empty. Clip slots are 0-based, so scene 1 is " <>
+           "slot 0; check the slot and track index with get_clip_slots." <> hint}
 
-      {:error, reason} ->
-        {:error, inspect(reason)}
+      {:error, message} ->
+        {:error, message}
     end
-  catch
-    :exit, _ ->
-      {:error, guard_timeout_error("whether slot #{slot} on track #{track} holds a clip")}
   end
 
   # Two properties, not one: `has_midi_input` is true for a group track built
@@ -1152,71 +1144,111 @@ defmodule Seshat.Tools.Handlers do
   # so without the second check the write is dropped and we report success,
   # which is the failure mode this guard exists to kill. Ordered so an audio
   # track still costs a single round trip.
+  #
+  # Two queries rather than one `/live/song/get/track_data` carrying both
+  # properties: that reply is a bare value list with no index echo, so it cannot
+  # be checked against the track we asked about. A second sub-millisecond
+  # loopback round trip is the cheaper thing to spend.
   defp ensure_midi_track(track) do
-    case Transport.query("/live/track/get/has_midi_input", [track], @guard_timeout) do
-      {:ok, {_addr, [reply_track, has_midi_input]}} when reply_track == track ->
-        if truthy?(has_midi_input) do
-          ensure_not_group_track(track)
-        else
-          {:error,
-           "Track #{track} is an audio track — MIDI notes can only be written to MIDI tracks, " <>
-             "so nothing was written. Check track types with get_clip_slots, and remember " <>
-             "track indices are 0-based."}
-        end
+    case query_flag("/live/track/get/has_midi_input", [track], "the type of track #{track}") do
+      {:ok, true} ->
+        ensure_not_group_track(track)
 
-      {:ok, _mismatched} ->
-        {:error, stale_reply_error("the type of track #{track}")}
+      {:ok, false} ->
+        {:error,
+         "Track #{track} is an audio track — MIDI notes can only be written to MIDI tracks, " <>
+           "so nothing was written. Check track types with get_clip_slots, and remember " <>
+           "track indices are 0-based."}
 
-      {:error, reason} ->
-        {:error, inspect(reason)}
+      {:error, message} ->
+        {:error, message}
     end
-  catch
-    :exit, _ -> {:error, guard_timeout_error("the type of track #{track}")}
   end
 
   defp ensure_not_group_track(track) do
-    case Transport.query("/live/track/get/is_foldable", [track], @guard_timeout) do
-      {:ok, {_addr, [reply_track, is_foldable]}} when reply_track == track ->
-        if truthy?(is_foldable) do
-          {:error,
-           "Track #{track} is a group track — it has no clip slots of its own, so nothing was " <>
-             "written. Write to one of the tracks inside the group instead; get_clip_slots " <>
-             "labels group tracks 'group'."}
-        else
-          :ok
-        end
+    case query_flag(
+           "/live/track/get/is_foldable",
+           [track],
+           "whether track #{track} is a group track"
+         ) do
+      {:ok, true} ->
+        {:error,
+         "Track #{track} is a group track — it has no clip slots of its own, so nothing was " <>
+           "written. Write to one of the tracks inside the group instead; get_clip_slots " <>
+           "labels group tracks 'group'."}
 
-      {:ok, _mismatched} ->
-        {:error, stale_reply_error("whether track #{track} is a group")}
+      {:ok, false} ->
+        :ok
 
-      {:error, reason} ->
-        {:error, inspect(reason)}
+      {:error, message} ->
+        {:error, message}
     end
-  catch
-    :exit, _ -> {:error, guard_timeout_error("whether track #{track} is a group track")}
   end
 
   defp ensure_midi_clip(track, slot) do
-    case Transport.query("/live/clip/get/is_midi_clip", [track, slot], @guard_timeout) do
-      {:ok, {_addr, [reply_track, reply_slot, is_midi]}}
-      when reply_track == track and reply_slot == slot ->
-        if truthy?(is_midi) do
-          :ok
-        else
-          {:error,
-           "The clip in slot #{slot} on track #{track} is an audio clip, not a MIDI clip, so " <>
-             "it has no notes to read."}
-        end
+    case query_flag(
+           "/live/clip/get/is_midi_clip",
+           [track, slot],
+           "whether the clip in slot #{slot} on track #{track} is MIDI"
+         ) do
+      {:ok, true} ->
+        :ok
 
-      {:ok, _mismatched} ->
-        {:error, stale_reply_error("the clip in slot #{slot} on track #{track}")}
+      {:ok, false} ->
+        {:error,
+         "The clip in slot #{slot} on track #{track} is an audio clip, not a MIDI clip, so " <>
+           "it has no notes to read."}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  # Reads one flag, and returns it only if the reply echoed back the indices we
+  # asked about. Transport correlates replies by address alone and keeps only one
+  # query in flight, so a reply abandoned by an earlier timeout can land while a
+  # later query for the same address is pending — answering a guard for track 3
+  # with track 0's data is exactly the silent wrong answer these guards exist to
+  # prevent.
+  #
+  # A mismatch reissues the query once rather than failing outright: consuming the
+  # stale reply also clears Transport's `pending`, so our own answer is usually
+  # already on the wire behind it and the second ask lands cleanly. Only a second
+  # mismatch is reported.
+  #
+  # Indices are compared with `==` rather than pinned: a float index still reaches
+  # Ableton fine (it casts to int) and comes back as an integer, so pinning would
+  # reject a reply that is in fact ours.
+  defp query_flag(address, indices, subject, reissued? \\ false) do
+    case Transport.query(address, indices, @guard_timeout) do
+      {:ok, {_addr, values}} ->
+        case Enum.split(values, length(indices)) do
+          {echoed, [flag]} ->
+            if indices_match?(echoed, indices) do
+              {:ok, truthy?(flag)}
+            else
+              reissue_or_give_up(address, indices, subject, reissued?)
+            end
+
+          _unexpected_shape ->
+            reissue_or_give_up(address, indices, subject, reissued?)
+        end
 
       {:error, reason} ->
         {:error, inspect(reason)}
     end
   catch
-    :exit, _ ->
-      {:error, guard_timeout_error("whether the clip in slot #{slot} on track #{track} is MIDI")}
+    :exit, _ -> {:error, guard_timeout_error(subject)}
+  end
+
+  defp reissue_or_give_up(address, indices, subject, false),
+    do: query_flag(address, indices, subject, true)
+
+  defp reissue_or_give_up(_address, _indices, subject, true),
+    do: {:error, stale_reply_error(subject)}
+
+  defp indices_match?(echoed, indices) do
+    echoed |> Enum.zip(indices) |> Enum.all?(fn {reply, asked} -> reply == asked end)
   end
 
   # A track or slot index that doesn't exist gets no reply at all — AbletonOSC
@@ -1228,9 +1260,12 @@ defmodule Seshat.Tools.Handlers do
       "get_clip_slots first; failing that, check Ableton is running with AbletonOSC enabled."
   end
 
+  # Reissued once already, so this is not one crossed wire: something is steadily
+  # answering with another index's data.
   defp stale_reply_error(subject) do
-    "Ableton's reply about #{subject} was for a different track or slot — it belongs to an " <>
-      "earlier query that timed out. Nothing further was sent; try again."
+    "Ableton's replies when checking #{subject} were not about the track or slot asked for, " <>
+      "twice in a row — they belong to an earlier query that timed out. Nothing further was " <>
+      "sent; try again."
   end
 
   # AbletonOSC sends booleans for some properties and 0/1 for others.
