@@ -57,20 +57,38 @@ defmodule Seshat.OSC.Transport do
       {:ok, socket} ->
         {:ok, port} = :inet.port(socket)
         Logger.info("OSC Transport listening on UDP port #{port}")
-        {:ok, %{socket: socket, pending: nil}}
+        {:ok, %{socket: socket, pending: nil, deaf: false}}
 
       {:error, :eaddrinuse} ->
-        Logger.warning("Port #{@client_port} already in use, binding to ephemeral port")
+        open_deaf()
 
-        case :gen_udp.open(0, @socket_opts) do
-          {:ok, socket} ->
-            {:ok, port} = :inet.port(socket)
-            Logger.info("OSC Transport listening on UDP port #{port}")
-            {:ok, %{socket: socket, pending: nil}}
+      {:error, reason} ->
+        {:stop, reason}
+    end
+  end
 
-          {:error, reason} ->
-            {:stop, reason}
-        end
+  # AbletonOSC replies to a fixed port rather than to the sender, so a socket
+  # bound anywhere but @client_port can send and never hear back — whoever holds
+  # 11001 receives our replies. Binding an ephemeral port keeps fire-and-forget
+  # setters working, and `deaf: true` makes every query fail immediately instead
+  # of stalling a full timeout on a reply that is being delivered elsewhere.
+  defp open_deaf do
+    case :gen_udp.open(0, @socket_opts) do
+      {:ok, socket} ->
+        {:ok, port} = :inet.port(socket)
+
+        Logger.error("""
+        OSC reply port #{@client_port} is already bound by another process — \
+        usually a second Seshat instance (an MCP server and `mix phx.server` \
+        running at once).
+
+        AbletonOSC sends every reply and listener update to #{@client_port}, so \
+        this instance (bound to #{port}) will receive none of them. Reads will \
+        fail fast and session state will not mirror Ableton; sets still go \
+        through. Stop the other instance and restart for a working session.\
+        """)
+
+        {:ok, %{socket: socket, pending: nil, deaf: true}}
 
       {:error, reason} ->
         {:stop, reason}
@@ -84,7 +102,13 @@ defmodule Seshat.OSC.Transport do
     {:reply, result, state}
   end
 
+  # No reply can reach a deaf transport, so answer now rather than after the
+  # caller's full timeout. Every caller already handles `{:error, reason}`.
   @impl true
+  def handle_call({:query, _address, _args}, _from, %{deaf: true} = state) do
+    {:reply, {:error, :reply_port_unavailable}, state}
+  end
+
   def handle_call({:query, address, args}, from, %{socket: socket} = state) do
     message = Seshat.OSC.Message.encode(address, args)
 

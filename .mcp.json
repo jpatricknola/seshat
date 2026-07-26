@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "seshat": {
-      "command": "mix",
-      "args": ["mcp"],
-      "cwd": "."
+      "type": "http",
+      "url": "http://localhost:4000/mcp"
     }
   }
 }

@@ -30,10 +30,16 @@ defmodule Mix.Tasks.Mcp do
 
   AbletonOSC sends all replies to a fixed UDP port (11001). Whichever Seshat
   instance binds it first hears Ableton; any other instance falls back to an
-  ephemeral port and can send commands but never receives state. If the
-  Phoenix server is running, point MCP clients at its streamable HTTP endpoint
-  (`http://localhost:4000/mcp`, e.g. via `npx mcp-remote`) instead of
-  spawning this task.
+  ephemeral port and can send commands but never receives state — it logs an
+  error and fails reads fast rather than pretending otherwise, but it is still
+  a broken session. If the Phoenix server is running, point MCP clients at its
+  streamable HTTP endpoint (`http://localhost:4000/mcp`) instead of spawning
+  this task.
+
+  This is why the repo's own `.mcp.json` uses the HTTP endpoint: a client that
+  spawns this task automatically — Claude Code does, on opening the project —
+  would otherwise take the port before the developer ever ran the server. Use
+  this task only where nothing else will start Seshat.
   """
 
   use Mix.Task

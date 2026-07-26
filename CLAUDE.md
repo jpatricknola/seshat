@@ -118,6 +118,7 @@ upstream doesn't provide goes there the same way.
 
 - **AbletonOSC is one bridge, not the architecture.** `OSC.Transport` isolates the wire mechanics (UDP, OSC encoding, reply correlation); the `/live/...` address strings deliberately live inline in `Handlers`, `Registry`, and `Session.State` — no abstraction layer, all sites greppable via `"/live/`. If the bridge ever changed, the stable seam is the tool contract in `Definitions`: the tool names and schemas stay, everything below `Handlers` gets reimplemented. Alternatives were weighed in [docs/bridge-options.md](docs/bridge-options.md) — staying on AbletonOSC is a decision, not an accident.
 - **MCP mode is primary.** It needs no API key — the user's Claude subscription covers the reasoning. API-key mode exists for dev and for users without an MCP client.
+- **Only one Seshat can read Ableton at a time.** AbletonOSC replies to a fixed port (11001), so the second instance to start is deaf — it can send but never receives. `.mcp.json` therefore points MCP clients at the running server's HTTP endpoint rather than spawning `mix mcp`, which means the server must be running for the tools to exist. Reasoning and rejected alternatives in [docs/osc-port-contention.md](docs/osc-port-contention.md).
 - **The LLM does the resolving.** Track names → indices, "the reverb" → device index, note names → MIDI numbers. Tools stay dumb and mechanical; the prompt in `Seshat.Agent` carries the music theory.
 
 ## Current focus

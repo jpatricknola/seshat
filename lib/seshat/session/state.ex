@@ -156,19 +156,9 @@ defmodule Seshat.Session.State do
     )
 
     state =
-      case Transport.query("/live/song/get/num_tracks", []) do
-        {:ok, {_addr, [count]}} ->
-          tracks =
-            Enum.map(0..(count - 1), fn i ->
-              %{
-                index: i,
-                name: query_string(Transport, "/live/track/get/name", i, "Track #{i + 1}"),
-                volume: query_float(Transport, "/live/track/get/volume", i, 0.85),
-                pan: query_float(Transport, "/live/track/get/panning", i, 0.0),
-                mute: query_int(Transport, "/live/track/get/mute", i, 0) |> to_bool(),
-                solo: query_int(Transport, "/live/track/get/solo", i, 0) |> to_bool()
-              }
-            end)
+      case probe(Transport, "/live/song/get/num_tracks", [], @query_timeout) do
+        {:ok, [count]} when is_integer(count) ->
+          tracks = read_tracks(Transport, count)
 
           subscribe_song_listeners()
           subscribe_listeners(tracks)
@@ -179,12 +169,30 @@ defmodule Seshat.Session.State do
 
           %{state | song: song, tracks: tracks}
 
-        {:error, reason} ->
-          Logger.warning("Could not load tracks from Ableton: #{inspect(reason)}")
+        # Anything else — a timeout, a deaf transport, a reply in a shape we
+        # don't recognise — leaves the session unmirrored rather than crashing
+        # a GenServer whose supervisor would only restart it into the same wall.
+        other ->
+          Logger.warning("Could not load tracks from Ableton: #{inspect(other)}")
           %{state | song: song}
       end
 
     Map.merge(state, refresh_returns(Transport))
+  end
+
+  defp read_tracks(_transport, count) when count < 1, do: []
+
+  defp read_tracks(transport, count) do
+    Enum.map(0..(count - 1), fn i ->
+      %{
+        index: i,
+        name: query_string(transport, "/live/track/get/name", i, "Track #{i + 1}"),
+        volume: query_float(transport, "/live/track/get/volume", i, 0.85),
+        pan: query_float(transport, "/live/track/get/panning", i, 0.0),
+        mute: query_int(transport, "/live/track/get/mute", i, 0) |> to_bool(),
+        solo: query_int(transport, "/live/track/get/solo", i, 0) |> to_bool()
+      }
+    end)
   end
 
   # No listeners for these in v1 — they are re-read on every refresh, and the
@@ -342,25 +350,28 @@ defmodule Seshat.Session.State do
     :exit, _ -> {:error, :timeout}
   end
 
+  # Like the per-index helpers, these go through `probe/4` — an Ableton that
+  # isn't running, or isn't reachable, must leave the defaults standing rather
+  # than take this GenServer down before it has finished starting.
   defp query_song_float(transport, address, default) do
-    case transport.query(address, []) do
-      {:ok, {_addr, [v]}} when is_float(v) -> v
+    case probe(transport, address, [], @query_timeout) do
+      {:ok, [v]} when is_float(v) -> v
       _ -> default
     end
   end
 
   defp query_song_string(transport, address, default) do
-    case transport.query(address, []) do
-      {:ok, {_addr, [s]}} when is_binary(s) -> s
+    case probe(transport, address, [], @query_timeout) do
+      {:ok, [s]} when is_binary(s) -> s
       _ -> default
     end
   end
 
   defp query_song_int(transport, address, default) do
-    case transport.query(address, []) do
-      {:ok, {_addr, [v]}} when is_integer(v) -> v
-      {:ok, {_addr, [true]}} -> 1
-      {:ok, {_addr, [false]}} -> 0
+    case probe(transport, address, [], @query_timeout) do
+      {:ok, [v]} when is_integer(v) -> v
+      {:ok, [true]} -> 1
+      {:ok, [false]} -> 0
       _ -> default
     end
   end
