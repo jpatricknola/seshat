@@ -87,4 +87,11 @@ be able to say yes/no to each one.
    needing Ableton noted as blockers to check first during implementation.
    Implementation starts only when the user says go.
 
+   End by recommending `/plan-review` — it re-derives this plan's OSC
+   contract independently of you, judges whether the approach is the least
+   invasive one that meets the objective, and on disagreement commissions a
+   rival plan and adjudicates. Self-review is no substitute: the address
+   check in particular is worthless performed by the agent that transcribed
+   the addresses. `/lifecycle` runs it automatically as its own phase.
+
 

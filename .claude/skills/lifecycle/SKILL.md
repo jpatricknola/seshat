@@ -1,7 +1,7 @@
 ---
 name: lifecycle
-description: Run the full feature lifecycle unattended — plan → implement → pr-review (with fix loop) → ship — as sequential subagents on a feature branch. Ends by pushing the branch and opening a PR; merging stays with the user. Use when the user wants a roadmap item taken from plan to shipped end to end without stopping at the usual human gates.
-argument-hint: [roadmap item; optional model overrides, e.g. "send levels, implement=sonnet" or "model=opus"]
+description: Run the full feature lifecycle unattended — plan → plan-review (with rival-plan tournament) → implement → pr-review (with fix loop) → ship — as sequential subagents on a feature branch. Ends by pushing the branch and opening a PR; merging stays with the user. Use when the user wants a roadmap item taken from plan to shipped end to end without stopping at the usual human gates.
+argument-hint: [roadmap item; optional model overrides, e.g. "send levels, implement=sonnet" or "judge=opus" or "model=opus"]
 ---
 
 Run the full lifecycle for: **$ARGUMENTS** (no item named → the
@@ -24,10 +24,20 @@ already made:
 | step | default |
 |---|---|
 | plan | fable |
+| plan-review | fable |
+| rival | fable |
+| judge | fable |
 | implement | opus |
 | review | opus |
 | fix | sonnet |
 | ship | sonnet |
+
+The whole plan-review phase runs on fable deliberately. Its reviewer is the
+only agent whose *silence* ends a phase, and its judge is the only decision in
+this pipeline that nothing downstream reviews — a judge that picks the worse
+plan stays invisible until the feature is built wrong. Rival and judge fire
+only on disagreement, so the aggregate cost is nearer one extra agent per plan
+than three.
 
 Pass the resolved model as the `Agent` call's `model` parameter.
 
@@ -58,16 +68,22 @@ And end every prompt with:
 > PR_URL: <opened PR, ship phase only>
 
 When a later phase needs an earlier phase's report, paste the **full report
-verbatim** inside a tagged block (`<plan-report>`, `<implementer-report>`,
-`<fix-report round="N">`, `<review-findings>`) — never a summary; details you
-drop are decisions the next agent will re-make differently.
+verbatim** inside a tagged block (`<plan-report>`, `<plan-review-findings>`,
+`<judge-decision>`, `<implementer-report>`, `<fix-report round="N">`,
+`<review-findings>`) — never a summary; details you drop are decisions the
+next agent will re-make differently.
 
 If any `Agent` call dies or returns nothing usable, treat it as blocked —
-except the review phase, which **fails closed**: a dead review agent means
-the branch has *not* been reviewed, so stop and hand the branch back
-unreviewed rather than proceeding to ship. Whenever you stop early, tell the
-user which phase stopped, why (quote the report), and the branch/plan state
-so they can pick it up by hand.
+with two exceptions at opposite ends. The code review phase **fails closed**:
+a dead review agent means the branch has *not* been reviewed, so stop and
+hand the branch back unreviewed rather than proceeding to ship. The plan
+review phase **fails open**: code review still stands behind it, so a dead
+plan-review agent means continuing to implement with an unreviewed plan and
+saying so in the final report — a gate meant to improve plans should not
+become a new way for the run to end with nothing.
+
+Whenever you stop early, tell the user which phase stopped, why (quote the
+report), and the branch/plan state so they can pick it up by hand.
 
 ## Phase 1 — Plan
 
@@ -83,10 +99,50 @@ Agent prompt: preamble, then —
 If blocked, stop. If the planner forgot PLAN_PATH, describe it to later
 phases as "the single active docs/PLAN_*.md" rather than a made-up path.
 
-## Phase 2 — Implement
+## Phase 2 — Plan review, with tournament (conditional)
+
+One review agent always; a rival author and a judge only if the reviewer
+disagrees. There is no revise loop here — the reviewer either approves or
+commissions a competing plan, and the judge's decision is final.
+
+**Review** agent prompt: preamble, `<plan-report>` block, then —
+
+> Read .claude/skills/plan-review/SKILL.md and carry out § Review for the
+> plan at <PLAN_PATH>. Apply corrections to the plan doc itself as that
+> section directs, but commit nothing — the plan doc and the ROADMAP edit are
+> still uncommitted in the working tree and Phase 3 commits them. State your
+> verdict on a line "PLAN_VERDICT: <verdict>".
+
+On `approve` or `approve_with_corrections`, go to Phase 3. On `rival`, run
+two more agents in sequence.
+
+**Rival** agent prompt: preamble, `<plan-review-findings>` block, then —
+
+> Read .claude/skills/plan-review/SKILL.md and carry out § Rival. The review
+> findings above are your entire brief. Do not open <PLAN_PATH> until your own
+> plan is written — that section says when to read it and what to do with it.
+> Commit nothing. Return the path you wrote.
+
+**Judge** agent prompt: preamble, `<plan-review-findings>` block ("contested
+claims, not facts — read them only after you have formed your own view of
+both plans"), then —
+
+> Read .claude/skills/plan-review/SKILL.md and carry out § Judge, choosing
+> between <PLAN_PATH> as plan A and <rival path> as plan B. Promote the
+> winner and delete the loser file exactly as that section directs, but commit
+> nothing. State "JUDGE_VERDICT: <verdict>" and return PLAN_PATH for the
+> surviving doc.
+
+On `neither`, stop: report both plans and the judge's reasoning to the user —
+that verdict is a judgment about the roadmap item itself, which is theirs to
+make. Otherwise carry the surviving PLAN_PATH into Phase 3.
+
+## Phase 3 — Implement
 
 Agent prompt: preamble, `<plan-report>` block ("treat its assumptions as
-decisions already made"), then —
+decisions already made"), `<plan-review-findings>` and — if a tournament ran
+— `<judge-decision>` ("the plan you are given is the one that survived this;
+its corrections and amendments are already in the doc"), then —
 
 > Read .claude/skills/implement/SKILL.md and carry out its instructions for
 > the plan at <PLAN_PATH>. Create the feature branch in place with
@@ -107,7 +163,7 @@ decisions already made"), then —
 If blocked, stop. If it reports complete but returns no BRANCH, stop too —
 no later phase can be targeted.
 
-## Phase 3 — Review, with fix loop (max 3 rounds)
+## Phase 4 — Review, with fix loop (max 3 rounds)
 
 Keep every fix round's report, oldest first; each round's reviewer gets
 **all** of them — a false positive rebutted in round 1 must stay rebutted in
@@ -145,7 +201,7 @@ If the fix agent is blocked, stop (include the last review's findings in
 your report to the user). Otherwise append its report and loop back to
 review.
 
-## Phase 4 — Ship
+## Phase 5 — Ship
 
 Agent prompt: preamble, `<implementer-report>` and
 `<review-verdict verdict="...">` blocks, then —
@@ -179,6 +235,8 @@ Agent prompt: preamble, `<implementer-report>` and
 
 ## Final report to the user
 
-Branch, plan path, review verdict (with any accepted nits), whether the
-close-out shipped, and the PR URL. If a PR was opened: merging stays with
-the user. If not: say why and point at the branch to inspect manually.
+Branch, plan path, the plan-review verdict — and if a tournament ran, which
+plan won and what decided it — the code review verdict (with any accepted
+nits), whether the close-out shipped, and the PR URL. If a PR was opened:
+merging stays with the user. If not: say why and point at the branch to
+inspect manually.
