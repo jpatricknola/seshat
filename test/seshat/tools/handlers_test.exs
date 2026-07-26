@@ -260,6 +260,112 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "parse_clip_notes/1" do
+    # The get_clip_notes do_call clause itself isn't tested here: it goes
+    # through Transport.query, which needs a live Ableton.
+    test "chunks the flat reply tail into one map per note" do
+      fields = [36, 0.0, 0.5, 100, false, 43, 0.5, 0.25, 90, true]
+
+      assert {:ok, notes} = Handlers.parse_clip_notes(fields)
+
+      assert notes == [
+               %{pitch: 36, start_time: 0.0, duration: 0.5, velocity: 100, mute: false},
+               %{pitch: 43, start_time: 0.5, duration: 0.25, velocity: 90, mute: true}
+             ]
+    end
+
+    test "accepts the float velocities Live 11+ can send" do
+      assert {:ok, [note]} = Handlers.parse_clip_notes([60, 0.0, 1.0, 99.5, 0])
+      assert note.velocity == 99.5
+    end
+
+    test "treats an integer mute flag as a boolean" do
+      assert {:ok, [note]} = Handlers.parse_clip_notes([60, 0.0, 1.0, 100, 1])
+      assert note.mute == true
+    end
+
+    test "an empty tail is an empty clip, not an error" do
+      assert {:ok, []} = Handlers.parse_clip_notes([])
+    end
+
+    test "fails loudly when the tail isn't a whole number of notes" do
+      assert {:error, msg} = Handlers.parse_clip_notes([60, 0.0, 1.0, 100])
+
+      assert msg =~ "4 value(s)"
+      assert msg =~ "not a whole number of notes"
+    end
+  end
+
+  describe "format_clip_notes/5" do
+    defp note(overrides) do
+      Map.merge(
+        %{pitch: 60, start_time: 0.0, duration: 1.0, velocity: 100, mute: false},
+        overrides
+      )
+    end
+
+    test "formats one line per note with the note name beside the pitch" do
+      notes = [
+        note(%{pitch: 36, start_time: 0.0, duration: 0.5}),
+        note(%{pitch: 43, start_time: 0.5, duration: 0.25, velocity: 90})
+      ]
+
+      result = Handlers.format_clip_notes(1, 0, "Bassline", 4.0, notes)
+
+      assert result =~ ~s{Clip "Bassline" on track 1, slot 0 — 4.0 beats, 2 note(s):}
+      assert result =~ "C2 (36)"
+      assert result =~ "start=0.0"
+      assert result =~ "dur=0.5"
+      assert result =~ "vel=100"
+      assert result =~ "G2 (43)"
+      refute result =~ "[muted]"
+    end
+
+    test "flags muted notes" do
+      result = Handlers.format_clip_notes(0, 0, "Drums", 4.0, [note(%{mute: true})])
+
+      assert result =~ "[muted]"
+    end
+
+    test "sorts by start time, then pitch, so chords read as blocks" do
+      notes = [
+        note(%{pitch: 67, start_time: 1.0}),
+        note(%{pitch: 64, start_time: 0.0}),
+        note(%{pitch: 60, start_time: 0.0})
+      ]
+
+      [_header, _blank | lines] =
+        Handlers.format_clip_notes(0, 0, "Chords", 4.0, notes) |> String.split("\n")
+
+      assert Enum.map(lines, &(&1 |> String.trim() |> String.split(" ") |> hd())) ==
+               ["C4", "E4", "G4"]
+    end
+
+    test "an empty clip is a success, not an error" do
+      result = Handlers.format_clip_notes(2, 1, "Empty", 8.0, [])
+
+      assert result =~ ~s{Clip "Empty" on track 2, slot 1 — 8.0 beats, no notes}
+      assert result =~ "the clip exists but is empty"
+    end
+  end
+
+  describe "note_range_args/1" do
+    # AbletonOSC's handler raises unless it gets exactly 0 or 4 range args.
+    test "sends nothing when no range param was given" do
+      assert Handlers.note_range_args(%{"track" => 0, "clip_slot" => 0}) == []
+    end
+
+    test "fills in all four when only one range param was given" do
+      assert Handlers.note_range_args(%{"start_pitch" => 36}) == [36, 128, 0.0, 9999.0]
+    end
+
+    test "coerces integer beat positions to floats" do
+      args = Handlers.note_range_args(%{"start_time" => 4, "time_span" => 8})
+
+      assert args == [0, 128, 4.0, 8.0]
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})

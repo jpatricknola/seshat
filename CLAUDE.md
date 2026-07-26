@@ -58,7 +58,8 @@ still has no database of its own.
 | [lib/seshat/commands/command.ex](lib/seshat/commands/command.ex) | The Command struct (multi-step operations only) |
 | [lib/seshat/osc/transport.ex](lib/seshat/osc/transport.ex) | UDP GenServer — send, query, PubSub broadcast |
 | [lib/seshat/osc/message.ex](lib/seshat/osc/message.ex) | OSC encoding/decoding |
-| [lib/seshat/session/state.ex](lib/seshat/session/state.ex) | Mirrored session state |
+| [lib/seshat/session/state.ex](lib/seshat/session/state.ex) | Mirrored session state (tracks, tempo, time signature, key/scale) |
+| [lib/seshat/music/pitch.ex](lib/seshat/music/pitch.ex) | MIDI pitch → note name, shared by the notes reader and session state |
 | [lib/seshat/library/catalog.ex](lib/seshat/library/catalog.ex) | Tag-aware sound catalog — ETS + `~/.seshat/catalog.json`, merge and search |
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
@@ -115,7 +116,8 @@ future address upstream doesn't provide goes there the same way.
 ## Current focus
 
 [docs/ROADMAP.md](docs/ROADMAP.md) is the single living list of what's not
-built yet — send levels first, then catalog follow-ups and the rest. Keep it
+built yet — reading clip notes first, then clip-slot state, send levels, and
+the rest. Keep it
 current: when something ships, run the `/ship` skill (or by hand: remove it
 there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
