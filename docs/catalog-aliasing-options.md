@@ -58,6 +58,29 @@ user-saved presets, which is where naming and FileId behaviour would be most
 likely to diverge. Re-run the clustering check after the first Pack or saved
 preset lands.
 
+**Plugins landed, check re-run (27 Jul 2026).** The empty `plugins` walk turned
+out to be Live configuration, not a broken walk: plugin sources were disabled
+in Preferences → Plug-Ins (`Live-plugins-1.db` had zero rows). Enabling
+AUv2/AUv3/VST3 and rescanning produced 66 plugin rows (Apple stock AUs + a
+Native Instruments/iZotope collection), and the clustering check still holds on
+the resulting 5,795-entry catalog: **no plugin uri carries a FileId** (shape:
+`query:Plugins#VST3:Native%20Instruments:Kontakt`), so the fold leaves every
+plugin row alone, and across the whole catalog no FileId is shared by two
+different names. Two new facts for any future plugin folding: (1) a plugin
+installed in two formats is two rows — 19 AUv2/VST3 pairs (Kontakt, Massive,
+Ozone 11…) that a FileId key cannot see; (2) the format trees are *not*
+mirrors (`Maschine 2 MFX` is AUv2-only, `Reaktor 6 FX` VST3-only), so a naive
+name fold is wrong and any fold would need a (vendor, name)-within-`plugins`
+rule plus a deliberate format preference. Left unfolded for now — same
+one-surplus-row trade as Drum Rack, times nineteen.
+
+**Alias equivalence probed (27 Jul 2026).** The "worth probing out of
+interest" check above was run: Sweet Lead loaded onto a scratch track via
+`query:Sounds#Synth%20Lead:FileId_4674` and via
+`query:Synths#Operator:Synth%20Lead:FileId_4674` lands the identical device
+("Sweet Lead", `InstrumentGroupDevice`) both times. Alias interchangeability
+is now observed fact, not inference.
+
 One alias escapes it. Counting surplus rows by *name* gives 2,494, one more
 than FileId finds — the straggler is **Drum Rack**, a core device carrying no
 FileId at all, listed under both `drums` and `instruments`:

@@ -482,19 +482,19 @@ defmodule Seshat.Library.Catalog do
 
   @impl true
   def handle_cast({:record_load, uri}, state) do
-    case :ets.lookup(state.table, uri) do
-      [{^uri, entry}] ->
+    case find_entry(state.table, uri) do
+      nil ->
+        {:noreply, state}
+
+      entry ->
         updated = %{
           entry
           | use_count: entry.use_count + 1,
             last_loaded_at: DateTime.utc_now() |> DateTime.to_iso8601()
         }
 
-        :ets.insert(state.table, {uri, updated})
+        :ets.insert(state.table, {entry.uri, updated})
         {:noreply, schedule_persist(state)}
-
-      [] ->
-        {:noreply, state}
     end
   end
 
@@ -559,6 +559,18 @@ defmodule Seshat.Library.Catalog do
 
   defp all_entries(table) do
     :ets.select(table, [{{:_, :"$1"}, [], [:"$1"]}])
+  end
+
+  # The table is keyed by canonical uri only, but a load can arrive via any
+  # of a preset's alias uris — from list_browser_items, or remembered from
+  # before a reindex shifted the canonical pick. The counter belongs to the
+  # preset, so a key miss falls back to scanning the alias lists. Loads are
+  # rare and the table is a few thousand rows; the scan is not worth an index.
+  defp find_entry(table, uri) do
+    case :ets.lookup(table, uri) do
+      [{^uri, entry}] -> entry
+      [] -> Enum.find(all_entries(table), &(uri in &1.uris))
+    end
   end
 
   defp insert_all(table, entries) do

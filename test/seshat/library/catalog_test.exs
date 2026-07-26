@@ -421,6 +421,21 @@ defmodule Seshat.Library.CatalogTest do
       assert {_, 7} = Catalog.search([query: "&", max_results: 100] ++ opts)
     end
 
+    test "record_load via an alias uri still bumps its preset", %{opts: opts, server: server} do
+      # The table is keyed by canonical uri, but load_device can be handed any
+      # alias — from list_browser_items, or remembered from before a reindex
+      # shifted the canonical pick. The counter belongs to the preset.
+      assert {[entry], 1} = Catalog.search([query: "sweet lead"] ++ opts)
+      alias_uri = Enum.find(entry.uris, &(&1 != entry.uri))
+
+      :ok = Catalog.record_load(alias_uri, server)
+      _ = :sys.get_state(server)
+
+      assert {[bumped], 1} = Catalog.search([query: "sweet lead"] ++ opts)
+      assert bumped.uri == entry.uri
+      assert bumped.use_count == 1
+    end
+
     test "stored paths are decoded, not the uri's percent-escaped form", %{opts: opts} do
       # Most of these uris carry %20 in a segment. `paths` arrives as its own
       # field on the browser export and is what search reads — the uri is not

@@ -73,11 +73,16 @@ measured against a real 8,222-row catalog and ordered by impact.
   fragile since the vocabulary depends on installed Packs — better to surface
   the real one, e.g. top tags in `reindex_library`'s reply or in the
   empty-result message.
-- **Coverage.** `plugins` and `user_library` are in `EXPORT_CATEGORIES` but
-  produced zero rows on the one machine measured. Worth learning whether that
-  is an empty library or a broken walk — if the latter, a whole class of
-  sounds is invisible. `samples` is excluded by design, so "a vinyl crackle"
-  is unfindable.
+- **Coverage.** ~~`plugins` and `user_library` produced zero rows — empty
+  library or broken walk?~~ _Answered 27 Jul 2026: neither walk is broken._
+  `plugins` was Live configuration — plugin sources disabled in Preferences;
+  enabling them added 66 tagged rows (see
+  [catalog-aliasing-options.md](catalog-aliasing-options.md) for the new
+  AUv2/VST3 duplicate class this exposed). `user_library` is genuinely empty —
+  no saved presets exist on this machine, so the walk remains untested there.
+  `samples` is excluded by design, so "a vinyl crackle" is unfindable — yet
+  the category holds 3,567 items whose uris carry FileIds, so an opt-in
+  samples index would be tag-aware for free.
 
 **Suggested order.** Tag scoring and ranking are one piece of work, not two:
 softening the AND is what supplies the signal the scorer needs, and doing
