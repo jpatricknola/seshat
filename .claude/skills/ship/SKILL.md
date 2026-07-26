@@ -11,9 +11,11 @@ built yet*, and it only works if shipping updates it. Walk every step; several
 are often no-ops, but check rather than assume.
 
 1. **Confirm it actually shipped.** Find the implementing code (grep for the
-   tool name or module) and check `git log` for the merge. If it isn't in the
-   code on this branch, stop and say so — never remove roadmap items ahead of
-   reality.
+   tool name or module) and confirm it is present on the branch you're closing
+   out from; `git log` shows how it got there. Presence in the code is the
+   test, *not* a merge to the default branch — closing out on the feature
+   branch before its PR merges is normal. If the code isn't there, stop and
+   say so — never remove roadmap items ahead of reality.
 
 2. **Remove it from [docs/ROADMAP.md](docs/ROADMAP.md).** Delete the item or
    section. If only part shipped, rewrite the entry to just the remainder. If

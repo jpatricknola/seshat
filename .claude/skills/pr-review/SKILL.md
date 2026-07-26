@@ -67,8 +67,15 @@ that are *absent* from the diff, which no amount of staring at hunks reveals.
    in `Definitions` read as usable prompt text for a model that can't see
    the code? Stale references anywhere to renamed/moved things.
 
-8. **Verify and report.** Run `mix precommit` on the branch. Then write the
-   review:
+8. **Verify and report.** Verify *without mutating the tree* — you're
+   reviewing, not fixing. Run `mix compile --warnings-as-errors`, `mix test`,
+   and `mix format --check-formatted`. Do **not** run `mix precommit` here:
+   its `format` and `deps.unlock --unused` steps rewrite files, and a
+   formatting change made during a review either gets absorbed into someone
+   else's commit or is left behind uncommitted while the branch ships
+   unformatted. An unformatted file is a *finding*, not something you silently
+   correct. If something does end up modified, restore it with
+   `git checkout --` before reporting. Then write the review:
    - **Verdict first** — one of: approve, approve with nits, needs changes —
      with a one-sentence reason.
    - **Findings ranked by severity** (bugs → plan gaps → test gaps → ripple
