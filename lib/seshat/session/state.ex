@@ -14,7 +14,9 @@ defmodule Seshat.Session.State do
   @pubsub Seshat.PubSub
   @topic "osc:in"
   @listened_properties ~w(panning volume mute solo name)
-  @listened_song_properties ~w(tempo signature_numerator signature_denominator is_playing)
+  @listened_song_properties ~w(
+    tempo signature_numerator signature_denominator is_playing root_note scale_name
+  )
 
   # --- Client API ---
 
@@ -36,7 +38,9 @@ defmodule Seshat.Session.State do
       tempo: 120.0,
       time_sig_numerator: 4,
       time_sig_denominator: 4,
-      is_playing: false
+      is_playing: false,
+      root_note: 0,
+      scale_name: "Major"
     }
 
     {:ok, %{song: initial_song, tracks: []}, {:continue, :setup}}
@@ -73,6 +77,14 @@ defmodule Seshat.Session.State do
     {:noreply, update_song(state, :is_playing, to_bool(value))}
   end
 
+  def handle_info({:osc_message, "/live/song/get/root_note", [value]}, state) do
+    {:noreply, update_song(state, :root_note, value)}
+  end
+
+  def handle_info({:osc_message, "/live/song/get/scale_name", [value]}, state) do
+    {:noreply, update_song(state, :scale_name, value)}
+  end
+
   def handle_info({:osc_message, "/live/track/get/panning", [idx, value]}, state) do
     {:noreply, update_track(state, idx, :pan, value)}
   end
@@ -107,11 +119,14 @@ defmodule Seshat.Session.State do
       tempo: query_song_float(Transport, "/live/song/get/tempo", 120.0),
       time_sig_numerator: query_song_int(Transport, "/live/song/get/signature_numerator", 4),
       time_sig_denominator: query_song_int(Transport, "/live/song/get/signature_denominator", 4),
-      is_playing: query_song_int(Transport, "/live/song/get/is_playing", 0) |> to_bool()
+      is_playing: query_song_int(Transport, "/live/song/get/is_playing", 0) |> to_bool(),
+      root_note: query_song_int(Transport, "/live/song/get/root_note", 0),
+      scale_name: query_song_string(Transport, "/live/song/get/scale_name", "Major")
     }
 
     Logger.info(
-      "Song: #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}"
+      "Song: #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, " <>
+        "key #{Seshat.Music.Pitch.pitch_class_name(song.root_note)} #{song.scale_name}"
     )
 
     case Transport.query("/live/song/get/num_tracks", []) do
@@ -202,6 +217,13 @@ defmodule Seshat.Session.State do
   defp query_song_float(transport, address, default) do
     case transport.query(address, []) do
       {:ok, {_addr, [v]}} when is_float(v) -> v
+      _ -> default
+    end
+  end
+
+  defp query_song_string(transport, address, default) do
+    case transport.query(address, []) do
+      {:ok, {_addr, [s]}} when is_binary(s) -> s
       _ -> default
     end
   end

@@ -11,6 +11,7 @@ defmodule Seshat.Tools.Handlers do
 
   alias Seshat.Commands.{Command, Registry}
   alias Seshat.Library.Catalog
+  alias Seshat.Music.Pitch
   alias Seshat.OSC.Transport
   alias Seshat.Session.State
 
@@ -147,6 +148,97 @@ defmodule Seshat.Tools.Handlers do
       end)
 
     "Device #{device} \"#{device_name}\" on track #{track} — #{length(names)} parameter(s):\n\n#{lines}"
+  end
+
+  @doc """
+  Chunks the flat tail of a `/live/clip/get/notes` reply into one map per note.
+
+  AbletonOSC contributes exactly five fields per note — pitch, start_time,
+  duration, velocity, mute — so a tail that isn't a multiple of five means the
+  reply shape changed upstream. Fail loudly there rather than silently dropping
+  a partial note and reporting a clip that isn't what Live holds.
+  """
+  @spec parse_clip_notes(list()) :: {:ok, [map()]} | {:error, String.t()}
+  def parse_clip_notes(fields) when is_list(fields) do
+    if rem(length(fields), 5) == 0 do
+      notes =
+        fields
+        |> Enum.chunk_every(5)
+        |> Enum.map(fn [pitch, start_time, duration, velocity, mute] ->
+          %{
+            pitch: pitch,
+            start_time: start_time,
+            duration: duration,
+            velocity: velocity,
+            mute: truthy?(mute)
+          }
+        end)
+
+      {:ok, notes}
+    else
+      {:error,
+       "Unexpected note data from Live: #{length(fields)} value(s) is not a whole number of " <>
+         "notes (5 fields each). AbletonOSC may have changed its reply format — the clip was " <>
+         "not read."}
+    end
+  end
+
+  @doc """
+  Formats the notes of a clip, one per line, with note names beside the raw
+  MIDI pitches.
+
+  Sorted by start time, then pitch, so chords read as blocks and the model sees
+  the clip in playing order rather than Live's internal order.
+  """
+  @spec format_clip_notes(integer(), integer(), String.t(), number(), [map()]) :: String.t()
+  def format_clip_notes(track, slot, clip_name, clip_length, []) do
+    ~s{Clip "#{clip_name}" on track #{track}, slot #{slot} — } <>
+      "#{format_number(clip_length)} beats, no notes (the clip exists but is empty)."
+  end
+
+  def format_clip_notes(track, slot, clip_name, clip_length, notes) do
+    lines =
+      notes
+      |> Enum.sort_by(&{&1.start_time, &1.pitch})
+      |> Enum.map_join("\n", fn note ->
+        muted = if note.mute, do: "  [muted]", else: ""
+
+        "  " <>
+          String.pad_trailing("#{Pitch.note_name(note.pitch)} (#{note.pitch})", 11) <>
+          String.pad_trailing("start=#{format_number(note.start_time)}", 14) <>
+          String.pad_trailing("dur=#{format_number(note.duration)}", 12) <>
+          "vel=#{format_number(note.velocity)}#{muted}"
+      end)
+
+    header =
+      ~s{Clip "#{clip_name}" on track #{track}, slot #{slot} — } <>
+        "#{format_number(clip_length)} beats, #{length(notes)} note(s):"
+
+    "#{header}\n\n#{lines}"
+  end
+
+  @range_params ~w(start_pitch pitch_span start_time time_span)
+
+  @doc """
+  Builds the optional range arguments for `/live/clip/get/notes`.
+
+  AbletonOSC's handler is all-or-nothing: it raises unless it gets exactly zero
+  or four range arguments. So one range param from the model means filling in
+  the other three (the same defaults `remove_notes` uses), and no range params
+  means sending none at all and letting AbletonOSC apply its own catch-all.
+  """
+  @spec note_range_args(map()) :: list()
+  def note_range_args(params) do
+    if Enum.any?(@range_params, &Map.has_key?(params, &1)) do
+      [
+        Map.get(params, "start_pitch", 0),
+        Map.get(params, "pitch_span", 128),
+        Map.get(params, "start_time", 0.0) / 1.0,
+        Map.get(params, "time_span", 9999.0) / 1.0
+      ]
+    else
+      []
+    end
   end
 
   defp device_type_label(1), do: "audio effect"
@@ -465,6 +557,37 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # Reads only, so no %Command{}/Registry — Registry is for mutation sequences.
+  # The two guards up front are not politeness: querying notes on an empty slot
+  # raises inside AbletonOSC, which means no reply and a 5s timeout instead of
+  # an answer.
+  defp do_call("get_clip_notes", %{"track" => track} = params) do
+    slot = Map.get(params, "clip_slot", 0)
+
+    with :ok <- ensure_clip(track, slot),
+         :ok <- ensure_midi_clip(track, slot),
+         {:ok, {_addr, [_t, _s, clip_name]}} <-
+           Transport.query("/live/clip/get/name", [track, slot]),
+         {:ok, {_addr, [_t, _s, clip_length]}} <-
+           Transport.query("/live/clip/get/length", [track, slot]),
+         {:ok, {_addr, [_t, _s | fields]}} <-
+           Transport.query("/live/clip/get/notes", [track, slot | note_range_args(params)]),
+         {:ok, notes} <- parse_clip_notes(fields) do
+      {:ok, format_clip_notes(track, slot, clip_name, clip_length, notes)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    # `slot` is bound in the body, which the implicit try can't see — only the
+    # head's params are in scope here.
+    :exit, _ ->
+      {:error,
+       "Timed out reading the notes in slot #{Map.get(params, "clip_slot", 0)} on track " <>
+         "#{track}. Check the track index against get_session_state, and that Ableton is " <>
+         "running with AbletonOSC enabled."}
+  end
+
   # --- Sound catalog ---
   #
   # Answered from ETS, so no Ableton required — see Seshat.Library.Catalog.
@@ -644,7 +767,8 @@ defmodule Seshat.Tools.Handlers do
     playing = if song.is_playing, do: "playing", else: "stopped"
 
     song_line =
-      "#{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, #{playing}"
+      "#{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, #{playing}, " <>
+        "key: #{Pitch.pitch_class_name(song.root_note)} #{song.scale_name}"
 
     if tracks == [] do
       {:ok, "#{song_line}\n\nNo tracks in current session (Ableton may not be connected)"}
@@ -669,6 +793,43 @@ defmodule Seshat.Tools.Handlers do
 
   defp to_track_type("midi"), do: :midi
   defp to_track_type("audio"), do: :audio
+
+  defp ensure_clip(track, slot) do
+    case Transport.query("/live/clip_slot/get/has_clip", [track, slot]) do
+      {:ok, {_addr, [_t, _s, has_clip]}} ->
+        if truthy?(has_clip) do
+          :ok
+        else
+          {:error,
+           "No clip in slot #{slot} on track #{track} — there is nothing to read. Clip slots " <>
+             "are 0-based, so scene 1 is slot 0; check the track index with get_session_state."}
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  end
+
+  defp ensure_midi_clip(track, slot) do
+    case Transport.query("/live/clip/get/is_midi_clip", [track, slot]) do
+      {:ok, {_addr, [_t, _s, is_midi]}} ->
+        if truthy?(is_midi) do
+          :ok
+        else
+          {:error,
+           "The clip in slot #{slot} on track #{track} is an audio clip, not a MIDI clip, so " <>
+             "it has no notes to read."}
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  end
+
+  # AbletonOSC sends booleans for some properties and 0/1 for others.
+  defp truthy?(true), do: true
+  defp truthy?(value) when is_integer(value), do: value != 0
+  defp truthy?(_value), do: false
 
   defp maybe_set_loop_start(%{"start" => start}),
     do: Transport.send_message("/live/song/set/loop_start", [start / 1.0])

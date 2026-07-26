@@ -489,6 +489,39 @@ defmodule Seshat.Tools.Definitions do
         required: ["track"]
       }
     },
+    %{
+      name: "get_clip_notes",
+      description:
+        "Read the MIDI notes in a clip in Ableton Live. " <>
+          "Track indices are 0-based; clip_slot defaults to 0. " <>
+          "Returns every note as pitch (with note name), start beat, duration in beats, " <>
+          "velocity, and whether the note is muted, plus the clip's name and length. " <>
+          "ALWAYS call this before editing existing material — transposing, fixing a note, " <>
+          "humanizing velocities, adding to an existing part — so you work with what is " <>
+          "actually there instead of overwriting it. " <>
+          "The typical edit loop is: get_clip_notes → decide changes → remove_notes " <>
+          "(with a pitch/time range) → write_midi_notes. " <>
+          "Optionally restrict the read to a pitch/time window using the same range " <>
+          "parameters remove_notes takes.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot (default 0)"},
+          "start_pitch" => %{type: "integer", description: "Lowest pitch to include (default 0)"},
+          "pitch_span" => %{
+            type: "integer",
+            description: "Number of pitches to span (default 128 = all)"
+          },
+          "start_time" => %{type: "number", description: "Start time in beats (default 0.0)"},
+          "time_span" => %{
+            type: "number",
+            description: "Time span in beats (default: entire clip)"
+          }
+        },
+        required: ["track"]
+      }
+    },
     # --- Sound catalog ---
     %{
       name: "search_library",
@@ -737,7 +770,10 @@ defmodule Seshat.Tools.Definitions do
       name: "get_session_state",
       description:
         "Get the current state of all tracks in the Ableton Live session. " <>
-          "Returns tempo, time signature, track names, indices, volume, pan, mute, and solo status. " <>
+          "Returns tempo, time signature, the song's key and scale, track names, indices, " <>
+          "volume, pan, mute, and solo status. " <>
+          "The key is whatever Live's scale controls are set to — a strong hint about what to " <>
+          "write, not gospel, since Live reports C Major when the user has never touched them. " <>
           "Use this before making relative adjustments ('turn it up a bit'), " <>
           "when you need to know what tracks exist, or before writing MIDI notes. " <>
           "Indices are 0-based but Ableton's UI numbers tracks from 1 — when talking " <>
