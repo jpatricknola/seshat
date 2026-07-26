@@ -349,6 +349,136 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "parse_track_data/3" do
+    # The get_clip_slots do_call clause itself isn't tested here: it goes
+    # through Transport.query, which needs a live Ableton. This exercises the
+    # pure chunking of the flat track_data reply.
+    #
+    # Per track, with 2 scenes: name, has_midi_input, is_foldable, then
+    # has_clip x2, clip.name x2, clip.length x2, is_playing x2,
+    # is_recording x2 = 13 values. Empty slots carry nil for clip.* values.
+    test "chunks the flat reply into one map per track, empty slots as nil" do
+      values =
+        ["Drums", true, false] ++
+          [true, false] ++
+          ["Beat A", nil] ++
+          [4.0, nil] ++
+          [true, nil] ++
+          [false, nil] ++
+          ["Vox", false, false] ++
+          [false, true] ++
+          [nil, "Take 3"] ++ [nil, 16.0] ++ [nil, false] ++ [nil, true]
+
+      assert {:ok, [drums, vox]} = Handlers.parse_track_data(values, 2, 2)
+
+      assert drums == %{
+               name: "Drums",
+               midi?: true,
+               group?: false,
+               slots: [
+                 %{name: "Beat A", length: 4.0, playing?: true, recording?: false},
+                 nil
+               ]
+             }
+
+      assert vox.name == "Vox"
+      assert vox.midi? == false
+      assert [nil, %{name: "Take 3", length: 16.0, playing?: false, recording?: true}] = vox.slots
+    end
+
+    test "treats integer flags as booleans" do
+      values = ["Bass", 1, 0] ++ [1] ++ ["Line"] ++ [8.0] ++ [0] ++ [0]
+
+      assert {:ok, [bass]} = Handlers.parse_track_data(values, 1, 1)
+
+      assert bass.midi? == true
+      assert bass.group? == false
+      assert [%{name: "Line", length: 8.0, playing?: false, recording?: false}] = bass.slots
+    end
+
+    test "fails loudly when the reply length doesn't match tracks x scenes" do
+      assert {:error, msg} = Handlers.parse_track_data(["Drums", true, false], 2, 2)
+
+      assert msg =~ "3 value(s)"
+      assert msg =~ "expected 26"
+      assert msg =~ "track_data"
+    end
+  end
+
+  describe "format_clip_slots/2" do
+    defp grid_track(overrides) do
+      Map.merge(%{name: "Track", midi?: true, group?: false, slots: []}, overrides)
+    end
+
+    defp slot(overrides) do
+      Map.merge(%{name: "Clip", length: 4.0, playing?: false, recording?: false}, overrides)
+    end
+
+    test "lists scenes with indices, then one block per track" do
+      scenes = ["Intro", "Verse", "Chorus", ""]
+
+      tracks = [
+        grid_track(%{
+          name: "Drums",
+          slots: [
+            slot(%{name: "Beat A", playing?: true}),
+            slot(%{name: "Beat B", length: 8.0}),
+            nil,
+            nil
+          ]
+        }),
+        grid_track(%{name: "Bass", slots: [nil, nil, nil, nil]}),
+        grid_track(%{
+          name: "Vox",
+          midi?: false,
+          slots: [nil, nil, slot(%{name: "Take 3", length: 16.0, recording?: true}), nil]
+        })
+      ]
+
+      result = Handlers.format_clip_slots(scenes, tracks)
+
+      assert result =~ ~s{4 scene(s): 0 "Intro", 1 "Verse", 2 "Chorus", 3 ""}
+      assert result =~ ~s{Track 0 "Drums" (MIDI):}
+      assert result =~ ~s{slot 0: "Beat A" — 4.0 beats [playing]}
+      assert result =~ ~s{slot 1: "Beat B" — 8.0 beats}
+      assert result =~ "slots 2-3: empty"
+      assert result =~ ~s{Track 1 "Bass" (MIDI): all 4 slot(s) empty}
+      assert result =~ ~s{Track 2 "Vox" (audio):}
+      assert result =~ ~s{slot 2: "Take 3" — 16.0 beats [recording]}
+      assert result =~ "slots 0-1, 3: empty"
+    end
+
+    test "labels group tracks and a single empty slot without a range" do
+      tracks = [
+        grid_track(%{name: "All Drums", group?: true, slots: [slot(%{name: "Row"}), nil]})
+      ]
+
+      result = Handlers.format_clip_slots(["A", "B"], tracks)
+
+      assert result =~ ~s{Track 0 "All Drums" (group):}
+      assert result =~ "slot 1: empty"
+      refute result =~ "slots 1"
+    end
+
+    test "prints (unnamed) for clips with empty names" do
+      tracks = [grid_track(%{slots: [slot(%{name: ""})]})]
+
+      result = Handlers.format_clip_slots(["A"], tracks)
+
+      assert result =~ "slot 0: (unnamed) — 4.0 beats"
+      refute result =~ ~s{""  —}
+    end
+
+    test "a recording clip shows only [recording], not [playing] too" do
+      tracks = [grid_track(%{slots: [slot(%{playing?: true, recording?: true})]})]
+
+      result = Handlers.format_clip_slots(["A"], tracks)
+
+      assert result =~ "[recording]"
+      refute result =~ "[playing]"
+    end
+  end
+
   describe "note_range_args/1" do
     # AbletonOSC's handler raises unless it gets exactly 0 or 4 range args.
     test "sends nothing when no range param was given" do

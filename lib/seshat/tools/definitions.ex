@@ -142,7 +142,8 @@ defmodule Seshat.Tools.Definitions do
           "velocity is 1-127: ghost note = 30, soft = 50, normal = 100, loud/accent = 120, max = 127. " <>
           "For chords, add multiple notes with the same start_beat and duration. " <>
           "Common chord intervals from root: major [0,4,7], minor [0,3,7], 7th [0,4,7,10], m7 [0,3,7,10], maj7 [0,4,7,11]. " <>
-          "Use get_session_state first to resolve track names to indices and to check the current time signature.",
+          "Use get_session_state first to resolve track names to indices and to check the current time signature. " <>
+          "Use get_clip_slots first to pick an empty slot on an actually-MIDI track — this tool fails silently on audio tracks.",
       parameters: %{
         type: "object",
         properties: %{
@@ -299,7 +300,9 @@ defmodule Seshat.Tools.Definitions do
       name: "fire_clip",
       description:
         "Launch/fire a clip in Ableton Live. " <>
-          "Track indices are 0-based. Clip slot (scene) is 0-based: scene 1 = 0.",
+          "Track indices are 0-based. Clip slot (scene) is 0-based: scene 1 = 0. " <>
+          "Use get_clip_slots first to see which slots actually hold clips — firing an " <>
+          "empty slot just stops the track.",
       parameters: %{
         type: "object",
         properties: %{
@@ -313,7 +316,8 @@ defmodule Seshat.Tools.Definitions do
       name: "stop_clip",
       description:
         "Stop a playing clip in Ableton Live. " <>
-          "Track indices are 0-based. Clip slot (scene) is 0-based.",
+          "Track indices are 0-based. Clip slot (scene) is 0-based. " <>
+          "Use get_clip_slots first to see which clips are actually playing.",
       parameters: %{
         type: "object",
         properties: %{
@@ -325,7 +329,9 @@ defmodule Seshat.Tools.Definitions do
     },
     %{
       name: "delete_clip",
-      description: "Delete a clip from a clip slot in Ableton Live.",
+      description:
+        "Delete a clip from a clip slot in Ableton Live. " <>
+          "Use get_clip_slots first to confirm which slot holds the clip you mean to delete.",
       parameters: %{
         type: "object",
         properties: %{
@@ -337,7 +343,10 @@ defmodule Seshat.Tools.Definitions do
     },
     %{
       name: "duplicate_clip",
-      description: "Duplicate a clip to another slot in Ableton Live.",
+      description:
+        "Duplicate a clip to another slot in Ableton Live. " <>
+          "Use get_clip_slots first to find the source clip and an empty target slot — " <>
+          "duplicating onto an occupied slot overwrites it.",
       parameters: %{
         type: "object",
         properties: %{
@@ -370,7 +379,9 @@ defmodule Seshat.Tools.Definitions do
       name: "fire_scene",
       description:
         "Launch/fire an entire scene (row of clips) in Ableton Live. " <>
-          "Scene indices are 0-based: scene 1 = 0.",
+          "Scene indices are 0-based: scene 1 = 0. " <>
+          "Use get_clip_slots first to resolve a scene name ('the chorus') to its index " <>
+          "and see what each scene would launch.",
       parameters: %{
         type: "object",
         properties: %{
@@ -502,7 +513,8 @@ defmodule Seshat.Tools.Definitions do
           "The typical edit loop is: get_clip_notes → decide changes → remove_notes " <>
           "(with a pitch/time range) → write_midi_notes. " <>
           "Optionally restrict the read to a pitch/time window using the same range " <>
-          "parameters remove_notes takes.",
+          "parameters remove_notes takes. " <>
+          "Use get_clip_slots first to see which slots hold MIDI clips worth reading.",
       parameters: %{
         type: "object",
         properties: %{
@@ -783,6 +795,25 @@ defmodule Seshat.Tools.Definitions do
         properties: %{},
         required: []
       }
+    },
+    %{
+      name: "get_clip_slots",
+      description:
+        "Read the whole Session-view clip grid in Ableton Live: every scene " <>
+          "(with its name) and, for each track, its type and every clip slot — " <>
+          "empty, or holding a clip with its name, length in beats, and whether " <>
+          "it is playing or recording. " <>
+          "Track and slot indices are 0-based; slot N is scene N (one row of " <>
+          "the grid). " <>
+          "ALWAYS call this before firing, duplicating, deleting, or writing " <>
+          "into a clip slot you have not already seen this conversation — it is " <>
+          "the only way to know which slots are occupied, and it resolves scene " <>
+          "names like 'the chorus' to a scene index. " <>
+          "Track type matters: write_midi_notes only works on MIDI tracks; " <>
+          "group tracks hold no clips of their own. " <>
+          "Returns only regular tracks (no return/master tracks — those have no " <>
+          "clip slots).",
+      parameters: %{type: "object", properties: %{}, required: []}
     }
   ]
 

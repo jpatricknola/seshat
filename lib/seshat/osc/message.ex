@@ -41,6 +41,9 @@ defmodule Seshat.OSC.Message do
   defp decode_arg("s", data), do: read_string(data)
   defp decode_arg("T", data), do: {true, data}
   defp decode_arg("F", data), do: {false, data}
+  # OSC nil: type tag only, no payload bytes. AbletonOSC sends it for every
+  # clip.* property of an empty slot in a /live/song/get/track_data reply.
+  defp decode_arg("N", data), do: {nil, data}
 
   @spec encode(String.t(), list()) :: binary()
   def encode(address, args) do
