@@ -44,3 +44,6 @@ __pycache__/
 # ElixirLS language server artifacts
 /.elixir_ls/
 
+# Sound catalog — dev points :catalog_path here so it's visible; machine-specific
+/catalog.json
+

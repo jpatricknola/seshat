@@ -79,5 +79,11 @@ config :phoenix_live_view,
 # Anthropic API key for intent parsing
 config :seshat, :anthropic_api_key, System.get_env("ANTHROPIC_API_KEY")
 
+# Keep the sound catalog in the project root in dev so it can be inspected by
+# eye. Gitignored — it's machine-specific. Installed builds keep the default
+# (~/.seshat/catalog.json). Anchored to __DIR__ rather than left relative
+# because `mix mcp` is launched by the MCP client, whose cwd is not ours.
+config :seshat, :catalog_path, Path.expand("../catalog.json", __DIR__)
+
 # Load local secrets if present (never committed)
 if File.exists?("config/dev.secret.exs"), do: import_config("dev.secret.exs")

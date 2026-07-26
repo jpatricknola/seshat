@@ -22,6 +22,9 @@ defmodule Seshat.Library.Catalog do
   reindexing is something a user does after installing Packs rather than on
   every boot. Rows live in ETS, read directly by callers; the GenServer owns
   writes only. No Ecto, no database of our own.
+
+  The location is overridable via `config :seshat, :catalog_path` — dev points
+  it at the (gitignored) project root so the file can be inspected by eye.
   """
 
   use GenServer
