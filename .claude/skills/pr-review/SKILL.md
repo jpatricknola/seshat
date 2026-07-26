@@ -12,9 +12,10 @@ fine can still be wrong in context, and the worst review misses are things
 that are *absent* from the diff, which no amount of staring at hunks reveals.
 
 1. **Establish the change set.** For a PR number, use `gh pr view` and
-   `gh pr diff`; for a branch, `git diff main...<branch>` plus `git log` for
-   the commit story. Read every changed file in full, not just the hunks —
-   you need the surrounding code to judge the change.
+   `gh pr diff`; for a branch, diff it against the given base ref — `main`
+   when none was specified — with `git diff <base>...<branch>`, plus
+   `git log` for the commit story. Read every changed file in full, not just
+   the hunks — you need the surrounding code to judge the change.
 
 2. **Find the implementation plan.** Look, in order: a `docs/PLAN_*.md`
    matching the feature, the relevant [docs/ROADMAP.md](docs/ROADMAP.md)

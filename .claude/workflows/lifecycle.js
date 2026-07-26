@@ -84,17 +84,22 @@ got resolving them, and what the implementer must check first.`,
   opts('plan', { label: 'plan', schema: PHASE_SCHEMA })
 ), 'plan')
 if (plan.status === 'blocked') return { stopped_at: 'plan', reason: plan.report }
+// Later prompts interpolate the plan path; if the planner forgot to record it, hand the next
+// agent a findable description instead of the literal string "undefined".
+const planPath = plan.plan_path || 'the single active docs/PLAN_*.md (the planner did not record the path)'
 log(`Plan written: ${plan.plan_path || 'see report'}`)
 
 phase('Implement')
 const impl = need(await agent(
   `${NONINTERACTIVE}
 
-Read .claude/skills/implement/SKILL.md and carry out its instructions for the plan at ${plan.plan_path}.
-Create the feature branch from the CURRENT HEAD (do not switch to or branch from main). Before you
-create it, record the current HEAD SHA ('git rev-parse HEAD') and return it as base_sha — later phases
-diff against that exact commit rather than guessing the branch point. Always return both branch and
-base_sha, even if you end up blocked partway.
+Read .claude/skills/implement/SKILL.md and carry out its instructions for the plan at ${planPath}.
+Create the feature branch in place with 'git checkout -b' from wherever HEAD currently is — do not
+check out or switch to another ref first: the planner's plan doc and ROADMAP edit are uncommitted in
+the working tree and must ride along onto the new branch. Before you create it, record the current
+HEAD SHA ('git rev-parse HEAD') and return it as base_sha — later phases diff against that exact
+commit rather than guessing the branch point. Always return both branch and base_sha, even if you
+end up blocked partway.
 The planning phase's report — treat its assumptions as decisions already made:
 <plan-report>
 ${plan.report}
@@ -106,12 +111,12 @@ Put your per-plan-item report (done/deviated/blocked, assumptions carried) in th
 body as well as your returned report, so it survives for the reviewer.`,
   opts('implement', { label: 'implement', schema: PHASE_SCHEMA })
 ), 'implement')
-if (impl.status === 'blocked') return { stopped_at: 'implement', plan: plan.plan_path, reason: impl.report }
+if (impl.status === 'blocked') return { stopped_at: 'implement', plan: planPath, reason: impl.report }
 const branch = impl.branch
 if (!branch) {
   return {
     stopped_at: 'implement',
-    plan: plan.plan_path,
+    plan: planPath,
     reason: `Implement reported complete but returned no branch name, so no later phase can be targeted.\n\n${impl.report}`,
   }
 }
@@ -120,7 +125,10 @@ log(`Implemented on ${branch}${impl.base_sha ? ` (from ${impl.base_sha.slice(0, 
 phase('Review')
 const MAX_ROUNDS = 3
 let review = null
-let lastFixReport = ''
+// Every fix round's report, oldest first. Each reviewer gets all of them — a false positive
+// rebutted in round 1 must stay rebutted in round 3, not resurface because only the latest
+// fix report was passed along.
+const fixReports = []
 for (let round = 1; round <= MAX_ROUNDS; round++) {
   review = needReview(await agent(
     `${NONINTERACTIVE}
@@ -129,12 +137,14 @@ Read .claude/skills/pr-review/SKILL.md and carry out its instructions, reviewing
 against ${impl.base_sha
       ? `commit ${impl.base_sha} — the exact commit it was branched from, so 'git diff ${impl.base_sha}...${branch}' is your change set`
       : `its merge base (derive it with 'git merge-base'; the branch point may not be main)`}.
-The plan doc is ${plan.plan_path}.
+The plan doc is ${planPath}.
+Check out "${branch}" first if HEAD is not already on it — the skill's compile and test steps run
+against the working tree, and testing the wrong checkout would pass a review the branch never earned.
 Implementer's report (deviations and assumptions are recorded here — judge them, don't rediscover them):
 <implementer-report>
 ${impl.report}
 </implementer-report>
-${lastFixReport ? `A previous review round requested changes; the fixes applied since:\n<fix-report>\n${lastFixReport}\n</fix-report>` : ''}
+${fixReports.length ? `Previous review rounds requested changes; every fix round so far, oldest first — findings rebutted as false positives in these reports stay settled unless you have new evidence:\n${fixReports.map((r, i) => `<fix-report round="${i + 1}">\n${r}\n</fix-report>`).join('\n')}` : ''}
 Report findings only — change no code. Map your verdict to exactly: approve, approve_with_nits, or needs_changes.`,
     opts('review', { label: `review round ${round}`, phase: 'Review', schema: REVIEW_SCHEMA })
   ))
@@ -146,7 +156,7 @@ Report findings only — change no code. Map your verdict to exactly: approve, a
     `${NONINTERACTIVE}
 
 You are addressing review findings on branch "${branch}" (check it out if needed). The plan doc is
-${plan.plan_path}. Fix every finding below that you agree with; for any you believe is a false
+${planPath}. Fix every finding below that you agree with; for any you believe is a false
 positive, don't change code — rebut it in your report with evidence. Run 'mix precommit' until clean,
 then commit the fixes on the same branch with a message referencing the review round.
 <review-findings>
@@ -154,11 +164,11 @@ ${review.report}
 </review-findings>`,
     opts('fix', { label: `fix round ${round}`, phase: 'Review', schema: PHASE_SCHEMA })
   ), 'fix')
-  if (fix.status === 'blocked') return { stopped_at: 'fix', branch, reason: fix.report, last_review: review.report }
-  lastFixReport = fix.report
+  if (fix.status === 'blocked') return { stopped_at: 'fix', branch, plan: planPath, reason: fix.report, last_review: review.report }
+  fixReports.push(fix.report)
 }
 if (review.verdict === 'needs_changes') {
-  return { stopped_at: 'review', branch, plan: plan.plan_path, verdict: review.verdict, findings: review.report }
+  return { stopped_at: 'review', branch, plan: planPath, verdict: review.verdict, findings: review.report }
 }
 log(`Review verdict: ${review.verdict}`)
 
@@ -167,14 +177,15 @@ const ship = need(await agent(
   `${NONINTERACTIVE}
 
 Read .claude/skills/ship/SKILL.md and carry out its instructions for the feature just implemented on
-branch "${branch}" (plan doc: ${plan.plan_path}) — the feature was implemented and reviewed on this
+branch "${branch}" (plan doc: ${planPath}) — the feature was implemented and reviewed on this
 branch. Get today's date from the 'date' command for the archive banner. Commit the close-out (roadmap edit,
 archived plan, any CLAUDE.md/docs sync) on the same branch as its own commit.
 
 Then — this phase's explicit exception to the no-push rule — publish the branch and open a PR:
 'git push -u origin ${branch}', then 'gh pr create'. Base the PR on the repo's default branch, EXCEPT
-when this branch was cut from somewhere else: it was created from commit ${impl.base_sha || '(unrecorded)'},
-so if that commit is not on the default branch, base the PR on the branch containing it instead —
+when this branch was cut from somewhere else: ${impl.base_sha
+    ? `it was created from commit ${impl.base_sha}, so if that commit is not on the default branch, base the PR on the branch containing it instead`
+    : `its creation point went unrecorded, so derive it with 'git merge-base' against the default branch, and if the branch was cut from elsewhere, base the PR there instead`} —
 otherwise the PR would carry unrelated commits that were never part of this review.
 
 PR title: the feature name. PR body, in order: a two-sentence summary of what the feature does; a link
@@ -198,7 +209,7 @@ status "complete" with the close-out done — report the failure in your report 
 
 return {
   branch,
-  plan: plan.plan_path,
+  plan: planPath,
   verdict: review.verdict,
   review: review.report,
   shipped: ship.status === 'complete',
