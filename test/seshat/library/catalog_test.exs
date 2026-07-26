@@ -107,15 +107,21 @@ defmodule Seshat.Library.CatalogTest do
 
   describe "carry_over_usage/2" do
     test "a reindex keeps what the user has actually loaded" do
-      fresh = Catalog.merge(@export, @db_index)
+      fresh = normalized()
 
       previous = [
         %{
           uri: "query:Sounds#Bass:FileId_5200",
+          uris: ["query:Sounds#Bass:FileId_5200"],
           use_count: 7,
           last_loaded_at: "2026-07-26T00:00:00Z"
         },
-        %{uri: "query:Gone#Away", use_count: 3, last_loaded_at: "2026-07-26T00:00:00Z"}
+        %{
+          uri: "query:Gone#Away",
+          uris: ["query:Gone#Away"],
+          use_count: 3,
+          last_loaded_at: "2026-07-26T00:00:00Z"
+        }
       ]
 
       carried = Map.new(Catalog.carry_over_usage(fresh, previous), &{&1.uri, &1})
@@ -126,9 +132,97 @@ defmodule Seshat.Library.CatalogTest do
     end
 
     test "entries the previous catalog never had are left untouched" do
-      fresh = Catalog.merge(@export, @db_index)
+      fresh = normalized()
 
       assert Catalog.carry_over_usage(fresh, []) == fresh
+    end
+
+    test "a counter follows its preset when the canonical uri shifts" do
+      # Installing a Pack can add a browser location that sorts ahead of the
+      # old canonical pick. The count belongs to the preset, not to whichever
+      # of its uris won last time.
+      fresh = normalized()
+
+      previous = [
+        %{
+          uri: "query:Sounds#Bass:FileId_5200_OLD",
+          uris: ["query:Sounds#Bass:FileId_5200_OLD", "query:Sounds#Bass:FileId_5200"],
+          use_count: 4,
+          last_loaded_at: "2026-07-26T00:00:00Z"
+        }
+      ]
+
+      carried = Map.new(Catalog.carry_over_usage(fresh, previous), &{&1.uri, &1})
+
+      assert carried["query:Sounds#Bass:FileId_5200"].use_count == 4
+    end
+  end
+
+  describe "normalize/1" do
+    test "folds a preset's browser locations into one entry" do
+      rows = [
+        %{
+          uri: "query:Synths#Operator:Pad:FileId_77",
+          name: "Ghost.adg",
+          category: "instruments",
+          path: "Operator/Pad",
+          tags: ["Pad", "Soft"],
+          tag_source: :ableton,
+          description: nil,
+          use_count: 0,
+          last_loaded_at: nil
+        },
+        %{
+          uri: "query:Sounds#Pad:FileId_77",
+          name: "Ghost.adg",
+          category: "sounds",
+          path: "Pad",
+          tags: ["Pad", "Soft"],
+          tag_source: :ableton,
+          description: nil,
+          use_count: 0,
+          last_loaded_at: nil
+        }
+      ]
+
+      assert [entry] = Catalog.normalize(rows)
+
+      assert entry.categories == ["instruments", "sounds"]
+      assert entry.paths == ["Operator/Pad", "Pad"]
+      assert length(entry.uris) == 2
+      assert entry.uri in entry.uris
+      assert entry.tags == ["Pad", "Soft"]
+    end
+
+    test "rows without a FileId are left alone rather than merged by name" do
+      # Core devices carry no FileId. Drum Rack really is one device under two
+      # browser roots, but guessing identity from a name is not safe in the
+      # plugin territory this has never been measured against.
+      rows =
+        for {cat, uri} <- [
+              {"drums", "query:Drums#Drum%20Rack"},
+              {"instruments", "query:Synths#Drum%20Rack"}
+            ] do
+          %{
+            uri: uri,
+            name: "Drum Rack",
+            category: cat,
+            path: "",
+            tags: [],
+            tag_source: :path,
+            description: nil,
+            use_count: 0,
+            last_loaded_at: nil
+          }
+        end
+
+      assert length(Catalog.normalize(rows)) == 2
+    end
+
+    test "is deterministic, so a rebuilt catalog diffs cleanly" do
+      rows = Catalog.merge(@export, @db_index)
+
+      assert Catalog.normalize(rows) == rows |> Enum.reverse() |> Catalog.normalize()
     end
   end
 
@@ -204,7 +298,7 @@ defmodule Seshat.Library.CatalogTest do
       assert entry.use_count == 1
       assert entry.last_loaded_at != nil
 
-      {:ok, _} = GenServer.call(server, {:replace, Catalog.merge(@export, @db_index)})
+      {:ok, _} = GenServer.call(server, {:replace, normalized()})
 
       assert {[entry], 1} = Catalog.search([query: "drifter"] ++ opts)
       assert entry.use_count == 1
@@ -230,6 +324,130 @@ defmodule Seshat.Library.CatalogTest do
     end
   end
 
+  # The fixture above is hand-written and deliberately tiny, which makes the
+  # assertions above exact and readable — but it is not shaped like anything
+  # Ableton actually produces. These run against 28 entries lifted verbatim
+  # from a real 8,222-entry catalog (stock factory content only), picked to
+  # cover every category, both tag sources, empty paths, punctuated names, and
+  # the aliasing below. Regenerate by sampling a real catalog.json; the
+  # assertions here are about shape, not about which presets someone owns.
+  describe "a real catalog" do
+    setup do
+      # Copied out of the repo first — the catalog persists on write, and a
+      # test has no business editing its own fixture.
+      path = tmp_path()
+      File.mkdir_p!(Path.dirname(path))
+      File.cp!("test/support/fixtures/catalog.json", path)
+
+      start_catalog(%{path: path})
+    end
+
+    test "28 browser rows load as 25 presets", %{opts: opts} do
+      assert Catalog.count(opts[:table]) == 25
+    end
+
+    test "a preset filed in several places is one result, not four", %{opts: opts} do
+      # Live files the same .adg under each device that can open it and bakes
+      # the path into the uri, so "Sweet Lead" arrives as four rows across two
+      # categories behind one FileId. ~30% of a real catalog is these aliases,
+      # and unfolded they crowd the candidate slate the user has to choose
+      # from. One preset, one row, every location kept.
+      assert {[entry], 1} = Catalog.search([query: "sweet lead"] ++ opts)
+
+      assert entry.name == "Sweet Lead.adg"
+      assert entry.categories == ["instruments", "sounds"]
+      assert length(entry.uris) == 4
+      assert length(entry.paths) == 4
+
+      # The canonical uri is one Live actually gave us, never a synthesised
+      # one — load_device has to be able to resolve it.
+      assert entry.uri in entry.uris
+
+      # All four uris are the same underlying file.
+      assert entry.uris |> Enum.map(&Catalog.file_id/1) |> Enum.uniq() |> length() == 1
+    end
+
+    test "folding away aliases costs no recall", %{opts: opts} do
+      # Only one of Sweet Lead's four uris survives, but every path it was
+      # filed under stays searchable — so the device names still find it.
+      # (Other entries may match these terms too; what matters is that folding
+      # did not lose the three locations whose uris were dropped.)
+      for term <- ["operator", "analog", "instrument rack", "synth lead"] do
+        {results, _} = Catalog.search([query: term, max_results: 100] ++ opts)
+
+        assert "Sweet Lead.adg" in Enum.map(results, & &1.name),
+               ~s{"#{term}" no longer finds Sweet Lead — a folded path stopped being searchable}
+      end
+    end
+
+    test "an entry with no tags at all is still searchable by name", %{opts: opts} do
+      # Exactly one entry in 8,222 has an empty tag list — an empty path gives
+      # the path fallback nothing to derive from.
+      assert {[entry], 1} = Catalog.search([query: "tremolo"] ++ opts)
+
+      assert entry.name == "Auto Pan-Tremolo"
+      assert entry.tags == []
+      assert entry.paths == [""]
+    end
+
+    test "tag_source survives the JSON round-trip", %{opts: opts} do
+      {all, 25} = Catalog.search([max_results: 100] ++ opts)
+
+      assert Enum.frequencies_by(all, & &1.tag_source) == %{ableton: 21, path: 4}
+    end
+
+    test "every category holds something findable", %{opts: opts} do
+      # These sum to 26, not 25: Sweet Lead is filed under two categories and a
+      # filter on either has to find it.
+      for {category, count} <- %{
+            "audio_effects" => 14,
+            "drums" => 2,
+            "instruments" => 5,
+            "midi_effects" => 2,
+            "sounds" => 3
+          } do
+        assert {_, ^count} = Catalog.search([category: category, max_results: 100] ++ opts)
+      end
+    end
+
+    test "punctuation in a name neither breaks the query nor the match", %{opts: opts} do
+      assert {[%{name: "Jimi's Feedback Guitar.adg"}], 1} =
+               Catalog.search([query: "jimi's"] ++ opts)
+
+      assert {[%{name: "Plug In & Wail.adg"}], 1} = Catalog.search([query: "wail"] ++ opts)
+
+      # Ampersands are everywhere in Live's factory naming ("Piano & Keys",
+      # "Ambient & Evolving") and must survive as a literal search term.
+      assert {_, 7} = Catalog.search([query: "&", max_results: 100] ++ opts)
+    end
+
+    test "record_load via an alias uri still bumps its preset", %{opts: opts, server: server} do
+      # The table is keyed by canonical uri, but load_device can be handed any
+      # alias — from list_browser_items, or remembered from before a reindex
+      # shifted the canonical pick. The counter belongs to the preset.
+      assert {[entry], 1} = Catalog.search([query: "sweet lead"] ++ opts)
+      alias_uri = Enum.find(entry.uris, &(&1 != entry.uri))
+
+      :ok = Catalog.record_load(alias_uri, server)
+      _ = :sys.get_state(server)
+
+      assert {[bumped], 1} = Catalog.search([query: "sweet lead"] ++ opts)
+      assert bumped.uri == entry.uri
+      assert bumped.use_count == 1
+    end
+
+    test "stored paths are decoded, not the uri's percent-escaped form", %{opts: opts} do
+      # Most of these uris carry %20 in a segment. `paths` arrives as its own
+      # field on the browser export and is what search reads — the uri is not
+      # in the haystack at all. So "20" finds nothing here, where it would
+      # match nearly everything if the escaped form became the searchable text.
+      assert {_, 0} = Catalog.search([query: "20"] ++ opts)
+
+      {all, _} = Catalog.search([max_results: 100] ++ opts)
+      refute Enum.any?(all, fn e -> Enum.any?(e.paths, &String.contains?(&1, "%")) end)
+    end
+  end
+
   # Starts a catalog with its own ETS table and its own file, so these tests
   # stay async. Given a `:path`, it loads whatever is already there; otherwise
   # it starts empty and gets the fixture catalog installed.
@@ -250,11 +468,15 @@ defmodule Seshat.Library.CatalogTest do
     _ = :sys.get_state(server)
 
     unless Map.has_key?(context, :path) do
-      {:ok, _} = GenServer.call(server, {:replace, Catalog.merge(@export, @db_index)})
+      {:ok, _} = GenServer.call(server, {:replace, normalized()})
     end
 
     %{opts: [table: table], path: path, server: server}
   end
+
+  # The indexing pipeline as `reindex/1` runs it: rows out of the export, then
+  # folded into one entry per preset.
+  defp normalized, do: @export |> Catalog.merge(@db_index) |> Catalog.normalize()
 
   defp tmp_path do
     Path.join([

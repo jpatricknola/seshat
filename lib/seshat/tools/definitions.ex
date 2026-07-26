@@ -574,7 +574,9 @@ defmodule Seshat.Tools.Definitions do
           "from get_session_state and from what the user has said — and present the top 3–5 " <>
           "candidates with a one-line reason each, then let the user pick. Only load the first " <>
           "hit without asking if the user told you to just pick one. " <>
-          "Each result is `name — tags [folder path] (uri)`; the uri goes straight to " <>
+          "Each result is one preset: `name — tags [folder paths] (uri)`. A preset Live files " <>
+          "under several devices lists all of them, so 'Analog/Synth Lead · Operator/Synth Lead' " <>
+          "is a single sound either device can play — not two options. The uri goes straight to " <>
           "load_device. " <>
           "If the catalog is empty, say so and offer to run reindex_library.",
       parameters: %{

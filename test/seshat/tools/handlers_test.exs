@@ -149,9 +149,10 @@ defmodule Seshat.Tools.HandlersTest do
       Map.merge(
         %{
           uri: "query:Sounds#Bass:FileId_5200",
+          uris: ["query:Sounds#Bass:FileId_5200"],
           name: "808 Drifter.adg",
-          category: "sounds",
-          path: "Bass/808 & Sub",
+          categories: ["sounds"],
+          paths: ["Bass/808 & Sub"],
           tags: ["808 Bass", "Punchy", "Sub"],
           tag_source: :ableton,
           description: nil,
@@ -173,9 +174,30 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "says so when an item has no tags at all" do
-      result = Handlers.format_catalog_entries([entry(%{tags: [], path: ""})], 1)
+      result = Handlers.format_catalog_entries([entry(%{tags: [], paths: [""]})], 1)
 
       assert result =~ "808 Drifter.adg — no tags (query:Sounds#Bass:FileId_5200)"
+    end
+
+    test "lists every place Live files a preset, as one result" do
+      # A folded preset keeps all its locations: which devices can play it is
+      # real information for choosing, and it is still one sound, not four.
+      result =
+        Handlers.format_catalog_entries(
+          [
+            entry(%{
+              name: "Sweet Lead.adg",
+              tags: ["Lead"],
+              paths: ["Analog/Synth Lead", "Operator/Synth Lead", "Synth Lead"]
+            })
+          ],
+          1
+        )
+
+      assert result =~
+               "Sweet Lead.adg — Lead [Analog/Synth Lead · Operator/Synth Lead · Synth Lead]"
+
+      assert result =~ "1 match(es)"
     end
 
     test "flags truncation" do

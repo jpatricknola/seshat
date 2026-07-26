@@ -24,7 +24,9 @@ defmodule Seshat.Library.Catalog do
   writes only. No Ecto, no database of our own.
 
   The location is overridable via `config :seshat, :catalog_path` — dev points
-  it at the (gitignored) project root so the file can be inspected by eye.
+  it at the (gitignored) project root so the file can be inspected by eye, and
+  `config :seshat, :catalog_pretty` indents it there for the same reason. Both
+  default to the installed-build behaviour: `~/.seshat/catalog.json`, minified.
   """
 
   use GenServer
@@ -36,7 +38,10 @@ defmodule Seshat.Library.Catalog do
 
   @table __MODULE__
   @default_path "~/.seshat/catalog.json"
-  @format_version 1
+  # 2: one row per preset rather than per browser location — `category`/`path`
+  # became `categories`/`paths`, and `uris` records every location. Bumping
+  # this makes an older catalog a rebuild prompt instead of a silent misread.
+  @format_version 2
 
   # A full browser walk of every category runs on Live's UI thread and takes
   # tens of seconds on a large library.
@@ -47,11 +52,30 @@ defmodule Seshat.Library.Catalog do
 
   @default_max_results 15
 
-  @type entry :: %{
+  # A `row` is one browser location: exactly what the export walked, one per
+  # place a preset appears. `merge/2` produces rows. An `entry` is one preset —
+  # what search and the model deal in — produced by folding a preset's rows
+  # together in `normalize/1`. Keeping the two apart is what lets later
+  # enrichment stages compose: each is a pure [row] -> [row] or [entry] ->
+  # [entry] pass over the same list.
+  @type row :: %{
           uri: String.t(),
           name: String.t(),
           category: String.t(),
           path: String.t(),
+          tags: [String.t()],
+          tag_source: :ableton | :path,
+          description: String.t() | nil,
+          use_count: non_neg_integer(),
+          last_loaded_at: String.t() | nil
+        }
+
+  @type entry :: %{
+          uri: String.t(),
+          uris: [String.t()],
+          name: String.t(),
+          categories: [String.t()],
+          paths: [String.t()],
           tags: [String.t()],
           tag_source: :ableton | :path,
           description: String.t() | nil,
@@ -162,7 +186,7 @@ defmodule Seshat.Library.Catalog do
     3. neither — fall back to the folder path as tags, which is roughly what a
        human reading the browser would infer anyway.
   """
-  @spec merge(map(), %{integer() => AbletonDB.entry()}) :: [entry()]
+  @spec merge(map(), %{integer() => AbletonDB.entry()}) :: [row()]
   def merge(export, db_index) do
     by_name = index_devices_by_name(db_index)
 
@@ -175,20 +199,82 @@ defmodule Seshat.Library.Catalog do
   end
 
   @doc """
+  Fold a merged export's rows so that one preset is one entry.
+
+  Live files a preset under every device that can open it and bakes the browser
+  path into the uri, so a single `.adg` arrives as two to four rows differing
+  only in where they sit. Left alone they crowd the result slate: measured
+  across ten realistic "describe a sound" searches, 46% of the returned rows
+  were aliases of a preset already in the list.
+
+  The key is the FileId the uri embeds. Across a real 8,222-entry catalog,
+  `name`, `tags`, `description` and `tag_source` are identical in every one of
+  the 1,798 multi-row clusters, and no two different names ever share a FileId
+  — so the fold is lossless as long as the two fields that *do* vary become
+  plural. Hence `paths` and `categories`; everything else comes from the
+  canonical row.
+
+  Rows carrying no FileId are left alone rather than merged by name. They are
+  core devices, and the only aliased pair among the 86 in that catalog is Drum
+  Rack, listed under both `drums` and `instruments`. One surplus row is a
+  better trade than guessing at identity in the plugin and user-library
+  territory this has never been measured against — see
+  docs/catalog-aliasing-options.md.
+  """
+  @spec normalize([row()]) :: [entry()]
+  def normalize(rows) do
+    rows
+    |> Enum.group_by(&fold_key/1)
+    |> Enum.map(fn {_key, group} -> fold(group) end)
+    # Sorted so a rebuilt catalog.json diffs cleanly against the last one
+    # rather than reshuffling with ETS/map iteration order.
+    |> Enum.sort_by(& &1.uri)
+  end
+
+  defp fold_key(row) do
+    case file_id(row.uri) do
+      nil -> {:uri, row.uri}
+      id -> {:file_id, id}
+    end
+  end
+
+  defp fold(rows) do
+    # The alias uris are interchangeable — `_find_item` in browser.py scans
+    # every category, so all of them resolve — but the choice must be stable,
+    # or `use_count` detaches from its preset on the next reindex.
+    [canonical | _] = sorted = Enum.sort_by(rows, & &1.uri)
+
+    %{
+      uri: canonical.uri,
+      uris: Enum.map(sorted, & &1.uri),
+      name: canonical.name,
+      categories: sorted |> Enum.map(& &1.category) |> Enum.uniq() |> Enum.sort(),
+      paths: sorted |> Enum.map(& &1.path) |> Enum.uniq() |> Enum.sort(),
+      tags: canonical.tags,
+      tag_source: canonical.tag_source,
+      description: canonical.description,
+      use_count: canonical.use_count,
+      last_loaded_at: canonical.last_loaded_at
+    }
+  end
+
+  @doc """
   Carry `use_count`/`last_loaded_at` from an older set of entries onto newly
   merged ones, so a reindex doesn't forget what the user actually reaches for.
+
+  Indexed by *every* alias uri, not just the canonical one: installing a Pack
+  can add a browser location that sorts ahead of the old canonical pick, and
+  the counter should follow the preset rather than the uri that happened to
+  win last time.
   """
   @spec carry_over_usage([entry()], [entry()]) :: [entry()]
   def carry_over_usage(entries, previous) do
-    previous_by_uri = Map.new(previous, &{&1.uri, &1})
+    previous_by_uri = for old <- previous, uri <- old.uris, into: %{}, do: {uri, old}
 
     Enum.map(entries, fn entry ->
-      case Map.fetch(previous_by_uri, entry.uri) do
-        {:ok, old} ->
-          %{entry | use_count: old.use_count, last_loaded_at: old.last_loaded_at}
-
-        :error ->
-          entry
+      case Enum.find_value(entry.uris, &Map.get(previous_by_uri, &1)) do
+        nil -> entry
+        old -> %{entry | use_count: old.use_count, last_loaded_at: old.last_loaded_at}
       end
     end)
   end
@@ -295,10 +381,13 @@ defmodule Seshat.Library.Catalog do
 
   defp matches_category?(_entry, nil), do: true
   defp matches_category?(_entry, ""), do: true
-  defp matches_category?(entry, category), do: entry.category == to_string(category)
+  defp matches_category?(entry, category), do: to_string(category) in entry.categories
 
   defp haystack(entry) do
-    [entry.name, entry.path, entry.category, entry.description || "" | entry.tags]
+    # Every browser location a preset has is searchable, so folding aliases
+    # away costs no recall: "operator" still finds a preset filed under
+    # Operator even though only one of its uris survived the fold.
+    [entry.name, entry.description || "" | entry.paths ++ entry.categories ++ entry.tags]
     |> Enum.join(" ")
     |> String.downcase()
   end
@@ -355,6 +444,12 @@ defmodule Seshat.Library.Catalog do
       {:error, :enoent} ->
         Logger.info("Catalog: no catalog at #{state.path} — run reindex_library to build one")
 
+      {:error, :stale_format} ->
+        Logger.info(
+          "Catalog: #{state.path} was written in an older format — " <>
+            "run reindex_library to rebuild it"
+        )
+
       {:error, reason} ->
         Logger.warning("Catalog: could not load #{state.path}: #{inspect(reason)}")
     end
@@ -387,19 +482,19 @@ defmodule Seshat.Library.Catalog do
 
   @impl true
   def handle_cast({:record_load, uri}, state) do
-    case :ets.lookup(state.table, uri) do
-      [{^uri, entry}] ->
+    case find_entry(state.table, uri) do
+      nil ->
+        {:noreply, state}
+
+      entry ->
         updated = %{
           entry
           | use_count: entry.use_count + 1,
             last_loaded_at: DateTime.utc_now() |> DateTime.to_iso8601()
         }
 
-        :ets.insert(state.table, {uri, updated})
+        :ets.insert(state.table, {entry.uri, updated})
         {:noreply, schedule_persist(state)}
-
-      [] ->
-        {:noreply, state}
     end
   end
 
@@ -457,11 +552,25 @@ defmodule Seshat.Library.Catalog do
           %{}
       end
 
-    {:ok, merge(export, db_index)}
+    # The indexing pipeline: faithful rows out of the export, then one pure
+    # pass per transform. Further enrichment belongs here as another stage.
+    {:ok, export |> merge(db_index) |> normalize()}
   end
 
   defp all_entries(table) do
     :ets.select(table, [{{:_, :"$1"}, [], [:"$1"]}])
+  end
+
+  # The table is keyed by canonical uri only, but a load can arrive via any
+  # of a preset's alias uris — from list_browser_items, or remembered from
+  # before a reindex shifted the canonical pick. The counter belongs to the
+  # preset, so a key miss falls back to scanning the alias lists. Loads are
+  # rare and the table is a few thousand rows; the scan is not worth an index.
+  defp find_entry(table, uri) do
+    case :ets.lookup(table, uri) do
+      [{^uri, entry}] -> entry
+      [] -> Enum.find(all_entries(table), &(uri in &1.uris))
+    end
   end
 
   defp insert_all(table, entries) do
@@ -485,12 +594,17 @@ defmodule Seshat.Library.Catalog do
     Application.get_env(:seshat, :catalog_path, @default_path) |> Path.expand()
   end
 
+  # The version is matched, not just written. Without that a catalog from an
+  # older format loads silently through the current `from_json/1` — no error,
+  # no crash, just entries with empty `categories`/`paths`, which reads as "the
+  # library has nothing like that" rather than "this file is stale".
   defp load_file(path) do
     with {:ok, body} <- File.read(path),
-         {:ok, %{"entries" => entries}} <- Jason.decode(body) do
+         {:ok, %{"version" => @format_version, "entries" => entries}} <- Jason.decode(body) do
       {:ok, Enum.map(entries, &from_json/1)}
     else
       {:error, %Jason.DecodeError{} = error} -> {:error, error}
+      {:ok, %{"entries" => _}} -> {:error, :stale_format}
       {:ok, _other} -> {:error, :unrecognised_format}
       {:error, reason} -> {:error, reason}
     end
@@ -504,17 +618,23 @@ defmodule Seshat.Library.Catalog do
     }
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
-         {:ok, body} <- Jason.encode(payload) do
+         {:ok, body} <- Jason.encode(payload, pretty: pretty?()) do
       File.write(path, body)
     end
   end
 
+  # Indented output is ~1.45x the bytes and ~300ms slower to encode, which only
+  # buys something where a human reads the file — dev. `Jason.decode` takes
+  # either form, so this is free to flip and old catalogs still load.
+  defp pretty?, do: Application.get_env(:seshat, :catalog_pretty, false)
+
   defp to_json(entry) do
     %{
       "uri" => entry.uri,
+      "uris" => entry.uris,
       "name" => entry.name,
-      "category" => entry.category,
-      "path" => entry.path,
+      "categories" => entry.categories,
+      "paths" => entry.paths,
       "tags" => entry.tags,
       "tag_source" => to_string(entry.tag_source),
       "description" => entry.description,
@@ -526,9 +646,10 @@ defmodule Seshat.Library.Catalog do
   defp from_json(row) do
     %{
       uri: row["uri"],
+      uris: row["uris"] || [row["uri"]],
       name: row["name"] || "",
-      category: row["category"] || "",
-      path: row["path"] || "",
+      categories: row["categories"] || [],
+      paths: row["paths"] || [],
       tags: row["tags"] || [],
       tag_source: if(row["tag_source"] == "ableton", do: :ableton, else: :path),
       description: row["description"],
