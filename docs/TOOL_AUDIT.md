@@ -5,11 +5,16 @@ _Living doc · MCP design review · 41 tools reviewed · 25 Jul 2026 — update 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
 > `set_track_volume` states the real scale and echoes dB, as does
-> `set_track_pan` in L/R) — see [docs/PLAN_audit_fixes.md](docs/PLAN_audit_fixes.md).
+> `set_track_pan` in L/R) — see [PLAN_audit_fixes.md](PLAN_audit_fixes.md).
 > The `search_library` ⟷ `list_browser_items` routing note turned out to be
 > already present on both sides. The optional merges were declined on purpose.
 > What remains from this audit is §02, now tracked on
-> [docs/ROADMAP.md](docs/ROADMAP.md).
+> [ROADMAP.md](ROADMAP.md).
+>
+> Both new guards query Ableton, so neither is unit-testable (see
+> [.claude/rules/testing.md](../.claude/rules/testing.md)) — the **Keep**
+> verdicts below record the intended behavior and are pending confirmation by
+> the Part 8 traps in [validation-script.md](validation-script.md).
 
 **At a glance:** 41 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~10 coverage gaps (mostly optional), all on the roadmap.
 
@@ -118,7 +123,7 @@ All 41 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 | `fire_clip`             | Launch    | Keep   | Fixed 07/2026 — empty slot errors, not a silent stop.    |
 | `fire_scene`            | Launch    | Keep   | —                                                        |
 | `stop_clip`             | Launch    | Keep   | —                                                        |
-| `write_midi_notes`      | MIDI      | Keep   | Fixed 07/2026 — audio tracks error, nothing written.     |
+| `write_midi_notes`      | MIDI      | Keep   | Fixed 07/2026 — audio and group tracks error.            |
 | `remove_notes`          | MIDI      | Keep   | Default-all is a mild footgun.                           |
 | `list_browser_items`    | Devices   | Keep   | Fallback note already present — overlap resolved.        |
 | `load_device`           | Devices   | Keep   | Good echo-and-verify pattern.                            |
@@ -130,7 +135,7 @@ All 41 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 
 ## 06 · If You Do Five Things
 
-1. ✅ **Make `write_midi_notes` error on audio tracks** — done 26 Jul. Kills the one silent-failure that could make me report a phantom success.
+1. ✅ **Make `write_midi_notes` error on audio tracks** — done 26 Jul, and on group tracks too (they report MIDI input but hold no clips, so they were the same phantom success by another route). Kills the one silent-failure that could make me report a write that never happened.
 2. **Build sends / return tracks** — `create_return_track` + `set_send`. The biggest capability gap — unlocks all reverb/delay mixing. Roadmap Priority 1.
 3. **Add device removal & bypass** — so the device workflow isn't one-way; you can undo a wrong load and A/B. Roadmap Priority 2. (`/live/track/delete_device` exists in the installed AbletonOSC but is missing from our address docs — cheaper than it looked.)
 4. ✅ **Fix the `set_track_volume` scale + echo dB** — done 26 Jul: 0.85 is unity, 1.0 is +6 dB, and both mixer setters now echo a display value.

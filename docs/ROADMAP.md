@@ -11,14 +11,6 @@ address.
 
 ---
 
-## Priority 0 — Tool audit fixes
-
-Correctness fixes on existing tools from [../TOOL_AUDIT.md](../TOOL_AUDIT.md):
-make `write_midi_notes` error on audio tracks instead of failing silently,
-guard `fire_clip` against empty slots, fix the misleading volume scale and
-bring the older mixer setters up to the echo-and-verify standard. Planned in
-[PLAN_audit_fixes.md](PLAN_audit_fixes.md).
-
 ## Priority 1 — Send levels & return tracks
 
 "Add some reverb to the vocals." "Turn down the delay send on the drums."
@@ -51,11 +43,10 @@ unlocks the catalog audition/hot-swap loop (below).
 
 - `delete_device` — **upstream has it after all**: `/live/track/delete_device`
   is registered as a track *method* in the installed AbletonOSC
-  (`abletonosc/track.py`, `methods = ["delete_device", "stop_all_clips"]`), it
-  is just missing from
-  [abletonosc-api-docs.md](abletonosc-api-docs.md). Confirm the argument shape
-  against the source (`track_id, device_id`) and add the row to the address
-  docs as part of building this — no vendored Python needed.
+  (`abletonosc/track.py`, `methods = ["delete_device", "stop_all_clips"]`).
+  Argument shape confirmed against that source and already added to
+  [abletonosc-api-docs.md](abletonosc-api-docs.md) — `track_id, device_id`, no
+  reply. No vendored Python needed; this is only a tool away.
 - Bypass may be free: every Live device's parameter 0 is "Device On", so
   `set_device_parameter` can already A/B a device — verify, then either add a
   `bypass_device` convenience or just teach the `set_device_parameter`

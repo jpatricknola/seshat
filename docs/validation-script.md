@@ -467,6 +467,16 @@ tool's own error is the backstop.
 - [ ] Refuses, and explains why
 - [ ] Does **not** claim success
 
+> **Say this** (only if this set has a group track — skip otherwise):
+> *"Write a melody on the group track itself."*
+
+**Look for:** the same refusal by a different route. A group track reports MIDI
+input but has no clip slots of its own, so an unguarded write would be dropped
+and reported as success. Seshat should name it as a group track and offer one of
+the tracks inside it.
+
+- [ ] Refuses, names it as a group track
+
 > **Say this:**
 > *"Try writing notes to track 47."*
 

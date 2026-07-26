@@ -20,6 +20,13 @@ defmodule Seshat.Commands.Registry do
 
   require Logger
 
+  # A clip-slot index that doesn't exist gets no reply at all (AbletonOSC raises
+  # inside the callback and sends nothing), so this timeout is really "how long
+  # until we call it a bad index". Matches the guard timeout in
+  # `Seshat.Tools.Handlers` rather than Transport's 5s default: a typo shouldn't
+  # stall a write for five seconds.
+  @slot_query_timeout 2_000
+
   @spec execute(Command.t()) :: :ok | {:error, term()}
   def execute(%Command{command: :create_track, track_type: type, name: name}) do
     with :ok <- create_and_name_track(type, name) do
@@ -54,19 +61,25 @@ defmodule Seshat.Commands.Registry do
 
   # --- Private helpers: MIDI notes ---
 
+  # The echoed indices are checked against the ones we asked about: Transport
+  # correlates replies by address alone, so a reply abandoned by an earlier
+  # timeout can arrive while a later query for the same address is pending, and
+  # acting on another slot's answer would create a clip over the wrong material.
   defp ensure_clip(track, slot, length) do
-    case Transport.query("/live/clip_slot/get/has_clip", [track, slot]) do
-      {:ok, {_addr, [_t, _s, 1]}} ->
-        :ok
+    case Transport.query("/live/clip_slot/get/has_clip", [track, slot], @slot_query_timeout) do
+      {:ok, {_addr, [reply_track, reply_slot, has_clip]}}
+      when reply_track == track and reply_slot == slot ->
+        # AbletonOSC sends booleans for some properties and 0/1 for others.
+        if has_clip in [1, true] do
+          :ok
+        else
+          Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
+        end
 
-      {:ok, {_addr, [_t, _s, true]}} ->
-        :ok
-
-      {:ok, {_addr, [_t, _s, 0]}} ->
-        Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
-
-      {:ok, {_addr, [_t, _s, false]}} ->
-        Transport.send_message("/live/clip_slot/create_clip", [track, slot, length / 1.0])
+      {:ok, _mismatched} ->
+        {:error,
+         "Ableton's reply about slot #{slot} on track #{track} was for a different slot — it " <>
+           "belongs to an earlier query that timed out. Nothing was written; try again."}
 
       {:error, reason} ->
         {:error, reason}

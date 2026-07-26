@@ -151,8 +151,8 @@ defmodule Seshat.Tools.Definitions do
           "For chords, add multiple notes with the same start_beat and duration. " <>
           "Common chord intervals from root: major [0,4,7], minor [0,3,7], 7th [0,4,7,10], m7 [0,3,7,10], maj7 [0,4,7,11]. " <>
           "Use get_session_state first to resolve track names to indices and to check the current time signature. " <>
-          "Use get_clip_slots first to pick an empty slot on an actually-MIDI track: writing to an " <>
-          "audio track is rejected with an error and nothing is written. " <>
+          "Use get_clip_slots first to pick an empty slot on an actually-MIDI track: writing to " <>
+          "an audio track or a group track is rejected with an error and nothing is written. " <>
           "Clip slot N sits in scene N — slot 0 is the first scene.",
       parameters: %{
         type: "object",
@@ -756,7 +756,8 @@ defmodule Seshat.Tools.Definitions do
           "cutoff') to its index and to learn the legal value range. " <>
           "Values are Ableton's internal units — often normalized 0.0–1.0, but not always; " <>
           "trust the min/max in the output, not an assumption. " <>
-          "When talking to the user, refer to tracks and devices by name, never raw index.",
+          "When talking to the user, refer to tracks and devices by name or 1-based UI number, " <>
+          "never raw index.",
       parameters: %{
         type: "object",
         properties: %{
