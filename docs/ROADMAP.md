@@ -13,6 +13,8 @@ address.
 
 ## Priority 1 — Clip-slot state
 
+Planned — implementation plan in [PLAN_clip_slot_state.md](PLAN_clip_slot_state.md).
+
 Session state is track-level only: we don't know which slots hold clips, which
 are empty, which are playing or recording, or their names and lengths. So
 `fire_clip`, `duplicate_clip`, and note-writing all operate on guessed slot
