@@ -24,6 +24,26 @@ defmodule Seshat.Tools.Handlers do
   @default_max_results 25
   @default_catalog_results 15
 
+  # Properties for the /live/song/get/track_data bulk query, in reply order.
+  # Each track.* property contributes one value per track; each clip.* /
+  # clip_slot.* property contributes num_scenes values — so a track's chunk is
+  # 3 + 5 * num_scenes values. parse_track_data/3 depends on this exact order.
+  @track_data_properties [
+    "track.name",
+    "track.has_midi_input",
+    "track.is_foldable",
+    "clip_slot.has_clip",
+    "clip.name",
+    "clip.length",
+    "clip.is_playing",
+    "clip.is_recording"
+  ]
+
+  # Batch size for track_data queries: keeps any single reply datagram far
+  # below the Transport's 64KB socket buffer (a truncated datagram surfaces as
+  # a mystery timeout). One batch covers any normal set.
+  @track_data_target_values 4000
+
   @spec call(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
   def call(name, params) when is_binary(name) and is_map(params) do
     do_call(name, stringify_keys(params))
@@ -215,6 +235,152 @@ defmodule Seshat.Tools.Handlers do
         "#{format_number(clip_length)} beats, #{length(notes)} note(s):"
 
     "#{header}\n\n#{lines}"
+  end
+
+  @doc """
+  Chunks the flat `/live/song/get/track_data` reply into one map per track.
+
+  The reply carries, per track, the values of `@track_data_properties` in
+  order: 3 single track-level values, then 5 runs of `num_scenes` slot-level
+  values. Empty slots contribute OSC nil for every `clip.*` property; a slot
+  is empty iff `clip_slot.has_clip` is falsy, and the nils are discarded.
+
+  A reply that isn't exactly `num_tracks * (3 + 5 * num_scenes)` values means
+  the shape changed upstream — fail loudly rather than misattribute values to
+  the wrong tracks (same guard as `parse_clip_notes/1`).
+  """
+  @spec parse_track_data(list(), pos_integer(), pos_integer()) ::
+          {:ok, [map()]} | {:error, String.t()}
+  def parse_track_data(values, num_scenes, num_tracks)
+      when is_list(values) and num_scenes >= 1 and num_tracks >= 1 do
+    per_track = 3 + 5 * num_scenes
+    expected = num_tracks * per_track
+
+    if length(values) == expected do
+      tracks =
+        values
+        |> Enum.chunk_every(per_track)
+        |> Enum.map(fn [name, has_midi_input, is_foldable | slot_values] ->
+          [has_clips, clip_names, clip_lengths, playings, recordings] =
+            Enum.chunk_every(slot_values, num_scenes)
+
+          slots =
+            [has_clips, clip_names, clip_lengths, playings, recordings]
+            |> Enum.zip()
+            |> Enum.map(fn {has_clip, clip_name, clip_length, playing, recording} ->
+              if truthy?(has_clip) do
+                %{
+                  name: clip_name,
+                  length: clip_length,
+                  playing?: truthy?(playing),
+                  recording?: truthy?(recording)
+                }
+              end
+            end)
+
+          %{
+            name: name,
+            midi?: truthy?(has_midi_input),
+            group?: truthy?(is_foldable),
+            slots: slots
+          }
+        end)
+
+      {:ok, tracks}
+    else
+      {:error,
+       "Unexpected clip-grid data from Live: got #{length(values)} value(s) for " <>
+         "#{num_tracks} track(s) × #{num_scenes} scene(s), expected #{expected}. " <>
+         "AbletonOSC may have changed its track_data reply format — the grid was not read."}
+    end
+  end
+
+  @doc """
+  Formats the parsed clip grid: the scene list, then one block per track.
+
+  Occupied slots get a line each; consecutive empty slots collapse into ranges
+  (with 30 scenes the output would otherwise be mostly the word "empty").
+  Track label from the flags: `is_foldable` → group, else `has_midi_input` →
+  MIDI, else audio. A recording clip shows only `[recording]` — Live reports
+  it as playing too, and two flags would just be noise.
+  """
+  @spec format_clip_slots([String.t()], [map()]) :: String.t()
+  def format_clip_slots(scenes, tracks) do
+    scene_line =
+      "#{length(scenes)} scene(s): " <>
+        (scenes
+         |> Enum.with_index()
+         |> Enum.map_join(", ", fn {name, index} -> ~s(#{index} "#{name}") end))
+
+    track_blocks =
+      tracks
+      |> Enum.with_index()
+      |> Enum.map_join("\n", &format_track_slots/1)
+
+    "#{scene_line}\n\n#{track_blocks}"
+  end
+
+  defp format_track_slots({track, index}) do
+    label =
+      cond do
+        track.group? -> "group"
+        track.midi? -> "MIDI"
+        true -> "audio"
+      end
+
+    header = ~s{Track #{index} "#{track.name}" (#{label}):}
+
+    empty_indices =
+      for {slot, slot_index} <- Enum.with_index(track.slots), is_nil(slot), do: slot_index
+
+    cond do
+      length(empty_indices) == length(track.slots) ->
+        "#{header} all #{length(track.slots)} slot(s) empty"
+
+      empty_indices == [] ->
+        "#{header}\n#{occupied_slot_lines(track.slots)}"
+
+      true ->
+        "#{header}\n#{occupied_slot_lines(track.slots)}\n" <>
+          "  #{slot_label(empty_indices)}: empty"
+    end
+  end
+
+  defp occupied_slot_lines(slots) do
+    for {slot, index} <- Enum.with_index(slots), not is_nil(slot) do
+      clip_name = if slot.name in [nil, ""], do: "(unnamed)", else: ~s("#{slot.name}")
+
+      flag =
+        cond do
+          slot.recording? -> " [recording]"
+          slot.playing? -> " [playing]"
+          true -> ""
+        end
+
+      "  slot #{index}: #{clip_name} — #{format_number(slot.length)} beats#{flag}"
+    end
+    |> Enum.join("\n")
+  end
+
+  # [0, 1, 3] -> ~s(slots 0-1, 3); [3] -> ~s(slot 3)
+  defp slot_label([index]), do: "slot #{index}"
+
+  defp slot_label(indices) do
+    ranges =
+      indices
+      |> Enum.reduce([], fn index, acc ->
+        case acc do
+          [{first, last} | rest] when index == last + 1 -> [{first, index} | rest]
+          _ -> [{index, index} | acc]
+        end
+      end)
+      |> Enum.reverse()
+      |> Enum.map_join(", ", fn
+        {first, first} -> "#{first}"
+        {first, last} -> "#{first}-#{last}"
+      end)
+
+    "slots #{ranges}"
   end
 
   @range_params ~w(start_pitch pitch_span start_time time_span)
@@ -760,6 +926,22 @@ defmodule Seshat.Tools.Handlers do
          "get_device_parameters."}
   end
 
+  # Reads only, so direct Transport.query — no %Command{}/Registry (Registry
+  # is for mutation sequences). One bulk track_data query per batch of tracks
+  # plus one tiny query per scene name; parsing and formatting are pure.
+  defp do_call("get_clip_slots", _params) do
+    with {:ok, {_addr, [num_tracks]}} <- Transport.query("/live/song/get/num_tracks", []),
+         {:ok, {_addr, [num_scenes]}} <- Transport.query("/live/song/get/num_scenes", []) do
+      read_clip_grid(num_tracks, num_scenes)
+    else
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out reading the clip grid. Check that Ableton is running with AbletonOSC enabled."}
+  end
+
   defp do_call("get_session_state", _params) do
     song = State.song()
     tracks = State.tracks()
@@ -793,6 +975,60 @@ defmodule Seshat.Tools.Handlers do
 
   defp to_track_type("midi"), do: :midi
   defp to_track_type("audio"), do: :audio
+
+  defp read_clip_grid(num_tracks, num_scenes) when num_tracks < 1 or num_scenes < 1 do
+    {:ok, "No tracks in the session — the clip grid is empty."}
+  end
+
+  defp read_clip_grid(num_tracks, num_scenes) do
+    with {:ok, scenes} <- query_scene_names(num_scenes),
+         {:ok, values} <- query_track_data(num_tracks, num_scenes),
+         {:ok, tracks} <- parse_track_data(values, num_scenes, num_tracks) do
+      {:ok, format_clip_slots(scenes, tracks)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  # No bulk scene-name address exists, so one query per scene — tiny replies,
+  # fine at real-world scene counts.
+  defp query_scene_names(num_scenes) do
+    result =
+      Enum.reduce_while(0..(num_scenes - 1), {:ok, []}, fn index, {:ok, acc} ->
+        case Transport.query("/live/scene/get/name", [index]) do
+          {:ok, {_addr, [_index, name]}} -> {:cont, {:ok, [name | acc]}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+
+    with {:ok, names} <- result, do: {:ok, Enum.reverse(names)}
+  end
+
+  # end_track is exclusive; explicit bounds per batch (never -1) because
+  # parsing needs the count anyway.
+  defp query_track_data(num_tracks, num_scenes) do
+    per_track = 3 + 5 * num_scenes
+    batch_size = max(1, div(@track_data_target_values, per_track))
+
+    result =
+      0..(num_tracks - 1)
+      |> Enum.chunk_every(batch_size)
+      |> Enum.reduce_while({:ok, []}, fn batch, {:ok, acc} ->
+        start_track = List.first(batch)
+        end_track = List.last(batch) + 1
+        args = [start_track, end_track | @track_data_properties]
+
+        case Transport.query("/live/song/get/track_data", args) do
+          {:ok, {_addr, values}} -> {:cont, {:ok, [values | acc]}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+
+    with {:ok, batches} <- result do
+      {:ok, batches |> Enum.reverse() |> Enum.concat()}
+    end
+  end
 
   defp ensure_clip(track, slot) do
     case Transport.query("/live/clip_slot/get/has_clip", [track, slot]) do
