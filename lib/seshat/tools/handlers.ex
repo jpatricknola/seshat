@@ -129,10 +129,15 @@ defmodule Seshat.Tools.Handlers do
   end
 
   @doc """
-  Formats catalog entries as `name — tags [path] (uri)`, one per line.
+  Formats catalog entries as `name — tags [paths] (uri)`, one per line.
 
   The tags are the whole reason to prefer this over a raw browser listing, so
   they lead; the uri trails because it is for the next tool call, not the user.
+
+  One entry is one preset, so a preset Live files in several places lists all
+  of them — "Analog/Synth Lead · Operator/Synth Lead" says which devices can
+  play it, which is real information for choosing. It is still shorter than the
+  repeated rows it replaces.
   """
   @spec format_catalog_entries([map()], non_neg_integer()) :: String.t()
   def format_catalog_entries([], _total) do
@@ -143,7 +148,7 @@ defmodule Seshat.Tools.Handlers do
   def format_catalog_entries(entries, total) do
     listing =
       Enum.map_join(entries, "\n", fn entry ->
-        "#{entry.name} — #{format_tags(entry.tags)}#{format_path(entry.path)} (#{entry.uri})"
+        "#{entry.name} — #{format_tags(entry.tags)}#{format_paths(entry.paths)} (#{entry.uri})"
       end)
 
     header =
@@ -160,8 +165,17 @@ defmodule Seshat.Tools.Handlers do
   defp format_tags([]), do: "no tags"
   defp format_tags(tags), do: Enum.join(tags, ", ")
 
+  # One location, for a raw browser listing.
   defp format_path(path) when path in [nil, ""], do: ""
   defp format_path(path), do: " [#{path}]"
+
+  # Every location a catalog entry has, since one entry is one preset.
+  defp format_paths(paths) do
+    case Enum.reject(List.wrap(paths), &(&1 in [nil, ""])) do
+      [] -> ""
+      list -> " [#{Enum.join(list, " · ")}]"
+    end
+  end
 
   @doc """
   Formats the parallel name/type/class_name lists of the

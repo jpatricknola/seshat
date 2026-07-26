@@ -1,0 +1,541 @@
+{
+  "entries": [
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Align Delay",
+      "paths": [
+        ""
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Utility",
+        "Delay"
+      ],
+      "uri": "query:AudioFx#Align%20Delay",
+      "uris": [
+        "query:AudioFx#Align%20Delay"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Amp",
+      "paths": [
+        ""
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Distortion",
+        "Vintage Emulation",
+        "Guitar",
+        "Amp Simulation"
+      ],
+      "uri": "query:AudioFx#Amp",
+      "uris": [
+        "query:AudioFx#Amp"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Audio Effect Rack",
+      "paths": [
+        ""
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Racks"
+      ],
+      "uri": "query:AudioFx#Audio%20Effect%20Rack",
+      "uris": [
+        "query:AudioFx#Audio%20Effect%20Rack"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": "A basic 'building block' amp preset designed to evoke a high-gain (distorted) amp setup with 2 cabinets.\n\nIncludes Compression, Room Ambience, a variable amount of Amp, and control over the width of the two Cabinets.",
+      "last_loaded_at": null,
+      "name": "Basic Rock Dual Cab Guitar Amp.adg",
+      "paths": [
+        "Audio Effect Rack/Amp Simulation"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Amp Simulation"
+      ],
+      "uri": "query:AudioFx#Audio%20Effect%20Rack:Amp%20Simulation:FileId_5601",
+      "uris": [
+        "query:AudioFx#Audio%20Effect%20Rack:Amp%20Simulation:FileId_5601"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": "Created by: Huston Singletary",
+      "last_loaded_at": null,
+      "name": "Basic Tolex Crunch Guitar Amp.adg",
+      "paths": [
+        "Audio Effect Rack/Amp Simulation"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Amp Simulation"
+      ],
+      "uri": "query:AudioFx#Audio%20Effect%20Rack:Amp%20Simulation:FileId_5603",
+      "uris": [
+        "query:AudioFx#Audio%20Effect%20Rack:Amp%20Simulation:FileId_5603"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": "Created by: Philipp Lange",
+      "last_loaded_at": null,
+      "name": "Cabinet Mic Mixer.adg",
+      "paths": [
+        "Audio Effect Rack/Amp Simulation"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Amp Simulation"
+      ],
+      "uri": "query:AudioFx#Audio%20Effect%20Rack:Amp%20Simulation:FileId_5605",
+      "uris": [
+        "query:AudioFx#Audio%20Effect%20Rack:Amp%20Simulation:FileId_5605"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Jimi's Feedback Guitar.adg",
+      "paths": [
+        "Audio Effect Rack/Distortion"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Distortion"
+      ],
+      "uri": "query:AudioFx#Audio%20Effect%20Rack:Distortion:FileId_5590",
+      "uris": [
+        "query:AudioFx#Audio%20Effect%20Rack:Distortion:FileId_5590"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": "Created by: Huston Singletary\n",
+      "last_loaded_at": null,
+      "name": "Plug In & Wail.adg",
+      "paths": [
+        "Audio Effect Rack/Distortion"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Distortion"
+      ],
+      "uri": "query:AudioFx#Audio%20Effect%20Rack:Distortion:FileId_5592",
+      "uris": [
+        "query:AudioFx#Audio%20Effect%20Rack:Distortion:FileId_5592"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Channel Strip EQ & Cabinet.adg",
+      "paths": [
+        "Audio Effect Rack/Mixing & Mastering"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Instrument Mixing"
+      ],
+      "uri": "query:AudioFx#Audio%20Effect%20Rack:Mixing%20&%20Mastering:FileId_5546",
+      "uris": [
+        "query:AudioFx#Audio%20Effect%20Rack:Mixing%20&%20Mastering:FileId_5546"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Auto Filter",
+      "paths": [
+        ""
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Modulation",
+        "Filter"
+      ],
+      "uri": "query:AudioFx#Auto%20Filter",
+      "uris": [
+        "query:AudioFx#Auto%20Filter"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Auto Pan-Tremolo",
+      "paths": [
+        ""
+      ],
+      "tag_source": "path",
+      "tags": [],
+      "uri": "query:AudioFx#Auto%20Pan-Tremolo",
+      "uris": [
+        "query:AudioFx#Auto%20Pan-Tremolo"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "16ths Ghosts.adv",
+      "paths": [
+        "Envelope Follower"
+      ],
+      "tag_source": "path",
+      "tags": [
+        "Envelope Follower"
+      ],
+      "uri": "query:AudioFx#Envelope%20Follower:FileId_7896",
+      "uris": [
+        "query:AudioFx#Envelope%20Follower:FileId_7896"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "8ths Precise.adv",
+      "paths": [
+        "Envelope Follower"
+      ],
+      "tag_source": "path",
+      "tags": [
+        "Envelope Follower"
+      ],
+      "uri": "query:AudioFx#Envelope%20Follower:FileId_7897",
+      "uris": [
+        "query:AudioFx#Envelope%20Follower:FileId_7897"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "audio_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Fast Rise & Fall.adv",
+      "paths": [
+        "Envelope Follower"
+      ],
+      "tag_source": "path",
+      "tags": [
+        "Envelope Follower"
+      ],
+      "uri": "query:AudioFx#Envelope%20Follower:FileId_7898",
+      "uris": [
+        "query:AudioFx#Envelope%20Follower:FileId_7898"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "drums"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Bell Cash.aif",
+      "paths": [
+        "Drum Hits/Bell"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "One Shot",
+        "Acoustic",
+        "Bell"
+      ],
+      "uri": "query:Drums#Drum%20Hits:Bell:FileId_3098",
+      "uris": [
+        "query:Drums#Drum%20Hits:Bell:FileId_3098"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "drums"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Bell Chop.wav",
+      "paths": [
+        "Drum Hits/Bell"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "One Shot",
+        "Acoustic",
+        "Bell"
+      ],
+      "uri": "query:Drums#Drum%20Hits:Bell:FileId_3099",
+      "uris": [
+        "query:Drums#Drum%20Hits:Bell:FileId_3099"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "midi_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Arpeggiator",
+      "paths": [
+        ""
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Generative",
+        "Sequencer"
+      ],
+      "uri": "query:MidiFx#Arpeggiator",
+      "uris": [
+        "query:MidiFx#Arpeggiator"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "midi_effects"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Bach 16th.adv",
+      "paths": [
+        "Arpeggiator"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Generative"
+      ],
+      "uri": "query:MidiFx#Arpeggiator:FileId_6110",
+      "uris": [
+        "query:MidiFx#Arpeggiator:FileId_6110"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "sounds"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Ambient Feeling.adv",
+      "paths": [
+        "Ambient & Evolving"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Dark",
+        "Atmosphere",
+        "Evolving"
+      ],
+      "uri": "query:Sounds#Ambient%20&%20Evolving:FileId_6636",
+      "uris": [
+        "query:Sounds#Ambient%20&%20Evolving:FileId_6636"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "sounds"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Air Of Dread.adv",
+      "paths": [
+        "Ambient & Evolving"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Dark",
+        "Atmosphere",
+        "Evolving",
+        "Inharmonic"
+      ],
+      "uri": "query:Sounds#Ambient%20&%20Evolving:FileId_7247",
+      "uris": [
+        "query:Sounds#Ambient%20&%20Evolving:FileId_7247"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "instruments",
+        "sounds"
+      ],
+      "description": "Created by: Mindflux",
+      "last_loaded_at": null,
+      "name": "Sweet Lead.adg",
+      "paths": [
+        "Analog/Synth Lead",
+        "Instrument Rack/Synth Lead",
+        "Operator/Synth Lead",
+        "Synth Lead"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Lead"
+      ],
+      "uri": "query:Sounds#Synth%20Lead:FileId_4674",
+      "uris": [
+        "query:Sounds#Synth%20Lead:FileId_4674",
+        "query:Synths#Analog:Synth%20Lead:FileId_4674",
+        "query:Synths#Instrument%20Rack:Synth%20Lead:FileId_4674",
+        "query:Synths#Operator:Synth%20Lead:FileId_4674"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "instruments"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Analog",
+      "paths": [
+        ""
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Virtual Analog"
+      ],
+      "uri": "query:Synths#Analog",
+      "uris": [
+        "query:Synths#Analog"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "instruments"
+      ],
+      "description": "Created by: Michael L. Penman at the Mind Flux Studios ",
+      "last_loaded_at": null,
+      "name": "Basic Analog Bass.adg",
+      "paths": [
+        "Analog/Bass"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Basic",
+        "Synth Bass",
+        "Analog",
+        "Bright"
+      ],
+      "uri": "query:Synths#Analog:Bass:FileId_5207",
+      "uris": [
+        "query:Synths#Analog:Bass:FileId_5207"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "instruments"
+      ],
+      "description": null,
+      "last_loaded_at": null,
+      "name": "Toy Piano Bells.adv",
+      "paths": [
+        "Collision/Piano & Keys"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Synth Keys",
+        "Bell Chromatic",
+        "Synth Mallets",
+        "Digital",
+        "Misc Keys",
+        "Bright",
+        "Inharmonic"
+      ],
+      "uri": "query:Synths#Collision:Piano%20&%20Keys:FileId_7216",
+      "uris": [
+        "query:Synths#Collision:Piano%20&%20Keys:FileId_7216"
+      ],
+      "use_count": 0
+    },
+    {
+      "categories": [
+        "instruments"
+      ],
+      "description": "A realistic emulation of a nylon string guitar using the Tension synthesizer. The Reverb Tone knob controls the high end of reverberations. The Tone knob controls the even harmonics in the spectrum of the sound.",
+      "last_loaded_at": null,
+      "name": "Basic Nylon Concerto Guitar.adg",
+      "paths": [
+        "Instrument Rack/Guitar & Plucked"
+      ],
+      "tag_source": "ableton",
+      "tags": [
+        "Basic",
+        "Snappy",
+        "Synth Plucked",
+        "Bright",
+        "Acoustic",
+        "MPE Enabled",
+        "Classical Guitar"
+      ],
+      "uri": "query:Synths#Instrument%20Rack:Guitar%20&%20Plucked:FileId_5084",
+      "uris": [
+        "query:Synths#Instrument%20Rack:Guitar%20&%20Plucked:FileId_5084"
+      ],
+      "use_count": 0
+    }
+  ],
+  "indexed_at": "2026-07-26T21:44:50.776908Z",
+  "version": 2
+}

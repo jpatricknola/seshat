@@ -85,5 +85,9 @@ config :seshat, :anthropic_api_key, System.get_env("ANTHROPIC_API_KEY")
 # because `mix mcp` is launched by the MCP client, whose cwd is not ours.
 config :seshat, :catalog_path, Path.expand("../catalog.json", __DIR__)
 
+# ...and indent it, for the same reason. Installed builds stay minified: the
+# file is 1.45x the size pretty-printed, which buys nothing where no one reads it.
+config :seshat, :catalog_pretty, true
+
 # Load local secrets if present (never committed)
 if File.exists?("config/dev.secret.exs"), do: import_config("dev.secret.exs")

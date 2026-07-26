@@ -29,6 +29,46 @@ unlocks the catalog audition/hot-swap loop (below).
   description the trick.
 - Reordering the chain is out of scope until a workflow demands it.
 
+## Catalog result quality
+
+The catalog's job is to turn "I want a warm analog bass" into a loadable uri.
+Alias folding shipped (see
+[catalog-aliasing-options.md](catalog-aliasing-options.md)) and roughly doubled
+the distinct presets a 25-slot search offers. These are the remaining levers,
+measured against a real 8,222-row catalog and ordered by impact.
+
+- **Ranking has almost no signal.** `score/1` is `name_score(0|2|4) +
+  tag_source(0|1) + min(use_count, 3)`, and in practice the middle term is
+  always 1 and the last always 0 — so a match set collapses into two score
+  bands. In 5 of 6 realistic searches **zero** slots were decided by score;
+  all 25 came from the alphabetical `&1.name` tie-break among 100–160 tied
+  entries. "electric piano" keeps three Ac Piano Uprights and drops E-Piano
+  Classic, because "Ac" sorts before "E-". Available and unused: how many
+  requested tags matched, whole-token vs substring hits, name vs path vs the
+  `description` credit line, category fit. Make the tie-break deterministic
+  (`uri`) while there — but the goal is to make ties rare.
+- **Tags filter when they should score.** `matches_tags?` is a strict AND, so
+  one tag the library doesn't have zeroes the whole search. Scoring tag
+  overlap instead fixes the zero-result failure *and* supplies the signal the
+  point above needs.
+- **The advertised tag vocabulary is wrong.** `search_library`'s description
+  lists 30 tags; `Warm`, `Wide`, `Mono` and `Hi-hat` do not exist in the
+  catalog — and its own worked example, "'a warm analog bass' is query 'bass'
+  + tags ['Analog', 'Warm']", returns **nothing**. (`Hi-hat` fails on the
+  hyphen: the real tags are `Closed Hihat` / `Open Hihat`.) Hardcoding a fix is
+  fragile since the vocabulary depends on installed Packs — better to surface
+  the real one, e.g. top tags in `reindex_library`'s reply or in the
+  empty-result message.
+- **Coverage.** `plugins` and `user_library` are in `EXPORT_CATEGORIES` but
+  produced zero rows on the one machine measured. Worth learning whether that
+  is an empty library or a broken walk — if the latter, a whole class of
+  sounds is invisible. `samples` is excluded by design, so "a vinyl crackle"
+  is unfindable.
+
+Not planned: embeddings or a semantic index. The LLM is already the semantic
+layer and has the musical context; the failure is that truncation and
+alphabetical ordering stop good candidates from reaching it.
+
 ## Capture MIDI & session record
 
 "Keep that." The user noodles an idea on their controller and the agent grabs
