@@ -118,9 +118,29 @@ For **Claude Desktop**, add to `claude_desktop_config.json`:
 ```
 
 For **Claude Code**, the repo ships a `.mcp.json` — approve the `seshat` server
-when prompted. It launches `mix mcp` over stdio.
+when prompted. It connects over HTTP to a running `mix phx.server`, so start
+that first; the tools are unavailable without it. This is deliberate: only one
+process can hold OSC reply port 11001, so spawning a second Seshat over stdio
+alongside the server would leave one of them unable to read from Ableton (see
+[Only one Seshat at a time](#only-one-seshat-at-a-time)).
 
-Then just talk to Ableton from the client. You never open a browser.
+Then just talk to Ableton from the client. You never open a browser — the
+server only needs to be running, not looked at.
+
+### Only one Seshat at a time
+
+AbletonOSC sends every reply and listener update to a fixed port, UDP 11001.
+Whichever Seshat binds it first is the only one that can read Ableton; a second
+instance can still send commands but never hears back. It detects this at
+startup and says so:
+
+```
+[error] OSC reply port 11001 is already bound by another process — usually a
+second Seshat instance (an MCP server and `mix phx.server` running at once).
+```
+
+If you see that, quit the other instance and restart. Reads returning
+`{:error, :reply_port_unavailable}` are the same cause.
 
 ### API-key mode (dev / fallback)
 
