@@ -214,12 +214,12 @@ defmodule Seshat.Library.Catalog do
   plural. Hence `paths` and `categories`; everything else comes from the
   canonical row.
 
-  Rows carrying no FileId are left alone rather than merged by name. They are
-  core devices, and the only aliased pair among the 86 in that catalog is Drum
-  Rack, listed under both `drums` and `instruments`. One surplus row is a
-  better trade than guessing at identity in the plugin and user-library
-  territory this has never been measured against — see
-  docs/catalog-aliasing-options.md.
+  Rows carrying no FileId are left alone rather than merged by name — core
+  devices (the only aliased pair among them is Drum Rack, under both `drums`
+  and `instruments`) and plugins, where a plugin installed in two formats is
+  two rows under one name (AUv2 and VST3, and the format trees are not
+  mirrors). One surplus row is a better trade than guessing at identity —
+  evidence in docs/archive/catalog-aliasing-options.md.
   """
   @spec normalize([row()]) :: [entry()]
   def normalize(rows) do

@@ -1,5 +1,13 @@
 # Catalog aliasing: what to do about duplicate presets
 
+> **Archived 2026-07-27 — shipped.** This is the decision record as written
+> around implementation; the code as merged may differ. The fold lives in
+> `Seshat.Library.Catalog.normalize/1` (PR #19); the still-open follow-ups
+> (ranking, tag scoring, vocabulary, samples) are tracked in
+> [ROADMAP.md](../ROADMAP.md) § Catalog result quality. The plugin-territory
+> evidence near the top postdates the decision and remains the reference for
+> any future plugin folding.
+
 Live files one preset under every device that can open it and bakes the
 browser path into the uri, so a single `.adg` shows up in the catalog several
 times over. `search_library` then shows the user the same preset four times.

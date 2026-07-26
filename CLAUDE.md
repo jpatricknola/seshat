@@ -41,7 +41,8 @@ it via `get_session_state` rather than querying Ableton field by field.
 loadable in Live's browser, kept in ETS and persisted to `~/.seshat/catalog.json`
 so `search_library` answers instantly and with Ableton closed. It is built by
 `reindex_library`, which merges a browser export with the preset tags read out
-of Ableton's own SQLite database. That file is read-only source data — Seshat
+of Ableton's own SQLite database, then folds the browser's alias rows so one
+preset is one entry (`categories`/`paths` are plural for that reason). That file is read-only source data — Seshat
 still has no database of its own. In dev the catalog is redirected to the
 project root (`:catalog_path` in [config/dev.exs](config/dev.exs), gitignored)
 so it can be read by eye; every other environment uses the `~/.seshat/` default.

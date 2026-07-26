@@ -33,7 +33,7 @@ unlocks the catalog audition/hot-swap loop (below).
 
 The catalog's job is to turn "I want a warm analog bass" into a loadable uri.
 Alias folding shipped (see
-[catalog-aliasing-options.md](catalog-aliasing-options.md)) and roughly doubled
+[archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md)) and roughly doubled
 the distinct presets a 25-slot search offers. These are the remaining levers,
 measured against a real 8,222-row catalog and ordered by impact.
 
@@ -73,23 +73,26 @@ measured against a real 8,222-row catalog and ordered by impact.
   fragile since the vocabulary depends on installed Packs — better to surface
   the real one, e.g. top tags in `reindex_library`'s reply or in the
   empty-result message.
-- **Coverage.** ~~`plugins` and `user_library` produced zero rows — empty
-  library or broken walk?~~ _Answered 27 Jul 2026: neither walk is broken._
-  `plugins` was Live configuration — plugin sources disabled in Preferences;
-  enabling them added 66 tagged rows (see
-  [catalog-aliasing-options.md](catalog-aliasing-options.md) for the new
-  AUv2/VST3 duplicate class this exposed). `user_library` is genuinely empty —
-  no saved presets exist on this machine, so the walk remains untested there.
-  `samples` is excluded by design, so "a vinyl crackle" is unfindable — yet
-  the category holds 3,567 items whose uris carry FileIds, so an opt-in
-  samples index would be tag-aware for free.
+- **Coverage: an opt-in `samples` index.** The only category still invisible
+  to the catalog. Excluded by design as huge and rarely tag-searched — yet it
+  holds 3,567 items whose uris carry FileIds, so indexing it would be
+  tag-aware for free, and today "a vinyl crackle" is unfindable despite
+  `Crackle Vinyl Pop.wav` sitting right there. Keep samples out of default
+  results (only when `category: samples` is asked for) so the preset slate
+  stays clean; check the walk cost — samples is why `EXPORT_CATEGORIES`
+  excludes it and the 20k-node scan cap exists. (The other coverage questions
+  are answered: `plugins` indexes fine once Live's plugin sources are enabled
+  — 66 tagged rows, plus a new AUv2/VST3 duplicate-pair class recorded in
+  [archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md) —
+  and `user_library` is genuinely empty on this machine, so that walk is
+  merely untested, not broken.)
 
 **Suggested order.** Tag scoring and ranking are one piece of work, not two:
 softening the AND is what supplies the signal the scorer needs, and doing
 ranking first means inventing a tie-break for a match set that a tag score
 would have separated anyway. The vocabulary fix is independent and much
 smaller — a good warm-up, or a standalone if you want the zero-result failure
-gone today. Coverage is a question to answer before it is work to schedule.
+gone today. The samples index is orthogonal and can ride whenever.
 
 Not planned: embeddings or a semantic index. The LLM is already the semantic
 layer and has the musical context; the failure is that truncation and
@@ -141,7 +144,8 @@ Deliberately left out of catalog v1 (see
 - **LLM enrichment** for untagged/third-party items — needs an API key or an
   MCP-client-driven tagging turn.
 - **User XMP tags** — read `User Library/Ableton Folder Info/12/`.
-- **`samples` category** in the browser export (huge, rarely tag-searched).
+- **`samples` category** — now measured and tracked as the coverage item
+  under "Catalog result quality" above.
 - **Windows DB location** for `Seshat.Library.AbletonDB` (currently macOS only;
   returns `{:error, :not_found}` cleanly elsewhere).
 - **Audition / hot-swap loop** — needs `delete_device`, now tracked under
