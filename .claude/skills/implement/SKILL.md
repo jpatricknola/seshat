@@ -48,7 +48,10 @@ Implement the plan for: **$ARGUMENTS**
    around it. Either way the plan doc stays as written — it's a
    point-in-time record (`/ship` archives it as "the plan as written
    *before* implementation") — deviations live in your report, where
-   `/pr-review` will look for them.
+   `/pr-review` will look for them. "As written" includes anything
+   [/plan-review](.claude/skills/plan-review/SKILL.md) corrected before you
+   started: those edits are part of the plan you're implementing, not
+   deviations from it.
 
 6. **Verify.** `mix precommit` clean — compile warnings, format, full test
    suite. If behavior needs a live Ableton to confirm, say exactly what to

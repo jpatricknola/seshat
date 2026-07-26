@@ -1,22 +1,30 @@
 ---
 name: plan-review
 description: Challenge an implementation plan before any code is written — verify its OSC contract independently, judge whether the approach is adequate and proportionate, and on disagreement commission a rival plan and adjudicate between them. Use after /plan, or when a plan doc needs a second opinion before implementation starts.
-argument-hint: [plan doc path; defaults to the single active docs/PLAN_*.md — optionally a section, e.g. "docs/PLAN_x.md § Judge"]
+argument-hint: [plan doc path; defaults to the single active docs/PLAN_*.md]
 ---
 
 Challenge the plan at: **$ARGUMENTS** (no path → the single active
 `docs/PLAN_*.md`; if several are active, the one the roadmap links from).
 
-This skill has three sections. Run **§ Review** unless `$ARGUMENTS` names
-another — § Rival and § Judge exist to be invoked as their own agents, and
-only when § Review returns `rival`.
+Invoked directly, this skill means **§ Review** — that is the whole of it.
+§ Rival and § Judge are the escalation § Review can call for, and they only
+work as their own agents with inputs `$ARGUMENTS` has no room for (§ Rival
+needs the reviewer's brief; § Judge needs both plan paths). `/lifecycle` runs
+them that way; § Review step 7 says what to do outside it.
 
 The point of this skill is to catch, while a plan is still prose, what would
 otherwise be caught after an implementation has faithfully built the wrong
-thing. A wrong OSC address is the canonical case: UDP fails silently, and
-[pr-review](.claude/skills/pr-review/SKILL.md) judges the code against the
-plan, so an address that is wrong *in the plan* sails through every gate
-downstream and surfaces as a tool that simply does nothing.
+thing. A wrong OSC address is the canonical case: UDP fails silently, so a
+wrong address is never wrong *loudly*. This phase is not the only net under it
+— [implement](.claude/skills/implement/SKILL.md) re-verifies each address as it
+writes the call, and [pr-review](.claude/skills/pr-review/SKILL.md) checks
+every one against the canonical docs. It is the *cheapest* net: catching it
+here costs one agent, catching it at pr-review costs an implement cycle and a
+fix round. And a plan wrong in its **shape** rather than its details has no
+downstream net at all — pr-review judges the code against the plan, so an
+implementation that faithfully builds the wrong thing passes every gate after
+this one.
 
 ---
 
@@ -45,7 +53,8 @@ step 5, change nothing in the doc.
      do not trust the plan's transcription. Addresses that are ours rather
      than upstream's live in
      [priv/abletonosc/browser.py](priv/abletonosc/browser.py)-style
-     vendored handlers. This check alone justifies the phase.
+     vendored handlers. Downstream will re-check these — but only once code
+     exists, which is exactly why you do it now.
    - **Adequacy.** Fully implemented, does this plan deliver the roadmap
      entry's user-visible outcome? The failure mode is a plan that is
      internally perfect and solves the wrong problem.
@@ -72,6 +81,12 @@ step 5, change nothing in the doc.
      function it references exists; the conventions it cites are real (0-based
      track indices, string keys at handler clauses, pan -1.0..1.0, volume
      0.0..1.0).
+   - **Structural completeness.** The plan carries every section
+     [plan](.claude/skills/plan/SKILL.md) step 3 requires — Context, OSC
+     contract, numbered parts, Testing, Out of scope, Open questions. Out of
+     scope is the one that costs when it's missing: it's what keeps
+     implementation from growing. And a Testing section promising coverage
+     through `Transport.query/3` is promising a test nobody can write.
    - **The missing-part sweep.** New tool but no count bump in
      `definitions_test.exs`? New module but no CLAUDE.md module-map row? New
      `Session.State` field with no listener? Tool description not drafted as
@@ -116,6 +131,11 @@ step 5, change nothing in the doc.
    what direction the alternative should take. That brief is the rival
    author's entire starting point, so make it self-contained.
 
+   Outside `/lifecycle`, `rival` is where you stop: give the user the brief and
+   let them decide whether a competing plan is worth two more agents. Do not
+   run § Rival yourself — its only value is that a different agent, which has
+   not read the plan, writes it.
+
 ---
 
 ## § Rival
@@ -123,15 +143,18 @@ step 5, change nothing in the doc.
 You are writing a competing plan. Your inputs are the roadmap entry and the
 reviewer's findings. **Do not read the original plan while writing.**
 
-1. Write your plan by following steps 1–3 of
-   [plan](.claude/skills/plan/SKILL.md) against the brief — your own research,
-   your own verified OSC contract, your own complete doc in full house style,
-   every section that skill requires. A
-   rival that arrives as a critique or a sketch loses to a finished plan
-   regardless of merit, so clear the same bar the original cleared.
+1. Write your plan to `docs/PLAN_<same_snake_case_name>_alt.md` — **never** the
+   canonical `docs/PLAN_<name>.md`, which still holds the plan you are
+   competing with. Follow steps 1–3 of
+   [plan](.claude/skills/plan/SKILL.md) against the brief for everything else:
+   your own research, your own verified OSC contract, your own complete doc in
+   full house style, every section that skill requires. (Its step 3 names the
+   canonical filename — that instruction is for the original author, not for
+   you.) A rival that arrives as a critique or a sketch loses to a finished
+   plan regardless of merit, so clear the same bar the original cleared.
 
-2. Write it to `docs/PLAN_<same_snake_case_name>_alt.md`. Do not touch the
-   original doc and do not edit the ROADMAP link — the judge handles both.
+2. Do not touch the original doc and do not edit the ROADMAP link — the judge
+   handles both.
 
 3. Address the objection without overshooting it. You are not obliged to
    differ from the original anywhere the original is right, and you have no
@@ -142,7 +165,8 @@ reviewer's findings. **Do not read the original plan while writing.**
 4. **Only when the plan is finished**, read the original once and append a
    short **"Differences from `PLAN_<name>.md`"** section: descriptive only,
    the divergences and what each turns on. Do not revise your own plan after
-   reading it.
+   reading it. That section is for the judge, not for the implementer — the
+   judge removes it either way, so keep it separable from the plan proper.
 
 5. Report the path you wrote and a two-paragraph case for your approach.
 
@@ -180,9 +204,15 @@ pipeline that nothing downstream reviews. Nobody checks you.
 5. **Promote the winner** (skip on `neither`):
    - The winner's content lands at the canonical `docs/PLAN_<name>.md`,
      amendments applied. If the rival won, its content replaces the
-     original's at that filename.
+     original's at that filename — and drop its **"Differences from
+     `PLAN_<name>.md`"** section as you move it: at the canonical path that
+     section names a file that no longer exists, and what it says belongs in
+     the rejected-approach section below.
    - Delete the `_alt.md` file. The ROADMAP link points at the canonical
      path and never has to change, and `/ship` only ever sees one doc.
+     **Exactly one `docs/PLAN_*.md` must be left active when you finish** —
+     everything downstream assumes it (`implement` stops and asks when there
+     are several; `/ship` archives one and would strand the other).
    - Fold a short **"Approach considered and rejected"** section into the
      winner: what the losing plan proposed, and why you chose otherwise. The
      archived plans in [docs/archive/](docs/archive/) earn their keep
@@ -193,4 +223,7 @@ pipeline that nothing downstream reviews. Nobody checks you.
 6. **Report**: the verdict line, `PLAN_PATH: docs/PLAN_<name>.md`, what
    decided it, every amendment applied, and any finding you rejected and why.
    On `neither`, explain what both plans miss and stop — that is a judgment
-   about the roadmap item itself, which belongs to the user.
+   about the roadmap item itself, which belongs to the user. Leave both docs
+   in place in that case and name both paths in your report: nothing may
+   proceed on either plan, so the two-active-docs state is the correct one and
+   whoever picks this up needs to see both.

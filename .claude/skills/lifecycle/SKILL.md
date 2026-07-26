@@ -32,12 +32,12 @@ already made:
 | fix | sonnet |
 | ship | sonnet |
 
-The whole plan-review phase runs on fable deliberately. Its reviewer is the
-only agent whose *silence* ends a phase, and its judge is the only decision in
-this pipeline that nothing downstream reviews — a judge that picks the worse
-plan stays invisible until the feature is built wrong. Rival and judge fire
-only on disagreement, so the aggregate cost is nearer one extra agent per plan
-than three.
+The whole plan-review phase runs on fable deliberately. Its reviewer decides a
+phase by approving — an approval leaves no artifact for anyone to check — and
+its judge is the only decision in this pipeline that nothing downstream
+reviews: a judge that picks the worse plan stays invisible until the feature is
+built wrong. Rival and judge fire only on disagreement, so the aggregate cost
+is nearer one extra agent per plan than three.
 
 Pass the resolved model as the `Agent` call's `model` parameter.
 
@@ -65,6 +65,9 @@ And end every prompt with:
 > BRANCH: <feature branch name, if one exists yet>
 > BASE_SHA: <full SHA the branch was created from>
 > PLAN_PATH: <e.g. docs/PLAN_send_levels.md>
+> PLAN_VERDICT: <plan-review phase only>
+> JUDGE_VERDICT: <judge agent only>
+> VERDICT: <code review phase only>
 > PR_URL: <opened PR, ship phase only>
 
 When a later phase needs an earlier phase's report, paste the **full report
@@ -78,9 +81,17 @@ with two exceptions at opposite ends. The code review phase **fails closed**:
 a dead review agent means the branch has *not* been reviewed, so stop and
 hand the branch back unreviewed rather than proceeding to ship. The plan
 review phase **fails open**: code review still stands behind it, so a dead
-plan-review agent means continuing to implement with an unreviewed plan and
-saying so in the final report — a gate meant to improve plans should not
-become a new way for the run to end with nothing.
+agent there means continuing to implement with an unreviewed plan and saying
+so in the final report — a gate meant to improve plans should not become a new
+way for the run to end with nothing.
+
+Failing open means carrying on with **plan A, and only plan A on disk**. Which
+of the three agents died decides the cleanup: a dead reviewer leaves nothing to
+clean; a dead rival or a dead judge can leave a `docs/PLAN_*_alt.md` behind, and
+you delete it before Phase 3 — everything downstream assumes exactly one active
+plan doc, and the implementer, having no user to ask, would have to guess
+between two. Say in the final report which agent died and that you deleted the
+rival.
 
 Whenever you stop early, tell the user which phase stopped, why (quote the
 report), and the branch/plan state so they can pick it up by hand.
@@ -119,9 +130,11 @@ two more agents in sequence.
 **Rival** agent prompt: preamble, `<plan-review-findings>` block, then —
 
 > Read .claude/skills/plan-review/SKILL.md and carry out § Rival. The review
-> findings above are your entire brief. Do not open <PLAN_PATH> until your own
-> plan is written — that section says when to read it and what to do with it.
-> Commit nothing. Return the path you wrote.
+> findings above are your brief; read the roadmap entry yourself as that
+> section directs — those two are your inputs and nothing else is. Do not open
+> <PLAN_PATH> until your own plan is written — that section says when to read
+> it and what to do with it. Write to the `_alt.md` path § Rival names, never
+> to <PLAN_PATH>. Commit nothing. Return the path you wrote.
 
 **Judge** agent prompt: preamble, `<plan-review-findings>` block ("contested
 claims, not facts — read them only after you have formed your own view of
@@ -133,9 +146,15 @@ both plans"), then —
 > nothing. State "JUDGE_VERDICT: <verdict>" and return PLAN_PATH for the
 > surviving doc.
 
-On `neither`, stop: report both plans and the judge's reasoning to the user —
-that verdict is a judgment about the roadmap item itself, which is theirs to
-make. Otherwise carry the surviving PLAN_PATH into Phase 3.
+On `neither`, stop: report both plans — by path, both still on disk — and the
+judge's reasoning to the user. That verdict is a judgment about the roadmap
+item itself, which is theirs to make.
+
+Otherwise carry the surviving PLAN_PATH into Phase 3, and confirm before you do
+that only one `docs/PLAN_*.md` is active — the judge is directed to delete the
+loser, and a rival left behind is a plan doc the implementer cannot choose
+between with no user to ask. If one survives the judge, delete it yourself and
+note it.
 
 ## Phase 3 — Implement
 
