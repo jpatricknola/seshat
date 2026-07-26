@@ -190,12 +190,11 @@ defmodule Seshat.Commands.Registry do
        "with delete_return_track first."}
   end
 
-  defp ensure_created(before_count, _after_count) do
+  defp ensure_created(before_count, after_count) do
     {:error,
-     "Ableton did not create a return track — the return track count is still " <>
-       "#{before_count} after sending the create, which is below Live's 12-return limit, so " <>
-       "the create message may not have landed. Nothing was renamed. Check get_session_state " <>
-       "and try again."}
+     "Ableton did not create a return track — the count went from #{before_count} to " <>
+       "#{after_count}, which is below Live's 12-return limit, so the create message may not " <>
+       "have landed. Nothing was renamed. Check get_session_state and try again."}
   end
 
   # --- Private helpers ---

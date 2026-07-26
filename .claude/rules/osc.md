@@ -25,6 +25,14 @@ exist because a typo'd address looks exactly like success.
   track addresses only reach `song.tracks` (regular tracks) — returns and the
   master come from the second file. Any new address upstream doesn't provide
   goes there the same way.
+- **A vendored getter always replies, including on its error paths** — an
+  `[..., "ok", value]` / `[..., "error", message]` envelope, echoing whatever
+  index it was asked about. Upstream's habit of raising inside the callback and
+  sending nothing is wrong for an *optional* extension: silence would mean both
+  "bad index" and "the user never ran `mix abletonosc.install`", and cost a full
+  guard timeout to distinguish neither. With the envelope, an error reply is a
+  bad index and silence is a missing install. Setters stay silent — each is
+  guarded by its getter first, and nothing waits on one.
 - **All OSC goes through `Seshat.OSC.Transport`** — nothing sends UDP
   directly. Address strings deliberately live inline in `Handlers`,
   `Registry`, and `Session.State` (greppable via `"/live/`) — do not add an

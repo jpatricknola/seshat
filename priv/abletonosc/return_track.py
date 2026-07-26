@@ -17,18 +17,29 @@ from .handler import AbletonOSCHandler
 # index is to read the return tracks' names in order.
 #
 #   /live/return_track/get/count    []                -> [count]
-#   /live/return_track/get/name     [index]           -> [index, name]
+#   /live/return_track/get/name     [index]           -> [index, "ok", name]
+#                                                     -> [index, "error", message]
 #   /live/return_track/set/name     [index, name]     -> (no reply)
-#   /live/return_track/get/volume   [index]           -> [index, volume]
-#   /live/return_track/set/volume   [index, volume]   -> (no reply)
+#   /live/return_track/get/volume   [index]           -> [index, "ok", volume]
+#                                                     -> [index, "error", message]
+#   /live/return_track/set/volume   [index, value]    -> (no reply)
 #   /live/master/get/volume         []                -> [volume]
-#   /live/master/set/volume         [volume]          -> (no reply)
+#   /live/master/set/volume         [value]           -> (no reply)
 #
-# Unlike browser.py, these follow upstream's convention rather than replying with
-# an ok/error envelope: an out-of-range index is logged and simply not replied
-# to, exactly as an IndexError inside an upstream callback would be. Every Elixir
-# caller validates the index with get/count or a guard get first, so the mixed
-# reply shape would buy nothing.
+# Getters follow browser.py's rule: always reply on the address they were called
+# on, including on every error path. Upstream's convention — raise inside the
+# callback and send nothing — is the wrong one for an optional extension. A
+# silent bad index is indistinguishable from "the user never ran
+# `mix abletonosc.install`", and it costs the caller a full guard timeout to
+# learn nothing. Replying makes the two cases immediately separable: an error
+# envelope is a bad index, and silence means the extension isn't loaded.
+#
+# `get/count` and `/live/master/get/volume` take no index and so have no failure
+# path to report; they reply with the bare value.
+#
+# Setters stay silent. Each one is guarded by its matching getter immediately
+# before it on the Elixir side, so the bad-index case is already reported by the
+# time a setter is sent, and nothing ever waits on a setter's reply.
 #
 # Volume is 0.0-1.0 on Live's fader scale, read and written through
 # `mixer_device.volume.value` — the same reason upstream's TrackHandler
@@ -58,16 +69,16 @@ class ReturnTrackHandler(AbletonOSCHandler):
     def _get_count(self, params: Tuple[Any] = ()) -> Tuple:
         return (len(self.song.return_tracks),)
 
-    def _get_name(self, params: Tuple[Any] = ()) -> Optional[Tuple]:
-        index, track = self._return_track(params, "get/name")
-        if track is None:
-            return None
+    def _get_name(self, params: Tuple[Any] = ()) -> Tuple:
+        index, track, error = self._return_track(params, "get/name")
+        if error is not None:
+            return (index, "error", error)
 
-        return (index, track.name)
+        return (index, "ok", track.name)
 
     def _set_name(self, params: Tuple[Any] = ()) -> None:
-        index, track = self._return_track(params, "set/name")
-        if track is None:
+        index, track, error = self._return_track(params, "set/name")
+        if error is not None:
             return None
 
         if len(params) < 2:
@@ -76,16 +87,16 @@ class ReturnTrackHandler(AbletonOSCHandler):
 
         track.name = str(params[1])
 
-    def _get_volume(self, params: Tuple[Any] = ()) -> Optional[Tuple]:
-        index, track = self._return_track(params, "get/volume")
-        if track is None:
-            return None
+    def _get_volume(self, params: Tuple[Any] = ()) -> Tuple:
+        index, track, error = self._return_track(params, "get/volume")
+        if error is not None:
+            return (index, "error", error)
 
-        return (index, track.mixer_device.volume.value)
+        return (index, "ok", track.mixer_device.volume.value)
 
     def _set_volume(self, params: Tuple[Any] = ()) -> None:
-        index, track = self._return_track(params, "set/volume")
-        if track is None:
+        index, track, error = self._return_track(params, "set/volume")
+        if error is not None:
             return None
 
         try:
@@ -118,20 +129,22 @@ class ReturnTrackHandler(AbletonOSCHandler):
         """
         Resolve params[0] to a return track, bounds-checked.
 
-        Returns (index, track), or (index, None) when the index is missing or out
-        of range — in which case the caller replies with nothing at all, the same
-        silence an upstream IndexError produces.
+        Returns (index, track, None) on success and (index, None, message) on
+        failure. The index is echoed back verbatim even when it is out of range,
+        so the caller's reply still correlates with the query that asked for it.
         """
         try:
             index = int(params[0])
         except (IndexError, TypeError, ValueError):
-            self.logger.error("Return track: %s requires a return track index" % operation)
-            return (-1, None)
+            message = "%s requires a return track index as its first argument" % operation
+            self.logger.error("Return track: %s" % message)
+            return (-1, None, message)
 
         return_tracks = self.song.return_tracks
         if index < 0 or index >= len(return_tracks):
-            self.logger.error("Return track: %s index %d out of range — the set has %d return "
-                              "track(s)" % (operation, index, len(return_tracks)))
-            return (index, None)
+            message = "Return track %d does not exist — this set has %d return track(s)" % (
+                index, len(return_tracks))
+            self.logger.error("Return track: %s (%s)" % (message, operation))
+            return (index, None, message)
 
-        return (index, return_tracks[index])
+        return (index, return_tracks[index], None)

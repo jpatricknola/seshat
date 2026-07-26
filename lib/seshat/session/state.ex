@@ -284,11 +284,16 @@ defmodule Seshat.Session.State do
   end
 
   # Each of these accepts the reply both with and without an echoed index, so the
-  # same helper serves the bare song getters' shape and the per-index ones.
+  # same helper serves the bare song getters' shape and the per-index ones. The
+  # three-element clause is the return/master extension's ok/error envelope: an
+  # `"error"` payload doesn't match it and falls through to the default, which is
+  # right — the only way to ask this extension for an index it doesn't have is to
+  # race a return being deleted mid-refresh.
   defp query_string(transport, address, index, default, timeout \\ @query_timeout) do
     case probe(transport, address, [index], timeout) do
       {:ok, [s]} when is_binary(s) -> s
       {:ok, [_idx, s]} when is_binary(s) -> s
+      {:ok, [_idx, "ok", s]} when is_binary(s) -> s
       _ -> default
     end
   end
@@ -297,6 +302,7 @@ defmodule Seshat.Session.State do
     case probe(transport, address, [index], timeout) do
       {:ok, [v]} when is_float(v) -> v
       {:ok, [_idx, v]} when is_float(v) -> v
+      {:ok, [_idx, "ok", v]} when is_float(v) -> v
       _ -> default
     end
   end

@@ -35,16 +35,23 @@ defmodule Seshat.Tools.Handlers do
   # Advice appended to a guard timeout, per address family. A timeout means "no
   # reply at all", which for an upstream address is nearly always a bad index and
   # for one of Seshat's own is that plus "the extension was never installed".
-  @clip_index_hint "check the track and slot indices with get_clip_slots first; failing that, " <>
-                     "check Ableton is running with AbletonOSC enabled."
+  @clip_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
+                     "track and slot indices with get_clip_slots first; failing that, check " <>
+                     "Ableton is running with AbletonOSC enabled."
 
-  @send_index_hint "check the track index (get_session_state) and send index " <>
-                     "(get_track_sends; sends are 0-based, send A = 0)."
+  @send_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
+                     "track index (get_session_state) and send index (get_track_sends; sends are " <>
+                     "0-based, send A = 0)."
 
-  @return_index_hint "check the return index with get_session_state — return indices are " <>
-                       "0-based and separate from regular track indices. This address is also " <>
-                       "part of Seshat's AbletonOSC extension, so if no return track answers, " <>
-                       "run `mix abletonosc.install` and restart Ableton Live."
+  # The return/master addresses are Seshat's own, and they always reply — a bad
+  # index comes back as an error envelope, not silence. So unlike the upstream
+  # families above, a timeout here isn't a bad index at all: it means nothing is
+  # serving the address.
+  @return_extension_hint "These addresses come from Seshat's AbletonOSC extension rather than " <>
+                           "upstream, and it answers every query it receives — even for an index " <>
+                           "that doesn't exist. Silence therefore means it isn't installed: run " <>
+                           "`mix abletonosc.install` and restart Ableton Live, and check Live is " <>
+                           "running with AbletonOSC enabled."
 
   # Properties for the /live/song/get/track_data bulk query, in reply order.
   # Each track.* property contributes one value per track; each clip.* /
@@ -786,7 +793,7 @@ defmodule Seshat.Tools.Handlers do
              "/live/return_track/get/name",
              [index],
              "return track #{index}",
-             @return_index_hint
+             @return_extension_hint
            ),
          :ok <- Transport.send_message("/live/song/delete_return_track", [index]) do
       State.refresh()
@@ -807,7 +814,7 @@ defmodule Seshat.Tools.Handlers do
              "/live/return_track/get/volume",
              [index],
              "the volume of return track #{index}",
-             @return_index_hint
+             @return_extension_hint
            ),
          :ok <- Transport.send_message("/live/return_track/set/volume", [index, value / 1.0]) do
       State.refresh()
@@ -1363,7 +1370,7 @@ defmodule Seshat.Tools.Handlers do
              "/live/return_track/get/name",
              [index],
              "the name of return track #{index}",
-             @return_index_hint
+             @return_extension_hint
            ),
          {:ok, value} <-
            query_echoed(
@@ -1513,16 +1520,16 @@ defmodule Seshat.Tools.Handlers do
   defp query_echoed(address, indices, subject, hint, reissued? \\ false) do
     case Transport.query(address, indices, @guard_timeout) do
       {:ok, {_addr, values}} ->
-        case Enum.split(values, length(indices)) do
-          {echoed, [value]} ->
-            if indices_match?(echoed, indices) do
-              {:ok, value}
-            else
-              reissue_or_give_up(address, indices, subject, hint, reissued?)
-            end
+        {echoed, payload} = Enum.split(values, length(indices))
 
-          _unexpected_shape ->
-            reissue_or_give_up(address, indices, subject, hint, reissued?)
+        if indices_match?(echoed, indices) do
+          case unwrap(payload) do
+            {:ok, value} -> {:ok, value}
+            {:error, message} -> {:error, remote_error(message)}
+            :unexpected_shape -> reissue_or_give_up(address, indices, subject, hint, reissued?)
+          end
+        else
+          reissue_or_give_up(address, indices, subject, hint, reissued?)
         end
 
       {:error, reason} ->
@@ -1530,6 +1537,20 @@ defmodule Seshat.Tools.Handlers do
     end
   catch
     :exit, _ -> {:error, guard_timeout_error(subject, hint)}
+  end
+
+  # Upstream getters reply with the value alone. Seshat's own return/master
+  # getters wrap it in browser.py's ok/error envelope, so an index that doesn't
+  # exist comes back as a message instead of the silence upstream produces —
+  # immediately, and distinguishably from an extension that was never installed.
+  defp unwrap([value]), do: {:ok, value}
+  defp unwrap(["ok", value]), do: {:ok, value}
+  defp unwrap(["error", message]) when is_binary(message), do: {:error, message}
+  defp unwrap(_other), do: :unexpected_shape
+
+  defp remote_error(message) do
+    "#{message}. Nothing further was sent — check get_session_state for the indices that " <>
+      "actually exist."
   end
 
   defp reissue_or_give_up(address, indices, subject, hint, false),
@@ -1542,12 +1563,11 @@ defmodule Seshat.Tools.Handlers do
     echoed |> Enum.zip(indices) |> Enum.all?(fn {reply, asked} -> reply == asked end)
   end
 
-  # A track or slot index that doesn't exist gets no reply at all — AbletonOSC
-  # raises inside the callback and sends nothing — so a guard timeout is far
-  # more often a bad index than a dead bridge. The message leads with that.
+  # What a timeout means depends on who serves the address, so the caller's hint
+  # supplies the diagnosis: for upstream addresses silence is usually a bad index,
+  # for Seshat's own extension it can only be a missing install.
   defp guard_timeout_error(subject, hint) do
-    "Timed out checking #{subject}, so nothing further was sent. An index that doesn't exist " <>
-      "gets no reply from Ableton at all, so #{hint}"
+    "Timed out checking #{subject}, so nothing further was sent. #{hint}"
   end
 
   # Reissued once already, so this is not one crossed wire: something is steadily

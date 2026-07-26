@@ -527,20 +527,27 @@ track needs no index at all.
 | Address | Query Params | Response Params | Description |
 |---|---|---|---|
 | `/live/return_track/get/count` | | `count` | Number of return tracks. Also the "is the extension installed?" probe |
-| `/live/return_track/get/name` | `return_index` | `return_index, name` | Return track name |
+| `/live/return_track/get/name` | `return_index` | `return_index, "ok", name` | Return track name |
+| | | `return_index, "error", message` | Index out of range |
 | `/live/return_track/set/name` | `return_index, name` | | Rename a return track |
-| `/live/return_track/get/volume` | `return_index` | `return_index, volume` | Return fader, 0.0 to 1.0 |
+| `/live/return_track/get/volume` | `return_index` | `return_index, "ok", volume` | Return fader, 0.0 to 1.0 |
+| | | `return_index, "error", message` | Index out of range |
 | `/live/return_track/set/volume` | `return_index, volume` | | Set the return fader |
 | `/live/master/get/volume` | | `volume` | Master fader, 0.0 to 1.0 |
 | `/live/master/set/volume` | `volume` | | Set the master fader |
 
-- Unlike the Browser API, these follow upstream's convention rather than
-  replying with an ok/error envelope: getters echo their index argument, and an
-  out-of-range or missing index is bounds-checked in Python, logged, and **not
-  replied to at all** — the same silence an `IndexError` inside an upstream
-  callback produces. Callers should validate the index with `get/count` (or a
-  guard get) first and treat a timeout as "bad index, or the extension isn't
-  installed".
+- **Getters always reply**, on the address they were called on, including on
+  every error path — the same rule as the Browser API above, and the opposite of
+  upstream's "raise inside the callback and send nothing". For an optional
+  extension that silence is ambiguous: a bad index would be indistinguishable
+  from an install that never happened, and would cost a full guard timeout to
+  learn nothing either way. With the envelope, **an error reply means a bad
+  index and silence means the extension isn't loaded.**
+- `get/count` and `/live/master/get/volume` take no index, so they have no
+  failure to report and reply with the bare value.
+- **Setters are silent**, like upstream's. Every caller guards with the matching
+  getter immediately beforehand, so a bad index has already been reported by the
+  time a setter goes out, and nothing waits on one.
 - Volume is `mixer_device.volume.value` on Live's fader scale, the same property
   and scale as `/live/track/get|set/volume`.
 - Creating and deleting return tracks is upstream's job:
