@@ -71,6 +71,10 @@ adding properties.
 - Booleans are usually `1`/`0` on the wire, but some properties arrive as real
   OSC booleans (e.g. `mute` in a notes reply, `has_clip`). Accept both —
   `Handlers.truthy?/1` and `Session.State.to_bool/1` exist for this.
+- Bulk `/live/song/get/track_data` replies carry **OSC nil** (`N` type tag, no
+  payload) for every `clip.*` property of an empty slot. `Seshat.OSC.Message`
+  decodes it to `nil`; treat `clip_slot.has_clip` as the ground truth for
+  emptiness and discard the nils, as `Handlers.parse_track_data/3` does.
 - `volume` is 0.0–1.0 normalised, not dB. `panning` is -1.0 to 1.0.
 - Device parameters are normalised 0.0–1.0; use
   `/live/device/get/parameter/value_string` for the human-readable value

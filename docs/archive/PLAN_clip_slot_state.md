@@ -1,3 +1,10 @@
+> **Archived 2026-07-26 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `get_clip_slots` lives in
+> `Seshat.Tools.Definitions` / `Handlers` (with OSC-nil decoding in
+> `Seshat.OSC.Message`); the deferred promotion of the grid into
+> `Session.State` is tracked under "Session state improvements" in
+> [ROADMAP.md](../ROADMAP.md).
+
 # Plan — Clip-slot state (`get_clip_slots`)
 
 Roadmap Priority 1. One new read-only tool, `get_clip_slots`, that returns the

@@ -11,29 +11,7 @@ address.
 
 ---
 
-## Priority 1 — Clip-slot state
-
-Planned — implementation plan in [PLAN_clip_slot_state.md](PLAN_clip_slot_state.md).
-
-Session state is track-level only: we don't know which slots hold clips, which
-are empty, which are playing or recording, or their names and lengths. So
-`fire_clip`, `duplicate_clip`, and note-writing all operate on guessed slot
-indices. A per-track slot map (has_clip, name, length, is_playing) eliminates
-a whole class of blind operations.
-
-- Tool: `get_clip_slots` — query on demand to start; promote into
-  `Session.State` only if read frequently.
-- Use `/live/song/get/track_data [start, end, properties…]` with
-  `clip_slot.*` / `clip.*` properties — one bulk query for the whole grid,
-  not O(tracks × scenes) round-trips of `/live/clip_slot/get/has_clip`.
-- Include **scene count and names** (`/live/song/get/num_scenes`) — the scene
-  list and the slot grid are the same axis; resolves "the chorus" → scene
-  index.
-- Include **track type** (`track.has_midi_input`) — `write_midi_notes`
-  against an audio track is another silent blind failure; it rides the same
-  bulk query.
-
-## Priority 2 — Send levels
+## Priority 1 — Send levels
 
 "Add some reverb to the vocals." "Turn down the delay send on the drums."
 
@@ -82,10 +60,14 @@ Deliberately left out of catalog v1 (see
 1. **Return track names** — needed for send levels (above).
 2. **Device list per track** — so the agent sees loaded devices without a
    `get_track_devices` round-trip.
+3. **Clip grid** — `get_clip_slots` (shipped, see
+   [archive/PLAN_clip_slot_state.md](archive/PLAN_clip_slot_state.md)) queries
+   on demand; promote the grid into `Session.State` only if usage shows it
+   read constantly. Clip-slot listeners are a large subscription surface
+   (tracks × scenes × properties) — not worth it until then.
 
 Query on-demand in the tools to start; promote into `Session.State` only if
-read frequently. (Scene names and track type moved into the clip-slot state
-item above.)
+read frequently.
 
 ## Idea — MCP mode in the browser UI
 
