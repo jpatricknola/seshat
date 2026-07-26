@@ -1,6 +1,6 @@
 # Seshat MCP — Tool Audit
 
-_Living doc · MCP design review · 41 tools reviewed · 25 Jul 2026 — update as tools change._
+_Living doc · MCP design review · 47 tools reviewed · 25 Jul 2026 — update as tools change._
 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
@@ -17,7 +17,15 @@ _Living doc · MCP design review · 41 tools reviewed · 25 Jul 2026 — update 
 > verdicts below record the intended behavior and are pending confirmation by
 > the Part 8 traps in [validation-script.md](validation-script.md).
 
-**At a glance:** 41 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~10 coverage gaps (mostly optional), all on the roadmap.
+> **Sends, return tracks and master shipped 26 Jul 2026** — six new tools
+> (`set_track_send`, `get_track_sends`, `create_return_track`,
+> `delete_return_track`, `set_return_track_volume`, `set_master_volume`),
+> closing §02's top gap and the master/return level gap with it. Returns and the
+> master needed a second vendored AbletonOSC handler
+> (`priv/abletonosc/return_track.py`) because upstream reaches `song.tracks`
+> only — see [PLAN_send_levels.md](PLAN_send_levels.md).
+
+**At a glance:** 47 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -43,13 +51,13 @@ Operations a producer would expect that no tool currently reaches, ranked by how
 
 | Gap                                                                       | Priority | Why it matters                                                                                                                                      |
 | ------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Sends / return tracks** (`create_return_track`, `set_send`)             | High     | No way to route a track into reverb/delay. Mixing stops at volume/pan/mute/solo — you can't build space or depth.                                   |
+| ~~**Sends / return tracks**~~ · **ADDRESSED 07/2026**                     | ~~High~~ | Was the top gap. `set_track_send` / `get_track_sends` / `create_return_track` / `delete_return_track` now cover the reverb-and-delay workflow. Loading a device *onto* a return is still manual. |
 | **Remove / bypass / reorder a device** (`delete_device`, `bypass_device`) | Med-High | You can `load_device` and tweak params, but can't undo a wrong load, turn a device off (A/B), or reorder the chain. The device workflow is one-way. |
 | **Capture / record into a slot** (`session_record`, `capture_midi`)       | Medium   | `set_track_arm` + `start_playing` exist, but nothing actually records or captures played MIDI. The record loop is incomplete.                       |
 | **Per-clip properties** (clip loop/start/end, launch mode)                | Medium   | `set_loop` is the _song_ loop, not a clip's loop. No control of a clip's own loop brace, length after creation, or launch quantization.             |
 | **Quantize notes** (`quantize_clip`)                                      | Medium   | The most common MIDI cleanup move, currently impossible without a full read→remove→rewrite by hand.                                                 |
 | **Set time signature** (`set_time_signature`)                             | Low-Med  | `get_session_state` reports it and `set_tempo` exists, but there's no setter. Cheap, obvious symmetry win.                                          |
-| **Master & return volume**                                                | Low-Med  | The mixer setters operate on regular tracks only — no master or return level control (confirmed by `get_clip_slots` excluding them).                |
+| ~~**Master & return volume**~~ · **ADDRESSED 07/2026**                    | ~~Low-Med~~ | `set_master_volume` and `set_return_track_volume` ride along with the sends work, and `get_session_state` now reports both. Pan/mute/solo on returns and the master are still out. |
 | **Modify a note in place**                                                | Low      | Changing one note's velocity/length means read → remove range → rewrite. Works, but a direct edit would be cleaner.                                 |
 | **Arrangement view** (record, place clips at bars, locators)              | Low      | Everything today is Session view. Fine for clip-launch work; a scope decision, not a bug.                                                           |
 | **Groups · routing/IO · automation · groove**                             | Low      | Breadth for later — grouping tracks, input/output routing & monitoring, automation envelopes, swing/groove.                                         |
@@ -86,7 +94,7 @@ Description quality is a real strength here. Two behaviors, though, were correct
 
 ## 05 · Full Inventory
 
-All 41 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
+All 47 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
@@ -131,17 +139,23 @@ All 41 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 | `set_device_parameter`  | Devices   | Keep   | Exemplary. No delete/bypass companion.                   |
 | `search_library`        | Library   | Keep   | Primary discovery tool; routing stated on both sides.    |
 | `reindex_library`       | Library   | Keep   | —                                                        |
+| `get_track_sends`       | Read      | Keep   | New 07/2026. Labels each send with its return.           |
+| `set_track_send`        | Mixer     | Keep   | New 07/2026. No dB echo — send curve unconfirmed.        |
+| `set_return_track_volume` | Mixer   | Keep   | New 07/2026. Reuses the track fader's dB labels.         |
+| `set_master_volume`     | Mixer     | Keep   | New 07/2026. Reuses the track fader's dB labels.         |
+| `create_return_track`   | Structure | Keep   | New 07/2026. Errors at Live's 12-return cap.             |
+| `delete_return_track`   | Structure | Keep   | New 07/2026. Warns that send letters shift.              |
 
 ---
 
 ## 06 · If You Do Five Things
 
 1. ✅ **Make `write_midi_notes` error on audio tracks** — done 26 Jul, and on group tracks too (they report MIDI input but hold no clips, so they were the same phantom success by another route). Kills the one silent-failure that could make me report a write that never happened.
-2. **Build sends / return tracks** — `create_return_track` + `set_send`. The biggest capability gap — unlocks all reverb/delay mixing. Roadmap Priority 1.
+2. ✅ **Build sends / return tracks** — done 26 Jul: `set_track_send`, `get_track_sends`, `create_return_track`, `delete_return_track`, plus `set_return_track_volume` / `set_master_volume` riding along. Reverb/delay mixing is unlocked; only *loading* an effect onto a return is still a manual step in Live.
 3. **Add device removal & bypass** — so the device workflow isn't one-way; you can undo a wrong load and A/B. Roadmap Priority 2. (`/live/track/delete_device` exists in the installed AbletonOSC but is missing from our address docs — cheaper than it looked.)
 4. ✅ **Fix the `set_track_volume` scale + echo dB** — done 26 Jul: 0.85 is unity, 1.0 is +6 dB, and both mixer setters now echo a display value.
 5. ✅ **Clarify `search_library` vs `list_browser_items`** — already in place on both sides; no change was needed.
 
 ---
 
-_Seshat MCP tool audit · living document · 41 tools as of 25 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._
+_Seshat MCP tool audit · living document · 47 tools as of 26 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._

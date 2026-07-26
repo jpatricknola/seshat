@@ -25,6 +25,29 @@ user's MCP client does.
    real work in progress (named tracks, clips), create your own scratch
    tracks rather than modifying existing ones.**
 
+## First, if the change touches a vendored address
+
+`/live/browser/*`, `/live/return_track/*` and `/live/master/*` are Seshat's own
+— served by [priv/abletonosc/browser.py](priv/abletonosc/browser.py) and
+[priv/abletonosc/return_track.py](priv/abletonosc/return_track.py), installed
+by `mix abletonosc.install`. `mix test` cannot reach them at all, so a smoke
+test is the *only* thing standing behind that whole surface. Before anything
+else:
+
+- Run `mix abletonosc.install` and **restart Live** (or toggle AbletonOSC off
+  and on under Preferences > Link/Tempo/MIDI). `/live/api/reload` does not pick
+  these up.
+- Confirm the extension is actually answering before you judge anything else:
+  `get_session_state` prints the return tracks and master volume when
+  `return_track.py` is loaded, and a single "Return/master state unavailable"
+  line when it isn't. A whole feature reading as broken usually means this step
+  was skipped.
+- These handlers' getters **always reply, including on a bad index**, so an
+  out-of-range index must come back as an immediate error naming the real
+  count — not a ~2s timeout. A timeout here means the extension isn't loaded,
+  and that distinction is the point of the envelope: if a bad index hangs
+  instead, the handler is stale and needs reinstalling.
+
 ## Exercise the change
 
 3. Drive the changed tool(s) through a realistic sequence, not just one call.

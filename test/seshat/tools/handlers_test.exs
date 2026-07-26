@@ -548,6 +548,134 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "send_letter/1" do
+    test "send index maps to the letter Live prints on the send" do
+      assert Handlers.send_letter(0) == "A"
+      assert Handlers.send_letter(1) == "B"
+      assert Handlers.send_letter(11) == "L"
+    end
+
+    test "past the alphabet it falls back to a number rather than punctuation" do
+      assert Handlers.send_letter(26) == "#27"
+    end
+  end
+
+  describe "format_track_sends/2" do
+    test "one line per send, with the letter and the return it feeds" do
+      sends = [
+        %{index: 0, return: "A-Reverb", value: 0.35},
+        %{index: 1, return: "B-Delay", value: 0.0}
+      ]
+
+      result = Handlers.format_track_sends(2, sends)
+
+      assert result =~ "2 send(s) on track 2:"
+      assert result =~ ~s{send 0 (A) → "A-Reverb": 0.35}
+      assert result =~ ~s{send 1 (B) → "B-Delay": 0.0}
+    end
+
+    test "no returns means no sends, and says how to make one" do
+      result = Handlers.format_track_sends(0, [])
+
+      assert result =~ "no return tracks"
+      assert result =~ "create_return_track"
+    end
+  end
+
+  describe "format_return_tracks/2" do
+    test "one line per return in send order, then the master" do
+      returns = [
+        %{index: 0, name: "A-Reverb", volume: 0.85},
+        %{index: 1, name: "B-Delay", volume: 0.7}
+      ]
+
+      result = Handlers.format_return_tracks(returns, %{volume: 0.85})
+
+      assert result =~ ~s{Return 0 "A-Reverb" (send A): volume=0.85}
+      assert result =~ ~s{Return 1 "B-Delay" (send B): volume=0.7}
+      assert result =~ "Master: volume=0.85"
+    end
+
+    # nil master means the extension never answered, which looks identical to a
+    # set with no returns unless it is called out.
+    test "a nil master reports the extension as unavailable, not as silence" do
+      result = Handlers.format_return_tracks([], nil)
+
+      assert result =~ "unavailable"
+      assert result =~ "mix abletonosc.install"
+      refute result =~ "volume="
+    end
+
+    test "an answering extension with no returns still reports the master" do
+      result = Handlers.format_return_tracks([], %{volume: 0.6})
+
+      assert result =~ "No return tracks"
+      assert result =~ "create_return_track"
+      assert result =~ "Master: volume=0.6"
+    end
+
+    # A guessed fader position reads as real, and the model does relative moves
+    # off it — "turn the delay down a bit" from a fictional 0.85 is an increase.
+    test "a return whose volume query went unanswered says so instead of guessing" do
+      returns = [
+        %{index: 0, name: "A-Reverb", volume: 0.85},
+        %{index: 1, name: "B-Delay", volume: nil}
+      ]
+
+      result = Handlers.format_return_tracks(returns, %{volume: 0.85})
+
+      assert result =~ ~s{Return 0 "A-Reverb" (send A): volume=0.85}
+      assert result =~ ~s{Return 1 "B-Delay" (send B): volume unknown}
+      refute result =~ ~s{"B-Delay" (send B): volume=}
+    end
+  end
+
+  describe "unwrap_payload/1" do
+    test "an upstream getter's bare value" do
+      assert Handlers.unwrap_payload([0.42]) == {:ok, 0.42}
+      assert Handlers.unwrap_payload(["A-Reverb"]) == {:ok, "A-Reverb"}
+    end
+
+    test "the vendored extension's ok envelope" do
+      assert Handlers.unwrap_payload(["ok", 0.85]) == {:ok, 0.85}
+    end
+
+    # This is the whole point of the envelope: a bad index answers immediately
+    # and distinguishably, instead of the silence that would be indistinguishable
+    # from a missing `mix abletonosc.install`.
+    test "the vendored extension's error envelope carries the message back" do
+      assert Handlers.unwrap_payload(["error", "Return track 4 does not exist"]) ==
+               {:error, "Return track 4 does not exist"}
+    end
+
+    # A return track named "ok" must not be mistaken for an envelope, and vice
+    # versa — the arity is what separates them, not the string.
+    test "a value that happens to read like an envelope tag is still a value" do
+      assert Handlers.unwrap_payload(["ok"]) == {:ok, "ok"}
+      assert Handlers.unwrap_payload(["ok", "error"]) == {:ok, "error"}
+    end
+
+    test "anything else is a shape this code can't read, not an answer" do
+      assert Handlers.unwrap_payload([]) == :unexpected_shape
+      assert Handlers.unwrap_payload(["error", 42]) == :unexpected_shape
+      assert Handlers.unwrap_payload([1, 2, 3]) == :unexpected_shape
+    end
+  end
+
+  # The six sends/returns/master tools each guard Ableton with a
+  # `Transport.query/3` before mutating (see handlers.ex), so an automated test
+  # of that guard's error path would have to reach a real Ableton. Per
+  # .claude/rules/testing.md ("never write tests that reach Transport.query/3
+  # — they need a live Ableton and will time out"), that path is exercised by
+  # /smoke-test instead, not here — see docs/PLAN_send_levels.md's Testing
+  # section, steps 3-7. An earlier version of this suite called these tools
+  # directly: on a machine with Live and the return_track.py extension
+  # installed and running, the guard answers for real and the calls mutate
+  # the open set (creating/deleting return tracks, changing a send or fader)
+  # while asserting nothing about the result. That is exactly the failure
+  # mode the rule above exists to prevent, so the tests were removed rather
+  # than patched.
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})

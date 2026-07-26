@@ -67,7 +67,8 @@ so it can be read by eye; every other environment uses the `~/.seshat/` default.
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
 | [priv/abletonosc/browser.py](priv/abletonosc/browser.py) | Vendored AbletonOSC handler extension — the browser API upstream doesn't have |
-| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies that handler into AbletonOSC and registers it |
+| [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) | Vendored AbletonOSC handler extension — return-track and master addresses upstream doesn't have (`/live/return_track/*`, `/live/master/*`) |
+| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies both handlers into AbletonOSC and registers them |
 
 ## Adding a tool
 
@@ -88,8 +89,11 @@ collects the conventions and gotchas the address tables don't show (ports,
 irregular naming, listener pattern, ordering hazards).
 
 `/live/browser/*` is ours, not upstream's: `priv/abletonosc/browser.py` vendors
-a handler that `mix abletonosc.install` copies into the user's AbletonOSC. Any
-future address upstream doesn't provide goes there the same way.
+a handler that `mix abletonosc.install` copies into the user's AbletonOSC.
+`/live/return_track/*` and `/live/master/*` are the same story, vendored in
+`priv/abletonosc/return_track.py` — upstream's track addresses only reach
+`song.tracks` (regular tracks), not returns or the master. Any future address
+upstream doesn't provide goes there the same way.
 
 ## Verification
 
@@ -97,7 +101,7 @@ future address upstream doesn't provide goes there the same way.
 - `mix test` — full suite, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed — the `/smoke-test` skill is the checklist for that. See [README.md](README.md).
-- [docs/validation-script.md](docs/validation-script.md) is the human-run version: a guided lo-fi session a person reads to Seshat, building a real sketch while touching all 41 tools. Use it when a batch of features needs validating by ear and eye rather than by agent.
+- [docs/validation-script.md](docs/validation-script.md) is the human-run version: a guided lo-fi session a person reads to Seshat, building a real sketch while touching the 41 tools it was written against (the six sends/returns tools postdate it — see `/smoke-test` for those). Use it when a batch of features needs validating by ear and eye rather than by agent.
 - The `audit-osc` workflow ([.claude/workflows/audit-osc.js](.claude/workflows/audit-osc.js)) fans out agents to verify every `/live/` address in `lib/` against the canonical docs — worth running after an AbletonOSC upgrade or a batch of new tools.
 
 ## Conventions

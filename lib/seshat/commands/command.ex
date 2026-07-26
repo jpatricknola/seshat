@@ -7,7 +7,7 @@ defmodule Seshat.Commands.Command do
   """
 
   @type t :: %__MODULE__{
-          command: :create_track | :new_project | :write_notes,
+          command: :create_track | :create_return_track | :new_project | :write_notes,
           track: non_neg_integer() | nil,
           track_type: :midi | :audio | nil,
           name: String.t() | nil,

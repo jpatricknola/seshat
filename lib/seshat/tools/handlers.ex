@@ -32,6 +32,31 @@ defmodule Seshat.Tools.Handlers do
   @default_max_results 25
   @default_catalog_results 15
 
+  # Advice appended to a guard timeout, per address family. A timeout means "no
+  # reply at all", which for an upstream address is nearly always a bad index and
+  # for one of Seshat's own is that plus "the extension was never installed".
+  @clip_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
+                     "track and slot indices with get_clip_slots first; failing that, check " <>
+                     "Ableton is running with AbletonOSC enabled."
+
+  @send_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
+                     "track index (get_session_state) and send index (get_track_sends; sends are " <>
+                     "0-based, send A = 0)."
+
+  @track_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
+                      "track index with get_session_state; failing that, check Ableton is " <>
+                      "running with AbletonOSC enabled."
+
+  # The return/master addresses are Seshat's own, and they always reply — a bad
+  # index comes back as an error envelope, not silence. So unlike the upstream
+  # families above, a timeout here isn't a bad index at all: it means nothing is
+  # serving the address.
+  @return_extension_hint "These addresses come from Seshat's AbletonOSC extension rather than " <>
+                           "upstream, and it answers every query it receives — even for an index " <>
+                           "that doesn't exist. Silence therefore means it isn't installed: run " <>
+                           "`mix abletonosc.install` and restart Ableton Live, and check Live is " <>
+                           "running with AbletonOSC enabled."
+
   # Properties for the /live/song/get/track_data bulk query, in reply order.
   # Each track.* property contributes one value per track; each clip.* /
   # clip_slot.* property contributes num_scenes values — so a track's chunk is
@@ -416,6 +441,78 @@ defmodule Seshat.Tools.Handlers do
   end
 
   @doc """
+  Formats one track's send levels, one per line, with the send letter and the
+  return track each one feeds.
+
+  The letter and the return name are both there because neither alone is enough:
+  Live's UI labels the send "B", the user calls it "the delay", and the tools
+  want the index.
+  """
+  @spec format_track_sends(integer(), [map()]) :: String.t()
+  def format_track_sends(_track, []) do
+    "This set has no return tracks, so no track has any sends. Create one with " <>
+      "create_return_track, then load an effect onto it in Live."
+  end
+
+  def format_track_sends(track, sends) do
+    lines =
+      Enum.map_join(sends, "\n", fn s ->
+        ~s{  send #{s.index} (#{send_letter(s.index)}) → "#{s.return}": } <>
+          "#{format_number(s.value)}"
+      end)
+
+    "#{length(sends)} send(s) on track #{track}:\n\n#{lines}"
+  end
+
+  @doc """
+  Formats the return tracks and the master level for `get_session_state`.
+
+  `master` is `nil` when `/live/master/get/volume` never answered, which means
+  Seshat's AbletonOSC extension isn't installed — say so rather than reporting a
+  set with no returns, which looks identical but isn't. A single return's
+  `volume` is `nil` on the same principle: one lost reply, and the fader position
+  is unknown rather than 0.85.
+  """
+  @spec format_return_tracks([map()], map() | nil) :: String.t()
+  def format_return_tracks(_return_tracks, nil) do
+    "Return/master state unavailable — run mix abletonosc.install and restart Live."
+  end
+
+  def format_return_tracks([], master) do
+    "No return tracks in this set — nothing to send to yet; create one with " <>
+      "create_return_track.\nMaster: volume=#{round_volume(master.volume)}"
+  end
+
+  def format_return_tracks(return_tracks, master) do
+    lines =
+      Enum.map_join(return_tracks, "\n", fn r ->
+        ~s{Return #{r.index} "#{r.name}" (send #{send_letter(r.index)}): } <>
+          volume_field(r.volume)
+      end)
+
+    "#{lines}\nMaster: volume=#{round_volume(master.volume)}"
+  end
+
+  # A guessed fader position reads as real and the model does relative moves off
+  # it ("turn the delay down a bit" from a fictional 0.85 is an increase), so an
+  # unanswered volume query says so instead.
+  defp volume_field(nil), do: "volume unknown (a reply was lost — try get_session_state again)"
+  defp volume_field(value), do: "volume=#{round_volume(value)}"
+
+  @doc """
+  Send index → the letter Live's mixer prints on it: send 0 = A, send 1 = B.
+
+  Live caps a set at 12 return tracks, so the alphabet never runs out in
+  practice; past Z it falls back to the 1-based number rather than emitting
+  punctuation.
+  """
+  @spec send_letter(non_neg_integer()) :: String.t()
+  def send_letter(index) when index >= 0 and index < 26, do: <<?A + index>>
+  def send_letter(index), do: "##{index + 1}"
+
+  defp round_volume(value), do: Float.round(value / 1.0, 2)
+
+  @doc """
   Approximate dB label for Live's 0.0–1.0 mixer scale.
 
   The fader is not linear and 1.0 is not the ceiling: ~0.85 is unity (0 dB) and
@@ -640,6 +737,123 @@ defmodule Seshat.Tools.Handlers do
 
     case Transport.send_message("/live/track/set/arm", [track, value]) do
       :ok -> {:ok, "#{if armed, do: "Armed", else: "Disarmed"} track #{track}"}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  # --- Sends, return tracks, master ---
+  #
+  # Sends belong to the *regular* track that feeds the return, so they use
+  # upstream's /live/track/get|set/send. Everything about the returns themselves
+  # and the master comes from priv/abletonosc/return_track.py — a Seshat
+  # extension, so an un-run `mix abletonosc.install` means no reply at all rather
+  # than an error. Each mutation therefore reads its own value back first: the
+  # guard is the difference between an error and a lie.
+
+  defp do_call("set_track_send", %{"track" => track, "send" => send_index, "value" => value}) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/track/get/send",
+             [track, send_index],
+             "send #{send_index} on track #{track}",
+             @send_index_hint
+           ),
+         :ok <-
+           Transport.send_message("/live/track/set/send", [track, send_index, value / 1.0]) do
+      {:ok,
+       "Set send #{send_letter(send_index)}#{return_track_label(send_index)} on track " <>
+         "#{track} to #{value} (was #{format_number(old)})"}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("get_track_sends", %{"track" => track}) do
+    with {:ok, count} <- return_track_count(),
+         {:ok, sends} <- read_sends(track, count) do
+      {:ok, format_track_sends(track, sends)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  # The only multi-step one: create, then rename at the index the create appended
+  # to. Registry owns the sequencing and hands back that index.
+  defp do_call("create_return_track", %{"name" => name}) do
+    case Registry.execute(%Command{command: :create_return_track, name: name}) do
+      {:ok, index} ->
+        {:ok,
+         ~s{Created return track "#{name}" (return #{index} — send #{send_letter(index)} on } <>
+           "every track). It has no effect on it yet: Seshat cannot load a device onto a " <>
+           "return track, so ask the user to drag one on in Live."}
+
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  end
+
+  # Guarded with get/name rather than get/count: one query catches a bad index and
+  # a missing extension both, and the name is worth having in the reply.
+  defp do_call("delete_return_track", %{"return_track" => index}) do
+    with {:ok, name} <-
+           query_echoed(
+             "/live/return_track/get/name",
+             [index],
+             "return track #{index}",
+             @return_extension_hint
+           ),
+         :ok <- Transport.send_message("/live/song/delete_return_track", [index]) do
+      State.refresh()
+
+      {:ok,
+       ~s{Deleted return track #{index} "#{name}". The returns after it have shifted down a } <>
+         "place, taking their send letters with them — re-check get_session_state before " <>
+         "touching another send."}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("set_return_track_volume", %{"return_track" => index, "value" => value}) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/volume",
+             [index],
+             "the volume of return track #{index}",
+             @return_extension_hint
+           ),
+         :ok <- Transport.send_message("/live/return_track/set/volume", [index, value / 1.0]) do
+      # Label first, refresh second: `refresh/0` is a cast, so a `State` call made
+      # after it queues behind the whole re-query and would time out into a blank
+      # label on a slow refresh. The name doesn't change here anyway.
+      label = return_track_label(index)
+      State.refresh()
+
+      {:ok,
+       "Set volume on return track #{index}#{label} to #{value} " <>
+         "(#{volume_display(value)}) — was #{format_number(old)} (#{volume_display(old)})"}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("set_master_volume", %{"value" => value}) do
+    with {:ok, old} <- master_volume(),
+         :ok <- Transport.send_message("/live/master/set/volume", [value / 1.0]) do
+      State.refresh()
+
+      {:ok,
+       "Set master volume to #{value} (#{volume_display(value)}) — was " <>
+         "#{format_number(old)} (#{volume_display(old)})"}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
     end
   end
@@ -1030,10 +1244,10 @@ defmodule Seshat.Tools.Handlers do
       "#{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, #{playing}, " <>
         "key: #{Pitch.pitch_class_name(song.root_note)} #{song.scale_name}"
 
-    if tracks == [] do
-      {:ok, "#{song_line}\n\nNo tracks in current session (Ableton may not be connected)"}
-    else
-      track_summary =
+    track_summary =
+      if tracks == [] do
+        "No tracks in current session (Ableton may not be connected)"
+      else
         Enum.map_join(tracks, "\n", fn t ->
           mute = if t.mute, do: " [muted]", else: ""
           solo = if t.solo, do: " [solo]", else: ""
@@ -1041,9 +1255,11 @@ defmodule Seshat.Tools.Handlers do
           "Track #{t.index} \"#{t.name}\": pan=#{Float.round(t.pan, 2)}, " <>
             "volume=#{Float.round(t.volume, 2)}#{mute}#{solo}"
         end)
+      end
 
-      {:ok, "#{song_line}\n\n#{track_summary}"}
-    end
+    return_summary = format_return_tracks(State.return_tracks(), State.master())
+
+    {:ok, "#{song_line}\n\n#{track_summary}\n\n#{return_summary}"}
   catch
     :exit, _ ->
       {:ok, "No tracks in current session (Ableton may not be connected)"}
@@ -1106,6 +1322,102 @@ defmodule Seshat.Tools.Handlers do
     with {:ok, batches} <- result do
       {:ok, batches |> Enum.reverse() |> Enum.concat()}
     end
+  end
+
+  # --- Return tracks & master reads ---
+
+  # Doubles as the "is return_track.py installed?" probe — the whole extension
+  # either answers or it doesn't, so one timeout is enough to say which.
+  defp return_track_count do
+    case Transport.query("/live/return_track/get/count", [], @guard_timeout) do
+      {:ok, {_addr, [count]}} when is_integer(count) ->
+        {:ok, count}
+
+      {:ok, {_addr, args}} ->
+        {:error, "Unexpected reply from /live/return_track/get/count: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ -> {:error, extension_missing_error("read the return tracks", "no sends were read")}
+  end
+
+  defp master_volume do
+    case Transport.query("/live/master/get/volume", [], @guard_timeout) do
+      {:ok, {_addr, [volume]}} when is_number(volume) ->
+        {:ok, volume}
+
+      {:ok, {_addr, args}} ->
+        {:error, "Unexpected reply from /live/master/get/volume: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ -> {:error, extension_missing_error("read the master volume", "nothing was changed")}
+  end
+
+  defp extension_missing_error(attempted, consequence) do
+    "Timed out trying to #{attempted}, so #{consequence}. Those addresses come from Seshat's " <>
+      "AbletonOSC extension rather than upstream, so run `mix abletonosc.install` and restart " <>
+      "Ableton Live — and check Live is running with AbletonOSC enabled."
+  end
+
+  # One name query per return plus one send query per return. Tiny replies, and
+  # the return count is capped at 12 by Live.
+  #
+  # With no returns there are no sends to read, but the track index still gets
+  # checked: otherwise a typo'd track comes back as "this set has no return
+  # tracks" — true, and not the question that was asked.
+  defp read_sends(track, count) when count < 1 do
+    with {:ok, _name} <-
+           query_echoed("/live/track/get/name", [track], "track #{track}", @track_index_hint) do
+      {:ok, []}
+    end
+  end
+
+  defp read_sends(track, count) do
+    result =
+      Enum.reduce_while(0..(count - 1), {:ok, []}, fn index, {:ok, acc} ->
+        case read_send(track, index) do
+          {:ok, send_data} -> {:cont, {:ok, [send_data | acc]}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+
+    with {:ok, sends} <- result, do: {:ok, Enum.reverse(sends)}
+  end
+
+  defp read_send(track, index) do
+    with {:ok, name} <-
+           query_echoed(
+             "/live/return_track/get/name",
+             [index],
+             "the name of return track #{index}",
+             @return_extension_hint
+           ),
+         {:ok, value} <-
+           query_echoed(
+             "/live/track/get/send",
+             [track, index],
+             "send #{index} on track #{track}",
+             @send_index_hint
+           ) do
+      {:ok, %{index: index, return: name, value: value}}
+    end
+  end
+
+  # Best-effort label from the mirrored state, for a reply that reads better with
+  # the return's name in it. Purely cosmetic, so a stale or unavailable mirror
+  # costs nothing.
+  defp return_track_label(index) do
+    case Enum.find(State.return_tracks(), &(&1.index == index)) do
+      %{name: name} -> ~s{ ("#{name}")}
+      _ -> ""
+    end
+  catch
+    :exit, _ -> ""
   end
 
   # --- Guards ---
@@ -1204,7 +1516,15 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # Reads one flag, and returns it only if the reply echoed back the indices we
+  # `query_echoed/4` for the boolean properties, normalising AbletonOSC's mix of
+  # `true`/`false` and 1/0.
+  defp query_flag(address, indices, subject) do
+    with {:ok, flag} <- query_echoed(address, indices, subject, @clip_index_hint) do
+      {:ok, truthy?(flag)}
+    end
+  end
+
+  # Reads one value, and returns it only if the reply echoed back the indices we
   # asked about. Transport correlates replies by address alone and keeps only one
   # query in flight, so a reply abandoned by an earlier timeout can land while a
   # later query for the same address is pending — answering a guard for track 3
@@ -1219,45 +1539,69 @@ defmodule Seshat.Tools.Handlers do
   # Indices are compared with `==` rather than pinned: a float index still reaches
   # Ableton fine (it casts to int) and comes back as an integer, so pinning would
   # reject a reply that is in fact ours.
-  defp query_flag(address, indices, subject, reissued? \\ false) do
+  #
+  # `hint` is the caller's advice for a timeout — which index to re-check, and
+  # whether the address is one of Seshat's extensions.
+  defp query_echoed(address, indices, subject, hint, reissued? \\ false) do
     case Transport.query(address, indices, @guard_timeout) do
       {:ok, {_addr, values}} ->
-        case Enum.split(values, length(indices)) do
-          {echoed, [flag]} ->
-            if indices_match?(echoed, indices) do
-              {:ok, truthy?(flag)}
-            else
-              reissue_or_give_up(address, indices, subject, reissued?)
-            end
+        {echoed, payload} = Enum.split(values, length(indices))
 
-          _unexpected_shape ->
-            reissue_or_give_up(address, indices, subject, reissued?)
+        if indices_match?(echoed, indices) do
+          case unwrap_payload(payload) do
+            {:ok, value} -> {:ok, value}
+            {:error, message} -> {:error, remote_error(message)}
+            :unexpected_shape -> reissue_or_give_up(address, indices, subject, hint, reissued?)
+          end
+        else
+          reissue_or_give_up(address, indices, subject, hint, reissued?)
         end
 
       {:error, reason} ->
         {:error, inspect(reason)}
     end
   catch
-    :exit, _ -> {:error, guard_timeout_error(subject)}
+    :exit, _ -> {:error, guard_timeout_error(subject, hint)}
   end
 
-  defp reissue_or_give_up(address, indices, subject, false),
-    do: query_flag(address, indices, subject, true)
+  @doc """
+  Reads the value out of a getter reply, once the echoed indices have been
+  stripped off the front.
 
-  defp reissue_or_give_up(_address, _indices, subject, true),
+  Upstream getters reply with the value alone. Seshat's own return/master getters
+  wrap it in browser.py's ok/error envelope, so an index that doesn't exist comes
+  back as a message instead of the silence upstream produces — immediately, and
+  distinguishably from an extension that was never installed.
+
+  `:unexpected_shape` means the reply is not one this code knows how to read,
+  which the caller treats as a crossed wire rather than an answer.
+  """
+  @spec unwrap_payload(list()) :: {:ok, term()} | {:error, String.t()} | :unexpected_shape
+  def unwrap_payload([value]), do: {:ok, value}
+  def unwrap_payload(["ok", value]), do: {:ok, value}
+  def unwrap_payload(["error", message]) when is_binary(message), do: {:error, message}
+  def unwrap_payload(_other), do: :unexpected_shape
+
+  defp remote_error(message) do
+    "#{message}. Nothing further was sent — check get_session_state for the indices that " <>
+      "actually exist."
+  end
+
+  defp reissue_or_give_up(address, indices, subject, hint, false),
+    do: query_echoed(address, indices, subject, hint, true)
+
+  defp reissue_or_give_up(_address, _indices, subject, _hint, true),
     do: {:error, stale_reply_error(subject)}
 
   defp indices_match?(echoed, indices) do
     echoed |> Enum.zip(indices) |> Enum.all?(fn {reply, asked} -> reply == asked end)
   end
 
-  # A track or slot index that doesn't exist gets no reply at all — AbletonOSC
-  # raises inside the callback and sends nothing — so a guard timeout is far
-  # more often a bad index than a dead bridge. The message leads with that.
-  defp guard_timeout_error(subject) do
-    "Timed out checking #{subject}, so nothing further was sent. An index that doesn't exist " <>
-      "gets no reply from Ableton at all, so check the track and slot indices with " <>
-      "get_clip_slots first; failing that, check Ableton is running with AbletonOSC enabled."
+  # What a timeout means depends on who serves the address, so the caller's hint
+  # supplies the diagnosis: for upstream addresses silence is usually a bad index,
+  # for Seshat's own extension it can only be a missing install.
+  defp guard_timeout_error(subject, hint) do
+    "Timed out checking #{subject}, so nothing further was sent. #{hint}"
   end
 
   # Reissued once already, so this is not one crossed wire: something is steadily

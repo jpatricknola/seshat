@@ -61,7 +61,7 @@ Top-level Song object. Playback control, scene/track creation, cue points, globa
 | `/live/song/cue_point/add_or_delete` | | Add/delete cue point at cursor |
 | `/live/song/cue_point/set/name` | `cue_point` | Rename cue point by index |
 | `/live/song/delete_scene` | `scene_index` | Delete scene |
-| `/live/song/delete_return_track` | `track_index` | Delete return track |
+| `/live/song/delete_return_track` | `return_index` | Delete return track — indexes `song.return_tracks`, a separate space from regular track indices |
 | `/live/song/delete_track` | `track_index` | Delete track |
 | `/live/song/duplicate_scene` | `scene_index` | Duplicate scene |
 | `/live/song/duplicate_track` | `track_index` | Duplicate track |
@@ -139,9 +139,14 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 |---|---|---|---|
 | `/live/song/get/cue_points` | | `name, time, ...` | List cue points |
 | `/live/song/get/num_scenes` | | `num_scenes` | Number of scenes |
-| `/live/song/get/num_tracks` | | `num_tracks` | Number of tracks |
-| `/live/song/get/track_names` | `[index_min, index_max]` | `[names...]` | Track names (optional range) |
-| `/live/song/get/track_data` | `start_track, end_track, properties...` | `[values...]` | Bulk track/clip data query |
+| `/live/song/get/num_tracks` | | `num_tracks` | Number of regular tracks (excludes return and master tracks) |
+| `/live/song/get/track_names` | `[index_min, index_max]` | `[names...]` | Regular track names, in index order (optional range) |
+| `/live/song/get/track_data` | `start_track, end_track, properties...` | `[values...]` | Bulk track/clip data query (regular tracks only) |
+
+All three iterate `song.tracks`, so return tracks and the master track are
+absent from their counts and their index space. Return-track count and names
+come from `/live/return_track/get/count` and `/live/return_track/get/name` —
+see the Return Track & Master API below.
 
 #### Bulk Track Data
 
@@ -178,7 +183,14 @@ User interface control — selecting tracks, scenes, clips, devices.
 
 ## Track API
 
-Audio, MIDI, return, or master track. Volume, panning, send, mute, solo, devices, clips.
+**Regular (audio/MIDI) tracks only.** Every handler here resolves its index
+through `song.tracks`, which holds audio and MIDI tracks and nothing else — a
+return track or the master track cannot be reached on any `/live/track/*`
+address, at any index. Return tracks and the master are addressable through
+Seshat's return_track extension (see below); sends, being a property of a
+*regular* track's mixer, live here.
+
+Volume, panning, send, mute, solo, devices, clips.
 
 Listen via `/live/track/start_listen/<property> <track_index>`, responses on `/live/track/get/<property>` with `<track_index> <value>`.
 
@@ -222,7 +234,7 @@ Listen via `/live/track/start_listen/<property> <track_index>`, responses on `/l
 | `/live/track/get/name` | `track_id` | `track_id, name` | Track name |
 | `/live/track/get/panning` | `track_id` | `track_id, panning` | Track panning (-1.0 to 1.0) |
 | `/live/track/get/playing_slot_index` | `track_id` | `track_id, index` | Currently-playing slot |
-| `/live/track/get/send` | `track_id, send_id` | `track_id, send_id, value` | Send level |
+| `/live/track/get/send` | `track_id, send_id` | `track_id, send_id, value` | Send level (0.0 to 1.0) |
 | `/live/track/get/solo` | `track_id` | `track_id, solo` | Soloed? |
 | `/live/track/get/volume` | `track_id` | `track_id, volume` | Track volume (0.0 to 1.0) |
 
@@ -491,6 +503,62 @@ directory and deletes the file afterwards.
 - The `FileId_<n>` in a preset uri is the primary key of Ableton's own browser
   database, which is where Seshat gets preset tags — see
   `Seshat.Library.AbletonDB`.
+
+---
+
+## Return Track & Master API (Seshat extension — not in upstream AbletonOSC)
+
+⚠️ These seven addresses do **not** exist in stock AbletonOSC. They are served
+by `priv/abletonosc/return_track.py` in this repo, installed with
+`mix abletonosc.install` (restart Live afterwards). Without that install all
+seven addresses are unknown and queries time out.
+
+They exist because upstream reaches regular tracks only: every `/live/track/*`
+handler resolves its index through `song.tracks`. Return tracks live in
+`song.return_tracks` and the master in `song.master_track`, so upstream can
+create and delete a return track but can neither name one nor touch its level,
+and the master fader is unreachable entirely.
+
+Return-track indices are 0-based **within `song.return_tracks`** — a separate
+index space from regular tracks. Return N is the target of send N on every
+regular track: return 0 = send A, return 1 = send B, and so on. The master
+track needs no index at all.
+
+| Address | Query Params | Response Params | Description |
+|---|---|---|---|
+| `/live/return_track/get/count` | | `count` | Number of return tracks. Also the "is the extension installed?" probe |
+| `/live/return_track/get/name` | `return_index` | `return_index, "ok", name` | Return track name |
+| | | `return_index, "error", message` | Index out of range |
+| `/live/return_track/set/name` | `return_index, name` | | Rename a return track |
+| `/live/return_track/get/volume` | `return_index` | `return_index, "ok", volume` | Return fader, 0.0 to 1.0 |
+| | | `return_index, "error", message` | Index out of range |
+| `/live/return_track/set/volume` | `return_index, volume` | | Set the return fader |
+| `/live/master/get/volume` | | `volume` | Master fader, 0.0 to 1.0 |
+| `/live/master/set/volume` | `volume` | | Set the master fader |
+
+- **Getters always reply**, on the address they were called on, including on
+  every error path — the same rule as the Browser API above, and the opposite of
+  upstream's "raise inside the callback and send nothing". For an optional
+  extension that silence is ambiguous: a bad index would be indistinguishable
+  from an install that never happened, and would cost a full guard timeout to
+  learn nothing either way. With the envelope, **an error reply means a bad
+  index and silence means the extension isn't loaded.**
+- `get/count` and `/live/master/get/volume` take no index, so they have no
+  failure to report and reply with the bare value.
+- **Setters are silent**, like upstream's. Every caller guards with the matching
+  getter immediately beforehand, so a bad index has already been reported by the
+  time a setter goes out, and nothing waits on one.
+- Volume is `mixer_device.volume.value` on Live's fader scale, the same property
+  and scale as `/live/track/get|set/volume`.
+- Creating and deleting return tracks is upstream's job:
+  `/live/song/create_return_track` (no arguments, appends after the existing
+  returns) and `/live/song/delete_return_track [return_index]`. A newly created
+  return's index is therefore the old `get/count` — query the count, create,
+  then `set/name` at that index.
+- Sends belong to the *regular* track that feeds the return, so they stay on
+  `/live/track/get|set/send [track_id, send_id, ...]` in the Track API above.
+- No listeners in v1: `/live/return_track/start_listen/*` does not exist.
+  `Seshat.Session.State` mirrors returns and the master on refresh only.
 
 ---
 

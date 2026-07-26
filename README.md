@@ -3,7 +3,7 @@
 Natural-language control of Ableton Live. Say "pan the drums left a bit" or
 "write a four-bar minor key bassline on track 2" and it happens in your session.
 
-Seshat is an Elixir/Phoenix app that exposes ~37 Ableton control tools and
+Seshat is an Elixir/Phoenix app that exposes ~47 Ableton control tools and
 sends OSC to a running copy of Ableton Live.
 
 ## Prerequisites
@@ -21,18 +21,27 @@ No database required.
 
 ```bash
 mix setup
-mix abletonosc.install     # adds the browser handler to AbletonOSC
+mix abletonosc.install     # adds Seshat's handler extensions to AbletonOSC
 ```
 
-`mix abletonosc.install` is what makes `search_library`, `list_browser_items`
-and `load_device` work — loading instruments and effects needs a browser API
-that upstream AbletonOSC doesn't have, so Seshat vendors one in
-[priv/abletonosc/browser.py](priv/abletonosc/browser.py). The task probes for
-your AbletonOSC install (pass the path if it can't find it), copies the file
-in, and registers the handler. **Restart Ableton Live afterwards** (or toggle
-AbletonOSC off and back on under Preferences > Link/Tempo/MIDI > Control
-Surface) — `/live/api/reload` never reloads this file, and can leave AbletonOSC
-with no handlers at all.
+`mix abletonosc.install` copies two vendored handlers into AbletonOSC and
+registers both, because upstream AbletonOSC is missing two things Seshat
+needs:
+
+- [priv/abletonosc/browser.py](priv/abletonosc/browser.py) — a browser API,
+  without which `search_library`, `list_browser_items` and `load_device` don't
+  work.
+- [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) — return
+  track and master addresses (upstream only reaches regular tracks), without
+  which `set_track_send`, `get_track_sends`, `create_return_track`,
+  `delete_return_track`, `set_return_track_volume`, `set_master_volume`, and
+  the return/master lines in `get_session_state` don't work.
+
+The task probes for your AbletonOSC install (pass the path if it can't find
+it), copies both files in, and registers both handlers. **Restart Ableton Live
+afterwards** (or toggle AbletonOSC off and back on under Preferences >
+Link/Tempo/MIDI > Control Surface) — `/live/api/reload` never reloads these
+files, and can leave AbletonOSC with no handlers at all.
 
 Everything else works without it.
 
@@ -52,13 +61,15 @@ after saving your own presets.
 <details>
 <summary>Manual install (if the task can't patch your AbletonOSC)</summary>
 
-Copy `priv/abletonosc/browser.py` to `<AbletonOSC>/abletonosc/browser.py`, then:
+Copy both `priv/abletonosc/browser.py` and `priv/abletonosc/return_track.py`
+to `<AbletonOSC>/abletonosc/`, then:
 
 1. In `<AbletonOSC>/abletonosc/__init__.py`, alongside the other handler
    imports, add:
 
    ```python
    from .browser import BrowserHandler
+   from .return_track import ReturnTrackHandler
    ```
 
 2. In `<AbletonOSC>/manager.py`, inside the `self.handlers = [` list in
@@ -66,6 +77,7 @@ Copy `priv/abletonosc/browser.py` to `<AbletonOSC>/abletonosc/browser.py`, then:
 
    ```python
    abletonosc.BrowserHandler(self),
+   abletonosc.ReturnTrackHandler(self),
    ```
 
 Restart Ableton Live.

@@ -551,7 +551,8 @@ You now have a small but real lo-fi sketch. Save it if you like it.
 
 ## What this covered
 
-All 41 tools, in the order they appear above:
+The 41 tools this walkthrough was written against, in the order they appear
+above (Seshat has since grown to 47 — see below):
 
 | Part | Tools exercised |
 |---|---|
@@ -564,9 +565,12 @@ All 41 tools, in the order they appear above:
 | 7 | `set_track_volume`, `set_track_pan`, `set_track_solo`, `set_track_mute`, `get_device_parameters`, `set_device_parameter`, `set_track_arm`, `set_loop` |
 | 8 | `create_track`, `duplicate_track`, `set_track_name`, `delete_track` |
 
-**Not covered, because it isn't built yet:** send levels
-(`set_track_send`) and MIDI capture (`capture_midi`). Both are on
-[ROADMAP.md](ROADMAP.md).
+**Not covered:** send levels and return tracks (`set_track_send`,
+`get_track_sends`, `create_return_track`, `delete_return_track`,
+`set_return_track_volume`, `set_master_volume`) shipped after this
+walkthrough was written and aren't part of it yet — see `/smoke-test` for
+that surface in the meantime. MIDI capture (`capture_midi`) isn't built yet;
+it's on [ROADMAP.md](ROADMAP.md).
 
 ---
 

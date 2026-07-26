@@ -17,10 +17,25 @@ exist because a typo'd address looks exactly like success.
   an address. Conventions and gotchas (ports, listener pattern, ordering
   hazards) are in
   [.claude/docs/ableton-osc-reference.md](../docs/ableton-osc-reference.md).
-- **`/live/browser/*` is ours, not upstream's** — those handlers live in
-  [priv/abletonosc/browser.py](../../priv/abletonosc/browser.py) and are
-  installed by `mix abletonosc.install`. Any new address upstream doesn't
-  provide goes there the same way.
+- **`/live/browser/*`, `/live/return_track/*`, and `/live/master/*` are ours,
+  not upstream's** — those handlers live in
+  [priv/abletonosc/browser.py](../../priv/abletonosc/browser.py) and
+  [priv/abletonosc/return_track.py](../../priv/abletonosc/return_track.py)
+  respectively, and both are installed by `mix abletonosc.install`. Upstream's
+  track addresses only reach `song.tracks` (regular tracks) — returns and the
+  master come from the second file. Any new address upstream doesn't provide
+  goes there the same way.
+- **A vendored getter always replies, including on its error paths** — an
+  `[..., "ok", value]` / `[..., "error", message]` envelope, echoing whatever
+  index it was asked about. The exception is a getter that takes no index
+  (`/live/return_track/get/count`, `/live/master/get/volume`): with nothing to
+  look up there is no failure to report, so those reply with the bare value and
+  no envelope. Upstream's habit of raising inside the callback and
+  sending nothing is wrong for an *optional* extension: silence would mean both
+  "bad index" and "the user never ran `mix abletonosc.install`", and cost a full
+  guard timeout to distinguish neither. With the envelope, an error reply is a
+  bad index and silence is a missing install. Setters stay silent — each is
+  guarded by its getter first, and nothing waits on one.
 - **All OSC goes through `Seshat.OSC.Transport`** — nothing sends UDP
   directly. Address strings deliberately live inline in `Handlers`,
   `Registry`, and `Session.State` (greppable via `"/live/`) — do not add an
