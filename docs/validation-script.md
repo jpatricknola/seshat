@@ -457,23 +457,47 @@ Real sessions involve mistakes. These steps check that failures fail *loudly*.
 > **Say this:**
 > *"Write a melody on the Vocals track."*
 
-**Look for:** ⚠️ **This is a trap.** MIDI can't be written to an audio track,
-and the underlying OSC call fails *silently*. Seshat should notice the track
-type — it has the tool to check — and **refuse with an explanation**, offering
-a MIDI track instead. If it cheerfully reports success and nothing appears in
-Live, that's a genuine failure. Write it down.
+**Look for:** ⚠️ **This is a trap.** MIDI can't be written to an audio track.
+`write_midi_notes` now checks the track type itself and **refuses with an
+explanation** naming the track — the silent no-op is gone, so a phantom
+success here is a genuine failure whichever layer produced it. Ideally Seshat
+notices before calling the tool at all and offers a MIDI track instead; the
+tool's own error is the backstop.
 
 - [ ] Refuses, and explains why
 - [ ] Does **not** claim success
 
+> **Say this** (only if this set has a group track — skip otherwise):
+> *"Write a melody on the group track itself."*
+
+**Look for:** the same refusal by a different route. A group track reports MIDI
+input but has no clip slots of its own, so an unguarded write would be dropped
+and reported as success. Seshat should name it as a group track and offer one of
+the tracks inside it.
+
+- [ ] Refuses, names it as a group track
+
 > **Say this:**
 > *"Try writing notes to track 47."*
 
-**Look for:** a clean error, quickly. Not a 5-second hang, not a timeout, not
-a crash.
+**Look for:** a clean error, quickly. A nonexistent index gets no reply from
+Ableton at all, so the guard gives up after ~2 seconds and says so — a brief
+pause is expected, a 5-second hang or a crash is not.
 
 - [ ] Clean error message
-- [ ] Fast — no hang
+- [ ] Fast — a couple of seconds at most
+
+> **Say this:**
+> *"Play the Keys clip in the Break scene."*
+
+**Look for:** ⚠️ **Another trap** — Break holds bass only, so the Keys slot
+there is empty. Firing an empty slot is Live's way of *stopping* a track, so a
+tool that just sent it would silence Keys while reporting a launch. Seshat
+should refuse, say that slot is empty, and point at `stop_clip` if stopping
+was the intent.
+
+- [ ] Refuses, names the empty slot
+- [ ] Reports no launch that didn't happen
 
 > **Say this:**
 > *"Duplicate the Keys track."*

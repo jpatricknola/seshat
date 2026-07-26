@@ -186,6 +186,7 @@ Listen via `/live/track/start_listen/<property> <track_index>`, responses on `/l
 
 | Address | Query Params | Description |
 |---|---|---|
+| `/live/track/delete_device` | `track_id, device_id` | Delete a device from the track's chain (no reply) |
 | `/live/track/stop_all_clips` | `track_id` | Stop all clips on track |
 
 ### Track Getters

@@ -123,6 +123,12 @@ there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
+[docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) is a standing design review of the
+whole tool surface — one verdict per tool, plus the coverage gaps that feed
+ROADMAP.md. It is the place to check whether a tool has a known wart before
+"fixing" it, and the inventory table wants updating whenever a tool is added,
+fixed, or merged.
+
 ## Framework rules
 
 @AGENTS.md
