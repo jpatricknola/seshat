@@ -548,6 +548,135 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "send_letter/1" do
+    test "send index maps to the letter Live prints on the send" do
+      assert Handlers.send_letter(0) == "A"
+      assert Handlers.send_letter(1) == "B"
+      assert Handlers.send_letter(11) == "L"
+    end
+
+    test "past the alphabet it falls back to a number rather than punctuation" do
+      assert Handlers.send_letter(26) == "#27"
+    end
+  end
+
+  describe "format_track_sends/2" do
+    test "one line per send, with the letter and the return it feeds" do
+      sends = [
+        %{index: 0, return: "A-Reverb", value: 0.35},
+        %{index: 1, return: "B-Delay", value: 0.0}
+      ]
+
+      result = Handlers.format_track_sends(2, sends)
+
+      assert result =~ "2 send(s) on track 2:"
+      assert result =~ ~s{send 0 (A) → "A-Reverb": 0.35}
+      assert result =~ ~s{send 1 (B) → "B-Delay": 0.0}
+    end
+
+    test "no returns means no sends, and says how to make one" do
+      result = Handlers.format_track_sends(0, [])
+
+      assert result =~ "no return tracks"
+      assert result =~ "create_return_track"
+    end
+  end
+
+  describe "format_return_tracks/2" do
+    test "one line per return in send order, then the master" do
+      returns = [
+        %{index: 0, name: "A-Reverb", volume: 0.85},
+        %{index: 1, name: "B-Delay", volume: 0.7}
+      ]
+
+      result = Handlers.format_return_tracks(returns, %{volume: 0.85})
+
+      assert result =~ ~s{Return 0 "A-Reverb" (send A): volume=0.85}
+      assert result =~ ~s{Return 1 "B-Delay" (send B): volume=0.7}
+      assert result =~ "Master: volume=0.85"
+    end
+
+    # nil master means the extension never answered, which looks identical to a
+    # set with no returns unless it is called out.
+    test "a nil master reports the extension as unavailable, not as silence" do
+      result = Handlers.format_return_tracks([], nil)
+
+      assert result =~ "unavailable"
+      assert result =~ "mix abletonosc.install"
+      refute result =~ "volume="
+    end
+
+    test "an answering extension with no returns still reports the master" do
+      result = Handlers.format_return_tracks([], %{volume: 0.6})
+
+      assert result =~ "No return tracks"
+      assert result =~ "create_return_track"
+      assert result =~ "Master: volume=0.6"
+    end
+  end
+
+  # Every one of these guards Ableton before mutating, so on a machine with no
+  # Ableton (CI, and most dev runs) each hits its guard timeout in ~2s and must
+  # report a useful error rather than claiming a success that never happened.
+  #
+  # A success is *also* valid, and deliberately allowed: run this suite on the
+  # developer's own machine with Live open and the guard genuinely answers. What
+  # is pinned here is the error wording, which is the part that would otherwise
+  # rot unnoticed — never "there is no Ableton", which isn't ours to assert.
+  # Happy-path behaviour belongs to /smoke-test.
+  describe "sends and returns when the guard doesn't answer" do
+    defp assert_guarded_error(result, expected_fragments) do
+      case result do
+        {:error, message} ->
+          for fragment <- expected_fragments do
+            assert message =~ fragment
+          end
+
+        {:ok, message} ->
+          # A live Ableton answered the guard. Nothing to check but that the
+          # clause returned a report rather than a raw term.
+          assert is_binary(message)
+      end
+    end
+
+    test "set_track_send names the send index and get_track_sends" do
+      Handlers.call("set_track_send", %{"track" => 2, "send" => 1, "value" => 0.4})
+      |> assert_guarded_error([
+        "send 1 on track 2",
+        "get_track_sends",
+        "nothing further was sent"
+      ])
+    end
+
+    test "get_track_sends points at the install task" do
+      Handlers.call("get_track_sends", %{"track" => 0})
+      |> assert_guarded_error(["mix abletonosc.install"])
+    end
+
+    test "create_return_track points at the install task and says nothing was created" do
+      Handlers.call("create_return_track", %{"name" => "Space"})
+      |> assert_guarded_error(["mix abletonosc.install", "nothing was created"])
+    end
+
+    test "delete_return_track explains that return indices are their own space" do
+      Handlers.call("delete_return_track", %{"return_track" => 0})
+      |> assert_guarded_error([
+        "return track 0",
+        "0-based and separate from regular track indices"
+      ])
+    end
+
+    test "set_return_track_volume does not claim the fader moved" do
+      Handlers.call("set_return_track_volume", %{"return_track" => 0, "value" => 0.85})
+      |> assert_guarded_error(["volume of return track 0", "mix abletonosc.install"])
+    end
+
+    test "set_master_volume does not claim the fader moved" do
+      Handlers.call("set_master_volume", %{"value" => 0.7})
+      |> assert_guarded_error(["master volume", "mix abletonosc.install", "nothing was changed"])
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})

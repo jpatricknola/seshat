@@ -806,7 +806,10 @@ defmodule Seshat.Tools.Definitions do
       description:
         "Get the current state of all tracks in the Ableton Live session. " <>
           "Returns tempo, time signature, the song's key and scale, track names, indices, " <>
-          "volume, pan, mute, and solo status. " <>
+          "volume, pan, mute, and solo status, plus the return tracks (name and volume, in " <>
+          "send order: return 0 = send A) and the master volume. " <>
+          "Return-track indices are their own 0-based space, separate from regular tracks — " <>
+          "this is how you resolve 'the reverb send' to the send index set_track_send needs. " <>
           "The key is whatever Live's scale controls are set to — a strong hint about what to " <>
           "write, not gospel, since Live reports C Major when the user has never touched them. " <>
           "Use this before making relative adjustments ('turn it up a bit'), " <>
@@ -839,6 +842,150 @@ defmodule Seshat.Tools.Definitions do
           "When talking to the user, refer to tracks and scenes by name or 1-based " <>
           "UI number, never raw index.",
       parameters: %{type: "object", properties: %{}, required: []}
+    },
+    # --- Sends, return tracks, master ---
+    #
+    # Everything below except set_track_send / get_track_sends' send reads needs
+    # Seshat's return_track.py extension to AbletonOSC (mix abletonosc.install).
+    %{
+      name: "set_track_send",
+      description:
+        "Set a send level on a regular track — how much of that track's signal feeds a return " <>
+          "track (shared reverb, delay, etc.). " <>
+          "Track indices are 0-based: 'track 1' = index 0. " <>
+          "Sends are 0-indexed in return-track order: send 0 = send A = the first return track, " <>
+          "send 1 = send B = the second. " <>
+          "Use get_session_state to see the return tracks and resolve 'the reverb send' to a " <>
+          "send index, and get_track_sends to read current levels before relative changes. " <>
+          "Value is 0.0 (off) to 1.0 (maximum). For 'a little reverb' start around 0.25–0.4; " <>
+          "0.6+ is a drenched, obvious effect. " <>
+          "The send is only audible if its return track has an effect loaded. " <>
+          "Regular tracks only — for a return track's own level use set_return_track_volume.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed regular track number"},
+          "send" => %{
+            type: "integer",
+            description: "0-indexed send: 0 = send A = return track 0, 1 = send B, and so on"
+          },
+          "value" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description: "Send amount. 0.0 = no signal sent, 1.0 = maximum"
+          }
+        },
+        required: ["track", "send", "value"]
+      }
+    },
+    %{
+      name: "get_track_sends",
+      description:
+        "Read every send level on one track, labeled with the send letter and the return track " <>
+          "it feeds. " <>
+          "Track indices are 0-based: 'track 1' = index 0. " <>
+          "Use this before relative send changes ('a bit less delay') or to see which send " <>
+          "index feeds which return. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed regular track number"}
+        },
+        required: ["track"]
+      }
+    },
+    %{
+      name: "create_return_track",
+      description:
+        "Create a new return track in Ableton Live and name it. " <>
+          "Return tracks host shared effects (reverb, delay) that regular tracks feed via " <>
+          "sends; the new return is appended after existing ones, and every track " <>
+          "automatically gains the matching send (new return's index = new send's index; " <>
+          "return 0 = send A). " <>
+          "Live allows at most 12 return tracks; the tool errors at the cap. " <>
+          "The new return is empty — Seshat cannot yet load a device onto a return track, so " <>
+          "ask the user to drop the effect onto it in Live.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "name" => %{
+            type: "string",
+            description:
+              "Short descriptive label for the return track (e.g. 'Room Reverb', 'Slap Delay')"
+          }
+        },
+        required: ["name"]
+      }
+    },
+    %{
+      name: "delete_return_track",
+      description:
+        "Delete a return track. " <>
+          "Return-track indices are 0-based and separate from regular track indices: return 0 " <>
+          "= the first return = send A (see get_session_state). " <>
+          "Deleting a return shifts the indices and send letters of the returns after it — " <>
+          "re-check get_session_state afterwards.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "return_track" => %{
+            type: "integer",
+            description: "0-indexed return track: 0 = the first return = send A"
+          }
+        },
+        required: ["return_track"]
+      }
+    },
+    %{
+      name: "set_return_track_volume",
+      description:
+        "Set the volume of a return track — the overall level of the shared effect it hosts. " <>
+          "Return-track indices are 0-based and separate from regular tracks: return 0 = send " <>
+          "A's return (see get_session_state). " <>
+          "Same fader scale as set_track_volume: 0.0 = silence, 0.85 = unity gain (0 dB), " <>
+          "1.0 = +6 dB. " <>
+          "To change how much one track feeds the effect, use set_track_send instead.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "return_track" => %{
+            type: "integer",
+            description: "0-indexed return track: 0 = the first return = send A"
+          },
+          "value" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description:
+              "Fader position. 0.0 = silence, 0.85 = unity gain (0 dB), 1.0 = +6 dB (maximum boost)"
+          }
+        },
+        required: ["return_track", "value"]
+      }
+    },
+    %{
+      name: "set_master_volume",
+      description:
+        "Set the master track's output volume in Ableton Live. " <>
+          "Same fader scale as set_track_volume: 0.0 = silence, 0.85 = unity gain (0 dB, where " <>
+          "a new set sits), 1.0 = +6 dB. " <>
+          "Lower this if the master is clipping; prefer track volumes and sends for balance " <>
+          "moves.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "value" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description:
+              "Fader position. 0.0 = silence, 0.85 = unity gain (0 dB), 1.0 = +6 dB (maximum boost)"
+          }
+        },
+        required: ["value"]
+      }
     }
   ]
 

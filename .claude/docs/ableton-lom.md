@@ -13,8 +13,11 @@ Application
     ├── Scenes[]
     │   └── clip slots across tracks
     ├── CuePoints[]
-    ├── Tracks[]  (audio, MIDI, return, master)
+    ├── Tracks[]        (audio and MIDI tracks only — its own index space)
+    ├── ReturnTracks[]  (a separate index space: return 0 = send A)
+    ├── MasterTrack     (a single object, not a list — no index)
     │   ├── name, color, arm, mute, solo
+    │   │   (return and master tracks have a subset: no arm, no clip slots)
     │   ├── MixerDevice
     │   │   ├── Volume  (0.0–1.0)
     │   │   ├── Panning (-1.0–1.0)
@@ -60,7 +63,16 @@ Tracks are **0-indexed** in the LOM. The LLM is told ("track 1" = index 0,
 
 This mapping happens in the LLM, not in application code.
 
-All track types share the same index space — `num_tracks` includes audio, MIDI, return, and master tracks.
+**Track types do _not_ share one index space.** `Song.tracks` holds audio and
+MIDI tracks only, and `num_tracks` counts just those. Return tracks are 0-indexed
+within `Song.return_tracks` — a separate space, where return N is the target of
+send N on every regular track (return 0 = send A). The master is
+`Song.master_track`, a single object with no index at all.
+
+The bridge follows the model: upstream AbletonOSC's `/live/track/*` addresses
+reach `Song.tracks` only, so returns and the master are addressable only through
+Seshat's own `/live/return_track/*` and `/live/master/*` extension — see
+[docs/abletonosc-api-docs.md](../../docs/abletonosc-api-docs.md).
 
 ## Value Ranges
 

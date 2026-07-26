@@ -13,6 +13,9 @@ defmodule Seshat.Commands.Registry do
     /live/clip_slot/create_clip   [track_index, slot, length]
     /live/clip/add/notes          [track_index, slot, pitch, start, dur, vel, mute, ...]
     /live/song/delete_track       [track_index]
+    /live/song/create_return_track                        (no args — appends)
+    /live/return_track/get/count  []                    → [count]        (Seshat ext.)
+    /live/return_track/set/name   [return_index, name]                   (Seshat ext.)
   """
 
   alias Seshat.Commands.Command
@@ -27,11 +30,37 @@ defmodule Seshat.Commands.Registry do
   # stall a write for five seconds.
   @slot_query_timeout 2_000
 
-  @spec execute(Command.t()) :: :ok | {:error, term()}
+  # `/live/return_track/get/count` comes from Seshat's own return_track.py, so an
+  # un-run `mix abletonosc.install` means no reply at all rather than an error.
+  # Short timeout for the same reason as the slot query: this is "how long until
+  # we call the extension missing", not a real wait.
+  @return_probe_timeout 2_000
+
+  @doc """
+  Runs a multi-step Command.
+
+  Most sequences report only success or failure; `:create_return_track` also
+  hands back the new return's index, which the caller needs for its reply and
+  can't safely re-derive afterwards (another create would shift it).
+  """
+  @spec execute(Command.t()) :: :ok | {:ok, non_neg_integer()} | {:error, term()}
   def execute(%Command{command: :create_track, track_type: type, name: name}) do
     with :ok <- create_and_name_track(type, name) do
       Seshat.Session.State.refresh()
       :ok
+    end
+  end
+
+  def execute(%Command{command: :create_return_track, name: name}) do
+    with {:ok, before_count} <- return_track_count(),
+         :ok <- Transport.send_message("/live/song/create_return_track", []),
+         {:ok, after_count} <- return_track_count(),
+         :ok <- ensure_created(before_count, after_count),
+         # The new return's index is the *old* count: Live appends returns, and
+         # upstream's create takes no index argument.
+         :ok <- Transport.send_message("/live/return_track/set/name", [before_count, name]) do
+      Seshat.Session.State.refresh()
+      {:ok, before_count}
     end
   end
 
@@ -110,6 +139,40 @@ defmodule Seshat.Commands.Registry do
       end)
 
     Transport.send_message("/live/clip/add/notes", [track, slot | note_args])
+  end
+
+  # --- Private helpers: return tracks ---
+
+  # Doubles as the "is return_track.py installed?" probe, so it runs *before* the
+  # create as well as after: fail-fast beats leaving an unnamed return behind.
+  defp return_track_count do
+    case Transport.query("/live/return_track/get/count", [], @return_probe_timeout) do
+      {:ok, {_addr, [count]}} when is_integer(count) ->
+        {:ok, count}
+
+      {:ok, {_addr, args}} ->
+        {:error, "Unexpected reply from /live/return_track/get/count: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out reading the return track count, so nothing was created. That address comes " <>
+         "from Seshat's AbletonOSC extension — run `mix abletonosc.install` and restart " <>
+         "Ableton Live, and check Live is running with AbletonOSC enabled."}
+  end
+
+  # Live caps a set at 12 return tracks. Whether the LOM call raises or no-ops at
+  # the cap, the count is the observable truth either way.
+  defp ensure_created(before_count, after_count) when after_count > before_count, do: :ok
+
+  defp ensure_created(before_count, _after_count) do
+    {:error,
+     "Ableton did not create a return track — the set already has #{before_count}, which is " <>
+       "Live's limit (12). Nothing was created or renamed. Delete a return you no longer need " <>
+       "with delete_return_track first."}
   end
 
   # --- Private helpers ---
