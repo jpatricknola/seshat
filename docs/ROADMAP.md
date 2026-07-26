@@ -11,33 +11,7 @@ address.
 
 ---
 
-## Priority 1 — Send levels & return tracks
-
-"Add some reverb to the vocals." "Turn down the delay send on the drums."
-The 2026-07 tool audit ranks this the biggest capability gap: mixing stops at
-volume/pan/mute/solo — no way to build space or depth. Planned — full plan
-(six tools, vendored return_track.py handler, session-state additions) in
-[PLAN_send_levels.md](PLAN_send_levels.md).
-
-```
-/live/track/get/send             [track_id, send_id]          → [track_id, send_id, value]
-/live/track/set/send             [track_id, send_id, value]
-/live/song/create_return_track   []
-/live/song/delete_return_track   [track_index]
-```
-
-- Send IDs are 0-indexed (send A = 0, send B = 1, …). Values 0.0–1.0.
-- Tools: `set_track_send` — track, send index, value; `create_return_track`
-  so a send target can be built from scratch, not just used if present.
-- The agent needs return-track names to resolve "the reverb send" → send index.
-  Return tracks come after regular tracks in the track list; surface their
-  names (via session state or a query in the tool itself).
-- **Return & master levels** ride along (audit: Low-Med): the mixer setters
-  reach regular tracks only. The Track API doc says return/master are
-  addressable — verify the indexing against the installed AbletonOSC source
-  before relying on it (`track_data` notably covers `song.tracks` only).
-
-## Priority 2 — Device removal & bypass
+## Priority 1 — Device removal & bypass
 
 Audit: Med-High. `load_device` + `set_device_parameter` make the device
 workflow one-way — a wrong load can't be undone, and there's no A/B. Also
@@ -105,14 +79,13 @@ Deliberately left out of catalog v1 (see
 - **Windows DB location** for `Seshat.Library.AbletonDB` (currently macOS only;
   returns `{:error, :not_found}` cleanly elsewhere).
 - **Audition / hot-swap loop** — needs `delete_device`, now tracked under
-  Priority 2 (device removal & bypass) above.
+  Priority 1 (device removal & bypass) above.
 
 ## Session state improvements
 
-1. **Return track names** — needed for send levels (above).
-2. **Device list per track** — so the agent sees loaded devices without a
+1. **Device list per track** — so the agent sees loaded devices without a
    `get_track_devices` round-trip.
-3. **Clip grid** — `get_clip_slots` (shipped, see
+2. **Clip grid** — `get_clip_slots` (shipped, see
    [archive/PLAN_clip_slot_state.md](archive/PLAN_clip_slot_state.md)) queries
    on demand; promote the grid into `Session.State` only if usage shows it
    read constantly. Clip-slot listeners are a large subscription surface
@@ -145,6 +118,12 @@ CLI flags that may have drifted) in
   swing" now that `get_clip_notes` has landed.
 - **Groups · routing/IO · automation** — audit: Low, breadth for later.
   Grouping tracks, input/output routing & monitoring, automation envelopes.
+- **Return-track pan/mute/solo, master pan, cue volume** — send levels &
+  return tracks (shipped) only covers levels; `priv/abletonosc/return_track.py`
+  already has the return/master mixer surface open, so each of these is one
+  more address in that same vendored handler.
+- **Sends on return tracks** (return→return routing, feedback sends) — niche,
+  needs Live's "sends only" awareness; not part of any named workflow yet.
 
 ## Deliberately not planned
 
@@ -152,7 +131,7 @@ CLI flags that may have drifted) in
   arrangement addresses (`/live/track/get/arrangement_clips/*`, arrangement
   overdub, song position) — revisit if a real workflow needs the timeline.
 - Return/master-track device loading, device *reordering* (removal & bypass
-  are now Priority 2 above), rack inner chains, parameter listeners (live
+  are now Priority 1 above), rack inner chains, parameter listeners (live
   meters/automation following) — revisit if a real workflow needs them.
 - Replacing AbletonOSC with a Max for Live WebSocket bridge — weighed and
   declined in [bridge-options.md](bridge-options.md); reopen only if a Remote

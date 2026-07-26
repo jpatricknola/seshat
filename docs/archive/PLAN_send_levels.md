@@ -1,5 +1,18 @@
 # Plan — Send levels & return tracks
 
+> **Archived 2026-07-26 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The six tools and
+> `priv/abletonosc/return_track.py` live on `feat/send-levels`
+> (`lib/seshat/tools/definitions.ex` / `handlers.ex`, `lib/seshat/commands/registry.ex`,
+> `lib/seshat/session/state.ex`); deviations from this plan (Registry's
+> `create_return_track` return shape, `Session.State`'s exit-catching `probe/4`,
+> and dropping the Part 8 guard-error tests per `.claude/rules/testing.md`) are
+> in the PR description. Still-open follow-ups — return-track pan/mute/solo,
+> master pan, cue volume, and return→return sends — are tracked under
+> "Smaller OSC surface" in [ROADMAP.md](../ROADMAP.md); the seven vendored
+> addresses still have no automated coverage and no live-Ableton smoke test
+> has been run against the installed handler yet.
+
 Roadmap Priority 1. Six new tools — `set_track_send`, `get_track_sends`,
 `create_return_track`, `delete_return_track`, `set_return_track_volume`,
 `set_master_volume` — plus return tracks and the master level in
