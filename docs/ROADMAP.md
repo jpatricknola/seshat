@@ -15,7 +15,9 @@ address.
 
 "Add some reverb to the vocals." "Turn down the delay send on the drums."
 The 2026-07 tool audit ranks this the biggest capability gap: mixing stops at
-volume/pan/mute/solo — no way to build space or depth.
+volume/pan/mute/solo — no way to build space or depth. Planned — full plan
+(six tools, vendored return_track.py handler, session-state additions) in
+[PLAN_send_levels.md](PLAN_send_levels.md).
 
 ```
 /live/track/get/send             [track_id, send_id]          → [track_id, send_id, value]
