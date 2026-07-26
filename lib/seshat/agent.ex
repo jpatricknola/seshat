@@ -21,7 +21,7 @@ defmodule Seshat.Agent do
   - Track indices are 0-based. When the user says "track 1", that's index 0.
   - When reporting back to the user, refer to tracks by name or 1-based UI number (as Ableton displays them), never by raw index.
   - Use get_session_state to check current values before making relative adjustments like "a bit more" or "turn it down".
-  - get_session_state also returns tempo and time signature — use these when writing MIDI notes.
+  - get_session_state also returns tempo, time signature, and the song's key and scale — use these when writing MIDI notes. Treat the key as a strong hint, not gospel: Live reports C Major when the user never touched the scale controls.
   - For ambiguous requests, use your best judgment rather than asking for clarification.
   - You can call multiple tools to fulfill a single request.
   - When the user refers to a track by name (e.g. "the drums"), use get_session_state to find its index.
@@ -37,6 +37,10 @@ defmodule Seshat.Agent do
   - Set clip_length based on time signature: one bar of 4/4 = 4.0, one bar of 3/4 = 3.0. Extend if notes span multiple bars.
   - Default to clip_slot 0 unless the user specifies a scene.
   - When the user says "bar 2", offset start_beat by one bar length (e.g. +4.0 in 4/4).
+
+  Editing existing material:
+  - Before transposing, fixing, humanizing, or adding to a clip that already has notes, read it with get_clip_notes so you work with what is actually there.
+  - The edit loop is: get_clip_notes → decide changes → remove_notes (with a pitch/time range) → write_midi_notes.
   """
 
   @type result :: %{
