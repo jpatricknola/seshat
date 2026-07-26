@@ -236,13 +236,18 @@ defmodule Seshat.Session.State do
     end)
   end
 
-  # Only reached once `get/count` has answered, so the extension is installed and
-  # this is a real read rather than a probe — a default here would be a guess, not
-  # a fallback, but it beats dropping the whole block over one lost datagram.
+  # Only reached once `get/count` has answered, so the extension is installed —
+  # a lost datagram for this one query specifically is the only way to land here
+  # without an answer. `nil` is the same "unavailable" signal `refresh_returns/1`
+  # uses when the extension itself doesn't answer at all: `format_return_tracks/2`
+  # already reports that honestly rather than printing a fabricated number, at
+  # the cost of also hiding the return tracks (already loaded above) behind that
+  # one lost datagram — an acceptable trade against reporting a guessed volume as
+  # real.
   defp read_master(transport) do
     case probe(transport, "/live/master/get/volume", [], @return_probe_timeout) do
       {:ok, [volume]} when is_float(volume) -> %{volume: volume}
-      _no_answer -> %{volume: 0.85}
+      _no_answer -> nil
     end
   end
 

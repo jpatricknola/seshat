@@ -615,67 +615,19 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
-  # Every one of these guards Ableton before mutating, so on a machine with no
-  # Ableton (CI, and most dev runs) each hits its guard timeout in ~2s and must
-  # report a useful error rather than claiming a success that never happened.
-  #
-  # A success is *also* valid, and deliberately allowed: run this suite on the
-  # developer's own machine with Live open and the guard genuinely answers. What
-  # is pinned here is the error wording, which is the part that would otherwise
-  # rot unnoticed — never "there is no Ableton", which isn't ours to assert.
-  # Happy-path behaviour belongs to /smoke-test.
-  describe "sends and returns when the guard doesn't answer" do
-    defp assert_guarded_error(result, expected_fragments) do
-      case result do
-        {:error, message} ->
-          for fragment <- expected_fragments do
-            assert message =~ fragment
-          end
-
-        {:ok, message} ->
-          # A live Ableton answered the guard. Nothing to check but that the
-          # clause returned a report rather than a raw term.
-          assert is_binary(message)
-      end
-    end
-
-    test "set_track_send names the send index and get_track_sends" do
-      Handlers.call("set_track_send", %{"track" => 2, "send" => 1, "value" => 0.4})
-      |> assert_guarded_error([
-        "send 1 on track 2",
-        "get_track_sends",
-        "nothing further was sent"
-      ])
-    end
-
-    test "get_track_sends points at the install task" do
-      Handlers.call("get_track_sends", %{"track" => 0})
-      |> assert_guarded_error(["mix abletonosc.install"])
-    end
-
-    test "create_return_track points at the install task and says nothing was created" do
-      Handlers.call("create_return_track", %{"name" => "Space"})
-      |> assert_guarded_error(["mix abletonosc.install", "nothing was created"])
-    end
-
-    test "delete_return_track explains that return indices are their own space" do
-      Handlers.call("delete_return_track", %{"return_track" => 0})
-      |> assert_guarded_error([
-        "return track 0",
-        "0-based and separate from regular track indices"
-      ])
-    end
-
-    test "set_return_track_volume does not claim the fader moved" do
-      Handlers.call("set_return_track_volume", %{"return_track" => 0, "value" => 0.85})
-      |> assert_guarded_error(["volume of return track 0", "mix abletonosc.install"])
-    end
-
-    test "set_master_volume does not claim the fader moved" do
-      Handlers.call("set_master_volume", %{"value" => 0.7})
-      |> assert_guarded_error(["master volume", "mix abletonosc.install", "nothing was changed"])
-    end
-  end
+  # The six sends/returns/master tools each guard Ableton with a
+  # `Transport.query/3` before mutating (see handlers.ex), so an automated test
+  # of that guard's error path would have to reach a real Ableton. Per
+  # .claude/rules/testing.md ("never write tests that reach Transport.query/3
+  # — they need a live Ableton and will time out"), that path is exercised by
+  # /smoke-test instead, not here — see docs/PLAN_send_levels.md's Testing
+  # section, steps 3-7. An earlier version of this suite called these tools
+  # directly: on a machine with Live and the return_track.py extension
+  # installed and running, the guard answers for real and the calls mutate
+  # the open set (creating/deleting return tracks, changing a send or fader)
+  # while asserting nothing about the result. That is exactly the failure
+  # mode the rule above exists to prevent, so the tests were removed rather
+  # than patched.
 
   describe "unknown tool" do
     test "returns error for unknown tool name" do

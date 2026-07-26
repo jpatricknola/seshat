@@ -864,9 +864,14 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed regular track number"},
+          "track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed regular track number"
+          },
           "send" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed send: 0 = send A = return track 0, 1 = send B, and so on"
           },
           "value" => %{
@@ -891,7 +896,11 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed regular track number"}
+          "track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed regular track number"
+          }
         },
         required: ["track"]
       }
@@ -932,6 +941,7 @@ defmodule Seshat.Tools.Definitions do
         properties: %{
           "return_track" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed return track: 0 = the first return = send A"
           }
         },
@@ -952,6 +962,7 @@ defmodule Seshat.Tools.Definitions do
         properties: %{
           "return_track" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed return track: 0 = the first return = send A"
           },
           "value" => %{

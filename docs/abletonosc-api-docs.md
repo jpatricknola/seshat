@@ -61,7 +61,7 @@ Top-level Song object. Playback control, scene/track creation, cue points, globa
 | `/live/song/cue_point/add_or_delete` | | Add/delete cue point at cursor |
 | `/live/song/cue_point/set/name` | `cue_point` | Rename cue point by index |
 | `/live/song/delete_scene` | `scene_index` | Delete scene |
-| `/live/song/delete_return_track` | `track_index` | Delete return track |
+| `/live/song/delete_return_track` | `return_index` | Delete return track — indexes `song.return_tracks`, a separate space from regular track indices |
 | `/live/song/delete_track` | `track_index` | Delete track |
 | `/live/song/duplicate_scene` | `scene_index` | Duplicate scene |
 | `/live/song/duplicate_track` | `track_index` | Duplicate track |

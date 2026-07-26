@@ -52,9 +52,9 @@ defmodule Seshat.Commands.Registry do
   end
 
   def execute(%Command{command: :create_return_track, name: name}) do
-    with {:ok, before_count} <- return_track_count(),
+    with {:ok, before_count} <- return_track_count(:pre_create),
          :ok <- Transport.send_message("/live/song/create_return_track", []),
-         {:ok, after_count} <- return_track_count(),
+         {:ok, after_count} <- return_track_count(:post_create),
          :ok <- ensure_created(before_count, after_count),
          # The new return's index is the *old* count: Live appends returns, and
          # upstream's create takes no index argument.
@@ -145,7 +145,13 @@ defmodule Seshat.Commands.Registry do
 
   # Doubles as the "is return_track.py installed?" probe, so it runs *before* the
   # create as well as after: fail-fast beats leaving an unnamed return behind.
-  defp return_track_count do
+  #
+  # `context` picks the timeout message: a timeout on the *pre*-create count means
+  # the create was never sent, so "nothing was created" is true. A timeout on the
+  # *post*-create count is a different situation — the create message is already
+  # on the wire and may well have landed — so it gets its own wording rather than
+  # falsely claiming nothing happened.
+  defp return_track_count(context) do
     case Transport.query("/live/return_track/get/count", [], @return_probe_timeout) do
       {:ok, {_addr, [count]}} when is_integer(count) ->
         {:ok, count}
@@ -158,21 +164,38 @@ defmodule Seshat.Commands.Registry do
     end
   catch
     :exit, _ ->
-      {:error,
-       "Timed out reading the return track count, so nothing was created. That address comes " <>
-         "from Seshat's AbletonOSC extension — run `mix abletonosc.install` and restart " <>
-         "Ableton Live, and check Live is running with AbletonOSC enabled."}
+      {:error, return_track_count_timeout_message(context)}
+  end
+
+  defp return_track_count_timeout_message(:pre_create) do
+    "Timed out reading the return track count, so nothing was created. That address comes " <>
+      "from Seshat's AbletonOSC extension — run `mix abletonosc.install` and restart " <>
+      "Ableton Live, and check Live is running with AbletonOSC enabled."
+  end
+
+  defp return_track_count_timeout_message(:post_create) do
+    "Sent the create, but timed out confirming the new return track count afterwards — a " <>
+      "return track may have been created but could not be confirmed or named. Check " <>
+      "get_session_state for an unnamed extra return before creating another."
   end
 
   # Live caps a set at 12 return tracks. Whether the LOM call raises or no-ops at
   # the cap, the count is the observable truth either way.
   defp ensure_created(before_count, after_count) when after_count > before_count, do: :ok
 
+  defp ensure_created(before_count, _after_count) when before_count >= 12 do
+    {:error,
+     "Ableton did not create a return track — the set is already at Live's limit of 12 " <>
+       "return tracks. Nothing was created or renamed. Delete a return you no longer need " <>
+       "with delete_return_track first."}
+  end
+
   defp ensure_created(before_count, _after_count) do
     {:error,
-     "Ableton did not create a return track — the set already has #{before_count}, which is " <>
-       "Live's limit (12). Nothing was created or renamed. Delete a return you no longer need " <>
-       "with delete_return_track first."}
+     "Ableton did not create a return track — the return track count is still " <>
+       "#{before_count} after sending the create, which is below Live's 12-return limit, so " <>
+       "the create message may not have landed. Nothing was renamed. Check get_session_state " <>
+       "and try again."}
   end
 
   # --- Private helpers ---

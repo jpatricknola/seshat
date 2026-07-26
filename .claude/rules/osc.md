@@ -17,10 +17,14 @@ exist because a typo'd address looks exactly like success.
   an address. Conventions and gotchas (ports, listener pattern, ordering
   hazards) are in
   [.claude/docs/ableton-osc-reference.md](../docs/ableton-osc-reference.md).
-- **`/live/browser/*` is ours, not upstream's** — those handlers live in
-  [priv/abletonosc/browser.py](../../priv/abletonosc/browser.py) and are
-  installed by `mix abletonosc.install`. Any new address upstream doesn't
-  provide goes there the same way.
+- **`/live/browser/*`, `/live/return_track/*`, and `/live/master/*` are ours,
+  not upstream's** — those handlers live in
+  [priv/abletonosc/browser.py](../../priv/abletonosc/browser.py) and
+  [priv/abletonosc/return_track.py](../../priv/abletonosc/return_track.py)
+  respectively, and both are installed by `mix abletonosc.install`. Upstream's
+  track addresses only reach `song.tracks` (regular tracks) — returns and the
+  master come from the second file. Any new address upstream doesn't provide
+  goes there the same way.
 - **All OSC goes through `Seshat.OSC.Transport`** — nothing sends UDP
   directly. Address strings deliberately live inline in `Handlers`,
   `Registry`, and `Session.State` (greppable via `"/live/`) — do not add an
