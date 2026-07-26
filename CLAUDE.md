@@ -116,8 +116,7 @@ future address upstream doesn't provide goes there the same way.
 ## Current focus
 
 [docs/ROADMAP.md](docs/ROADMAP.md) is the single living list of what's not
-built yet — reading clip notes first, then clip-slot state, send levels, and
-the rest. Keep it
+built yet — clip-slot state first, then send levels, and the rest. Keep it
 current: when something ships, run the `/ship` skill (or by hand: remove it
 there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those

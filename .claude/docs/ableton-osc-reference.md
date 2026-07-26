@@ -68,7 +68,9 @@ adding properties.
 - Track indices, scene indices, send indices, device indices: **0-based**.
 - `-1` as a creation index means "append to the end"
   (`/live/song/create_midi_track [-1]`).
-- Booleans are `1`/`0` on the wire, not `true`/`false`.
+- Booleans are usually `1`/`0` on the wire, but some properties arrive as real
+  OSC booleans (e.g. `mute` in a notes reply, `has_clip`). Accept both —
+  `Handlers.truthy?/1` and `Session.State.to_bool/1` exist for this.
 - `volume` is 0.0–1.0 normalised, not dB. `panning` is -1.0 to 1.0.
 - Device parameters are normalised 0.0–1.0; use
   `/live/device/get/parameter/value_string` for the human-readable value
@@ -82,3 +84,17 @@ adding properties.
   `num_tracks`. Query first, then create, then set the name.
 - **Adding notes** requires the clip to exist. `Registry.ensure_clip/3` checks
   `/live/clip_slot/get/has_clip` and creates one if needed.
+
+## Queries that raise instead of replying
+
+Some queries make AbletonOSC raise internally, which on UDP looks identical to
+a wrong address: no reply, 5s timeout. Guard rather than diagnose after the
+fact:
+
+- **Clip queries against an empty slot** (`.clip` is `None` upstream) — check
+  `/live/clip_slot/get/has_clip` first, as `get_clip_notes` and
+  `Registry.ensure_clip/3` do. Notes queries against an *audio* clip likewise
+  never answer — check `/live/clip/get/is_midi_clip`.
+- **`/live/clip/get/notes` range args are all-or-nothing** — the handler raises
+  unless it gets exactly 0 or 4 of `start_pitch, pitch_span, start_time,
+  time_span`. If any is given, fill all four (`Handlers.note_range_args/1`).

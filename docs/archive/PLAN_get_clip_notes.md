@@ -1,8 +1,11 @@
-# Plan — `get_clip_notes` (+ key/scale in session state)
+> **Archived 2026-07-26 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `get_clip_notes` lives in
+> `Seshat.Tools.Handlers` (with `Seshat.Music.Pitch` for note names), and
+> key/scale in `Seshat.Session.State` / `get_session_state` — merged in
+> PR #13. No follow-ups were left open; the clip-slot state work this
+> unblocks is [ROADMAP.md](../ROADMAP.md) Priority 1.
 
-> **Status: active plan.** When this ships, move this doc to
-> [archive/](archive/) with a status banner and delete the item from
-> [ROADMAP.md](ROADMAP.md) (the `/ship` skill does both).
+# Plan — `get_clip_notes` (+ key/scale in session state)
 
 Roadmap Priority 1. Two deliverables in one pass:
 
@@ -23,7 +26,7 @@ Roadmap Priority 1. Two deliverables in one pass:
 - No per-note mute *writing* — `write_midi_notes` stays as is; mute state is
   surfaced read-only in this tool's output.
 
-## OSC addresses (verified against [abletonosc-api-docs.md](abletonosc-api-docs.md))
+## OSC addresses (verified against [abletonosc-api-docs.md](../abletonosc-api-docs.md))
 
 | Address | Args | Reply |
 |---|---|---|
@@ -108,7 +111,7 @@ Shape:
 
 1. **Guard: slot has a clip.** Query `/live/clip_slot/get/has_clip` first
    (same guard Registry uses at
-   [registry.ex:58](../lib/seshat/commands/registry.ex#L58)). Empty slot →
+   [registry.ex:58](../../lib/seshat/commands/registry.ex#L58)). Empty slot →
    instant, useful error ("No clip in slot N on track M — use fire-able slots
    from get_session_state") instead of a 5s timeout on the notes query.
 2. **Guard: clip is MIDI.** `/live/clip/get/is_midi_clip` — audio clip →
@@ -143,7 +146,7 @@ Clip "Bassline" on track 1, slot 0 — 4.0 beats, 6 notes:
 ## Key/scale in session state (`lib/seshat/session/state.ex`)
 
 Follows the "new session state" steps in
-[adding-a-tool.md](../.claude/docs/adding-a-tool.md):
+[adding-a-tool.md](../../.claude/docs/adding-a-tool.md):
 
 1. Add `root_note: 0, scale_name: "Major"` to the initial song map.
 2. Query both in `do_refresh/1` (`query_song_int` / new `query_song_string`
@@ -181,7 +184,7 @@ not gospel.
 - `definitions_test.exs` — bump the tool count (the deliberate tripwire).
 - MCP parity (`Seshat.MCP.ToolsTest`) — automatic once the definition exists;
   `get_clip_notes` round-trips `Macro.camelize/underscore` fine.
-- Unit-test the pure parts, per [testing rules](../.claude/rules/testing.md)
+- Unit-test the pure parts, per [testing rules](../../.claude/rules/testing.md)
   (nothing that touches `Transport.query`):
   - note-list parsing: chunking flat 5-tuples, the non-divisible-by-5 error,
     empty list;
@@ -210,6 +213,6 @@ not gospel.
 ## Ship checklist
 
 `mix precommit` green → run `/ship`: delete Priority 1 from
-[ROADMAP.md](ROADMAP.md) (the key/scale bullet in "Session state
+[ROADMAP.md](../ROADMAP.md) (the key/scale bullet in "Session state
 improvements" ships with it), archive this doc, sync the CLAUDE.md focus
 line to clip-slot state.

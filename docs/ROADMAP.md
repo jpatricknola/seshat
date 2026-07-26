@@ -11,30 +11,7 @@ address.
 
 ---
 
-## Priority 1 — Read clip notes
-
-"Transpose the bassline up a fifth." "Fix the one off note." "Humanize the
-velocities." "Make it swing."
-
-Today there is no way to read the notes already in a clip, so every edit that
-depends on current content becomes a destructive rewrite-from-scratch. The
-write side of the read-modify-write loop already exists — `write_midi_notes`
-preserves existing notes and `remove_notes` takes a pitch/time range — reading
-is the only missing leg. This turns Seshat from a generator into a
-collaborator.
-
-```
-/live/clip/get/notes  [track_id, clip_id, [start_pitch, pitch_span, start_time, time_span]]
-                      → [track_id, clip_id, pitch, start_time, duration, velocity, mute, …]
-```
-
-- Tool: `get_clip_notes` — track, clip slot, optional pitch/time range
-  (same range shape `remove_notes` already uses).
-- Single query, no Registry sequence needed.
-- Implementation plan: [PLAN_get_clip_notes.md](PLAN_get_clip_notes.md)
-  (includes the key/scale session-state ride-along).
-
-## Priority 2 — Clip-slot state
+## Priority 1 — Clip-slot state
 
 Session state is track-level only: we don't know which slots hold clips, which
 are empty, which are playing or recording, or their names and lengths. So
@@ -54,7 +31,7 @@ a whole class of blind operations.
   against an audio track is another silent blind failure; it rides the same
   bulk query.
 
-## Priority 3 — Send levels
+## Priority 2 — Send levels
 
 "Add some reverb to the vocals." "Turn down the delay send on the drums."
 
@@ -79,7 +56,7 @@ it — Live remembers recent MIDI input even on un-armed tracks.
 ```
 
 - Tool: `capture_midi` — single fire-and-forget message, no Registry needed.
-- Pairs with `get_clip_notes` (Priority 1): capture, then tighten the timing,
+- Pairs with `get_clip_notes`: capture, then tighten the timing,
   harmonize, or build a variation. Turns the collaboration bidirectional —
   today the agent generates and the user listens; this lets the user play and
   the agent edit.
@@ -100,13 +77,8 @@ Deliberately left out of catalog v1 (see
 
 ## Session state improvements
 
-1. **Key and scale** — `/live/song/get/root_note` and
-   `/live/song/get/scale_name` into `get_session_state`. The LLM carries the
-   music theory but can't see the one piece of theory context Live knows: the
-   song's key. Two queries; makes every note-writing and note-editing
-   operation more musical. Cheap enough to ride along with Priority 1.
-2. **Return track names** — needed for send levels (above).
-3. **Device list per track** — so the agent sees loaded devices without a
+1. **Return track names** — needed for send levels (above).
+2. **Device list per track** — so the agent sees loaded devices without a
    `get_track_devices` round-trip.
 
 Query on-demand in the tools to start; promote into `Session.State` only if
@@ -131,7 +103,7 @@ CLI flags that may have drifted) in
 - **MIDI mapping** — `/live/midimap/map_cc`. Power-user feature.
 - **Beat listener** — `/live/song/start_listen/beat` for sync/visualization.
 - **Groove amount** — `/live/song/get|set/groove_amount`; pairs with "make it
-  swing" once note-editing lands.
+  swing" now that `get_clip_notes` has landed.
 
 ## Deliberately not planned
 
