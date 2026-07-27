@@ -5,6 +5,12 @@
 Natural-language control of Ableton Live. The LLM calls tools; the tools send
 OSC to Ableton. Built with Elixir/Phoenix LiveView.
 
+**Not in production; one user (the author).** Backwards compatibility is never
+a goal: no fallback layers, migration shims, or compat paths for older
+installs or older data. When a change needs `mix abletonosc.install` re-run,
+a catalog rebuild, or a restart, just require it and say so — design for the
+current setup only.
+
 ## Two entry points, one tool layer
 
 Seshat exposes the same tools two ways. Both funnel into `Seshat.Tools.Handlers`:
