@@ -5,8 +5,12 @@ defmodule Mix.Tasks.Abletonosc.Install do
   Upstream AbletonOSC has no browser API, so `list_browser_items` and
   `load_device` need an extra handler on the Python side; it also reaches
   regular tracks only, so the return-track and master addresses the send/level
-  tools need come from a second one. This task copies both files from
-  `priv/abletonosc/` into AbletonOSC and registers them.
+  tools need come from a second one; and it can only listen to *scalar* song
+  properties, so the track-list listeners that keep `Seshat.Session.State` from
+  going stale come from a third. A fourth, `track_listeners.py`, registers no new
+  addresses at all — it overrides upstream's own track listeners, which unbind
+  from the wrong object once a track index has been reused. This task copies all
+  four files from `priv/abletonosc/` into AbletonOSC and registers them.
 
   ## Usage
 
@@ -15,7 +19,8 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
   ## What it changes
 
-  For each of `browser.py` and `return_track.py`:
+  For each of `browser.py`, `return_track.py`, `song_structure.py` and
+  `track_listeners.py`:
 
   1. Copies `priv/abletonosc/<file>` -> `<install>/abletonosc/<file>`
   2. Adds its `from .<module> import <Handler>` line to `<install>/abletonosc/__init__.py`
@@ -27,8 +32,8 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
   Restart Ableton Live afterwards — or toggle AbletonOSC off and back on under
   Preferences > Link/Tempo/MIDI > Control Surface. `/live/api/reload` is not a
-  shortcut here: `reload_imports` names the modules it reloads and neither
-  `abletonosc.browser` nor `abletonosc.return_track` is among them, so it never
+  shortcut here: `reload_imports` names the modules it reloads and none of ours
+  is among them, so it never
   picks up an edit to these files, new module or not. It can also leave
   AbletonOSC with no handlers at all — see the warning in
   docs/abletonosc-api-docs.md.
@@ -48,12 +53,31 @@ defmodule Mix.Tasks.Abletonosc.Install do
       file: "return_track.py",
       init_line: "from .return_track import ReturnTrackHandler",
       manager_line: "abletonosc.ReturnTrackHandler(self),"
+    },
+    %{
+      file: "song_structure.py",
+      init_line: "from .song_structure import SongStructureHandler",
+      manager_line: "abletonosc.SongStructureHandler(self),"
+    },
+    %{
+      file: "track_listeners.py",
+      init_line: "from .track_listeners import TrackListenerHandler",
+      manager_line: "abletonosc.TrackListenerHandler(self),"
     }
   ]
 
-  # Both handlers insert after the same anchor. `patch/3` is idempotent per line
-  # and each insert lands directly after the anchor, so the order the two end up
-  # in is arbitrary and harmless — they are independent imports.
+  # Every handler inserts after the same anchor. `patch/3` is idempotent per line
+  # and each insert lands directly after the anchor, so the order our four end up
+  # in relative to each other is arbitrary and harmless — they register disjoint
+  # addresses.
+  #
+  # Where the anchor sits is *not* arbitrary. `OSCServer.add_handler` is a plain
+  # dict assignment, so for an address registered twice the last handler
+  # instantiated wins, and `track_listeners.py` deliberately re-registers five of
+  # upstream's own addresses. MidiMapHandler is the last entry in upstream's list
+  # and TrackHandler is several lines above it, so anchoring here is what makes
+  # the override take effect. Moving it above TrackHandler would leave every
+  # address answering but silently reinstate the bug it fixes.
   @init_anchor "from .midimap import MidiMapHandler"
   @manager_anchor "abletonosc.MidiMapHandler(self),"
 

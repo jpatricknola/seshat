@@ -1,0 +1,267 @@
+SESHAT VALIDATION SCRIPT — copy-paste version
+Source: docs/validation-script.md. Say each prompt to Seshat, check Live, move on.
+Remember: OSC is UDP with no reply — "nothing happened" is a failure, write it down.
+Before starting: save your work; step 1 opens a fresh set and deletes default tracks.
+
+========== PART 1 — OPEN THE SET ==========
+
+prompt: Let's start a new project. Make me three MIDI tracks: Keys, Bass, and Drums.
+result: MIXED: a new project was not opened, three new midi tracks were added to an existing project that was already open with 4 existing tracks.
+
+prompt: What's in the session right now?
+result: MIXED: i deleted the 4 existing tracks so that only the 3 midi ones remained.  Seshat responded that there were 7 tracks, so it saw a stale session state that did not reflect the action i took before asking the question.
+The clip grid — which is the tool that actually enumerates every track and what's in it, shows only three tracks: Keys, Bass, and Drums.  But that contradicts the session-state readout showing 7 tracks.
+
+prompt: This is a lo-fi thing, take it down to 86 BPM. And put the metronome on while we work.
+result: PASS: everything worked as expected.
+
+========== PART 2 — FIND SOUNDS ==========
+
+prompt: Have you got an index of my library yet? If not, build one — I'll wait.
+good result: First run: warns it takes up to a minute and Live's UI may freeze, then runs and completes (Live looking hung partway is expected). Second run: says the catalog already exists and skips it.
+bad result: Silently freezes Live with no warning, times out, or re-indexes from scratch when a catalog already exists.
+
+prompt: I want a warm, slightly out-of-tune electric piano for the Keys track. What have I got?
+good result: Several candidates, each with a one-line reason referencing the musical context (lo-fi, 86 BPM). Names are real presets from your library.
+bad result: Loads one result without asking, gives only a single option, reasons are generic name-parroting, or preset names look invented.
+
+prompt: Load the second one.
+good result: The device appears on the Keys track in Live's device view, and Seshat confirms by naming what actually landed (which may differ if the URI resolved oddly).
+bad result: Nothing appears on Keys, it lands on the wrong track, or Seshat claims a load without naming/verifying the actual device.
+
+prompt: Bass next — something warm and analog, nothing too clicky.
+good result: Same shape: options offered, your choice respected, device lands on the Bass track.
+bad result: Loads without offering options, or the device lands on Keys (or anywhere other than Bass).
+
+prompt: For drums I want a dusty, vinyl-ish kit.
+good result: A drum rack or kit preset loaded onto the Drums track.
+bad result: Nothing loads, a non-drum instrument loads, or it lands on the wrong track.
+
+prompt: Actually, search Live's browser directly for anything called 'Operator' — I want to see the raw browser results.
+good result: Bypasses the catalog and hits Live's browser live. Returns Operator and/or its presets with folder paths. Noticeably slower than catalog search (that's the tell it's a real round-trip).
+bad result: Answers instantly from the catalog instead of the live browser, returns nothing, or times out.
+
+prompt: What's on each of my three tracks now?
+good result: The device chain per track, in order, matching what you see in Live when you click each track.
+bad result: Chains missing, out of order, or not matching the screen.
+
+========== PART 3 — THE FIRST IDEA ==========
+
+prompt: Give me a four-bar chord progression on Keys — something moody in F minor. Lay it in the first scene.
+good result: A clip appears in Keys, scene 1. Open it: four bars long (16 beats at 4/4), notes stacked into chords, and actually in F minor.
+bad result: No clip, wrong slot, wrong length, a single melodic line instead of chords, or wrong key.
+
+prompt: Show me the clip grid — what's where?
+good result: Three tracks with their types (all MIDI), scene names, and only the Keys clip listed as occupied — matching the Session view slot for slot.
+bad result: Grid doesn't match the screen, track types missing, or empty slots reported as occupied (or vice versa).
+
+prompt: Play it.
+good result: Clip fires, transport rolls, you hear the chords on the electric piano you picked, at 86 BPM.
+bad result: Nothing plays, wrong clip fires, or Seshat claims playback with no sound.
+
+prompt: Stop.
+good result: Playback stops.
+bad result: Keeps playing, or only partially stops.
+
+========== PART 4 — BASS AND DRUMS ==========
+
+prompt: Now a bassline under those chords. Keep it simple — roots, mostly on the downbeats, and leave some space.
+good result: Seshat reads the Keys clip first (and says so), then writes a bass clip into scene 1 on Bass. Notes follow the chord roots, in a sensible low octave.
+bad result: Guesses the progression without reading the Keys clip, writes to the wrong track/slot, or the bass sits up in the chord register.
+
+prompt: Drums — a laid-back boom-bap pattern, one bar, and loop it.
+good result: A one-bar drum clip on Drums. Kick, snare, hats on standard GM drum pitches (C1 kick, D1 snare, F#1 hat) so the drum rack actually sounds.
+bad result: Notes land on silent empty pads, pattern isn't one bar, or no clip appears.
+
+prompt: Play the whole first scene.
+good result: All three clips launch together and it sounds like a piece of music.
+bad result: Only some clips fire, or nothing launches.
+
+prompt: Stop just the drums.
+good result: Drums clip stops; Keys and Bass keep playing.
+bad result: Everything stops, the wrong track stops, or drums keep going.
+
+prompt: Alright, stop everything.
+good result: Full stop.
+bad result: Something keeps playing.
+
+========== PART 5 — EDITING WHAT'S ALREADY THERE ==========
+(Watch note counts carefully — this is where silent data loss happens.)
+
+prompt: Read me back what's in the Keys clip.
+good result: Every note listed with a note name (not just a MIDI number), start beat, length, and velocity. Spot-check three notes against the clip editor — they match, and the note count matches.
+bad result: Raw MIDI numbers only, wrong beats/durations, or a note count that doesn't match the screen.
+
+prompt: Those chords are too stiff. Humanize the velocities a bit — some softer, some accented — but don't change any pitches or timing.
+good result: Velocities now varied; same number of notes; pitches and timing identical to before.
+bad result: THE TRAP: a lazy implementation rewrites the clip and loses the voicing — note count changes, pitches shift, or timing moves.
+
+prompt: Take the bass down an octave.
+good result: Bass notes moved down exactly 12 semitones. Note count and rhythm unchanged. Sounds lower, not broken.
+bad result: Wrong interval, notes lost, rhythm changed, or the clip rewritten from scratch.
+
+prompt: There's too much going on in bar 3 of the drums — clear out the hats in that bar only.
+good result: Surgical removal: hats gone from bar 3 only; kick and snare in bar 3 untouched; bars 1, 2, 4 untouched.
+bad result: All hats removed everywhere, other instruments removed, or the whole bar/clip cleared.
+
+prompt: Hmm, undo that.
+good result: The hats come back.
+bad result: Nothing restored, or the wrong edit is undone.
+
+prompt: No, I was right the first time — redo.
+good result: Hats gone again.
+bad result: Redo does nothing, or redoes something else.
+
+========== PART 6 — BUILDING AN ARRANGEMENT ==========
+
+prompt: Call this first scene 'Verse'.
+good result: Scene 1 renamed in the Session view master column.
+bad result: No rename visible, or the wrong scene renamed.
+
+prompt: Duplicate the Verse so I've got somewhere to build a chorus, and name the new one 'Chorus'.
+good result: A second scene named Chorus, containing copies of all three clips.
+bad result: Empty duplicate, missing clips, wrong name, or no new scene.
+
+prompt: In the Chorus, make the chords bigger — add a higher voicing on top. Leave the Verse alone.
+good result: The Chorus Keys clip has added notes; the Verse Keys clip is byte-for-byte untouched (open both and compare — the Verse half is the important half).
+bad result: The Verse clip changes too, or the wrong scene's clip is edited.
+
+prompt: Name that clip 'Chorus keys'.
+good result: The clip title shows in its Session view slot.
+bad result: No rename, or the wrong clip renamed.
+
+prompt: Add an empty scene at the end for a breakdown, and call it 'Break'.
+good result: Scene 3 exists, named Break, all slots empty.
+bad result: Scene inserted in the wrong place, not empty, or wrong name.
+
+prompt: Copy the Verse bass into the Break — I just want bass there on its own.
+good result: The bass clip appears in the Break row; other Break slots stay empty.
+bad result: Wrong clip copied, wrong destination, or extra clips appear.
+
+prompt: Show me the grid again.
+good result: Three scenes correctly named; Verse and Chorus full, Break holding only bass; clip names reported (including "Chorus keys"). Every cell matches the screen.
+bad result: Any cell mismatching the screen, missing scene names, or missing clip names.
+
+prompt: Play the Chorus.
+good result: Scene 2 launches, all three clips.
+bad result: Wrong scene fires, or only some clips launch.
+
+prompt: Now the Break.
+good result: Scene 3 launches; only bass sounds.
+bad result: Other tracks keep sounding, or the wrong scene fires.
+
+prompt: Select the Verse scene and the Keys track for me so I can see them.
+good result: Selection visibly moves in Live's UI — Keys track highlighted, Verse row selected.
+bad result: Selection doesn't move, or the wrong track/scene is selected.
+
+prompt: Stop.
+good result: Playback stops.
+bad result: Keeps playing.
+
+========== PART 7 — MIXING ==========
+(Relative changes — "a bit", "a touch" — require reading current state first.
+A jump to a hardcoded value is a failure even if something visibly moved.)
+
+prompt: The drums are too loud. Pull them down a bit.
+good result: Seshat reads the current volume first, then the Drums fader moves down a modest amount.
+bad result: Fader slammed to zero, reset to a default value, or moves up / not at all.
+
+prompt: Push the keys out to the left a touch, and give the bass dead centre.
+good result: Keys pan moves a touch left of centre (not hard left); Bass pan at centre.
+bad result: Hard-left pan, wrong track panned, or bass not centred.
+
+prompt: Solo the bass for a second so I can hear it on its own.
+good result: Bass solo button lights up.
+bad result: Wrong track soloed, or nothing lights.
+
+prompt: OK, unsolo. And mute the keys, I want to hear the rhythm section.
+good result: Solo off, Keys muted.
+bad result: Solo stays on, wrong track muted.
+
+prompt: Unmute the keys.
+good result: Keys back on.
+bad result: Still muted, or another track unmuted instead.
+
+prompt: What parameters has the bass instrument got?
+good result: A parameter list with names, current values, and min-max ranges, matching Live's device panel.
+bad result: Empty list, names not matching the device panel, or ranges missing.
+
+prompt: Close the filter down on the bass — I want it darker.
+good result: The filter cutoff knob visibly moves down in Live by a musical fraction of the range, and Seshat reports the new human-readable display value (e.g. "1.2 kHz").
+bad result: The wrong knob moves, the cutoff jumps to the minimum, or Seshat reports only a raw normalized number.
+
+prompt: Arm the drums track, I might play something in.
+good result: Drums record-arm button lights.
+bad result: Wrong track armed, or nothing happens.
+
+prompt: Actually, disarm it.
+good result: Arm off.
+bad result: Still armed.
+
+prompt: Set the song loop to the first eight bars and turn looping on.
+good result: In Arrangement view (press Tab to check): loop brace enabled and spanning bars 1-9. Switch back to Session view after checking.
+bad result: Loop not enabled, wrong span, or nothing changes in Arrangement view.
+
+========== PART 8 — MAKING A MESS AND CLEANING IT UP ==========
+(These steps check that failures fail LOUDLY.)
+
+prompt: Add an audio track called Vocals.
+good result: New audio track named Vocals, at the end.
+bad result: MIDI track created instead, wrong position, or wrong name.
+
+prompt: Write a melody on the Vocals track.
+good result: TRAP — MIDI can't go on an audio track. Seshat refuses with an explanation naming the track (ideally before even calling the tool, offering a MIDI track instead; the tool's own error is the backstop).
+bad result: Claims success. A phantom success here is a genuine failure whichever layer produced it.
+
+prompt: Write a melody on the group track itself.
+(Only if this set has a group track — skip otherwise.)
+good result: Refuses, names it as a group track, and offers one of the tracks inside it.
+bad result: Write silently dropped and reported as success.
+
+prompt: Try writing notes to track 47.
+good result: A clean error, fast — the guard gives up after ~2 seconds and says so. A brief pause is expected.
+bad result: A 5-second hang, a crash, or a claimed success.
+
+prompt: Play the Keys clip in the Break scene.
+good result: TRAP — the Keys slot in Break is empty, and firing an empty slot is Live's way of STOPPING a track. Seshat refuses, says that slot is empty, and points at stop_clip if stopping was the intent.
+bad result: Fires the empty slot (silencing Keys) while reporting a successful launch.
+
+prompt: Duplicate the Keys track.
+good result: A copy of Keys appears, with its clips and its instrument.
+bad result: Empty duplicate, missing clips/device, or no new track.
+
+prompt: Rename that copy to 'Keys 2'.
+good result: Renamed.
+bad result: Wrong track renamed, or no change.
+
+prompt: Delete the Keys 2 track and the Vocals track, I don't need them.
+good result: Both gone; the original three tracks intact.
+bad result: Wrong track deleted (especially the original Keys), or one of the two left behind.
+
+prompt: Delete the bass clip out of the Break scene, and then delete the Break scene entirely.
+good result: Clip gone, then scene gone. Verse and Chorus untouched.
+bad result: Wrong clip/scene deleted, or Verse/Chorus affected.
+
+prompt: Where are we at — read me the grid and the session one more time.
+good result: Three tracks, two scenes (Verse, Chorus), everything consistent with the screen — names, tempo 86, mix positions. This is the real test of state tracking after a messy session.
+bad result: Any drift between the report and the screen: ghost tracks/scenes, stale tempo, wrong mix state.
+
+========== PART 9 — WRAP UP ==========
+
+prompt: Turn the metronome off and play me the Verse one last time.
+good result: Metronome icon off, Verse scene plays.
+bad result: Metronome stays on, or wrong scene plays.
+
+prompt: Stop. That's a wrap.
+good result: Stopped.
+bad result: Keeps playing.
+
+========== REPORTING ==========
+For each failure note: which step, your exact words, what Seshat said (did it
+claim success?), what Live actually did (including "nothing"), and which tool
+was called if you can expand it.
+
+Classify each as:
+- Broken: Seshat claimed success, Live didn't change (usually a wrong OSC address).
+- Wrong: something happened, but not what you asked (tool description / prompting problem).
+- Judgement: it worked, but the musical result was poor. Note separately — these are prompt-quality signals only a human can report. Be opinionated.

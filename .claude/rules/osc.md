@@ -25,6 +25,21 @@ exist because a typo'd address looks exactly like success.
   track addresses only reach `song.tracks` (regular tracks) — returns and the
   master come from the second file. Any new address upstream doesn't provide
   goes there the same way.
+- **Two addresses of ours live under a prefix upstream owns**:
+  `/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
+  from
+  [priv/abletonosc/song_structure.py](../../priv/abletonosc/song_structure.py).
+  Upstream can only listen to *scalar* song properties, so nothing of its own
+  fires when tracks are added, deleted or reordered. They push on
+  `/live/song/get/tracks` and `/live/song/get/return_tracks` — push-only
+  addresses, sent by the listener and never registered, so querying them gets
+  silence. `Seshat.Session.State` treats the pushed name list as a change signal
+  and re-reads everything only when it differs from the mirror.
+- **Vendored addresses must appear as string literals in `lib/`, never
+  interpolated.** `vendored_addresses_test` greps for `"/live/…"` literals and
+  checks each against what the Python actually registers; an address built with
+  `#{}` is invisible to that tripwire, which is the only thing standing between a
+  typo and a silent no-op.
 - **A vendored getter always replies, including on its error paths** — an
   `[..., "ok", value]` / `[..., "error", message]` envelope, echoing whatever
   index it was asked about. The exception is a getter that takes no index
@@ -36,6 +51,22 @@ exist because a typo'd address looks exactly like success.
   guard timeout to distinguish neither. With the envelope, an error reply is a
   bad index and silence is a missing install. Setters stay silent — each is
   guarded by its getter first, and nothing waits on one.
+- **An index-keyed listener must be unbound from the object it was registered
+  on.** Listeners are keyed by track/return index but bound to a LOM object, and
+  indices renumber when something is deleted or reordered. AbletonOSC's base
+  `_stop_listen` unbinds from the target it is *handed*, which after a renumber
+  is the wrong object — it fails silently and leaves the old listener pushing
+  under an index that now means someone else, so a later rename writes one
+  track's name onto another. `return_track.py` and `track_listeners.py` both stop
+  via `_stop_listen_stored`; copy that pattern for any new index-keyed listener.
+- **`track_listeners.py` overrides upstream rather than extending it** — five
+  `/live/track/{start,stop}_listen/*` addresses (name, mute, solo, volume,
+  panning), for the reason above. It works only because `add_handler` is a dict
+  assignment and `mix abletonosc.install` anchors our handlers *below*
+  `TrackHandler`; move that anchor and every address still answers while the bug
+  quietly returns. Adding a property to `Session.State`'s
+  `@listened_properties` means adding it there too — `vendored_addresses_test`
+  fails if you don't.
 - **All OSC goes through `Seshat.OSC.Transport`** — nothing sends UDP
   directly. Address strings deliberately live inline in `Handlers`,
   `Registry`, and `Session.State` (greppable via `"/live/`) — do not add an

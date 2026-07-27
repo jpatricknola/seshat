@@ -5,6 +5,12 @@
 Natural-language control of Ableton Live. The LLM calls tools; the tools send
 OSC to Ableton. Built with Elixir/Phoenix LiveView.
 
+**Not in production; one user (the author).** Backwards compatibility is never
+a goal: no fallback layers, migration shims, or compat paths for older
+installs or older data. When a change needs `mix abletonosc.install` re-run,
+a catalog rebuild, or a restart, just require it and say so — design for the
+current setup only.
+
 ## Two entry points, one tool layer
 
 Seshat exposes the same tools two ways. Both funnel into `Seshat.Tools.Handlers`:
@@ -36,6 +42,15 @@ Seshat.MCP.Server                      Seshat.Agent
 `Seshat.Session.State` subscribes to the `"osc:in"` PubSub topic and mirrors
 track state (names, volume, pan, mute, solo, tempo, time signature). Tools read
 it via `get_session_state` rather than querying Ableton field by field.
+
+It stays fresh by push, not by polling: every mirrored value has a listener
+behind it, including the *structure* of the session (tracks and returns added,
+deleted, duplicated or reordered by hand in Live) via the vendored
+`song_structure.py`, and `/live/startup` triggers a full refresh whenever
+AbletonOSC re-initialises — a set load or a Live restart otherwise leaves the
+mirror not just stale but permanently deaf, since the old song's listeners are
+gone. `get_session_state`'s `refresh: true` is the backstop for the rest: a lost
+UDP datagram, or two identically named tracks swapping places.
 
 `Seshat.Library.Catalog` sits beside it: a tag-aware index of everything
 loadable in Live's browser, kept in ETS and persisted to `~/.seshat/catalog.json`
@@ -76,8 +91,10 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
 | [priv/abletonosc/browser.py](priv/abletonosc/browser.py) | Vendored AbletonOSC handler extension — the browser API upstream doesn't have |
-| [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) | Vendored AbletonOSC handler extension — return-track and master addresses upstream doesn't have (`/live/return_track/*`, `/live/master/*`) |
-| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies both handlers into AbletonOSC and registers them |
+| [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) | Vendored AbletonOSC handler extension — return-track and master addresses upstream doesn't have (`/live/return_track/*`, `/live/master/*`), including their listeners |
+| [priv/abletonosc/song_structure.py](priv/abletonosc/song_structure.py) | Vendored AbletonOSC handler extension — track-list and return-list listeners (`/live/song/start_listen/tracks`, `.../return_tracks`); upstream can only listen to scalar song properties |
+| [priv/abletonosc/track_listeners.py](priv/abletonosc/track_listeners.py) | Vendored *override* of five upstream track listeners (name, mute, solo, volume, panning) — registers no new addresses; upstream's unbind from the wrong track once an index is reused |
+| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies all four handlers into AbletonOSC and registers them |
 
 ## Adding a tool
 
@@ -101,8 +118,22 @@ irregular naming, listener pattern, ordering hazards).
 a handler that `mix abletonosc.install` copies into the user's AbletonOSC.
 `/live/return_track/*` and `/live/master/*` are the same story, vendored in
 `priv/abletonosc/return_track.py` — upstream's track addresses only reach
-`song.tracks` (regular tracks), not returns or the master. Any future address
-upstream doesn't provide goes there the same way.
+`song.tracks` (regular tracks), not returns or the master. So are
+`/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
+vendored in `priv/abletonosc/song_structure.py` — the only two addresses of ours
+living under a prefix upstream otherwise owns. Any future address upstream
+doesn't provide goes into one of those files the same way.
+
+`priv/abletonosc/track_listeners.py` is the one file that adds no addresses: it
+*re-registers* five of upstream's (`/live/track/{start,stop}_listen/` for name,
+mute, solo, volume, panning), because upstream's unbind a listener from the wrong
+track once an index has been reused — delete a track, rename another, and the
+mirror gets one track's name under another's index. It wins because
+`add_handler` is a dict assignment and `mix abletonosc.install` anchors our
+handlers below `TrackHandler`. That makes it the one vendored file whose absence
+is invisible: every address still answers. `abletonosc_install_test` guards the
+anchor ordering; `vendored_addresses_test` guards that the override covers
+everything `Session.State`'s `@listened_properties` subscribes to.
 
 ## Verification
 
@@ -110,7 +141,7 @@ upstream doesn't provide goes there the same way.
 - `mix test` — full suite, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed — the `/smoke-test` skill is the checklist for that. See [README.md](README.md).
-- [docs/validation-script.md](docs/validation-script.md) is the human-run version: a guided lo-fi session a person reads to Seshat, building a real sketch while touching the 41 tools it was written against (the six sends/returns tools postdate it — see `/smoke-test` for those). Use it when a batch of features needs validating by ear and eye rather than by agent.
+- [docs/validation-script.md](docs/validation-script.md) is the human-run version: a guided lo-fi session a person reads to Seshat, building a real sketch while touching the 41 tools it was written against (the six sends/returns tools postdate it — see `/smoke-test` for those). Use it when a batch of features needs validating by ear and eye rather than by agent. [docs/validation-script.txt](docs/validation-script.txt) is its copy-paste companion — the same script stripped of prose, with the 2026-07-27 run's findings written inline under the first few prompts (those produced the push-based session state work and the `create_project` bug now on the roadmap).
 - The `audit-osc` workflow ([.claude/workflows/audit-osc.js](.claude/workflows/audit-osc.js)) fans out agents to verify every `/live/` address in `lib/` against the canonical docs — worth running after an AbletonOSC upgrade or a batch of new tools.
 
 ## Conventions

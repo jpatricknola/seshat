@@ -109,7 +109,7 @@ All 47 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
-| `get_session_state`     | Read      | Keep   | Track-level state. Solid.                                |
+| `get_session_state`     | Read      | Keep   | Track-level state. Solid. Stays fresh by push; `refresh: true` is the backstop. |
 | `get_clip_slots`        | Read      | Keep   | Exemplary description.                                   |
 | `get_clip_notes`        | Read      | Keep   | Clean errors. Closes the read-notes gap.                 |
 | `get_track_devices`     | Read      | Keep   | Racks show as one device — noted well.                   |
