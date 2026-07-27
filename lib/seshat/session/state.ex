@@ -41,7 +41,7 @@ defmodule Seshat.Session.State do
   # and the per-track cost grows with the session. So this is a ceiling on how
   # long the *caller* waits, not on the refresh — the GenServer finishes in its
   # own time. Reaching it means Ableton is unreachable rather than slow, which is
-  # what `get_session_state` reports when the exit reaches its clause-level catch.
+  # what `get_session_state` reports when `maybe_refresh` catches the exit.
   @refresh_sync_timeout 30_000
 
   # `/live/return_track/*` and `/live/master/*` come from Seshat's return_track.py
@@ -192,7 +192,8 @@ defmodule Seshat.Session.State do
   # Two shapes reach these: the listener's bare push, and the ok-envelope of a
   # query reply, which Transport broadcasts as well as returning to its caller.
   # Both carry a current value, so both are worth taking.
-  def handle_info({:osc_message, "/live/return_track/get/name", [idx, "ok", name]}, state) do
+  def handle_info({:osc_message, "/live/return_track/get/name", [idx, "ok", name]}, state)
+      when is_binary(name) do
     {:noreply, update_return(state, idx, :name, name)}
   end
 

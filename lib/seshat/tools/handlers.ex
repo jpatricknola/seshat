@@ -1363,8 +1363,28 @@ defmodule Seshat.Tools.Handlers do
   # done — hence sync rather than the fire-and-forget `State.refresh/0`, which
   # would serve the stale mirror it just asked to replace.
   defp do_call("get_session_state", params) do
-    if Map.get(params, "refresh", false), do: State.refresh_sync()
+    with :ok <- maybe_refresh(params) do
+      serve_session_state()
+    end
+  end
 
+  defp do_call(name, _params), do: {:error, "Unknown tool: #{name}"}
+
+  # An explicit refresh that never completes must not fall through to
+  # `serve_session_state/0`'s soft "no tracks" answer: the caller passed
+  # refresh: true because the mirror looked wrong, and answering with an empty
+  # session would present the give-up as fact. Caught here, so only this path
+  # turns into a real error.
+  defp maybe_refresh(params) do
+    if Map.get(params, "refresh", false), do: State.refresh_sync(), else: :ok
+  catch
+    :exit, _ ->
+      {:error,
+       "Refreshing from Ableton timed out. Check that Ableton is running with " <>
+         "AbletonOSC enabled."}
+  end
+
+  defp serve_session_state do
     song = State.song()
     tracks = State.tracks()
 
@@ -1394,8 +1414,6 @@ defmodule Seshat.Tools.Handlers do
     :exit, _ ->
       {:ok, "No tracks in current session (Ableton may not be connected)"}
   end
-
-  defp do_call(name, _params), do: {:error, "Unknown tool: #{name}"}
 
   defp to_track_type("midi"), do: :midi
   defp to_track_type("audio"), do: :audio
