@@ -36,8 +36,12 @@ defmodule Seshat.Session.State do
   @query_timeout 5_000
 
   # A full refresh against an Ableton that has stopped answering is a stack of
-  # per-property guard timeouts, so a synchronous refresh has to outlast all of
-  # them rather than time the caller out mid-way through one.
+  # per-property guard timeouts, and no constant can bound it: the six song
+  # properties alone reach @query_timeout each before the first track is read,
+  # and the per-track cost grows with the session. So this is a ceiling on how
+  # long the *caller* waits, not on the refresh — the GenServer finishes in its
+  # own time. Reaching it means Ableton is unreachable rather than slow, which is
+  # what `get_session_state` reports when the exit reaches its clause-level catch.
   @refresh_sync_timeout 30_000
 
   # `/live/return_track/*` and `/live/master/*` come from Seshat's return_track.py
@@ -276,8 +280,9 @@ defmodule Seshat.Session.State do
   # brake that is an unbounded spin: refresh, re-subscribe, push, disagree,
   # refresh. Recording the exact list that failed stops the second attempt at it
   # while leaving any *different* list a fresh try, so a real change is never
-  # ignored. `do_refresh/1` clears the record, so `/live/startup` and
-  # `refresh_sync/0` both lift the brake.
+  # ignored. `/live/startup` and `refresh_sync/0` lift the brake, because
+  # `do_refresh/1` clears every record — but a refresh triggered from *here*
+  # must keep the records it isn't about; see below.
   defp reconcile(state, key, names, change_message) do
     cond do
       not stale?(Map.fetch!(state, key), names) ->
@@ -288,7 +293,23 @@ defmodule Seshat.Session.State do
 
       true ->
         Logger.info("#{change_message} — refreshing session state")
-        refreshed = do_refresh(state)
+
+        # Every record but this one survives the refresh. `do_refresh/1` clears
+        # them all, which is what makes an explicitly requested refresh lift the
+        # brake — but this refresh is about `key` alone, and dropping the other
+        # key's record hands the two of them a way to lift each other's brake
+        # forever: tracks refresh, which clears returns, whose echo then
+        # refreshes, which clears tracks, whose echo then refreshes. Since every
+        # refresh re-subscribes and every re-subscribe pushes again, that is the
+        # unbounded spin this bookkeeping exists to stop, reached whenever both
+        # lists are unreconcilable at once — one degraded refresh does exactly
+        # that, since the same abandoned replies defeat both echo checks.
+        others = Map.delete(state.unreconciled, key)
+
+        refreshed =
+          state
+          |> do_refresh()
+          |> Map.update!(:unreconciled, &Map.merge(&1, others))
 
         if stale?(Map.fetch!(refreshed, key), names) do
           Logger.warning(
@@ -331,7 +352,6 @@ defmodule Seshat.Session.State do
         {:ok, [count]} when is_integer(count) ->
           tracks = read_tracks(Transport, count)
 
-          subscribe_song_listeners()
           subscribe_listeners(tracks)
 
           Logger.info(
@@ -349,6 +369,16 @@ defmodule Seshat.Session.State do
       end
 
     returns = refresh_returns(Transport)
+
+    # Outside the case above on purpose: neither of these depends on the track
+    # count, and the song listeners are what make a *later* structure change
+    # reach us at all. Subscribing them only on the branch where
+    # /live/song/get/num_tracks answered would mean one dropped datagram at
+    # startup leaves the mirror permanently deaf to the adds, deletes and
+    # reorders these listeners exist to catch — the failure they were added to
+    # end, reintroduced through the back door. `subscribe_listeners/1` stays
+    # inside, since it genuinely needs the track list.
+    subscribe_song_listeners()
     subscribe_return_listeners(returns.return_tracks)
 
     state
