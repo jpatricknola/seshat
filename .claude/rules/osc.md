@@ -51,6 +51,22 @@ exist because a typo'd address looks exactly like success.
   guard timeout to distinguish neither. With the envelope, an error reply is a
   bad index and silence is a missing install. Setters stay silent — each is
   guarded by its getter first, and nothing waits on one.
+- **An index-keyed listener must be unbound from the object it was registered
+  on.** Listeners are keyed by track/return index but bound to a LOM object, and
+  indices renumber when something is deleted or reordered. AbletonOSC's base
+  `_stop_listen` unbinds from the target it is *handed*, which after a renumber
+  is the wrong object — it fails silently and leaves the old listener pushing
+  under an index that now means someone else, so a later rename writes one
+  track's name onto another. `return_track.py` and `track_listeners.py` both stop
+  via `_stop_listen_stored`; copy that pattern for any new index-keyed listener.
+- **`track_listeners.py` overrides upstream rather than extending it** — five
+  `/live/track/{start,stop}_listen/*` addresses (name, mute, solo, volume,
+  panning), for the reason above. It works only because `add_handler` is a dict
+  assignment and `mix abletonosc.install` anchors our handlers *below*
+  `TrackHandler`; move that anchor and every address still answers while the bug
+  quietly returns. Adding a property to `Session.State`'s
+  `@listened_properties` means adding it there too — `vendored_addresses_test`
+  fails if you don't.
 - **All OSC goes through `Seshat.OSC.Transport`** — nothing sends UDP
   directly. Address strings deliberately live inline in `Handlers`,
   `Registry`, and `Session.State` (greppable via `"/live/`) — do not add an

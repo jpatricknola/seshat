@@ -111,7 +111,8 @@ defmodule Seshat.Session.State do
       tracks: [],
       return_tracks: [],
       master: nil,
-      returns_readable?: false
+      returns_readable?: false,
+      unreconciled: %{}
     }
 
     {:ok, state, {:continue, :setup}}
@@ -149,16 +150,11 @@ defmodule Seshat.Session.State do
   # reordered — including by Live's UI and by our own undo/redo, neither of which
   # any other listener sees. Carries names only: it is a change signal, and the
   # authoritative re-read is `do_refresh/1`. Re-subscribing inside that refresh
-  # makes the extension push again immediately, which is why the comparison
-  # matters — the echo compares equal against the state it just produced and
-  # stops there instead of looping.
+  # makes the extension push again immediately, which is why the comparison in
+  # `reconcile/4` matters — the echo compares equal against the state it just
+  # produced and stops there instead of looping.
   def handle_info({:osc_message, "/live/song/get/tracks", names}, state) do
-    if stale?(state.tracks, names) do
-      Logger.info("Track list changed in Live — refreshing session state")
-      {:noreply, do_refresh(state)}
-    else
-      {:noreply, state}
-    end
+    {:noreply, reconcile(state, :tracks, names, "Track list changed in Live")}
   end
 
   # Guarded by `returns_readable?`, unlike its track counterpart, because these
@@ -173,11 +169,10 @@ defmodule Seshat.Session.State do
   def handle_info({:osc_message, "/live/song/get/return_tracks", names}, state) do
     cond do
       not stale?(state.return_tracks, names) ->
-        {:noreply, state}
+        {:noreply, reconciled(state, :return_tracks)}
 
       state.returns_readable? ->
-        Logger.info("Return track list changed in Live — refreshing session state")
-        {:noreply, do_refresh(state)}
+        {:noreply, reconcile(state, :return_tracks, names, "Return track list changed in Live")}
 
       true ->
         Logger.warning(
@@ -270,6 +265,50 @@ defmodule Seshat.Session.State do
 
   # --- Private ---
 
+  # A pushed name list that disagrees with the mirror triggers one authoritative
+  # re-read. Normally that reconciles it and the echo from re-subscribing
+  # compares equal, so the exchange ends there.
+  #
+  # It ends there even when it *doesn't* reconcile, which is the point of the
+  # bookkeeping. A refresh can come back still disagreeing — replies running one
+  # index behind after an abandoned timeout make `read_tracks/2`'s echo check
+  # reject every name and fall back to "Track N" for all of them — and without a
+  # brake that is an unbounded spin: refresh, re-subscribe, push, disagree,
+  # refresh. Recording the exact list that failed stops the second attempt at it
+  # while leaving any *different* list a fresh try, so a real change is never
+  # ignored. `do_refresh/1` clears the record, so `/live/startup` and
+  # `refresh_sync/0` both lift the brake.
+  defp reconcile(state, key, names, change_message) do
+    cond do
+      not stale?(Map.fetch!(state, key), names) ->
+        reconciled(state, key)
+
+      Map.get(state.unreconciled, key) == names ->
+        state
+
+      true ->
+        Logger.info("#{change_message} — refreshing session state")
+        refreshed = do_refresh(state)
+
+        if stale?(Map.fetch!(refreshed, key), names) do
+          Logger.warning(
+            "#{change_message}, but re-reading Ableton did not reproduce it: Live reports " <>
+              "#{inspect(names)} and the mirror holds " <>
+              "#{inspect(Enum.map(Map.fetch!(refreshed, key), & &1.name))}. Leaving it as it " <>
+              "is rather than refreshing on every push; pass refresh: true to force a retry."
+          )
+
+          %{refreshed | unreconciled: Map.put(refreshed.unreconciled, key, names)}
+        else
+          reconciled(refreshed, key)
+        end
+    end
+  end
+
+  defp reconciled(state, key) do
+    %{state | unreconciled: Map.delete(state.unreconciled, key)}
+  end
+
   defp do_refresh(state) do
     alias Seshat.OSC.Transport
 
@@ -312,7 +351,9 @@ defmodule Seshat.Session.State do
     returns = refresh_returns(Transport)
     subscribe_return_listeners(returns.return_tracks)
 
-    Map.merge(state, returns)
+    state
+    |> Map.merge(returns)
+    |> Map.put(:unreconciled, %{})
   end
 
   defp read_tracks(_transport, count) when count < 1, do: []
@@ -452,9 +493,15 @@ defmodule Seshat.Session.State do
     %{state | tracks: tracks}
   end
 
-  # Listeners left behind on a return index that no longer exists keep pushing
-  # until the next refresh clears them; an index absent from the mirror simply
-  # matches nothing here, the same way `update_track/4` handles a deleted track.
+  # An index absent from the mirror matches nothing here, the same way
+  # `update_track/4` handles a deleted track. Nothing on this side clears a
+  # listener — `Session.State` never sends `stop_listen`, and a refresh only
+  # re-subscribes the indices that currently exist — so the guarantee that a
+  # push arriving under index N really describes return N is enforced in
+  # `return_track.py`, by `_stop_listen_stored` unbinding the old object before
+  # an index is re-bound. Without that a deleted return leaves its neighbour
+  # listening under two indices at once, and this function would faithfully
+  # write one return's name onto another.
   defp update_return(state, index, key, value) do
     Logger.debug("Return #{index} #{key} → #{inspect(value)}")
 

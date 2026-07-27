@@ -20,13 +20,16 @@ defmodule Seshat.Session.StateTest do
         tracks: [],
         return_tracks: [],
         master: nil,
-        returns_readable?: true
+        returns_readable?: true,
+        unreconciled: %{}
       },
       overrides
     )
   end
 
-  defp track(index, name), do: %{index: index, name: name, volume: 0.85, pan: 0.0}
+  defp track(index, name) do
+    %{index: index, name: name, volume: 0.85, pan: 0.0, mute: false, solo: false}
+  end
 
   defp return(index, name), do: %{index: index, name: name, volume: 0.85}
 
@@ -128,6 +131,45 @@ defmodule Seshat.Session.StateTest do
 
       assert push(mirrored, "/live/song/get/return_tracks", ["Reverb"]) == mirrored
     end
+
+    # The brake against an unbounded refresh spin: a refresh that comes back
+    # still disagreeing records the list it failed on, and a repeat of that exact
+    # list must not refresh again. Pre-setting the record is what makes the
+    # branch reachable without Ableton — taking it means do_refresh is never
+    # called, which is the whole assertion.
+    test "a name list that already failed to reconcile is not refreshed on again" do
+      mirrored =
+        state(%{
+          tracks: [track(0, "Drums")],
+          unreconciled: %{tracks: ["Drums", "Bass"]}
+        })
+
+      assert push(mirrored, "/live/song/get/tracks", ["Drums", "Bass"]) == mirrored
+    end
+
+    test "the return list gets the same brake" do
+      mirrored =
+        state(%{
+          return_tracks: [return(0, "Reverb")],
+          unreconciled: %{return_tracks: ["Reverb", "Delay"]}
+        })
+
+      assert push(mirrored, "/live/song/get/return_tracks", ["Reverb", "Delay"]) == mirrored
+    end
+
+    # A *different* list has to get a fresh attempt, or one unreconcilable push
+    # would deafen the mirror to every real change after it.
+    test "a list that matches the mirror lifts the brake" do
+      mirrored =
+        state(%{
+          tracks: [track(0, "Drums")],
+          unreconciled: %{tracks: ["Drums", "Bass"]}
+        })
+
+      state = push(mirrored, "/live/song/get/tracks", ["Drums"])
+
+      assert state.unreconciled == %{}
+    end
   end
 
   describe "return track and master pushes" do
@@ -177,6 +219,23 @@ defmodule Seshat.Session.StateTest do
       state = push(state(), "/live/master/get/volume", [0.7])
 
       assert state.master == %{volume: 0.7}
+    end
+
+    # The error envelope shares its address and arity with the ok envelope, so
+    # only the literal "ok" and the float guard keep the message text out of the
+    # mirror. Relax either and a return gets named "error".
+    test "a name error envelope is ignored rather than mirrored" do
+      mirrored = state(%{return_tracks: [return(0, "Reverb")]})
+
+      assert push(mirrored, "/live/return_track/get/name", [0, "error", "no such return"]) ==
+               mirrored
+    end
+
+    test "a volume error envelope is ignored rather than mirrored" do
+      mirrored = state(%{return_tracks: [return(0, "Reverb")]})
+
+      assert push(mirrored, "/live/return_track/get/volume", [0, "error", "no such return"]) ==
+               mirrored
     end
   end
 

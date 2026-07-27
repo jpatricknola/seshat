@@ -93,7 +93,8 @@ Packs, so it is never hardcoded in a tool description.
 | [priv/abletonosc/browser.py](priv/abletonosc/browser.py) | Vendored AbletonOSC handler extension — the browser API upstream doesn't have |
 | [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) | Vendored AbletonOSC handler extension — return-track and master addresses upstream doesn't have (`/live/return_track/*`, `/live/master/*`), including their listeners |
 | [priv/abletonosc/song_structure.py](priv/abletonosc/song_structure.py) | Vendored AbletonOSC handler extension — track-list and return-list listeners (`/live/song/start_listen/tracks`, `.../return_tracks`); upstream can only listen to scalar song properties |
-| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies all three handlers into AbletonOSC and registers them |
+| [priv/abletonosc/track_listeners.py](priv/abletonosc/track_listeners.py) | Vendored *override* of five upstream track listeners (name, mute, solo, volume, panning) — registers no new addresses; upstream's unbind from the wrong track once an index is reused |
+| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies all four handlers into AbletonOSC and registers them |
 
 ## Adding a tool
 
@@ -122,6 +123,17 @@ a handler that `mix abletonosc.install` copies into the user's AbletonOSC.
 vendored in `priv/abletonosc/song_structure.py` — the only two addresses of ours
 living under a prefix upstream otherwise owns. Any future address upstream
 doesn't provide goes into one of those files the same way.
+
+`priv/abletonosc/track_listeners.py` is the one file that adds no addresses: it
+*re-registers* five of upstream's (`/live/track/{start,stop}_listen/` for name,
+mute, solo, volume, panning), because upstream's unbind a listener from the wrong
+track once an index has been reused — delete a track, rename another, and the
+mirror gets one track's name under another's index. It wins because
+`add_handler` is a dict assignment and `mix abletonosc.install` anchors our
+handlers below `TrackHandler`. That makes it the one vendored file whose absence
+is invisible: every address still answers. `vendored_addresses_test` guards both
+the anchor ordering and the fact that it covers everything
+`Session.State`'s `@listened_properties` subscribes to.
 
 ## Verification
 

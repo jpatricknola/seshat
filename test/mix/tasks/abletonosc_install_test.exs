@@ -11,6 +11,11 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
   the tools blame a missing install forever. Re-running it is also the documented
   fix for "my addresses stopped answering", so idempotence is a promise, not an
   implementation detail.
+
+  `track_listeners.py` fails quieter still. It overrides addresses upstream
+  already serves, so a missed registration line leaves every one of them
+  answering normally — with the stale-listener bug the override exists to fix
+  silently back in place. Hence the ordering test below.
   """
 
   use ExUnit.Case, async: false
@@ -24,11 +29,17 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
 
   # The anchor sits inside a list literal, so its indentation is load-bearing:
   # a line inserted flush-left here is a Python syntax error.
+  #
+  # TrackHandler is here because it is load-bearing too: track_listeners.py
+  # re-registers five of its addresses and only wins by being instantiated later,
+  # so the fixture has to reproduce upstream's ordering (TrackHandler above
+  # MidiMapHandler, the anchor) for that to be testable at all.
   @manager_py """
   class Manager:
       def init_api(self):
           self.handlers = [
               abletonosc.SongHandler(self),
+              abletonosc.TrackHandler(self),
               abletonosc.MidiMapHandler(self),
               abletonosc.ViewHandler(self),
           ]
@@ -62,7 +73,7 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
     test "copies every handler and registers each one exactly once", %{install_dir: dir} do
       Mix.Tasks.Abletonosc.Install.run([dir])
 
-      for file <- ["browser.py", "return_track.py", "song_structure.py"] do
+      for file <- ["browser.py", "return_track.py", "song_structure.py", "track_listeners.py"] do
         assert File.read!(Path.join([dir, "abletonosc", file])) ==
                  File.read!("priv/abletonosc/#{file}"),
                "#{file} was not copied verbatim"
@@ -72,11 +83,36 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
       assert occurrences(init, "from .browser import BrowserHandler") == 1
       assert occurrences(init, "from .return_track import ReturnTrackHandler") == 1
       assert occurrences(init, "from .song_structure import SongStructureHandler") == 1
+      assert occurrences(init, "from .track_listeners import TrackListenerHandler") == 1
 
       manager = File.read!(Path.join(dir, "manager.py"))
       assert occurrences(manager, "abletonosc.BrowserHandler(self),") == 1
       assert occurrences(manager, "abletonosc.ReturnTrackHandler(self),") == 1
       assert occurrences(manager, "abletonosc.SongStructureHandler(self),") == 1
+      assert occurrences(manager, "abletonosc.TrackListenerHandler(self),") == 1
+    end
+
+    # track_listeners.py only takes effect because it is registered after
+    # upstream's TrackHandler — add_handler is a dict assignment, so the last
+    # registration for an address wins. The anchor is what puts it there, and a
+    # fixture whose TrackHandler sat below MidiMapHandler would make this pass
+    # while the real install broke, so the fixture ordering is asserted too.
+    test "registers the track override below upstream's TrackHandler", %{install_dir: dir} do
+      Mix.Tasks.Abletonosc.Install.run([dir])
+
+      lines = dir |> Path.join("manager.py") |> File.read!() |> String.split("\n")
+
+      upstream = Enum.find_index(lines, &String.contains?(&1, "abletonosc.TrackHandler(self),"))
+      anchor = Enum.find_index(lines, &String.contains?(&1, "abletonosc.MidiMapHandler(self),"))
+
+      override =
+        Enum.find_index(lines, &String.contains?(&1, "abletonosc.TrackListenerHandler(self),"))
+
+      assert upstream < anchor, "fixture drifted: TrackHandler must precede the install anchor"
+
+      assert override > upstream,
+             "TrackListenerHandler is registered before TrackHandler, so upstream's " <>
+               "listeners win and the override silently does nothing"
     end
 
     test "matches the anchor's indentation so manager.py still parses", %{install_dir: dir} do

@@ -192,7 +192,42 @@ Seshat's return_track extension (see below); sends, being a property of a
 
 Volume, panning, send, mute, solo, devices, clips.
 
-Listen via `/live/track/start_listen/<property> <track_index>`, responses on `/live/track/get/<property>` with `<track_index> <value>`.
+Listen via `/live/track/start_listen/<property> <track_index>`, responses on `/live/track/get/<property>` with `<track_index> <value>`. `*` in place of the
+index subscribes every track.
+
+> ⚠️ **Five of those listeners are overridden by Seshat**, in
+> `priv/abletonosc/track_listeners.py` — same addresses, same arguments, same
+> pushes, so nothing calling them can tell the difference:
+>
+> | Address | Query Params |
+> |---|---|
+> | `/live/track/start_listen/name` | `track_index` or `*` |
+> | `/live/track/stop_listen/name` | `track_index` or `*` |
+> | `/live/track/start_listen/mute` | `track_index` or `*` |
+> | `/live/track/stop_listen/mute` | `track_index` or `*` |
+> | `/live/track/start_listen/solo` | `track_index` or `*` |
+> | `/live/track/stop_listen/solo` | `track_index` or `*` |
+> | `/live/track/start_listen/volume` | `track_index` or `*` |
+> | `/live/track/stop_listen/volume` | `track_index` or `*` |
+> | `/live/track/start_listen/panning` | `track_index` or `*` |
+> | `/live/track/stop_listen/panning` | `track_index` or `*` |
+>
+> Upstream's versions are keyed by track index but bound to a track *object*, and
+> they unbind from whatever object the index resolves to at teardown time. Delete
+> a track and every later index shifts, so re-subscribing tries to unbind the old
+> callback from the wrong track: the removal fails, the base class swallows it as
+> "likely benign", and the old listener stays alive pushing under an index that
+> now belongs to someone else. A rename afterwards writes one track's name onto
+> another in `Seshat.Session.State`. The override unbinds the object the callback
+> was actually registered on, which the base class already records in
+> `listener_objects`. It also registers `listener_objects` for the two mixer
+> properties, which upstream omits — without that, `_clear_listeners` raises
+> `KeyError` on reload once a volume or panning listener is active.
+>
+> This works because `OSCServer.add_handler` is a plain dict assignment, so the
+> last registration for an address wins, and `mix abletonosc.install` anchors
+> Seshat's handlers after `MidiMapHandler` — below `TrackHandler` in
+> `manager.py`. Every other track listener keeps upstream's behaviour.
 
 ### Track Methods
 
@@ -576,6 +611,15 @@ track needs no index at all.
   `DeviceParameter` with `add_value_listener` rather than a Track property — so
   that one listener is hand-rolled instead of using the base class's
   `_start_listen`, which would derive `/live/return_track/get/value`.
+- **Re-subscribing an index unbinds the object it used to mean.** These
+  listeners are keyed by return index but bound to a return-track object, and
+  deleting a return renumbers everything after it. The base class's
+  `_stop_listen` removes the callback from whatever target it is *handed*, so
+  re-subscribing index 0 after a delete would try to unbind it from the wrong
+  object, silently fail, and leave the old listener pushing under an index that
+  now belongs to someone else. `return_track.py` therefore stops via
+  `_stop_listen_stored`, which unbinds the object the callback was actually
+  registered on. Any future index-keyed listener we vendor needs the same.
 
 ---
 

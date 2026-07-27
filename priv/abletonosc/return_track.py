@@ -149,7 +149,11 @@ class ReturnTrackHandler(AbletonOSCHandler):
         # A return track is a LOM Track, so `name` is an ordinary listenable
         # property and the base class derives the right address on its own:
         # /live/return_track/get/name, sent as (index, name).
+        #
+        # The base class would re-listen on its own, but its removal step is
+        # unsafe here — see _stop_listen_stored.
         #--------------------------------------------------------------------------------
+        self._stop_listen_stored("name", (index,))
         self._start_listen(track, "name", (index,))
 
     def _stop_listen_name(self, params: Tuple[Any] = ()) -> None:
@@ -157,7 +161,7 @@ class ReturnTrackHandler(AbletonOSCHandler):
         if error is not None:
             return None
 
-        self._stop_listen(track, "name", (index,))
+        self._stop_listen_stored("name", (index,))
 
     def _start_listen_volume(self, params: Tuple[Any] = ()) -> None:
         index, track, error = self._return_track(params, "start_listen/volume")
@@ -174,7 +178,7 @@ class ReturnTrackHandler(AbletonOSCHandler):
         if error is not None:
             return None
 
-        self._stop_listen(track.mixer_device.volume, "value", (index,))
+        self._stop_listen_stored("value", (index,))
 
     #--------------------------------------------------------------------------------
     # Master track
@@ -191,7 +195,30 @@ class ReturnTrackHandler(AbletonOSCHandler):
                                listener_params=("master",))
 
     def _stop_listen_master_volume(self, params: Tuple[Any] = ()) -> None:
-        self._stop_listen(self.song.master_track.mixer_device.volume, "value", ("master",))
+        self._stop_listen_stored("value", ("master",))
+
+    def _stop_listen_stored(self, prop, listener_params) -> None:
+        """
+        Stop a listener, removing it from the object it was actually registered on.
+
+        The base `_stop_listen` removes the callback from the `target` it is
+        handed, but our listeners are keyed by *index* while being bound to an
+        *object* — and a return track's index is not stable. Delete return 0 of
+        [A, B, C] and index 0 now means B, so re-subscribing hands the base class
+        B while the stored callback belongs to A. `B.remove_name_listener` then
+        raises, the base swallows it as "likely benign", and the dict entry is
+        dropped regardless — leaving A's listener alive in Live forever, still
+        pushing under index 0. B ends up with two listeners and a later rename
+        writes B's name into the mirror under an index that belongs to C.
+
+        The base class already stores the true object in `listener_objects` (its
+        own `_clear_listeners` reads it), so passing that back is all it takes.
+        Silent when nothing is registered: nothing waits on a stop_listen, and a
+        stop for an index never listened to is not an error.
+        """
+        listener_key = (prop, tuple(listener_params))
+        if listener_key in self.listener_functions:
+            self._stop_listen(self.listener_objects[listener_key], prop, listener_params)
 
     def _listen_to_volume(self, parameter, address, reply_prefix, listener_params) -> None:
         """
@@ -207,15 +234,16 @@ class ReturnTrackHandler(AbletonOSCHandler):
         `listener_functions` / `listener_objects`, keyed by (prop, params). So
         registering under ("value", listener_params) with the DeviceParameter as the
         object keeps `_stop_listen` (remove_value_listener) and `_clear_listeners`
-        (cleanup on reload) working unchanged, and re-listening stays idempotent.
-        The immediate first push matches base behaviour too.
+        (cleanup on reload) working unchanged. Re-listening stays idempotent via
+        `_stop_listen_stored`, which is what makes it safe when the same index has
+        come to mean a different return track. The immediate first push matches
+        base behaviour too.
         """
         def value_changed_callback():
             self.osc_server.send(address, (*reply_prefix, parameter.value))
 
         listener_key = ("value", tuple(listener_params))
-        if listener_key in self.listener_functions:
-            self._stop_listen(parameter, "value", listener_params)
+        self._stop_listen_stored("value", listener_params)
 
         self.logger.info("Return track: adding volume listener %s" % str(listener_params))
         parameter.add_value_listener(value_changed_callback)
