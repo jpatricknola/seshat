@@ -2,11 +2,12 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   @moduledoc """
   Tripwire for the addresses upstream AbletonOSC doesn't serve.
 
-  `/live/browser/*`, `/live/return_track/*` and `/live/master/*` are ours: they
-  exist only because `priv/abletonosc/browser.py` and
-  `priv/abletonosc/return_track.py` register them. A typo on either side of that
-  seam fails the way every OSC mistake fails — silently, over UDP, with no reply
-  — and the guard timeouts that catch it look exactly like "Ableton isn't
+  `/live/browser/*`, `/live/return_track/*` and `/live/master/*` are ours, as are
+  two addresses under upstream's own `/live/song/` prefix: they exist only
+  because `priv/abletonosc/browser.py`, `priv/abletonosc/return_track.py` and
+  `priv/abletonosc/song_structure.py` register them. A typo on either side of
+  that seam fails the way every OSC mistake fails — silently, over UDP, with no
+  reply — and the guard timeouts that catch it look exactly like "Ableton isn't
   running". These tests close the loop without needing Ableton at all:
 
     * every vendored address the Elixir code sends must be registered in Python
@@ -20,7 +21,25 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
   @vendored_prefixes ["/live/browser/", "/live/return_track/", "/live/master/"]
 
-  @handler_files ["priv/abletonosc/browser.py", "priv/abletonosc/return_track.py"]
+  # song_structure.py registers under `/live/song/`, which upstream mostly owns —
+  # a prefix would sweep in every upstream song address and fail. Listed exactly
+  # instead, so a typo in either one is still caught.
+  @vendored_song_addresses [
+    "/live/song/start_listen/tracks",
+    "/live/song/start_listen/return_tracks"
+  ]
+
+  # The addresses song_structure.py *pushes on*. They are deliberately absent
+  # from the list above: nothing registers them (they are sent by a listener
+  # callback, never queried), so requiring a handler for them would fail.
+  # `Session.State` still matches on them, so they are documented like any other.
+  @push_only_addresses ["/live/song/get/tracks", "/live/song/get/return_tracks"]
+
+  @handler_files [
+    "priv/abletonosc/browser.py",
+    "priv/abletonosc/return_track.py",
+    "priv/abletonosc/song_structure.py"
+  ]
 
   @docs "docs/abletonosc-api-docs.md"
 
@@ -60,15 +79,46 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       end
     end
 
-    test "the return/master handler registers exactly the seven documented addresses" do
+    test "every push-only address is documented even though nothing registers it" do
+      docs = File.read!(@docs)
+
+      for address <- @push_only_addresses do
+        assert String.contains?(docs, address),
+               "#{address} is pushed by priv/abletonosc/song_structure.py but missing from #{@docs}."
+
+        refute address in registered_addresses(),
+               """
+               #{address} is registered by a vendored handler, but this test lists it as
+               push-only. Either the registration is a mistake, or @push_only_addresses
+               is now out of date.
+               """
+      end
+    end
+
+    test "the return/master handler registers exactly the thirteen documented addresses" do
       assert Enum.sort(registered_addresses("priv/abletonosc/return_track.py")) == [
                "/live/master/get/volume",
                "/live/master/set/volume",
+               "/live/master/start_listen/volume",
+               "/live/master/stop_listen/volume",
                "/live/return_track/get/count",
                "/live/return_track/get/name",
                "/live/return_track/get/volume",
                "/live/return_track/set/name",
-               "/live/return_track/set/volume"
+               "/live/return_track/set/volume",
+               "/live/return_track/start_listen/name",
+               "/live/return_track/start_listen/volume",
+               "/live/return_track/stop_listen/name",
+               "/live/return_track/stop_listen/volume"
+             ]
+    end
+
+    test "the song structure handler registers exactly the four documented addresses" do
+      assert Enum.sort(registered_addresses("priv/abletonosc/song_structure.py")) == [
+               "/live/song/start_listen/return_tracks",
+               "/live/song/start_listen/tracks",
+               "/live/song/stop_listen/return_tracks",
+               "/live/song/stop_listen/tracks"
              ]
     end
   end
@@ -92,9 +142,12 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       |> Regex.scan(File.read!(file))
       |> Enum.map(fn [_match, address] -> {address, file} end)
     end)
-    |> Enum.filter(fn {address, _file} ->
-      Enum.any?(@vendored_prefixes, &String.starts_with?(address, &1))
-    end)
+    |> Enum.filter(fn {address, _file} -> vendored?(address) end)
     |> Enum.uniq()
+  end
+
+  defp vendored?(address) do
+    Enum.any?(@vendored_prefixes, &String.starts_with?(address, &1)) or
+      address in @vendored_song_addresses
   end
 end

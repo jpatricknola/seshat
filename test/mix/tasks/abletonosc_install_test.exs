@@ -1,11 +1,12 @@
 defmodule Mix.Tasks.Abletonosc.InstallTest do
   @moduledoc """
   Exercises `mix abletonosc.install` against a fixture that mimics an AbletonOSC
-  checkout, so the two-handler install is covered without writing to the user's
-  real Remote Scripts directory.
+  checkout, so the whole multi-handler install is covered without writing to the
+  user's real Remote Scripts directory.
 
   The task is the whole delivery mechanism for `/live/browser/*`,
-  `/live/return_track/*` and `/live/master/*`: if it copies a file but skips a
+  `/live/return_track/*`, `/live/master/*` and the song-structure listeners: if
+  it copies a file but skips a
   registration line, every one of those addresses goes quietly unanswered and
   the tools blame a missing install forever. Re-running it is also the documented
   fix for "my addresses stopped answering", so idempotence is a promise, not an
@@ -58,10 +59,10 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
   end
 
   describe "run/1" do
-    test "copies both handlers and registers each one exactly once", %{install_dir: dir} do
+    test "copies every handler and registers each one exactly once", %{install_dir: dir} do
       Mix.Tasks.Abletonosc.Install.run([dir])
 
-      for file <- ["browser.py", "return_track.py"] do
+      for file <- ["browser.py", "return_track.py", "song_structure.py"] do
         assert File.read!(Path.join([dir, "abletonosc", file])) ==
                  File.read!("priv/abletonosc/#{file}"),
                "#{file} was not copied verbatim"
@@ -70,10 +71,12 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
       init = File.read!(Path.join([dir, "abletonosc", "__init__.py"]))
       assert occurrences(init, "from .browser import BrowserHandler") == 1
       assert occurrences(init, "from .return_track import ReturnTrackHandler") == 1
+      assert occurrences(init, "from .song_structure import SongStructureHandler") == 1
 
       manager = File.read!(Path.join(dir, "manager.py"))
       assert occurrences(manager, "abletonosc.BrowserHandler(self),") == 1
       assert occurrences(manager, "abletonosc.ReturnTrackHandler(self),") == 1
+      assert occurrences(manager, "abletonosc.SongStructureHandler(self),") == 1
     end
 
     test "matches the anchor's indentation so manager.py still parses", %{install_dir: dir} do
@@ -134,6 +137,7 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
 
       assert output =~ "from .browser import BrowserHandler"
       assert output =~ "from .return_track import ReturnTrackHandler"
+      assert output =~ "from .song_structure import SongStructureHandler"
 
       # The handler files are still copied — only the registration is left to the
       # user, so a hand-edit is all that's needed to finish.

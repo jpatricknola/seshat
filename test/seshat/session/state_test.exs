@@ -6,19 +6,29 @@ defmodule Seshat.Session.StateTest do
   # The GenServer isn't started here — its init queries Ableton over OSC, which
   # needs a live Live. The listener-push handling is pure given a state map, so
   # it is exercised by calling handle_info/2 directly.
-  defp state do
-    %{
-      song: %{
-        tempo: 120.0,
-        time_sig_numerator: 4,
-        time_sig_denominator: 4,
-        is_playing: false,
-        root_note: 0,
-        scale_name: "Major"
+  defp state(overrides \\ %{}) do
+    Map.merge(
+      %{
+        song: %{
+          tempo: 120.0,
+          time_sig_numerator: 4,
+          time_sig_denominator: 4,
+          is_playing: false,
+          root_note: 0,
+          scale_name: "Major"
+        },
+        tracks: [],
+        return_tracks: [],
+        master: nil,
+        returns_readable?: true
       },
-      tracks: []
-    }
+      overrides
+    )
   end
+
+  defp track(index, name), do: %{index: index, name: name, volume: 0.85, pan: 0.0}
+
+  defp return(index, name), do: %{index: index, name: name, volume: 0.85}
 
   defp push(state, address, args) do
     {:noreply, state} = State.handle_info({:osc_message, address, args}, state)
@@ -64,4 +74,113 @@ defmodule Seshat.Session.StateTest do
       assert push(state(), "/live/song/get/something_new", [1]) == state()
     end
   end
+
+  describe "stale?/2" do
+    test "the same names in the same order are not stale" do
+      refute State.stale?([track(0, "Drums"), track(1, "Bass")], ["Drums", "Bass"])
+    end
+
+    test "a deleted track is stale" do
+      assert State.stale?([track(0, "Drums"), track(1, "Bass")], ["Drums"])
+    end
+
+    test "an added track is stale" do
+      assert State.stale?([track(0, "Drums")], ["Drums", "Bass"])
+    end
+
+    test "a rename is stale" do
+      assert State.stale?([track(0, "Drums")], ["Beats"])
+    end
+
+    test "a reorder is stale even though the same names are present" do
+      assert State.stale?([track(0, "Drums"), track(1, "Bass")], ["Bass", "Drums"])
+    end
+
+    test "an empty mirror against a live session is stale" do
+      assert State.stale?([], ["Drums"])
+    end
+
+    test "an empty mirror against an empty session is not stale" do
+      refute State.stale?([], [])
+    end
+  end
+
+  describe "song structure pushes" do
+    test "a track list matching the mirror leaves the state untouched" do
+      mirrored = state(%{tracks: [track(0, "Drums"), track(1, "Bass")]})
+
+      assert push(mirrored, "/live/song/get/tracks", ["Drums", "Bass"]) == mirrored
+    end
+
+    test "a return list matching the mirror leaves the state untouched" do
+      mirrored = state(%{return_tracks: [return(0, "Reverb")]})
+
+      assert push(mirrored, "/live/song/get/return_tracks", ["Reverb"]) == mirrored
+    end
+
+    # A return list that disagrees with the mirror normally triggers do_refresh,
+    # which needs Ableton. When returns aren't readable it must not — otherwise
+    # each push refreshes, each refresh re-subscribes, and each re-subscribe
+    # pushes again, forever. That branch is pure, so it is the one testable half
+    # of the disagreement case.
+    test "a disagreeing return list is ignored while returns are unreadable" do
+      mirrored = state(%{return_tracks: [], returns_readable?: false})
+
+      assert push(mirrored, "/live/song/get/return_tracks", ["Reverb"]) == mirrored
+    end
+  end
+
+  describe "return track and master pushes" do
+    test "a name push updates that return and no other" do
+      state =
+        %{return_tracks: [return(0, "Reverb"), return(1, "Delay")]}
+        |> state()
+        |> push("/live/return_track/get/name", [1, "Tape Delay"])
+
+      assert Enum.map(state.return_tracks, & &1.name) == ["Reverb", "Tape Delay"]
+    end
+
+    test "a name query reply carries its ok envelope and still lands" do
+      state =
+        %{return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/return_track/get/name", [0, "ok", "Hall"])
+
+      assert Enum.map(state.return_tracks, & &1.name) == ["Hall"]
+    end
+
+    test "a volume push updates that return and no other" do
+      state =
+        %{return_tracks: [return(0, "Reverb"), return(1, "Delay")]}
+        |> state()
+        |> push("/live/return_track/get/volume", [0, 0.5])
+
+      assert Enum.map(state.return_tracks, & &1.volume) == [0.5, 0.85]
+    end
+
+    test "a volume query reply carries its ok envelope and still lands" do
+      state =
+        %{return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/return_track/get/volume", [0, "ok", 0.25])
+
+      assert Enum.map(state.return_tracks, & &1.volume) == [0.25]
+    end
+
+    test "a push for an index the mirror doesn't have is a no-op" do
+      mirrored = state(%{return_tracks: [return(0, "Reverb")]})
+
+      assert push(mirrored, "/live/return_track/get/volume", [3, 0.5]) == mirrored
+    end
+
+    test "a master push replaces the master level" do
+      state = push(state(), "/live/master/get/volume", [0.7])
+
+      assert state.master == %{volume: 0.7}
+    end
+  end
+
+  # `/live/startup` and the stale branches of the two structure pushes all call
+  # do_refresh/1, which queries Ableton — untestable here by design
+  # (testing.md: never reach Transport.query/3), and covered by /smoke-test.
 end

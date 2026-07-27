@@ -43,6 +43,15 @@ Seshat.MCP.Server                      Seshat.Agent
 track state (names, volume, pan, mute, solo, tempo, time signature). Tools read
 it via `get_session_state` rather than querying Ableton field by field.
 
+It stays fresh by push, not by polling: every mirrored value has a listener
+behind it, including the *structure* of the session (tracks and returns added,
+deleted, duplicated or reordered by hand in Live) via the vendored
+`song_structure.py`, and `/live/startup` triggers a full refresh whenever
+AbletonOSC re-initialises — a set load or a Live restart otherwise leaves the
+mirror not just stale but permanently deaf, since the old song's listeners are
+gone. `get_session_state`'s `refresh: true` is the backstop for the rest: a lost
+UDP datagram, or two identically named tracks swapping places.
+
 `Seshat.Library.Catalog` sits beside it: a tag-aware index of everything
 loadable in Live's browser, kept in ETS and persisted to `~/.seshat/catalog.json`
 so `search_library` answers instantly and with Ableton closed. It is built by
@@ -82,8 +91,9 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
 | [priv/abletonosc/browser.py](priv/abletonosc/browser.py) | Vendored AbletonOSC handler extension — the browser API upstream doesn't have |
-| [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) | Vendored AbletonOSC handler extension — return-track and master addresses upstream doesn't have (`/live/return_track/*`, `/live/master/*`) |
-| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies both handlers into AbletonOSC and registers them |
+| [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) | Vendored AbletonOSC handler extension — return-track and master addresses upstream doesn't have (`/live/return_track/*`, `/live/master/*`), including their listeners |
+| [priv/abletonosc/song_structure.py](priv/abletonosc/song_structure.py) | Vendored AbletonOSC handler extension — track-list and return-list listeners (`/live/song/start_listen/tracks`, `.../return_tracks`); upstream can only listen to scalar song properties |
+| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies all three handlers into AbletonOSC and registers them |
 
 ## Adding a tool
 
@@ -107,8 +117,11 @@ irregular naming, listener pattern, ordering hazards).
 a handler that `mix abletonosc.install` copies into the user's AbletonOSC.
 `/live/return_track/*` and `/live/master/*` are the same story, vendored in
 `priv/abletonosc/return_track.py` — upstream's track addresses only reach
-`song.tracks` (regular tracks), not returns or the master. Any future address
-upstream doesn't provide goes there the same way.
+`song.tracks` (regular tracks), not returns or the master. So are
+`/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
+vendored in `priv/abletonosc/song_structure.py` — the only two addresses of ours
+living under a prefix upstream otherwise owns. Any future address upstream
+doesn't provide goes into one of those files the same way.
 
 ## Verification
 

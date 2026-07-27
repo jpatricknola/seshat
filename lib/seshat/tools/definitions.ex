@@ -823,11 +823,22 @@ defmodule Seshat.Tools.Definitions do
           "write, not gospel, since Live reports C Major when the user has never touched them. " <>
           "Use this before making relative adjustments ('turn it up a bit'), " <>
           "when you need to know what tracks exist, or before writing MIDI notes. " <>
+          "Changes made in Ableton's own UI — including tracks added, deleted or " <>
+          "reordered by hand — stream in automatically, so this is normally current " <>
+          "without asking; pass refresh: true only if the state it reports ever " <>
+          "looks wrong. " <>
           "Indices are 0-based but Ableton's UI numbers tracks from 1 — when talking " <>
           "to the user, refer to tracks by name or 1-based UI number, never raw index.",
       parameters: %{
         type: "object",
-        properties: %{},
+        properties: %{
+          "refresh" => %{
+            type: "boolean",
+            description:
+              "Re-read everything from Ableton before answering, instead of serving the " <>
+                "mirrored state. Slower — use only when the reported state looks wrong."
+          }
+        },
         required: []
       }
     },

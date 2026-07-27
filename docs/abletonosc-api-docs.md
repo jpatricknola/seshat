@@ -508,10 +508,10 @@ directory and deletes the file afterwards.
 
 ## Return Track & Master API (Seshat extension — not in upstream AbletonOSC)
 
-⚠️ These seven addresses do **not** exist in stock AbletonOSC. They are served
+⚠️ These thirteen addresses do **not** exist in stock AbletonOSC. They are served
 by `priv/abletonosc/return_track.py` in this repo, installed with
 `mix abletonosc.install` (restart Live afterwards). Without that install all
-seven addresses are unknown and queries time out.
+thirteen addresses are unknown and queries time out.
 
 They exist because upstream reaches regular tracks only: every `/live/track/*`
 handler resolves its index through `song.tracks`. Return tracks live in
@@ -535,6 +535,12 @@ track needs no index at all.
 | `/live/return_track/set/volume` | `return_index, volume` | | Set the return fader |
 | `/live/master/get/volume` | | `volume` | Master fader, 0.0 to 1.0 |
 | `/live/master/set/volume` | `volume` | | Set the master fader |
+| `/live/return_track/start_listen/name` | `return_index` | | Push `/live/return_track/get/name [return_index, name]` on every change |
+| `/live/return_track/stop_listen/name` | `return_index` | | |
+| `/live/return_track/start_listen/volume` | `return_index` | | Push `/live/return_track/get/volume [return_index, volume]` on every change |
+| `/live/return_track/stop_listen/volume` | `return_index` | | |
+| `/live/master/start_listen/volume` | | | Push `/live/master/get/volume [volume]` on every change |
+| `/live/master/stop_listen/volume` | | | |
 
 - **Getters always reply**, on the address they were called on, including on
   every error path — the same rule as the Browser API above, and the opposite of
@@ -557,8 +563,66 @@ track needs no index at all.
   then `set/name` at that index.
 - Sends belong to the *regular* track that feeds the return, so they stay on
   `/live/track/get|set/send [track_id, send_id, ...]` in the Track API above.
-- No listeners in v1: `/live/return_track/start_listen/*` does not exist.
-  `Seshat.Session.State` mirrors returns and the master on refresh only.
+- **The listeners push the bare value**, not the ok/error envelope — a push has
+  no failure path to report, and the differing arity is what lets
+  `Seshat.Session.State` accept a push and a query reply on the same address
+  without confusing them. Like upstream's listeners, each sends once immediately
+  on subscribe. `start_listen`/`stop_listen` reply with nothing at all on a bad
+  index (they are guarded by `get/count` and nothing waits on them).
+- A `get/*` address therefore carries both query replies and listener pushes.
+  Live's own track listeners upstream already work this way, and a push landing
+  on a pending query is harmless: it carries a current value.
+- Return-track volume is listened to on `mixer_device.volume`, a
+  `DeviceParameter` with `add_value_listener` rather than a Track property — so
+  that one listener is hand-rolled instead of using the base class's
+  `_start_listen`, which would derive `/live/return_track/get/value`.
+
+---
+
+## Song Structure API (Seshat extension — not in upstream AbletonOSC)
+
+⚠️ These four addresses do **not** exist in stock AbletonOSC. They are served by
+`priv/abletonosc/song_structure.py` in this repo, installed with
+`mix abletonosc.install` (restart Live afterwards).
+
+Upstream's `SongHandler` registers `start_listen` only for the *scalar* Song
+properties in its hardcoded list (tempo, root_note, is_playing, …). `tracks` and
+`return_tracks` are lists of LOM objects, so they aren't in it — meaning nothing
+upstream fires when a track is added, deleted, duplicated or reordered, and
+`Seshat.Session.State`'s mirror drifts silently.
+
+| Address | Query Params | Response Params | Description |
+|---|---|---|---|
+| `/live/song/start_listen/tracks` | | | Push `/live/song/get/tracks` on every change to the track list |
+| `/live/song/stop_listen/tracks` | | | |
+| `/live/song/start_listen/return_tracks` | | | Push `/live/song/get/return_tracks` on every change to the return list |
+| `/live/song/stop_listen/return_tracks` | | | |
+
+The two push addresses are **push-only** — sent by the listener callback, never
+registered as handlers, so querying them gets silence:
+
+| Push address | Args |
+|---|---|
+| `/live/song/get/tracks` | `name0, name1, …` (regular tracks, in order) |
+| `/live/song/get/return_tracks` | `name0, name1, …` (return tracks, in send order) |
+
+- **Names only, deliberately.** The push is a change *signal*; `Session.State`
+  compares it against its mirror and re-reads everything only when it differs, so
+  this handler never becomes a second source of truth for track state.
+- Upstream registers no handler on either push address — its equivalent is
+  `/live/song/get/track_names`, a different address. No collision.
+- Neither address exists on stock AbletonOSC, so a Live without the install just
+  drops the `start_listen` messages: no error, and the mirror falls back to
+  refresh-only staleness.
+
+### `/live/startup` is acted on
+
+AbletonOSC sends `/live/startup` (see the Application API above) whenever its
+control surface initialises — Live launching, a different set being loaded, or
+AbletonOSC toggled off and on. `Seshat.Session.State` treats it as a refresh
+trigger, because by that point every listener registered against the previous
+song object is dead: without it the mirror would be stale *permanently*, not
+just until the next change.
 
 ---
 

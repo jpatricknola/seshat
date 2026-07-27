@@ -1357,7 +1357,14 @@ defmodule Seshat.Tools.Handlers do
        "Timed out reading the clip grid. Check that Ableton is running with AbletonOSC enabled."}
   end
 
-  defp do_call("get_session_state", _params) do
+  # State mirrors Ableton by push, so it is current without asking. `refresh` is
+  # the backstop for what the listeners can't see (a lost UDP push, or two
+  # identically named tracks swapping places) and blocks until the re-read is
+  # done — hence sync rather than the fire-and-forget `State.refresh/0`, which
+  # would serve the stale mirror it just asked to replace.
+  defp do_call("get_session_state", params) do
+    if Map.get(params, "refresh", false), do: State.refresh_sync()
+
     song = State.song()
     tracks = State.tracks()
 

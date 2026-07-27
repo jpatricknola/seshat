@@ -25,6 +25,21 @@ exist because a typo'd address looks exactly like success.
   track addresses only reach `song.tracks` (regular tracks) — returns and the
   master come from the second file. Any new address upstream doesn't provide
   goes there the same way.
+- **Two addresses of ours live under a prefix upstream owns**:
+  `/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
+  from
+  [priv/abletonosc/song_structure.py](../../priv/abletonosc/song_structure.py).
+  Upstream can only listen to *scalar* song properties, so nothing of its own
+  fires when tracks are added, deleted or reordered. They push on
+  `/live/song/get/tracks` and `/live/song/get/return_tracks` — push-only
+  addresses, sent by the listener and never registered, so querying them gets
+  silence. `Seshat.Session.State` treats the pushed name list as a change signal
+  and re-reads everything only when it differs from the mirror.
+- **Vendored addresses must appear as string literals in `lib/`, never
+  interpolated.** `vendored_addresses_test` greps for `"/live/…"` literals and
+  checks each against what the Python actually registers; an address built with
+  `#{}` is invisible to that tripwire, which is the only thing standing between a
+  typo and a silent no-op.
 - **A vendored getter always replies, including on its error paths** — an
   `[..., "ok", value]` / `[..., "error", message]` envelope, echoing whatever
   index it was asked about. The exception is a getter that takes no index

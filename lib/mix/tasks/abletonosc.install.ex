@@ -5,7 +5,9 @@ defmodule Mix.Tasks.Abletonosc.Install do
   Upstream AbletonOSC has no browser API, so `list_browser_items` and
   `load_device` need an extra handler on the Python side; it also reaches
   regular tracks only, so the return-track and master addresses the send/level
-  tools need come from a second one. This task copies both files from
+  tools need come from a second one; and it can only listen to *scalar* song
+  properties, so the track-list listeners that keep `Seshat.Session.State` from
+  going stale come from a third. This task copies all three files from
   `priv/abletonosc/` into AbletonOSC and registers them.
 
   ## Usage
@@ -15,7 +17,7 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
   ## What it changes
 
-  For each of `browser.py` and `return_track.py`:
+  For each of `browser.py`, `return_track.py` and `song_structure.py`:
 
   1. Copies `priv/abletonosc/<file>` -> `<install>/abletonosc/<file>`
   2. Adds its `from .<module> import <Handler>` line to `<install>/abletonosc/__init__.py`
@@ -27,8 +29,9 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
   Restart Ableton Live afterwards — or toggle AbletonOSC off and back on under
   Preferences > Link/Tempo/MIDI > Control Surface. `/live/api/reload` is not a
-  shortcut here: `reload_imports` names the modules it reloads and neither
-  `abletonosc.browser` nor `abletonosc.return_track` is among them, so it never
+  shortcut here: `reload_imports` names the modules it reloads and none of
+  `abletonosc.browser`, `abletonosc.return_track` or `abletonosc.song_structure`
+  is among them, so it never
   picks up an edit to these files, new module or not. It can also leave
   AbletonOSC with no handlers at all — see the warning in
   docs/abletonosc-api-docs.md.
@@ -48,11 +51,16 @@ defmodule Mix.Tasks.Abletonosc.Install do
       file: "return_track.py",
       init_line: "from .return_track import ReturnTrackHandler",
       manager_line: "abletonosc.ReturnTrackHandler(self),"
+    },
+    %{
+      file: "song_structure.py",
+      init_line: "from .song_structure import SongStructureHandler",
+      manager_line: "abletonosc.SongStructureHandler(self),"
     }
   ]
 
-  # Both handlers insert after the same anchor. `patch/3` is idempotent per line
-  # and each insert lands directly after the anchor, so the order the two end up
+  # Every handler inserts after the same anchor. `patch/3` is idempotent per line
+  # and each insert lands directly after the anchor, so the order they end up
   # in is arbitrary and harmless — they are independent imports.
   @init_anchor "from .midimap import MidiMapHandler"
   @manager_anchor "abletonosc.MidiMapHandler(self),"
