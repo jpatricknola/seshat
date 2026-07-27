@@ -1,8 +1,19 @@
 # Plan — Catalog result quality
 
+> **Archived 2026-07-27 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. All six parts live in
+> `Seshat.Library.Catalog` (`score/2`, `round_robin/2`, `facets/2`,
+> `diagnose/1`) and in the `search_library` / `reindex_library` clauses of
+> `Seshat.Tools.Handlers`. Part 2's ≥80% slots-by-score criterion was **not**
+> met and was amended at implementation to the 39/77 (51%) the design
+> delivers — the residual band is undifferentiable by any weighting; see the
+> commit message for the benchmark. The still-open follow-ups (samples index,
+> ranking headroom, LLM enrichment) moved to
+> [ROADMAP.md](../ROADMAP.md) § Sound catalog follow-ups.
+
 The mission-critical flow: a user describes a sound in words, and Seshat must
 surface the best loadable instrument. This plan covers the four levers from
-[ROADMAP.md](ROADMAP.md) § Catalog result quality — tag scoring, ranking,
+[ROADMAP.md](../ROADMAP.md) § Catalog result quality — tag scoring, ranking,
 informative replies, and slate diversity — as one coherent change to how
 `search_library` matches, orders, and reports.
 
@@ -38,7 +49,7 @@ its replies. No embeddings, no synonym table in the tool.
 
 Everything here is pure Elixir over the ETS table — **no OSC involvement, no
 new tools, no schema change to `catalog.json`**. The alias fold (format v2,
-[archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md))
+[archive/catalog-aliasing-options.md](catalog-aliasing-options.md))
 already ships the data this plan reads.
 
 ## OSC contract
@@ -50,7 +61,7 @@ claim, not an omission.)
 
 ## Part 1 — Matching: tags become at-least-one + scored, with normalization
 
-**File:** [lib/seshat/library/catalog.ex](../lib/seshat/library/catalog.ex)
+**File:** [lib/seshat/library/catalog.ex](../../lib/seshat/library/catalog.ex)
 (`matches_tags?/2` and a new `normalize_tag/1`).
 
 - `matches_tags?` changes from *every requested tag must match* to **at least
@@ -68,7 +79,7 @@ claim, not an omission.)
 
 ## Part 2 — Scoring: from two bands to a real ordering
 
-**File:** [lib/seshat/library/catalog.ex](../lib/seshat/library/catalog.ex)
+**File:** [lib/seshat/library/catalog.ex](../../lib/seshat/library/catalog.ex)
 (`score/2`, `haystack/1` helpers).
 
 New score, integer components, highest first in the sort:
@@ -102,7 +113,7 @@ of 150 today. Measurement procedure in Testing.
 
 ## Part 3 — Slate diversity at the cut line
 
-**File:** [lib/seshat/library/catalog.ex](../lib/seshat/library/catalog.ex)
+**File:** [lib/seshat/library/catalog.ex](../../lib/seshat/library/catalog.ex)
 (`search/1` truncation).
 
 Even a good scorer leaves tied bands on broad queries. When the score band
@@ -126,7 +137,7 @@ demotion needed.
 
 ## Part 4 — Search returns facets; a diagnose pass for zero results
 
-**File:** [lib/seshat/library/catalog.ex](../lib/seshat/library/catalog.ex).
+**File:** [lib/seshat/library/catalog.ex](../../lib/seshat/library/catalog.ex).
 
 - `search/1` returns `{entries, total, facets}` (a breaking change to an
   internal API; both callers are in `Handlers` and tests). `facets` is the tag
@@ -143,7 +154,7 @@ demotion needed.
 
 ## Part 5 — Replies that teach
 
-**File:** [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
+**File:** [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
 (`format_catalog_entries/2` → `/3`, the `search_library` and
 `reindex_library` clauses).
 
@@ -172,7 +183,7 @@ demotion needed.
 
 ## Part 6 — The tool description stops lying
 
-**File:** [lib/seshat/tools/definitions.ex](../lib/seshat/tools/definitions.ex)
+**File:** [lib/seshat/tools/definitions.ex](../../lib/seshat/tools/definitions.ex)
 (`search_library` description and its `tags` parameter). No new tool → no
 count bump in `definitions_test.exs`; MCP parity is generated.
 
@@ -203,7 +214,7 @@ one-preset-one-entry explanation survive unchanged):
 > goes straight to load_device. If the catalog is empty, say so and offer to
 > run reindex_library.
 
-At ship time, touch [TOOL_AUDIT.md](TOOL_AUDIT.md)'s `search_library` row —
+At ship time, touch [TOOL_AUDIT.md](../TOOL_AUDIT.md)'s `search_library` row —
 the strict-AND filtering and the wrong advertised vocabulary are exactly the
 kind of wart that table exists to track, and both stop being true here.
 
@@ -246,7 +257,7 @@ All pure — nothing in this plan can touch `Transport.query/3`.
 - **Opt-in `samples` index** — separate coverage item on the roadmap;
   orthogonal to ranking.
 - **`kind: device | preset` modelling** and plugin AUv2/VST3 format folding —
-  recorded in [archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md);
+  recorded in [archive/catalog-aliasing-options.md](catalog-aliasing-options.md);
   Part 3's round-robin already caps the symptom.
 - **LLM enrichment, user XMP tags, embeddings** — roadmap "Sound catalog
   follow-ups" / "not planned", unchanged.
