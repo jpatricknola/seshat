@@ -63,6 +63,33 @@ else:
    session state for track properties, `get_device_parameters` for device
    changes, `get_track_devices` after loading.
 
+## If the change touches the sound catalog
+
+`search_library`'s job is to turn a description into a loadable preset, and the
+only honest test of ranking is whether a plain ask reaches a good candidate.
+Tests cover the scoring rules; they cannot tell you the slate is *musically*
+right.
+
+- Ask for a sound in words rather than in tags — "find me a warm guitar". `Warm`
+  is not a real tag in a stock library, which is the point. **Judge the
+  conversation, not the first tool call.** If the model sends `Warm` as its only
+  tag the search correctly returns nothing (tags filter at ≥1) — what has to
+  happen next is that the reply names the failed tag and the real tags on what
+  the query alone matches, and the model retries with one of those and lands on
+  the acoustic/soft guitars. One wasted call is the designed cost; **a dead end
+  is the failure**, even though nothing errored.
+- Don't expect `nearest real tags` to appear for a word like `Warm`. That list is
+  string similarity — it rescues a typo (`Anlaog` → `Analog`) or a longer form
+  (`Warmth` → `Warm`), not a word the library has no spelling of. The nearest
+  string neighbour of "Warm" in a stock vocabulary is "Marimba" at 0.726, below
+  the threshold, and suppressing that is correct.
+- Check the slate spans devices rather than 15 neighbours from one folder, and
+  that a truncated reply lists real tags with counts you can then narrow by —
+  try one of them and confirm it does narrow.
+- Confirm the model presents 3–5 candidates with reasons instead of loading the
+  first hit unasked, then load one and confirm `search_library` favours it
+  slightly afterwards (usage counts survive a reindex).
+
 ## Clean up and report
 
 5. Delete any scratch tracks/scenes/clips you created (`delete_track`,

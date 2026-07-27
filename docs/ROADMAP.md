@@ -31,6 +31,9 @@ unlocks the catalog audition/hot-swap loop (below).
 
 ## Catalog result quality
 
+**Plan: [PLAN_catalog_result_quality.md](PLAN_catalog_result_quality.md)** —
+tag scoring + ranking + informative replies + slate diversity as one change.
+
 The catalog's job is to turn "I want a warm analog bass" into a loadable uri.
 Alias folding shipped (see
 [archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md)) and roughly doubled
