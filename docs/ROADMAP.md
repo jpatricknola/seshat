@@ -11,6 +11,22 @@ address.
 
 ---
 
+## Known bugs — `create_project`
+
+Found by the validation run (the same run that produced the push-based session
+state work, see
+[archive/PLAN_session_state_push.md](archive/PLAN_session_state_push.md)).
+"Let's start a new project" silently did *not* open a new set — it added the
+three requested tracks to the set already open. Root cause at
+[registry.ex:236](../lib/seshat/commands/registry.ex#L236):
+
+- The AppleScript targets `"Ableton Live 12"`, but the installed app is
+  `"Ableton Live 12 Suite"`. The process name is always `"Live"` — target that
+  instead of any edition-specific name.
+- No `can_undo` guard for an unsaved set.
+- Create-before-delete ordering: the new tracks land before the old set's
+  tracks are cleared.
+
 ## Priority 1 — Device removal & bypass
 
 Audit: Med-High. `load_device` + `set_device_parameter` make the device
@@ -69,11 +85,32 @@ read → remove → rewrite by hand.
 
 ## Sound catalog follow-ups
 
+[sound-search-options.md](sound-search-options.md) is the standing research
+doc for this whole area — it ranks nine levers by measured impact on the real
+dev catalog and proposes a sequence. Read it before picking any item below;
+the numbered references (№1–№9) point into it.
+
 Left out of catalog v1 (see
 [archive/PLAN_sound_catalog.md](archive/PLAN_sound_catalog.md) for context),
 plus what the result-quality work found and did not close:
 
-- **Coverage: an opt-in `samples` index.** The only category still invisible
+- **№9 eval harness that measures relevance** — do this first: it is what
+  gives every item below a number instead of an opinion. Estimated a morning's
+  work.
+- **№2 + №1 — read Ableton's tag *axes*, and teach the vocabulary
+  proactively.** The biggest certain win, and it attacks the mouth of the
+  funnel (a first-attempt vocabulary miss). Ableton's own database already
+  carries the axis each tag belongs to and the preset→device relation; the
+  tool replies should hand the model the real menu rather than make it guess.
+- **№4 widen the slate where the scorer is blind** — presentation fix for the
+  tied score band; closes the "ranking headroom" item below honestly, in
+  hours rather than by another pass over the scorer.
+- **№8 remember what a description resolved to** — accepted-search memory,
+  compounds over time.
+- **№6 audition without loading (browser preview)** — the ear-in-the-loop
+  lever; sequence it after the eval can show whether it's still needed.
+
+- **№7 coverage: an opt-in `samples` index.** The only category still invisible
   to the catalog. Excluded by design as huge and rarely tag-searched — yet it
   holds 3,567 items whose uris carry FileIds, so indexing it would be
   tag-aware for free, and today "a vinyl crackle" is unfindable despite
@@ -95,10 +132,11 @@ plus what the result-quality work found and did not close:
   separate — a graded per-term variant was measured at +1 slot across all six
   queries and rejected. Anything further wants data the catalog doesn't carry
   yet (LLM enrichment or XMP tags, both below), not another pass over the
-  scorer.
-- **LLM enrichment** for untagged/third-party items — needs an API key or an
-  MCP-client-driven tagging turn. Also the most likely source of the signal
-  the ranking item above is missing.
+  scorer — or a presentation change rather than a scoring one, which is what
+  №4 above proposes.
+- **№5 LLM enrichment** for untagged/third-party items — needs an API key or
+  an MCP-client-driven tagging turn. Highest ceiling and highest cost; buy it
+  only if the №9 eval still shows first-slate misses on thin-tagged entries.
 - **User XMP tags** — read `User Library/Ableton Folder Info/12/`.
 - **Windows DB location** for `Seshat.Library.AbletonDB` (currently macOS only;
   returns `{:error, :not_found}` cleanly elsewhere).

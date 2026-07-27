@@ -1,5 +1,18 @@
 # Session state: push-based updates for everything mirrored, plus a manual refresh backstop
 
+> **Archived 2026-07-27 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The listeners live in
+> [priv/abletonosc/song_structure.py](../../priv/abletonosc/song_structure.py),
+> [return_track.py](../../priv/abletonosc/return_track.py) and — an addition
+> this plan did not anticipate —
+> [track_listeners.py](../../priv/abletonosc/track_listeners.py), which
+> overrides five of upstream's track listeners that unbind from the wrong
+> track once an index is reused. The Elixir side is
+> [lib/seshat/session/state.ex](../../lib/seshat/session/state.ex)
+> (`stale?/2`, `refresh_sync/0`, the `/live/startup` handler). The open
+> follow-ups moved to [ROADMAP.md](../ROADMAP.md): the `create_project`
+> AppleScript bug under Priority 1.
+
 ## Context
 
 During the validation run, tracks deleted by hand in Live's UI never reached `Seshat.Session.State` — it reported 7 tracks when 3 existed. Auditing the whole mirror surface, the stale-state loopholes are:
