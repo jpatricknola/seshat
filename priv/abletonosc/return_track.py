@@ -245,7 +245,7 @@ class ReturnTrackHandler(AbletonOSCHandler):
         listener_key = ("value", tuple(listener_params))
         self._stop_listen_stored("value", listener_params)
 
-        self.logger.info("Return track: adding volume listener %s" % str(listener_params))
+        self.logger.info("Adding volume listener: %s %s" % (address, str(listener_params)))
         parameter.add_value_listener(value_changed_callback)
         self.listener_functions[listener_key] = value_changed_callback
         self.listener_objects[listener_key] = parameter

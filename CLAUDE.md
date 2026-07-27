@@ -131,9 +131,9 @@ track once an index has been reused — delete a track, rename another, and the
 mirror gets one track's name under another's index. It wins because
 `add_handler` is a dict assignment and `mix abletonosc.install` anchors our
 handlers below `TrackHandler`. That makes it the one vendored file whose absence
-is invisible: every address still answers. `vendored_addresses_test` guards both
-the anchor ordering and the fact that it covers everything
-`Session.State`'s `@listened_properties` subscribes to.
+is invisible: every address still answers. `abletonosc_install_test` guards the
+anchor ordering; `vendored_addresses_test` guards that the override covers
+everything `Session.State`'s `@listened_properties` subscribes to.
 
 ## Verification
 

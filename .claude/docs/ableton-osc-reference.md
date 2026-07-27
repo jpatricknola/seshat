@@ -49,7 +49,7 @@ tool that reports success while nothing moves in Ableton.
 
 ## Listener pattern
 
-Any gettable property can be subscribed to:
+**Scalar** properties can be subscribed to:
 
 ```
 /live/<object>/start_listen/<property>  [index_args...]
@@ -62,11 +62,36 @@ Changes are then pushed to 11001 as if they were get replies:
 /live/<object>/get/<property>  [index_args..., new_value]
 ```
 
-`Seshat.Session.State` uses this to mirror session state. Its `@listened_properties`
-list drives what it subscribes to on startup, and `handle_info` clauses absorb
-the pushes. Because pushes and query replies share a shape, a `handle_info`
-clause will also catch replies to one-off queries — keep that in mind when
-adding properties.
+Upstream registers `start_listen` only for the scalars in each handler's
+hardcoded property list. A property holding a *list of LOM objects* — `tracks`,
+`return_tracks` — is not in any of them, so nothing upstream fires when a track
+is added, deleted or reordered. Those two are ours, vendored in
+`priv/abletonosc/song_structure.py`, which pushes a tuple of names via the base
+class's optional `getter` argument. Don't assume a property is listenable
+because it is gettable; check the handler's list first.
+
+`Seshat.Session.State` uses this to mirror session state. `@listened_properties`
+and `@listened_song_properties` drive the per-track and scalar-song
+subscriptions, the two vendored structure listeners cover adds/deletes/reorders,
+and `handle_info` clauses absorb the pushes. Because pushes and query replies
+share a shape, a `handle_info` clause will also catch replies to one-off
+queries — keep that in mind when adding properties.
+
+Two gotchas that don't show in the address tables:
+
+- **An index-keyed listener must be unbound from the object it was registered
+  on.** Listeners are keyed by index but bound to a LOM object, and indices
+  renumber on delete or reorder. The base `_stop_listen` unbinds from the target
+  it is *handed*, which after a renumber is the wrong object — it fails
+  silently, the base swallows it as "likely benign", and the old listener keeps
+  pushing under an index that now means someone else. `return_track.py` and
+  `track_listeners.py` both stop via `_stop_listen_stored`; copy that for any
+  new index-keyed listener.
+- **`/live/startup` invalidates every listener.** AbletonOSC sends it whenever
+  its control surface initialises (Live launching, a set loading, the surface
+  toggled). Every listener registered against the previous song object is dead
+  by then, so `Session.State` treats it as a full refresh + re-subscribe. Without
+  that the mirror would be stale permanently, not just until the next change.
 
 ## Value conventions
 

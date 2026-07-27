@@ -23,7 +23,10 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
   # song_structure.py registers under `/live/song/`, which upstream mostly owns —
   # a prefix would sweep in every upstream song address and fail. Listed exactly
-  # instead, so a typo in either one is still caught.
+  # instead. That exactness cuts both ways: unlike a prefix, a typo'd address
+  # stops being recognised as vendored and so drops out of the check it should
+  # fail — which is what "the exactly-listed song addresses are still in use"
+  # below exists to catch.
   @vendored_song_addresses [
     "/live/song/start_listen/tracks",
     "/live/song/start_listen/return_tracks"
@@ -62,6 +65,33 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
                An unregistered address is silently dropped by AbletonOSC — add it
                to a handler in priv/abletonosc/, or fix the typo.
+               """
+      end
+    end
+
+    # The prefix entries are self-correcting: `/live/return_track/nmae` still
+    # starts with `/live/return_track/`, so it is swept into `used` and fails
+    # against the registered list. The two song addresses are admitted by exact
+    # match, so a typo on the *Elixir* side excludes itself from that check —
+    # `vendored?/1` simply stops recognising it, and `used` quietly shrinks by
+    # one (15 addresses today, so the >= 10 floor above doesn't notice either).
+    # Pinning that both are still sent is what closes that direction.
+    test "the exactly-listed song addresses are still the ones Session.State sends" do
+      sent = Enum.map(used_addresses(), fn {address, _file} -> address end)
+
+      for address <- @vendored_song_addresses do
+        assert address in sent,
+               """
+               #{address} is listed in @vendored_song_addresses, but nothing under lib/
+               sends it.
+
+               If it was typo'd on the Elixir side, that typo is invisible to the
+               used→registered test above — these two are recognised by exact match
+               only, so a misspelling stops counting as vendored instead of failing.
+               Fix the address, or drop it from @vendored_song_addresses if it is
+               genuinely no longer used.
+
+               Sent: #{Enum.join(Enum.sort(sent), ", ")}
                """
       end
     end
