@@ -2,9 +2,11 @@
 
 > **Archived 2026-07-27 — shipped.** This is the decision record as written
 > around implementation; the code as merged may differ. The fold lives in
-> `Seshat.Library.Catalog.normalize/1` (PR #19); the still-open follow-ups
-> (ranking, tag scoring, vocabulary, samples) are tracked in
-> [ROADMAP.md](../ROADMAP.md) § Catalog result quality. The plugin-territory
+> `Seshat.Library.Catalog.normalize/1` (PR #19); ranking, tag scoring and
+> vocabulary shipped after it (see
+> [PLAN_catalog_result_quality.md](PLAN_catalog_result_quality.md)) and the
+> still-open follow-ups (samples index, ranking headroom) are tracked in
+> [ROADMAP.md](../ROADMAP.md) § Sound catalog follow-ups. The plugin-territory
 > evidence near the top postdates the decision and remains the reference for
 > any future plugin folding.
 

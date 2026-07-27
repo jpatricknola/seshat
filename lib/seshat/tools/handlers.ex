@@ -138,28 +138,134 @@ defmodule Seshat.Tools.Handlers do
   of them — "Analog/Synth Lead · Operator/Synth Lead" says which devices can
   play it, which is real information for choosing. It is still shorter than the
   repeated rows it replaces.
+
+  The third argument is what makes a partial answer actionable rather than a dead
+  end: `Catalog.diagnose/1`'s map when nothing matched, so the reply can name the
+  tag that killed the search and the real ones near it, and otherwise
+  `Catalog.search/1`'s facets, so a truncated reply offers the tags that would
+  narrow it. Both carry this library's own vocabulary, which no fixed list can.
   """
-  @spec format_catalog_entries([map()], non_neg_integer()) :: String.t()
-  def format_catalog_entries([], _total) do
-    "No catalog matches. Loosen the tags first (they must all match), then the query, then the " <>
-      "category. If the catalog has never been built, run reindex_library."
+  @spec format_catalog_entries([map()], non_neg_integer(), [{String.t(), pos_integer()}] | map()) ::
+          String.t()
+  def format_catalog_entries([], _total, diagnosis) do
+    "No catalog matches.#{format_diagnosis(diagnosis)} If the catalog has never been built, " <>
+      "run reindex_library."
   end
 
-  def format_catalog_entries(entries, total) do
+  def format_catalog_entries(entries, total, facets) do
     listing =
       Enum.map_join(entries, "\n", fn entry ->
         "#{entry.name} — #{format_tags(entry.tags)}#{format_paths(entry.paths)} (#{entry.uri})"
       end)
 
     header =
-      if length(entries) < total do
-        "Showing #{length(entries)} of #{total} matches — narrow the query or add a tag to see " <>
-          "the most relevant ones."
-      else
-        "#{length(entries)} match(es):"
+      cond do
+        length(entries) >= total ->
+          "#{length(entries)} match(es):"
+
+        facets == [] ->
+          "Showing #{length(entries)} of #{total} matches — narrow the query or add a tag to " <>
+            "see the most relevant ones."
+
+        true ->
+          "Showing #{length(entries)} of #{total} matches — top tags among them: " <>
+            "#{format_tag_counts(facets)}. Add one as a tag to narrow."
       end
 
     "#{header}\n\n#{listing}"
+  end
+
+  # Nothing matched and nothing to say about why — an empty catalog, which the
+  # search_library clause reports before it ever gets here.
+  defp format_diagnosis(diagnosis) when not is_map(diagnosis), do: ""
+
+  defp format_diagnosis(diagnosis) do
+    notes =
+      Enum.map(diagnosis.tags, &tag_note/1) ++
+        [
+          constraint_note("Query", diagnosis.query, diagnosis.query_matches),
+          constraint_note("Category", diagnosis.category, diagnosis.category_matches)
+        ]
+
+    case Enum.reject(notes, &(&1 == "")) do
+      [] -> ""
+      notes -> " " <> Enum.join(notes, " ") <> " " <> retry_advice(diagnosis)
+    end
+  end
+
+  defp tag_note(%{tag: tag, matches: 0, nearest: []}) do
+    "Tag '#{tag}' matches nothing in this library."
+  end
+
+  defp tag_note(%{tag: tag, matches: 0, nearest: nearest}) do
+    "Tag '#{tag}' matches nothing in this library — nearest real tags: " <>
+      "#{format_tag_counts(nearest)}."
+  end
+
+  defp tag_note(%{tag: tag, matches: matches}), do: "'#{tag}' alone matches #{matches}."
+
+  # nil means the constraint was never set, which is not worth a sentence.
+  defp constraint_note(_label, _value, nil), do: ""
+
+  defp constraint_note(label, value, 0), do: "#{label} '#{value}' alone matches nothing."
+  defp constraint_note(label, value, matches), do: "#{label} '#{value}' alone matches #{matches}."
+
+  # Two independent things the model needs: *why* it got nothing, and *what to
+  # send next*. Folding them into one branch loses whichever it didn't pick —
+  # a combination failure with narrowing tags available needs both sentences.
+  defp retry_advice(diagnosis) do
+    [cause_note(diagnosis), narrowing_note(diagnosis)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join(" ")
+  end
+
+  # A tag that matched nothing has already been named, with its count, above.
+  defp cause_note(diagnosis) do
+    if Enum.any?(diagnosis.tags, &(&1.matches == 0)) do
+      ""
+    else
+      "Every constraint matches something on its own, so it is the combination that fails."
+    end
+  end
+
+  # Naming tags that would actually work is the difference between a dead end and
+  # a one-step retry — and string similarity can't supply them when the model
+  # guessed a word this library has no spelling of ("Warm", against a vocabulary
+  # whose nearest neighbour is "Marimba"). The tags on what the query alone
+  # reaches can.
+  defp narrowing_note(%{narrowing_tags: [_ | _] = narrowing}) do
+    "Real tags on those: #{format_tag_counts(narrowing)} — retry with one of them rather " <>
+      "than abandoning the search."
+  end
+
+  defp narrowing_note(_diagnosis) do
+    "Drop the query down to just the kind of sound, or search with fewer tags."
+  end
+
+  defp format_tag_counts(counts) do
+    Enum.map_join(counts, ", ", fn {tag, count} -> "#{tag} (#{count})" end)
+  end
+
+  @doc """
+  Formats a `Catalog.reindex/1` summary.
+
+  A reindex is when the tag vocabulary changes, so it is when the model should be
+  told what it now is — the tool description can't, since the vocabulary depends
+  on which Packs this user has installed. The distinct count says how much of it
+  the sample leaves out.
+  """
+  @spec format_reindex_summary(map()) :: String.t()
+  def format_reindex_summary(%{items: items, tagged: tagged} = summary) do
+    "Reindexed the sound catalog: #{items} item(s), #{tagged} of them tagged by Ableton. " <>
+      "#{format_vocabulary(summary)}search_library is ready."
+  end
+
+  defp format_vocabulary(%{distinct_tags: 0}), do: ""
+
+  defp format_vocabulary(%{distinct_tags: distinct, top_tags: top}) do
+    ending = if distinct > length(top), do: ", …", else: "."
+
+    "#{distinct} distinct tags — most common: #{format_tag_counts(top)}#{ending} "
   end
 
   defp format_tags([]), do: "no tags"
@@ -1080,17 +1186,20 @@ defmodule Seshat.Tools.Handlers do
          "reindex_library (Ableton must be running; it takes up to a minute), or fall back to " <>
          "list_browser_items for this search."}
     else
-      {entries, total} = Catalog.search(opts)
-      {:ok, format_catalog_entries(entries, total)}
+      {entries, total, facets} = Catalog.search(opts)
+
+      # A zero-result search is the one case worth a second scan: without it the
+      # reply can only say "loosen something", which is where the model gives up.
+      context = if total == 0, do: Catalog.diagnose(opts), else: facets
+
+      {:ok, format_catalog_entries(entries, total, context)}
     end
   end
 
   defp do_call("reindex_library", _params) do
     case Catalog.reindex() do
-      {:ok, %{items: items, tagged: tagged}} ->
-        {:ok,
-         "Reindexed the sound catalog: #{items} item(s), #{tagged} of them tagged by Ableton. " <>
-           "search_library is ready."}
+      {:ok, summary} ->
+        {:ok, format_reindex_summary(summary)}
 
       {:error, reason} ->
         {:error, "Could not reindex the library: #{inspect(reason)}"}

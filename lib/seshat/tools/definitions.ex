@@ -562,14 +562,19 @@ defmodule Seshat.Tools.Definitions do
           "PREFER THIS OVER list_browser_items — it is instant (no round-trip to Live), it " <>
           "searches folder paths and tags as well as names, and it works even when Ableton is " <>
           "closed. Fall back to list_browser_items only when this returns nothing. " <>
-          "Most presets carry tags written by Ableton's own sound designers, which is what " <>
-          "makes character-based search possible. Common character tags: Analog, Digital, " <>
-          "Acoustic, Electric, Bright, Dark, Warm, Soft, Punchy, Distorted, Clean, Sub, " <>
-          "Rhythmic, Evolving, Wide, Mono. Common kind tags: Bass, 808 Bass, Synth Bass, Lead, " <>
-          "Pad, Keys, Piano, Strings, Brass, Kick, Snare, Hi-hat, Clap, Percussion. " <>
-          "Put the kind of sound in `query` and the character in `tags` — 'a warm analog bass' " <>
-          "is query 'bass' + tags ['Analog', 'Warm']. Tag filters are strict (every tag must " <>
-          "match), so start with one or two and loosen if nothing comes back. " <>
+          "Most presets carry tags written by Ableton's own sound designers. The tag vocabulary " <>
+          "is this user's library, not a fixed list — reindex_library and every truncated " <>
+          "result report the real tags with counts; trust those over guesses. " <>
+          "Put the kind of sound in `query` and character words in `tags`: tags are scored, not " <>
+          "strict — at least one must match, and results carrying more of them rank higher, so " <>
+          "guessing ['Analog', 'Warm'] still returns the Analog matches even if 'Warm' isn't a " <>
+          "real tag here. If nothing comes back, the reply names which tag failed and lists real " <>
+          "tags carried by what your query alone matched — retry with one of those rather than " <>
+          "abandoning the search. " <>
+          "PASS `category` WHENEVER YOU KNOW THE KIND: without it a name match wins on words " <>
+          "alone, so 'electric piano' puts the Electric Piano Amp effect above every actual " <>
+          "piano. Use 'sounds' or 'instruments' for something to play, 'audio_effects' for " <>
+          "something to process it with. " <>
           "WHEN CHOOSING: weigh the musical context — the tempo, the other tracks and the genre " <>
           "from get_session_state and from what the user has said — and present the top 3–5 " <>
           "candidates with a one-line reason each, then let the user pick. Only load the first " <>
@@ -593,8 +598,10 @@ defmodule Seshat.Tools.Definitions do
             type: "array",
             items: %{type: "string"},
             description:
-              "Tags the item must ALL carry, e.g. ['Analog', 'Punchy']. Matched " <>
-                "case-insensitively as substrings, so 'bass' also matches '808 Bass'."
+              "Character or kind tags, e.g. ['Analog', 'Soft']. At least one must match; the " <>
+                "more that match, the higher the result ranks. Case-insensitive, " <>
+                "punctuation-insensitive substrings — 'bass' matches '808 Bass', 'hi-hat' " <>
+                "matches 'Closed Hihat'."
           },
           "category" => %{
             type: "string",

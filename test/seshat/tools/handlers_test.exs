@@ -144,7 +144,7 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
-  describe "format_catalog_entries/2" do
+  describe "format_catalog_entries/3" do
     defp entry(overrides) do
       Map.merge(
         %{
@@ -164,7 +164,7 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "leads with the tags, since they are what the model picks on" do
-      result = Handlers.format_catalog_entries([entry(%{})], 1)
+      result = Handlers.format_catalog_entries([entry(%{})], 1, [])
 
       assert result =~ "1 match(es)"
 
@@ -174,7 +174,7 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "says so when an item has no tags at all" do
-      result = Handlers.format_catalog_entries([entry(%{tags: [], paths: [""]})], 1)
+      result = Handlers.format_catalog_entries([entry(%{tags: [], paths: [""]})], 1, [])
 
       assert result =~ "808 Drifter.adg — no tags (query:Sounds#Bass:FileId_5200)"
     end
@@ -191,7 +191,8 @@ defmodule Seshat.Tools.HandlersTest do
               paths: ["Analog/Synth Lead", "Operator/Synth Lead", "Synth Lead"]
             })
           ],
-          1
+          1,
+          []
         )
 
       assert result =~
@@ -200,17 +201,144 @@ defmodule Seshat.Tools.HandlersTest do
       assert result =~ "1 match(es)"
     end
 
-    test "flags truncation" do
-      result = Handlers.format_catalog_entries([entry(%{})], 42)
+    test "a truncated result offers the tags that would narrow it" do
+      # The vocabulary is per-machine, so the reply is the only honest place to
+      # advertise it — and a truncated result is where the model needs it.
+      result =
+        Handlers.format_catalog_entries(
+          [entry(%{})],
+          127,
+          [{"Analog", 40}, {"FM", 22}, {"Evolving", 18}]
+        )
 
-      assert result =~ "Showing 1 of 42 matches"
+      assert result =~
+               "Showing 1 of 127 matches — top tags among them: Analog (40), FM (22), " <>
+                 "Evolving (18). Add one as a tag to narrow."
     end
 
-    test "tells the model how to loosen a search that found nothing" do
-      result = Handlers.format_catalog_entries([], 0)
+    test "falls back to generic advice when there are no narrowing tags" do
+      result = Handlers.format_catalog_entries([entry(%{})], 42, [])
 
-      assert result =~ "No catalog matches"
+      assert result =~ "Showing 1 of 42 matches — narrow the query or add a tag"
+    end
+
+    test "a search that found nothing routes the model to tags that would work" do
+      # The recovery the ≥1 tag filter is predicated on: one wasted call, then a
+      # retry against named tags rather than another guess.
+      result =
+        Handlers.format_catalog_entries([], 0, %{
+          query: "guitar",
+          query_matches: 187,
+          category: nil,
+          category_matches: nil,
+          narrowing_tags: [{"Snappy", 38}, {"Acoustic", 20}],
+          tags: [%{tag: "Warm", matches: 0, nearest: []}]
+        })
+
+      assert result =~
+               "No catalog matches. Tag 'Warm' matches nothing in this library. Query 'guitar' " <>
+                 "alone matches 187. Real tags on those: Snappy (38), Acoustic (20) — retry " <>
+                 "with one of them rather than abandoning the search."
+    end
+
+    test "a search that found nothing names the tag that killed it" do
+      result =
+        Handlers.format_catalog_entries([], 0, %{
+          query: "bass",
+          query_matches: 412,
+          category: nil,
+          category_matches: nil,
+          narrowing_tags: [],
+          tags: [
+            %{tag: "Warm", matches: 0, nearest: [{"Warmth", 12}, {"Warp", 4}]},
+            %{tag: "Analog", matches: 638, nearest: []}
+          ]
+        })
+
+      assert result =~
+               "No catalog matches. Tag 'Warm' matches nothing in this library — nearest real " <>
+                 "tags: Warmth (12), Warp (4). 'Analog' alone matches 638. Query 'bass' alone " <>
+                 "matches 412. Drop the query down to just the kind of sound, or search with " <>
+                 "fewer tags."
+
       assert result =~ "reindex_library"
+    end
+
+    test "when every constraint matches alone, it says the combination is the problem" do
+      result =
+        Handlers.format_catalog_entries([], 0, %{
+          query: "bass",
+          query_matches: 412,
+          category: "drums",
+          category_matches: 88,
+          narrowing_tags: [{"Kick", 22}, {"Sub", 19}],
+          tags: [%{tag: "Analog", matches: 638, nearest: []}]
+        })
+
+      assert result =~ "'Analog' alone matches 638."
+      assert result =~ "Query 'bass' alone matches 412."
+      assert result =~ "Category 'drums' alone matches 88."
+
+      # Why it failed and what to send next are separate things the model needs;
+      # neither should swallow the other.
+      assert result =~
+               "Every constraint matches something on its own, so it is the combination that " <>
+                 "fails. Real tags on those: Kick (22), Sub (19) — retry with one of them"
+    end
+
+    test "a tag with no near neighbours is still named" do
+      result =
+        Handlers.format_catalog_entries([], 0, %{
+          query: nil,
+          query_matches: nil,
+          category: nil,
+          category_matches: nil,
+          narrowing_tags: [],
+          tags: [%{tag: "Zzz", matches: 0, nearest: []}]
+        })
+
+      assert result =~ "Tag 'Zzz' matches nothing in this library."
+      refute result =~ "nearest real tags"
+      refute result =~ "Query"
+    end
+
+    test "an empty catalog gets no diagnosis to report" do
+      # search_library reports the unbuilt catalog before it ever formats a
+      # result, so this is only the belt-and-braces path.
+      result = Handlers.format_catalog_entries([], 0, [])
+
+      assert result ==
+               "No catalog matches. If the catalog has never been built, run " <>
+                 "reindex_library."
+    end
+  end
+
+  describe "reindex_library reply" do
+    test "reports the library's real tag vocabulary" do
+      # Where the model learns the local tags, exactly when they change.
+      assert Handlers.format_reindex_summary(%{
+               items: 5795,
+               tagged: 5760,
+               distinct_tags: 214,
+               top_tags: [{"One Shot", 2483}, {"Punchy", 861}]
+             }) ==
+               "Reindexed the sound catalog: 5795 item(s), 5760 of them tagged by Ableton. " <>
+                 "214 distinct tags — most common: One Shot (2483), Punchy (861), … " <>
+                 "search_library is ready."
+    end
+
+    test "a catalog with no tags at all says nothing about tags" do
+      result =
+        Handlers.format_reindex_summary(%{
+          items: 3,
+          tagged: 0,
+          distinct_tags: 0,
+          top_tags: []
+        })
+
+      assert result ==
+               "Reindexed the sound catalog: 3 item(s), 0 of them tagged by Ableton. " <>
+                 "search_library is ready."
     end
   end
 
@@ -223,6 +351,80 @@ defmodule Seshat.Tools.HandlersTest do
       assert msg =~ "empty"
       assert msg =~ "reindex_library"
     end
+  end
+
+  # The clause's own wiring — which reply shape a search resolves to — is not
+  # covered by formatting these by hand. It is all ETS, so it costs nothing to
+  # drive the real dispatch. The catalog is started under its real name because
+  # that is the table the handler reads.
+  describe "search_library against a populated catalog" do
+    setup do
+      path =
+        Path.join([
+          System.tmp_dir!(),
+          "seshat-handlers-catalog-#{System.unique_integer([:positive])}",
+          "catalog.json"
+        ])
+
+      server = start_supervised!({Seshat.Library.Catalog, path: path})
+      _ = :sys.get_state(server)
+
+      {:ok, _summary} =
+        GenServer.call(
+          server,
+          {:replace,
+           [
+             catalog_entry("Nylon Guitar.adg", "q:1", ["Acoustic", "Soft"]),
+             catalog_entry("Steel Guitar.adg", "q:2", ["Acoustic", "Bright"]),
+             catalog_entry("Glass Pad.adg", "q:3", ["Pad"])
+           ]}
+        )
+
+      on_exit(fn -> File.rm_rf(Path.dirname(path)) end)
+
+      :ok
+    end
+
+    test "a zero-result search comes back diagnosed, not merely empty" do
+      # 'Warm' is not a tag here, so the ≥1 filter zeroes the search — and the
+      # reply has to make the retry obvious rather than ending the thread.
+      assert {:ok, reply} =
+               Handlers.call("search_library", %{"query" => "guitar", "tags" => ["Warm"]})
+
+      assert reply =~ "Tag 'Warm' matches nothing in this library."
+      assert reply =~ "Query 'guitar' alone matches 2."
+      assert reply =~ "Real tags on those: Bright (1), Soft (1)"
+    end
+
+    test "a search that matches comes back as a listing, with no diagnosis" do
+      assert {:ok, reply} = Handlers.call("search_library", %{"query" => "guitar"})
+
+      assert reply =~ "2 match(es)"
+      assert reply =~ "Nylon Guitar.adg — Acoustic, Soft"
+      refute reply =~ "matches nothing"
+    end
+
+    test "a truncated search offers the tags that would narrow it" do
+      assert {:ok, reply} =
+               Handlers.call("search_library", %{"query" => "guitar", "max_results" => 1})
+
+      assert reply =~ "Showing 1 of 2 matches — top tags among them:"
+    end
+  end
+
+  defp catalog_entry(name, uri, tags) do
+    %{
+      uri: uri,
+      uris: [uri],
+      name: name,
+      categories: ["sounds"],
+      paths: ["Test"],
+      tags: tags,
+      tag_source: :ableton,
+      description: nil,
+      use_count: 0,
+      last_loaded_at: nil
+    }
   end
 
   describe "format_device_chain/4" do

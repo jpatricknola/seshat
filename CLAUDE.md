@@ -47,6 +47,14 @@ still has no database of its own. In dev the catalog is redirected to the
 project root (`:catalog_path` in [config/dev.exs](config/dev.exs), gitignored)
 so it can be read by eye; every other environment uses the `~/.seshat/` default.
 
+Searching it is *scored*, not filtered: requested tags need only match one to
+qualify and matching more ranks higher, the score band straddling the result
+cut round-robins across device roots so a slate spans devices rather than
+alphabetical neighbours, and the replies teach the model this library's real
+tag vocabulary (facets on a truncated result, `diagnose/1` on a zero-result,
+top tags in `reindex_library`'s reply). The vocabulary depends on installed
+Packs, so it is never hardcoded in a tool description.
+
 ## Module map
 
 | Path | Role |

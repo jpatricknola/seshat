@@ -52,6 +52,22 @@ defmodule Seshat.Library.Catalog do
 
   @default_max_results 15
 
+  # A truncated result reports the tags that would narrow it, and a reindex
+  # reports the library's most common ones — both so the model learns the local
+  # vocabulary instead of guessing from a hardcoded list that can't be right on
+  # every machine.
+  @facet_limit 6
+  @vocabulary_sample 6
+
+  # A tag carried by most of the match set can't narrow it, so it is no use as a
+  # narrowing suggestion however frequent it is.
+  @facet_ubiquity 0.6
+
+  # For a requested tag the library doesn't have: how close a real tag has to be
+  # to be worth suggesting, and how many to suggest.
+  @nearest_tag_distance 0.75
+  @nearest_tag_limit 3
+
   # A `row` is one browser location: exactly what the export walked, one per
   # place a preset appears. `merge/2` produces rows. An `entry` is one preset —
   # what search and the model deal in — produced by folding a preset's rows
@@ -97,34 +113,101 @@ defmodule Seshat.Library.Catalog do
 
     * `:query` — case-insensitive AND-of-terms over name, path, tags and
       description
-    * `:tags` — every tag listed must be on the entry
+    * `:tags` — at least one must match; the more that match, the higher the
+      entry ranks (see `score/2`)
     * `:category` — restrict to one browser category
     * `:max_results` — defaults to #{@default_max_results}
     * `:table` — ETS table to read (tests only)
+    * `:now` — reference time for the recency bonus (tests only)
 
-  Returns `{entries, total_matches}` so the caller can tell "that's all of
-  them" from "there are more". A full scan at catalog scale (10–20k rows) is
-  single-digit milliseconds, so there is no index to keep in sync.
+  Returns `{entries, total_matches, facets}`. `total_matches` lets the caller
+  tell "that's all of them" from "there are more"; `facets` is the tag frequency
+  across *all* matches, which is what a truncated reply offers as the way to
+  narrow — empty unless the result was actually truncated. A full scan at
+  catalog scale (10–20k rows) is single-digit milliseconds, so there is no index
+  to keep in sync.
   """
-  @spec search(keyword()) :: {[entry()], non_neg_integer()}
+  @spec search(keyword()) :: {[entry()], non_neg_integer(), [{String.t(), pos_integer()}]}
   def search(opts \\ []) do
-    table = Keyword.get(opts, :table, @table)
     max_results = Keyword.get(opts, :max_results, @default_max_results)
+    opts = Keyword.put_new_lazy(opts, :now, &DateTime.utc_now/0)
 
-    entries =
-      case :ets.info(table) do
-        :undefined -> []
-        _ -> :ets.select(table, [{{:_, :"$1"}, [], [:"$1"]}])
-      end
-
-    matches = Enum.filter(entries, &matches?(&1, opts))
+    matches =
+      opts
+      |> Keyword.get(:table, @table)
+      |> scan()
+      |> Enum.filter(&matches?(&1, opts))
 
     ranked =
       matches
-      |> Enum.sort_by(&{-score(&1, opts), &1.name})
-      |> Enum.take(max_results)
+      |> Enum.map(&{score(&1, opts), &1})
+      # uri, not name: deterministic across reindexes, where the alphabetical
+      # tie-break used to decide almost every slot by itself.
+      |> Enum.sort_by(fn {score, entry} -> {-score, entry.uri} end)
+      |> take_diverse(max_results)
 
-    {ranked, length(matches)}
+    total = length(matches)
+    facets = if total > length(ranked), do: facets(matches, opts), else: []
+
+    {ranked, total, facets}
+  end
+
+  @doc """
+  Explain a search that matched nothing, so the model's next attempt is informed
+  rather than another guess.
+
+  Reports what each constraint matches *on its own* — the combination failed, so
+  the useful question is which part of it — and, for a requested tag the library
+  simply doesn't have, the nearest tags it does have with their counts. The tag
+  vocabulary is per-machine (it depends on installed Packs), so this is the only
+  honest way to advertise it.
+
+  `nearest` is string similarity, which only rescues a typo or a longer form of a
+  real tag. It cannot rescue a word the library has no spelling of at all —
+  nothing in a stock library is within jaro 0.75 of "Warm", and the semantically
+  right answer (`Soft`) is not textually near it. `narrowing_tags` is what makes
+  that case recoverable: the real tags carried by what the *query* alone matches,
+  which is a concrete set to retry with rather than an instruction to guess
+  again.
+
+  Pure, and only worth its extra scan when `search/1` returned nothing.
+  """
+  @spec diagnose(keyword()) :: %{
+          query: String.t() | nil,
+          query_matches: non_neg_integer() | nil,
+          category: String.t() | nil,
+          category_matches: non_neg_integer() | nil,
+          narrowing_tags: [{String.t(), pos_integer()}],
+          tags: [
+            %{
+              tag: String.t(),
+              matches: non_neg_integer(),
+              nearest: [{String.t(), pos_integer()}]
+            }
+          ]
+        }
+  def diagnose(opts \\ []) do
+    entries = opts |> Keyword.get(:table, @table) |> scan()
+    query = Keyword.get(opts, :query)
+    category = Keyword.get(opts, :category)
+    vocabulary = tag_counts(entries)
+
+    # What the query alone reaches — the set the model should be retrying
+    # against. With no query at all, the whole catalog is that set.
+    scope = if blank?(query), do: entries, else: Enum.filter(entries, &matches_query?(&1, query))
+
+    %{
+      query: query,
+      query_matches: if(blank?(query), do: nil, else: length(scope)),
+      category: category,
+      category_matches: count_unless_blank(entries, category, &matches_category?/2),
+      narrowing_tags: facets(scope, opts),
+      tags:
+        opts
+        |> Keyword.get(:tags)
+        |> List.wrap()
+        |> Enum.map(&diagnose_tag(&1, entries, vocabulary))
+    }
   end
 
   @doc "How many entries the catalog currently holds."
@@ -141,9 +224,19 @@ defmodule Seshat.Library.Catalog do
 
   Both halves are captured in this one pass — see the module doc on why they
   must not be mixed across passes. Existing usage counters survive.
+
+  The success shape carries the library's tag vocabulary as well as its size, so
+  the reply can teach the model the tags this machine actually has.
   """
   @spec reindex(atom()) ::
-          {:ok, %{items: non_neg_integer(), tagged: non_neg_integer()}} | {:error, term()}
+          {:ok,
+           %{
+             items: non_neg_integer(),
+             tagged: non_neg_integer(),
+             distinct_tags: non_neg_integer(),
+             top_tags: [{String.t(), pos_integer()}]
+           }}
+          | {:error, term()}
   def reindex(server \\ __MODULE__) do
     export_path =
       Path.join(
@@ -367,16 +460,20 @@ defmodule Seshat.Library.Catalog do
     Enum.all?(terms(query), &String.contains?(haystack, &1))
   end
 
+  # At least one requested tag, not all of them: a strict AND meant one tag the
+  # library doesn't have zeroed the whole search, and the advertised vocabulary
+  # is a guess by construction. How *many* matched moves into `score/2`, so tags
+  # still order the slate — they just no longer empty it. Keeping the
+  # one-tag-minimum rather than scoring alone is what keeps `tags` meaningful:
+  # with no filter, `tags: ["Analog"]` would "match" the entire catalog and the
+  # total the reply reports would stop meaning anything.
   defp matches_tags?(_entry, nil), do: true
   defp matches_tags?(_entry, []), do: true
 
   defp matches_tags?(entry, tags) do
-    entry_tags = Enum.map(entry.tags, &String.downcase/1)
+    entry_tags = normalize_tags(entry)
 
-    Enum.all?(tags, fn tag ->
-      wanted = String.downcase(tag)
-      Enum.any?(entry_tags, &String.contains?(&1, wanted))
-    end)
+    Enum.any?(tags, &(tag_match(entry_tags, &1) != :none))
   end
 
   defp matches_category?(_entry, nil), do: true
@@ -398,24 +495,289 @@ defmodule Seshat.Library.Catalog do
     |> String.split(~r/\s+/, trim: true)
   end
 
-  # A name hit beats a hit buried in the folder path or description, and
-  # something the user has actually loaded before beats something they haven't.
-  defp score(entry, opts) do
-    name = String.downcase(entry.name)
+  # Tags fold to bare alphanumerics on both sides, so 'hi-hat' reaches
+  # 'Closed Hihat' and 'pads' reaches 'Pad' — mechanical string folding, not
+  # semantics. Mapping "warm" onto Soft/Acoustic is the model's job.
+  defp normalize_tag(tag) do
+    tag |> String.downcase() |> String.replace(~r/[^\p{L}\p{N}]+/u, "")
+  end
+
+  defp normalize_tags(entry) do
+    Enum.map(entry.tags, fn tag ->
+      {normalize_tag(tag), tokens(String.downcase(tag))}
+    end)
+  end
+
+  # `:exact` | `:substring` | `:none`, strongest first — a requested tag scores
+  # one or the other, never both. Substring semantics are kept from the strict-AND
+  # days (`bass` still reaches `808 Bass`) but no longer look the same as a
+  # deliberate hit, which is most of the ranking signal tags now carry.
+  # Each entry tag arrives as `{normalized, words}` — 'Closed Hihat' as
+  # `{"closedhihat", ["closed", "hihat"]}` — because the two forms answer
+  # different questions and normalizing destroys the word boundaries the plural
+  # rule needs.
+  defp tag_match(entry_tags, requested) do
+    wanted = normalize_tag(requested)
+    # A plural the library spells singular. The stripped form may match a tag
+    # whole, or match one whole *word* of a multi-word tag — never a bare
+    # substring of one. That distinction is the whole rule: as a substring
+    # 'bass' becomes 'bas' and drags in all 598 'Basic' presets, while as a word
+    # 'hihats' correctly reaches the 395 'Closed/Open/Pedal Hihat' ones.
+    singular = depluralize(wanted)
+
+    cond do
+      wanted == "" ->
+        :none
+
+      Enum.any?(entry_tags, fn {tag, _words} -> tag == wanted end) ->
+        :exact
+
+      singular != "" and Enum.any?(entry_tags, fn {tag, _words} -> tag == singular end) ->
+        :exact
+
+      Enum.any?(entry_tags, fn {tag, _words} -> String.contains?(tag, wanted) end) ->
+        :substring
+
+      singular != "" and Enum.any?(entry_tags, fn {_tag, words} -> singular in words end) ->
+        :substring
+
+      true ->
+        :none
+    end
+  end
+
+  defp depluralize(tag) do
+    case String.replace_suffix(tag, "s", "") do
+      ^tag -> ""
+      singular -> singular
+    end
+  end
+
+  @doc """
+  Rank one entry against the search options. Higher sorts first.
+
+  | component | value |
+  |---|---|
+  | requested tag matched exactly (normalized) | +4 each |
+  | requested tag matched as a substring only | +2 each |
+  | every query term a whole token in the name | +6 |
+  | every query term a substring of the name | +4 |
+  | at least one query term in the name | +2 |
+  | every query term found in name or tags | +2 |
+  | tagged by Ableton rather than by folder path | +1 |
+  | usage | `min(use_count, 3)`, +2 loaded within 14 days, +1 within 90 |
+
+  The three name components are one tiered `cond` — only the highest applicable
+  one counts, so `Pad` the whole word beats `pad` inside "Padlock" rather than
+  scoring on top of it. Everything else stacks. The point of the spread is that
+  ties should be *rare*: before this, five of six realistic searches had every
+  returned slot decided by the alphabetical tie-break rather than by score.
+  """
+  @spec score(entry(), keyword()) :: integer()
+  def score(entry, opts) do
     query_terms = terms(Keyword.get(opts, :query) || "")
+    name = String.downcase(entry.name)
+    name_tokens = tokens(name)
 
     name_score =
       cond do
         query_terms == [] -> 0
+        Enum.all?(query_terms, &(&1 in name_tokens)) -> 6
         Enum.all?(query_terms, &String.contains?(name, &1)) -> 4
         Enum.any?(query_terms, &String.contains?(name, &1)) -> 2
         true -> 0
       end
 
-    tag_score = if entry.tag_source == :ableton, do: 1, else: 0
-
-    name_score + tag_score + min(entry.use_count, 3)
+    name_score + kind_score(entry, name, query_terms) + tag_score(entry, opts) +
+      source_score(entry) + usage_score(entry, Keyword.get(opts, :now))
   end
+
+  # The words for what a sound *is* live in its name and its tags; a term found
+  # only in the folder path or in the "Created by:" credit line is a weaker hit.
+  defp kind_score(_entry, _name, []), do: 0
+
+  defp kind_score(entry, name, query_terms) do
+    haystack = Enum.join([name | Enum.map(entry.tags, &String.downcase/1)], " ")
+
+    if Enum.all?(query_terms, &String.contains?(haystack, &1)), do: 2, else: 0
+  end
+
+  defp tag_score(entry, opts) do
+    case List.wrap(Keyword.get(opts, :tags)) do
+      [] ->
+        0
+
+      requested ->
+        entry_tags = normalize_tags(entry)
+
+        Enum.reduce(requested, 0, fn tag, total ->
+          case tag_match(entry_tags, tag) do
+            :exact -> total + 4
+            :substring -> total + 2
+            :none -> total
+          end
+        end)
+    end
+  end
+
+  defp source_score(%{tag_source: :ableton}), do: 1
+  defp source_score(_entry), do: 0
+
+  # Recency-decayed rather than flat: something loaded last week is a better bet
+  # than something loaded once a year ago.
+  defp usage_score(entry, now) do
+    min(entry.use_count, 3) + recency_score(entry.last_loaded_at, now)
+  end
+
+  defp recency_score(nil, _now), do: 0
+  defp recency_score(_timestamp, nil), do: 0
+
+  defp recency_score(timestamp, now) do
+    case DateTime.from_iso8601(timestamp) do
+      {:ok, loaded, _offset} ->
+        case DateTime.diff(now, loaded, :day) do
+          days when days <= 14 -> 2
+          days when days <= 90 -> 1
+          _older -> 0
+        end
+
+      {:error, _reason} ->
+        0
+    end
+  end
+
+  defp tokens(text), do: String.split(text, ~r/[^\p{L}\p{N}]+/u, trim: true)
+
+  # --- Truncation (pure) ---
+
+  # Even a good scorer leaves tied bands on a broad query, and taking a tie in
+  # sort order hands every remaining slot to one corner of the library — the 26
+  # Apple utility AUs flooding a "reverb" slate is the same effect the old
+  # alphabetical sort had, one letter at a time. Bands that fit are taken whole;
+  # only the band straddling the cut is rotated, across device roots, so the
+  # slate spans devices instead of neighbours.
+  defp take_diverse(_scored, max_results) when max_results <= 0, do: []
+
+  defp take_diverse(scored, max_results) do
+    scored
+    |> Enum.chunk_by(fn {score, _entry} -> score end)
+    |> Enum.reduce_while({[], max_results}, fn band, {taken, remaining} ->
+      entries = Enum.map(band, fn {_score, entry} -> entry end)
+
+      cond do
+        remaining <= 0 -> {:halt, {taken, 0}}
+        length(entries) <= remaining -> {:cont, {taken ++ entries, remaining - length(entries)}}
+        true -> {:halt, {taken ++ round_robin(entries, remaining), 0}}
+      end
+    end)
+    |> elem(0)
+  end
+
+  defp round_robin(entries, count) do
+    groups = Enum.group_by(entries, &device_root/1)
+
+    entries
+    |> Enum.map(&device_root/1)
+    |> Enum.uniq()
+    |> Enum.map(&Map.fetch!(groups, &1))
+    |> interleave()
+    |> Enum.take(count)
+  end
+
+  # Order within a group stays uri-sorted, and groups keep the order they first
+  # appear in, so the rotation is deterministic.
+  defp interleave([]), do: []
+
+  defp interleave(lists) do
+    {heads, rests} =
+      Enum.reduce(lists, {[], []}, fn [head | rest], {heads, rests} ->
+        {[head | heads], if(rest == [], do: rests, else: [rest | rests])}
+      end)
+
+    Enum.reverse(heads) ++ interleave(Enum.reverse(rests))
+  end
+
+  # The device a preset is filed under — `Operator`, `Analog`, `AUv2`. Taking the
+  # first path unconditionally would not rotate across devices at all: a preset's
+  # `sounds` path carries no device prefix, so an Operator bass (`["Bass",
+  # "Operator/Bass"]`) would group under `Bass` while an Analog one
+  # (`["Analog/Bass", "Bass"]`) groups under `Analog`, purely by accident of the
+  # device's initial. Hence the first *device-prefixed* path, with the bare
+  # character folder as the fallback for presets that only have those.
+  defp device_root(entry) do
+    paths = List.wrap(entry.paths)
+    path = Enum.find(paths, &String.contains?(&1, "/")) || List.first(paths) || ""
+
+    path |> String.split("/") |> List.first() || ""
+  end
+
+  # --- Facets and diagnosis (pure) ---
+
+  # What the model could add to narrow a truncated result. A tag it already asked
+  # for narrows nothing, and neither does one carried by most of the match set.
+  defp facets(matches, opts) do
+    requested =
+      opts
+      |> Keyword.get(:tags)
+      |> List.wrap()
+      |> Enum.flat_map(fn tag ->
+        normalized = normalize_tag(tag)
+        [normalized, depluralize(normalized)]
+      end)
+      |> MapSet.new()
+
+    ceiling = length(matches) * @facet_ubiquity
+
+    matches
+    |> tag_counts()
+    |> Enum.reject(fn {tag, count} ->
+      MapSet.member?(requested, normalize_tag(tag)) or count > ceiling
+    end)
+    |> Enum.sort_by(fn {tag, count} -> {-count, tag} end)
+    |> Enum.take(@facet_limit)
+  end
+
+  defp diagnose_tag(tag, entries, vocabulary) do
+    matches = Enum.count(entries, &matches_tags?(&1, [tag]))
+
+    %{
+      tag: tag,
+      matches: matches,
+      nearest: if(matches == 0, do: nearest_tags(tag, vocabulary), else: [])
+    }
+  end
+
+  # A tag the library doesn't have is a dead end unless the reply says what it
+  # *does* have. Jaro catches a misspelling or a near-miss ('Warm' → 'Warmth');
+  # containment catches the requested tag being a longer form of a real one,
+  # which the substring matcher can't see because it only looks the other way.
+  defp nearest_tags(tag, vocabulary) do
+    wanted = normalize_tag(tag)
+
+    vocabulary
+    |> Enum.filter(fn {real, _count} ->
+      normalized = normalize_tag(real)
+
+      normalized != "" and wanted != "" and
+        (String.jaro_distance(wanted, normalized) >= @nearest_tag_distance or
+           String.contains?(normalized, wanted) or String.contains?(wanted, normalized))
+    end)
+    |> Enum.sort_by(fn {real, count} -> {-count, real} end)
+    |> Enum.take(@nearest_tag_limit)
+  end
+
+  defp tag_counts(entries) do
+    entries |> Enum.flat_map(& &1.tags) |> Enum.frequencies()
+  end
+
+  # A constraint that wasn't set has no count to report — nil, not zero, so the
+  # reply can tell "matches nothing" from "wasn't asked for".
+  defp count_unless_blank(_entries, constraint, _matcher) when constraint in [nil, ""], do: nil
+
+  defp count_unless_blank(entries, constraint, matcher),
+    do: Enum.count(entries, &matcher.(&1, constraint))
+
+  defp blank?(value), do: value in [nil, ""]
 
   # --- Server callbacks ---
 
@@ -464,15 +826,15 @@ defmodule Seshat.Library.Catalog do
     :ets.delete_all_objects(state.table)
     insert_all(state.table, entries)
 
-    tagged = Enum.count(entries, &(&1.tag_source == :ableton))
+    summary = summarise(entries)
 
     case write_file(state.path, entries) do
       :ok ->
-        {:reply, {:ok, %{items: length(entries), tagged: tagged}}, state}
+        {:reply, {:ok, summary}, state}
 
       {:error, reason} ->
         Logger.warning("Catalog: could not write #{state.path}: #{inspect(reason)}")
-        {:reply, {:ok, %{items: length(entries), tagged: tagged}}, state}
+        {:reply, {:ok, summary}, state}
     end
   end
 
@@ -561,6 +923,15 @@ defmodule Seshat.Library.Catalog do
     :ets.select(table, [{{:_, :"$1"}, [], [:"$1"]}])
   end
 
+  # Search and diagnose read the table directly and must answer before the first
+  # reindex has created it — an unbuilt catalog is empty, not an error.
+  defp scan(table) do
+    case :ets.info(table) do
+      :undefined -> []
+      _info -> all_entries(table)
+    end
+  end
+
   # The table is keyed by canonical uri only, but a load can arrive via any
   # of a preset's alias uris — from list_browser_items, or remembered from
   # before a reindex shifted the canonical pick. The counter belongs to the
@@ -571,6 +942,24 @@ defmodule Seshat.Library.Catalog do
       [{^uri, entry}] -> entry
       [] -> Enum.find(all_entries(table), &(uri in &1.uris))
     end
+  end
+
+  # The reindex reply is the one place the model learns this library's real tag
+  # vocabulary, exactly when it changes — and this callback is the only place the
+  # fresh entry list is already in hand. A hardcoded list in the tool description
+  # can't be right on every machine; installed Packs decide the vocabulary.
+  defp summarise(entries) do
+    counts = tag_counts(entries)
+
+    %{
+      items: length(entries),
+      tagged: Enum.count(entries, &(&1.tag_source == :ableton)),
+      distinct_tags: map_size(counts),
+      top_tags:
+        counts
+        |> Enum.sort_by(fn {tag, count} -> {-count, tag} end)
+        |> Enum.take(@vocabulary_sample)
+    }
   end
 
   defp insert_all(table, entries) do

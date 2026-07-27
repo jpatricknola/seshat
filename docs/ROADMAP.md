@@ -29,75 +29,6 @@ unlocks the catalog audition/hot-swap loop (below).
   description the trick.
 - Reordering the chain is out of scope until a workflow demands it.
 
-## Catalog result quality
-
-The catalog's job is to turn "I want a warm analog bass" into a loadable uri.
-Alias folding shipped (see
-[archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md)) and roughly doubled
-the distinct presets a 25-slot search offers. These are the remaining levers,
-measured against a real 8,222-row catalog and ordered by impact.
-
-- **Ranking has almost no signal.** `score/1` is `name_score(0|2|4) +
-  tag_source(0|1) + min(use_count, 3)`, and in practice the middle term is
-  always 1 and the last always 0 — so a match set collapses into two score
-  bands. Re-measured *after* the fold, on the folded catalog: in 5 of 6
-  realistic searches **zero** slots were decided by score; all 25 came from
-  the alphabetical `&1.name` tie-break among 47–86 entries tied at the top
-  band. Folding halved the match sets ("electric piano" 294 → 127) but they
-  are still 4–7× the 25-slot cap, so it did not dent this. The effective
-  behaviour is *filter, sort alphabetically, take 25*:
-
-  ```
-  query                    score bands          slots by score / alphabetical
-  electric piano           score5:70 score1:57            0 / 25
-  a distorted guitar amp   score5:70 score1:117           0 / 25
-  an 808 bass              score5:86 score1:10            0 / 25
-  a bright synth lead      score5:49 score1:52            0 / 25
-  a soft evolving pad      score5:47 score1:19            0 / 25
-  plucked strings          score5:1  score1:175           1 / 24
-  ```
-
-  Available and unused: how many requested tags matched, whole-token vs
-  substring hits, name vs path vs the `description` credit line, category fit.
-  Make the tie-break deterministic (`uri`) while there — but the goal is to
-  make ties rare, not merely stable.
-- **Tags filter when they should score.** `matches_tags?` is a strict AND, so
-  one tag the library doesn't have zeroes the whole search. Scoring tag
-  overlap instead fixes the zero-result failure *and* supplies the signal the
-  point above needs.
-- **The advertised tag vocabulary is wrong.** `search_library`'s description
-  lists 30 tags; `Warm`, `Wide`, `Mono` and `Hi-hat` do not exist in the
-  catalog — and its own worked example, "'a warm analog bass' is query 'bass'
-  + tags ['Analog', 'Warm']", returns **nothing**. (`Hi-hat` fails on the
-  hyphen: the real tags are `Closed Hihat` / `Open Hihat`.) Hardcoding a fix is
-  fragile since the vocabulary depends on installed Packs — better to surface
-  the real one, e.g. top tags in `reindex_library`'s reply or in the
-  empty-result message.
-- **Coverage: an opt-in `samples` index.** The only category still invisible
-  to the catalog. Excluded by design as huge and rarely tag-searched — yet it
-  holds 3,567 items whose uris carry FileIds, so indexing it would be
-  tag-aware for free, and today "a vinyl crackle" is unfindable despite
-  `Crackle Vinyl Pop.wav` sitting right there. Keep samples out of default
-  results (only when `category: samples` is asked for) so the preset slate
-  stays clean; check the walk cost — samples is why `EXPORT_CATEGORIES`
-  excludes it and the 20k-node scan cap exists. (The other coverage questions
-  are answered: `plugins` indexes fine once Live's plugin sources are enabled
-  — 66 tagged rows, plus a new AUv2/VST3 duplicate-pair class recorded in
-  [archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md) —
-  and `user_library` is genuinely empty on this machine, so that walk is
-  merely untested, not broken.)
-
-**Suggested order.** Tag scoring and ranking are one piece of work, not two:
-softening the AND is what supplies the signal the scorer needs, and doing
-ranking first means inventing a tie-break for a match set that a tag score
-would have separated anyway. The vocabulary fix is independent and much
-smaller — a good warm-up, or a standalone if you want the zero-result failure
-gone today. The samples index is orthogonal and can ride whenever.
-
-Not planned: embeddings or a semantic index. The LLM is already the semantic
-layer and has the musical context; the failure is that truncation and
-alphabetical ordering stop good candidates from reaching it.
-
 ## Capture MIDI & session record
 
 "Keep that." The user noodles an idea on their controller and the agent grabs
@@ -138,18 +69,44 @@ read → remove → rewrite by hand.
 
 ## Sound catalog follow-ups
 
-Deliberately left out of catalog v1 (see
-[archive/PLAN_sound_catalog.md](archive/PLAN_sound_catalog.md) for context):
+Left out of catalog v1 (see
+[archive/PLAN_sound_catalog.md](archive/PLAN_sound_catalog.md) for context),
+plus what the result-quality work found and did not close:
 
+- **Coverage: an opt-in `samples` index.** The only category still invisible
+  to the catalog. Excluded by design as huge and rarely tag-searched — yet it
+  holds 3,567 items whose uris carry FileIds, so indexing it would be
+  tag-aware for free, and today "a vinyl crackle" is unfindable despite
+  `Crackle Vinyl Pop.wav` sitting right there. Keep samples out of default
+  results (only when `category: samples` is asked for) so the preset slate
+  stays clean; check the walk cost — samples is why `EXPORT_CATEGORIES`
+  excludes it and the 20k-node scan cap exists. (The other coverage questions
+  are answered: `plugins` indexes fine once Live's plugin sources are enabled
+  — 66 tagged rows, plus a new AUv2/VST3 duplicate-pair class recorded in
+  [archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md) —
+  and `user_library` is genuinely empty on this machine, so that walk is
+  merely untested, not broken.)
+- **Ranking headroom needs a new signal, not new weights.** Scoring,
+  diversity and diagnosis shipped (see
+  [archive/PLAN_catalog_result_quality.md](archive/PLAN_catalog_result_quality.md)),
+  taking the six benchmark queries from 28/77 to 39/77 slots decided by
+  score. The residual is genuinely undifferentiated: ~46 `E-Piano <variation>`
+  presets sharing the single tag `Electric Piano`, which no weighting can
+  separate — a graded per-term variant was measured at +1 slot across all six
+  queries and rejected. Anything further wants data the catalog doesn't carry
+  yet (LLM enrichment or XMP tags, both below), not another pass over the
+  scorer.
 - **LLM enrichment** for untagged/third-party items — needs an API key or an
-  MCP-client-driven tagging turn.
+  MCP-client-driven tagging turn. Also the most likely source of the signal
+  the ranking item above is missing.
 - **User XMP tags** — read `User Library/Ableton Folder Info/12/`.
-- **`samples` category** — now measured and tracked as the coverage item
-  under "Catalog result quality" above.
 - **Windows DB location** for `Seshat.Library.AbletonDB` (currently macOS only;
   returns `{:error, :not_found}` cleanly elsewhere).
 - **Audition / hot-swap loop** — needs `delete_device`, now tracked under
   Priority 1 (device removal & bypass) above.
+
+Not planned: embeddings or a semantic index. The LLM is already the semantic
+layer and has the musical context.
 
 ## Session state improvements
 

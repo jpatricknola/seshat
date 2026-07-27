@@ -23,7 +23,18 @@ _Living doc · MCP design review · 47 tools reviewed · 25 Jul 2026 — update 
 > closing §02's top gap and the master/return level gap with it. Returns and the
 > master needed a second vendored AbletonOSC handler
 > (`priv/abletonosc/return_track.py`) because upstream reaches `song.tracks`
-> only — see [PLAN_send_levels.md](PLAN_send_levels.md).
+> only — see [archive/PLAN_send_levels.md](archive/PLAN_send_levels.md).
+
+> **`search_library` result quality shipped 27 Jul 2026.** Two things §04
+> praised as exemplary description work were in fact false: the `tags`
+> parameter filtered with a strict AND (one tag the library lacked zeroed the
+> whole search), and the description advertised 30 tags, four of which don't
+> exist here — its own worked example, "a warm analog bass", returned
+> nothing. Tags now score rather than gate, the score band at the result cut
+> round-robins across device roots, and the zero-result, truncated and
+> `reindex_library` replies report the machine's real vocabulary instead of a
+> hardcoded list. See
+> [archive/PLAN_catalog_result_quality.md](archive/PLAN_catalog_result_quality.md).
 
 **At a glance:** 47 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
 
@@ -137,8 +148,8 @@ All 47 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 | `list_browser_items`    | Devices   | Keep   | Fallback note already present — overlap resolved.        |
 | `load_device`           | Devices   | Keep   | Good echo-and-verify pattern.                            |
 | `set_device_parameter`  | Devices   | Keep   | Exemplary. No delete/bypass companion.                   |
-| `search_library`        | Library   | Keep   | Primary discovery tool; routing stated on both sides.    |
-| `reindex_library`       | Library   | Keep   | —                                                        |
+| `search_library`        | Library   | Keep   | Scored 07/2026. Tags rank, don't gate; replies teach tags. |
+| `reindex_library`       | Library   | Keep   | Reports the library's real tag vocabulary (07/2026).     |
 | `get_track_sends`       | Read      | Keep   | New 07/2026. Labels each send with its return.           |
 | `set_track_send`        | Mixer     | Keep   | New 07/2026. No dB echo — send curve unconfirmed.        |
 | `set_return_track_volume` | Mixer   | Keep   | New 07/2026. Reuses the track fader's dB labels.         |
