@@ -38,15 +38,16 @@ defmodule Seshat.Commands.Registry do
   @doc """
   Runs a multi-step Command.
 
-  Most sequences report only success or failure; `:create_return_track` also
-  hands back the new return's index, which the caller needs for its reply and
-  can't safely re-derive afterwards (another create would shift it).
+  `:write_notes` reports only success or failure. The two creates also hand back
+  the new object's index, which the caller needs for its reply and for steering
+  Live's view onto it, and can't safely re-derive afterwards (another create
+  would shift it).
   """
   @spec execute(Command.t()) :: :ok | {:ok, non_neg_integer()} | {:error, term()}
   def execute(%Command{command: :create_track, track_type: type, name: name}) do
-    with :ok <- create_and_name_track(type, name) do
+    with {:ok, index} <- create_and_name_track(type, name) do
       Seshat.Session.State.refresh()
-      :ok
+      {:ok, index}
     end
   end
 
@@ -206,10 +207,12 @@ defmodule Seshat.Commands.Registry do
         :audio -> "/live/song/create_audio_track"
       end
 
+    # The pre-create count *is* the new track's index: both creates are sent with
+    # -1, which appends.
     with {:ok, {_addr, [count]}} <- Transport.query("/live/song/get/num_tracks", []),
          :ok <- Transport.send_message(osc_address, [-1]),
          :ok <- Transport.send_message("/live/track/set/name", [count, name]) do
-      :ok
+      {:ok, count}
     end
   end
 end

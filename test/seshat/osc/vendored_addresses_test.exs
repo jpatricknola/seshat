@@ -3,9 +3,10 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   Tripwire for the addresses upstream AbletonOSC doesn't serve.
 
   `/live/browser/*`, `/live/return_track/*` and `/live/master/*` are ours, as are
-  two addresses under upstream's own `/live/song/` prefix: they exist only
-  because `browser.py`, `return_track.py` and `song_structure.py` in the
-  `priv/AbletonOSC` fork register them. A typo on either side of that seam fails
+  two addresses under upstream's own `/live/song/` prefix and two under its
+  `/live/view/` prefix: they exist only because `browser.py`, `return_track.py`,
+  `song_structure.py` and our additions to `view.py` in the `priv/AbletonOSC`
+  fork register them. A typo on either side of that seam fails
   the way every OSC mistake fails — silently, over UDP, with no reply — and the
   guard timeouts that catch it look exactly like "Ableton isn't running". These
   tests close the loop without needing Ableton at all:
@@ -62,11 +63,22 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   # `Session.State` still matches on them, so they are documented like any other.
   @push_only_addresses ["/live/song/get/tracks", "/live/song/get/return_tracks"]
 
+  # Two more of ours under a prefix upstream owns, and for the same reason listed
+  # exactly rather than by prefix — `/live/view/` is upstream's. Unlike
+  # song_structure.py these live *inside* an upstream file, so view.py joins
+  # @handler_files below and its upstream registrations get checked against the
+  # docs alongside them (they are all documented already).
+  @vendored_view_addresses [
+    "/live/view/show_view",
+    "/live/view/set/detail_clip"
+  ]
+
   @browser_file "priv/AbletonOSC/abletonosc/browser.py"
   @return_track_file "priv/AbletonOSC/abletonosc/return_track.py"
   @song_structure_file "priv/AbletonOSC/abletonosc/song_structure.py"
+  @view_file "priv/AbletonOSC/abletonosc/view.py"
 
-  @handler_files [@browser_file, @return_track_file, @song_structure_file]
+  @handler_files [@browser_file, @return_track_file, @song_structure_file, @view_file]
 
   @docs "docs/abletonosc-api-docs.md"
 
@@ -94,25 +106,25 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
     # The prefix entries are self-correcting: `/live/return_track/nmae` still
     # starts with `/live/return_track/`, so it is swept into `used` and fails
-    # against the registered list. The two song addresses are admitted by exact
-    # match, so a typo on the *Elixir* side excludes itself from that check —
-    # `vendored?/1` simply stops recognising it, and `used` quietly shrinks by
-    # one (15 addresses today, so the >= 10 floor above doesn't notice either).
-    # Pinning that both are still sent is what closes that direction.
-    test "the exactly-listed song addresses are still the ones Session.State sends" do
+    # against the registered list. The song and view addresses are admitted by
+    # exact match, so a typo on the *Elixir* side excludes itself from that
+    # check — `vendored?/1` simply stops recognising it, and `used` quietly
+    # shrinks by one (the >= 10 floor above doesn't notice either).
+    # Pinning that all four are still sent is what closes that direction.
+    test "the exactly-listed song and view addresses are still the ones lib/ sends" do
       sent = Enum.map(used_addresses(), fn {address, _file} -> address end)
 
-      for address <- @vendored_song_addresses do
+      for address <- @vendored_song_addresses ++ @vendored_view_addresses do
         assert address in sent,
                """
-               #{address} is listed in @vendored_song_addresses, but nothing under lib/
-               sends it.
+               #{address} is listed as an exactly-matched vendored address, but nothing under
+               lib/ sends it.
 
                If it was typo'd on the Elixir side, that typo is invisible to the
-               used→registered test above — these two are recognised by exact match
+               used→registered test above — these are recognised by exact match
                only, so a misspelling stops counting as vendored instead of failing.
-               Fix the address, or drop it from @vendored_song_addresses if it is
-               genuinely no longer used.
+               Fix the address, or drop it from @vendored_song_addresses /
+               @vendored_view_addresses if it is genuinely no longer used.
 
                Sent: #{Enum.join(Enum.sort(sent), ", ")}
                """
@@ -159,7 +171,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              ]
     end
 
-    test "the return/master handler registers exactly the thirteen documented addresses" do
+    test "the return/master handler registers exactly the fourteen documented addresses" do
       assert Enum.sort(registered_addresses(@return_track_file)) == [
                "/live/master/get/volume",
                "/live/master/set/volume",
@@ -168,6 +180,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                "/live/return_track/get/count",
                "/live/return_track/get/name",
                "/live/return_track/get/volume",
+               "/live/return_track/select",
                "/live/return_track/set/name",
                "/live/return_track/set/volume",
                "/live/return_track/start_listen/name",
@@ -183,6 +196,30 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                "/live/song/start_listen/tracks",
                "/live/song/stop_listen/return_tracks",
                "/live/song/stop_listen/tracks"
+             ]
+    end
+
+    # view.py is upstream's file with two of ours added, so unlike the three
+    # handlers above this list is mostly upstream's. Pinning the whole of it is
+    # what makes an upstream merge that drops our two addresses fail here rather
+    # than in Live: nothing else notices, because every *other* address still
+    # answers and ours fail the way all OSC fails — silently.
+    test "the view handler registers upstream's twelve addresses plus Seshat's two" do
+      assert Enum.sort(registered_addresses(@view_file)) == [
+               "/live/view/get/selected_clip",
+               "/live/view/get/selected_device",
+               "/live/view/get/selected_scene",
+               "/live/view/get/selected_track",
+               "/live/view/set/detail_clip",
+               "/live/view/set/selected_clip",
+               "/live/view/set/selected_device",
+               "/live/view/set/selected_scene",
+               "/live/view/set/selected_track",
+               "/live/view/show_view",
+               "/live/view/start_listen/selected_scene",
+               "/live/view/start_listen/selected_track",
+               "/live/view/stop_listen/selected_scene",
+               "/live/view/stop_listen/selected_track"
              ]
     end
   end
@@ -238,8 +275,12 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   end
 
   # `add_handler("/live/...", ...)` — the one way a handler registers an address.
+  # Either quote style: our own files use double quotes throughout, but upstream's
+  # view.py (which now carries two of ours) mixes in single-quoted registrations,
+  # and a regex that missed those would under-report what the file registers —
+  # a tripwire that quietly stops tripping.
   defp registered_addresses(file) do
-    ~r/add_handler\(\s*"(\/live\/[^"]+)"/
+    ~r/add_handler\(\s*['"](\/live\/[^'"]+)['"]/
     |> Regex.scan(File.read!(file))
     |> Enum.map(fn [_match, address] -> address end)
   end
@@ -262,6 +303,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
   defp vendored?(address) do
     Enum.any?(@vendored_prefixes, &String.starts_with?(address, &1)) or
-      address in @vendored_song_addresses
+      address in @vendored_song_addresses or
+      address in @vendored_view_addresses
   end
 end
