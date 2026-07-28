@@ -78,7 +78,7 @@ whole surface. Before anything else:
 ## If the change touches an address with no tool yet
 
 `/live/clip/quantize` and `/live/browser/preview_item` / `stop_preview` are
-served by the fork but have no Seshat tool (roadmap #9 and #16), so the MCP
+served by the fork but have no Seshat tool (roadmap #8 and #15), so the MCP
 surface can't reach them. Drive them by raw OSC — **send-only**, so nothing
 binds port 11001 and Seshat's own reader stays alive:
 

@@ -1,5 +1,13 @@
 # Fork AbletonOSC: own the bridge source, retire the patch-in-place installer
 
+> **Archived 2026-07-28 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The fork lives at
+> [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC) as a
+> submodule at `priv/AbletonOSC`, with every divergence from upstream listed in
+> its own `SESHAT.md`; `mix abletonosc.install` is now locate-and-copy. The
+> Elixir tools for the addresses this landed — `quantize_clip` and browser
+> preview — remain open as roadmap issues #8 and #15.
+
 ## Context
 
 Seshat currently extends AbletonOSC by patching the user's install:
