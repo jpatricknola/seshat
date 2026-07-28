@@ -359,6 +359,50 @@ defmodule Seshat.Tools.Handlers do
   end
 
   @doc """
+  Refuses the bypass unless parameter 0's display value reads On/Off.
+
+  Turns "parameter 0 is the Device On switch" from a load-bearing assumption
+  into a refusal that prints what it actually found — the whole tool hangs on
+  this guard until the assumption is smoke-tested against a live Ableton.
+  """
+  @spec ensure_on_off_switch(String.t(), term()) :: :ok | {:error, String.t()}
+  def ensure_on_off_switch(name, display) do
+    if String.downcase(to_string(display)) in ["on", "off"] do
+      :ok
+    else
+      {:error,
+       "Parameter 0 of '#{name}' reads '#{display}', not On/Off — this device doesn't expose " <>
+         "the standard Device On switch at parameter 0, so nothing was changed. Inspect it " <>
+         "with get_device_parameters instead."}
+    end
+  end
+
+  @doc """
+  The success reply for `bypass_device`, once the toggle is confirmed.
+  """
+  @spec bypass_reply(String.t(), integer(), integer(), boolean()) :: String.t()
+  def bypass_reply(name, track, device, true) do
+    "'#{name}' (device #{device} on track #{track}) is now On."
+  end
+
+  def bypass_reply(name, track, device, false) do
+    "'#{name}' (device #{device} on track #{track}) is now Off — bypassed, settings kept."
+  end
+
+  @doc """
+  The no-op reply for `bypass_device` — parameter 0 already read the requested
+  state, so nothing was written and the reply must not claim otherwise.
+  """
+  @spec bypass_noop_reply(String.t(), integer(), integer(), boolean()) :: String.t()
+  def bypass_noop_reply(name, track, device, enabled) do
+    "'#{name}' (device #{device} on track #{track}) was already #{on_off_label(enabled)} — " <>
+      "nothing to do."
+  end
+
+  defp on_off_label(true), do: "On"
+  defp on_off_label(false), do: "Off"
+
+  @doc """
   Formats the parallel parameter name/value/min/max lists of the
   `/live/device/get/parameters/*` replies into one line per parameter.
   """
@@ -1384,7 +1428,7 @@ defmodule Seshat.Tools.Handlers do
   # the count afterwards as the only confirmation available.
   defp do_call("delete_device", %{"track" => track, "device" => device}) do
     with {:ok, names} <- read_device_names(track),
-         :ok <- ensure_device_index(track, device, names),
+         {:ok, device} <- ensure_device_index(track, device, names),
          :ok <- Transport.send_message("/live/track/delete_device", [track, device]),
          :ok <- confirm_device_count(track, length(names) - 1) do
       {:ok, deleted_device_reply(track, device, names)}
@@ -1675,9 +1719,14 @@ defmodule Seshat.Tools.Handlers do
       {:error, guard_timeout_error("the devices on track #{track}", @device_index_hint)}
   end
 
+  # Floats are tolerated the way `query_echoed/5` documents for indices — 1.0
+  # reaches Ableton as device 1 — so the bounds check normalises rather than
+  # rejects, and hands back the index the rest of the sequence should use.
   defp ensure_device_index(track, device, names) do
-    if is_integer(device) and device >= 0 and device < length(names) do
-      :ok
+    index = if is_number(device), do: trunc(device), else: device
+
+    if is_integer(index) and index >= 0 and index < length(names) do
+      {:ok, index}
     else
       {:error, device_out_of_range_error(track, device, names)}
     end
@@ -1690,16 +1739,19 @@ defmodule Seshat.Tools.Handlers do
   # readback sets the precedent).
   defp confirm_device_count(track, expected) do
     case Transport.query("/live/track/get/num_devices", [track]) do
-      {:ok, {_addr, [_track, ^expected]}} ->
+      {:ok, {_addr, [echoed, ^expected]}} when echoed == track ->
         :ok
 
-      {:ok, {_addr, [_track, actual]}} ->
+      {:ok, {_addr, [echoed, actual]}} when echoed == track ->
         {:error,
          "The delete did not go through — track #{track} still reports #{actual} device(s), " <>
            "not #{expected}. Check Ableton and re-read the chain with get_track_devices."}
 
       {:ok, {_addr, args}} ->
-        {:error, "Unexpected reply from /live/track/get/num_devices: #{inspect(args)}"}
+        {:error,
+         "The reply confirming the delete was not about track #{track} " <>
+           "(got #{inspect(args)}) — likely left over from an earlier timed-out query, so it " <>
+           "is unknown whether the device was removed. Verify with get_track_devices."}
 
       {:error, reason} ->
         {:error, inspect(reason)}
@@ -1711,25 +1763,9 @@ defmodule Seshat.Tools.Handlers do
          "was removed — verify with get_track_devices."}
   end
 
-  # Turns "parameter 0 is the Device On switch" from a load-bearing assumption
-  # into a refusal that prints what it actually found.
-  defp ensure_on_off_switch(name, display) do
-    if String.downcase(to_string(display)) in ["on", "off"] do
-      :ok
-    else
-      {:error,
-       "Parameter 0 of '#{name}' reads '#{display}', not On/Off — this device doesn't expose " <>
-         "the standard Device On switch at parameter 0, so nothing was changed. Inspect it " <>
-         "with get_device_parameters instead."}
-    end
-  end
-
   defp set_device_enabled(track, device, name, enabled, prior) do
-    label = on_off_label(enabled)
-
-    if String.downcase(to_string(prior)) == String.downcase(label) do
-      {:ok,
-       "'#{name}' (device #{device} on track #{track}) was already #{label} — nothing to do."}
+    if String.downcase(to_string(prior)) == String.downcase(on_off_label(enabled)) do
+      {:ok, bypass_noop_reply(name, track, device, enabled)}
     else
       with :ok <-
              Transport.send_message(
@@ -1753,7 +1789,8 @@ defmodule Seshat.Tools.Handlers do
     expected = if enabled, do: 1.0, else: 0.0
 
     case Transport.query("/live/device/get/parameter/value", [track, device, 0]) do
-      {:ok, {_addr, [_t, _d, _p, value]}} when is_number(value) ->
+      {:ok, {_addr, [t, d, p, value]}}
+      when t == track and d == device and p == 0 and is_number(value) ->
         if value / 1.0 == expected do
           :ok
         else
@@ -1764,7 +1801,10 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:ok, {_addr, args}} ->
-        {:error, "Unexpected reply from /live/device/get/parameter/value: #{inspect(args)}"}
+        {:error,
+         "The reply confirming the toggle was not about the on/off switch of device " <>
+           "#{device} on track #{track} (got #{inspect(args)}) — likely left over from an " <>
+           "earlier timed-out query. Verify with get_device_parameters."}
 
       {:error, reason} ->
         {:error, inspect(reason)}
@@ -1774,17 +1814,6 @@ defmodule Seshat.Tools.Handlers do
       {:error,
        "The toggle was sent but reading it back timed out — verify with get_device_parameters."}
   end
-
-  defp bypass_reply(name, track, device, true) do
-    "'#{name}' (device #{device} on track #{track}) is now On."
-  end
-
-  defp bypass_reply(name, track, device, false) do
-    "'#{name}' (device #{device} on track #{track}) is now Off — bypassed, settings kept."
-  end
-
-  defp on_off_label(true), do: "On"
-  defp on_off_label(false), do: "Off"
 
   # --- Guards ---
   #

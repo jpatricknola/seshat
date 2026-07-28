@@ -90,6 +90,39 @@ right.
   first hit unasked, then load one and confirm `search_library` favours it
   slightly afterwards (usage counts survive a reindex).
 
+## If the change touches the device tools (`delete_device` / `bypass_device`)
+
+Both stand on an assumption `mix test` cannot reach: **parameter 0 of every
+device is its "Device On" switch, displaying exactly `On`/`Off`**. That comes
+from the Live Object Model, not from a verified run — so check it first, and
+on more than one kind of device:
+
+1. On a stock Live device, an Instrument Rack preset, and (if installed) an
+   AU/VST plugin: `get_device_parameters` shows parameter 0 named "Device On",
+   and `bypass_device` toggles it. If Live spells the display differently,
+   `bypass_device` refuses on *every* device and its error prints the actual
+   string — the fix is widening the accepted set in `ensure_on_off_switch`
+   ([lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex)).
+2. `bypass_device enabled: false` on an effect is audible and the device's
+   power button visibly dims in Live; `enabled: true` restores it with
+   settings intact; bypassing an instrument silences its track; repeating a
+   bypass replies "already Off" without writing.
+3. `delete_device` removes the right device (confirm in Live's UI), its
+   reply's remaining chain matches a fresh `get_track_devices`, and later
+   device indices shift down as the reply warns.
+4. Error paths: an out-of-range device index errors immediately (Elixir-side
+   bounds check — no 2s stall); a bad track index errors in ≈2s with the
+   get_track_devices hint; deleting from an empty chain errors cleanly.
+5. Delete a device while its track's clip is playing — no crash expected;
+   note by ear whether Live clicks or glitches (open question 2 in
+   [docs/archive/PLAN_audition_loop.md](docs/archive/PLAN_audition_loop.md) —
+   if it's ugly, the fix is a description sentence advising to stop the clip
+   first).
+6. The loop as a conversation: `search_library` for electric pianos → load
+   one on a MIDI track with a clip → fire → "next" (delete + load) → "keep
+   that one" — the set ends holding only the winner. Then an effect A/B via
+   `bypass_device`.
+
 ## Clean up and report
 
 5. Delete any scratch tracks/scenes/clips you created (`delete_track`,

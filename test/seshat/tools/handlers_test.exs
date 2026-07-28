@@ -497,6 +497,42 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "ensure_on_off_switch/2" do
+    test "accepts On/Off case-insensitively" do
+      assert :ok = Handlers.ensure_on_off_switch("Reverb", "On")
+      assert :ok = Handlers.ensure_on_off_switch("Reverb", "off")
+      assert :ok = Handlers.ensure_on_off_switch("Reverb", "ON")
+    end
+
+    test "refuses anything else, printing what it actually found" do
+      assert {:error, message} = Handlers.ensure_on_off_switch("Weird Rack", "1.0")
+
+      assert message =~ "Parameter 0 of 'Weird Rack' reads '1.0', not On/Off"
+      assert message =~ "nothing was changed"
+      assert message =~ "get_device_parameters"
+    end
+  end
+
+  describe "bypass_device replies" do
+    test "the off reply says bypassed with settings kept" do
+      result = Handlers.bypass_reply("Compressor", 2, 1, false)
+
+      assert result == "'Compressor' (device 1 on track 2) is now Off — bypassed, settings kept."
+    end
+
+    test "the on reply" do
+      assert Handlers.bypass_reply("Compressor", 2, 1, true) ==
+               "'Compressor' (device 1 on track 2) is now On."
+    end
+
+    test "the no-op reply names the unchanged state and claims no change" do
+      result = Handlers.bypass_noop_reply("Compressor", 2, 1, false)
+
+      assert result =~ "was already Off — nothing to do"
+      refute result =~ "is now"
+    end
+  end
+
   describe "format_device_parameters/7" do
     test "formats one line per parameter with value and range" do
       result =
