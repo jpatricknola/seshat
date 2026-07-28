@@ -7,7 +7,7 @@ defmodule Seshat.Tools.DefinitionsTest do
     test "returns a list of tool definitions" do
       tools = Definitions.all()
       assert is_list(tools)
-      assert length(tools) == 48
+      assert length(tools) == 49
     end
 
     test "each tool has required fields" do

@@ -1,6 +1,6 @@
 # Seshat MCP — Tool Audit
 
-_Living doc · MCP design review · 48 tools in the surface · 25 Jul 2026 — update as tools change._
+_Living doc · MCP design review · 49 tools in the surface · 25 Jul 2026 — update as tools change._
 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
@@ -43,7 +43,7 @@ _Living doc · MCP design review · 48 tools in the surface · 25 Jul 2026 — u
 > Live Set plus ordinary `create_track` calls — see
 > [archive/create-project-removal.md](archive/create-project-removal.md).
 
-**At a glance:** 48 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
+**At a glance:** 49 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -72,7 +72,7 @@ Operations a producer would expect that no tool currently reaches, ranked by how
 | ~~**Sends / return tracks**~~ · **ADDRESSED 07/2026**                     | ~~High~~ | Was the top gap. `set_track_send` / `get_track_sends` / `create_return_track` / `delete_return_track` now cover the reverb-and-delay workflow. Loading a device *onto* a return is still manual. |
 | ~~**Remove / bypass a device**~~ · **ADDRESSED 07/2026** | ~~Med-High~~ | `delete_device` and `bypass_device` close the audition loop — a wrong load is undoable and a device can be A/B'd in place. Regular tracks only (upstream reaches `song.tracks` alone). |
 | **Reorder the device chain**                                              | Low      | The remaining half of the old one-way-device-workflow gap: a device can be added, bypassed and removed, but not moved. Deliberately not planned until a workflow demands it. |
-| **Capture / record into a slot** (`session_record`, `capture_midi`)       | Medium   | `set_track_arm` + `start_playing` exist, but nothing actually records or captures played MIDI. The record loop is incomplete.                       |
+| **Record into a slot** (`session_record`) · capture half **ADDRESSED 07/2026** | Medium   | `capture_midi` now keeps the MIDI just played, from Live's retroactive buffer — the "keep that" move needs no arming and no mouse. A *deliberate* take (arm, count in, record into a slot) still has no tool; that's `session_record`, roadmap #4. |
 | **Per-clip properties** (clip loop/start/end, launch mode)                | Medium   | `set_loop` is the _song_ loop, not a clip's loop. No control of a clip's own loop brace, length after creation, or launch quantization.             |
 | **Quantize notes** (`quantize_clip`)                                      | Medium   | The most common MIDI cleanup move, currently impossible without a full read→remove→rewrite by hand.                                                 |
 | **Set time signature** (`set_time_signature`)                             | Low-Med  | `get_session_state` reports it and `set_tempo` exists, but there's no setter. Cheap, obvious symmetry win.                                          |
@@ -113,7 +113,7 @@ Description quality is a real strength here. Two behaviors, though, were correct
 
 ## 05 · Full Inventory
 
-All 48 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
+All 49 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
@@ -147,6 +147,7 @@ All 48 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 | `set_tempo`             | Transport | Keep   | Pairs with a missing `set_time_signature`.               |
 | `set_metronome`         | Transport | Keep   | —                                                        |
 | `set_loop`              | Transport | Keep   | Song loop — distinct from per-clip loop gap.             |
+| `capture_midi`          | Transport | Keep   | New 07/2026. Verifies by clip-grid diff (the address never replies); reports Live's tempo inference. |
 | `fire_clip`             | Launch    | Keep   | Fixed 07/2026 — empty slot errors, not a silent stop.    |
 | `fire_scene`            | Launch    | Keep   | —                                                        |
 | `stop_clip`             | Launch    | Keep   | —                                                        |
