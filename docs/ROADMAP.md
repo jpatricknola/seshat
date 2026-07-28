@@ -64,13 +64,16 @@ the best impact-to-effort ratio on this list.
 
 ## #2 · Follow cam — every action visibly lands on screen
 
+**Plan:** [PLAN_follow_cam.md](PLAN_follow_cam.md)
+
 **Goal:** every mutating tool ends by steering Live's view to what it just
 touched, automatically — write notes → clip selected with the note editor
 open on them; load a device → that device selected; duplicate a scene → new
 scene selected. Steering addresses are mostly upstream
-(`/live/view/set/selected_clip|track|device|scene`); opening the note editor
-needs one small vendored view address (`song.view.detail_clip` +
-`Application.View.show_view("Detail/Clip")`).
+(`/live/view/set/selected_clip|track|device|scene`); *showing* the right pane
+needs one small vendored view address wrapping
+`Application.View.show_view(...)` (plus `song.view.detail_clip` for the note
+editor).
 
 **Why:** the 2026-07-28 validation run's headline finding
 ([validation-script-thoughts-and-findings.md](validation-script-thoughts-and-findings.md)):
@@ -83,14 +86,60 @@ asked-for: the change appearing on screen *is* the confirmation.
 **Planner notes:**
 - Put the steering in the **handlers**, not in tool-description guidance —
   deterministic, no extra round trip, works even when the model forgets.
+- **Steer only for tools that create, write, or destroy an object.** In:
+  `create_track`, `duplicate_track`, `create_return_track`, `create_scene`,
+  `duplicate_scene`, `write_midi_notes`, `remove_notes`, `capture_midi`,
+  `duplicate_clip`, `load_device`, `delete_device`, `bypass_device`, and the
+  deletes (`delete_track`, `delete_return_track`, `delete_scene`,
+  `delete_clip`) — a delete steers to whatever now occupies that index, or to
+  the container when nothing does. Out: parameter tweaks (volume, pan, send,
+  mute, solo, arm, tempo, metronome), transport (`fire_clip`, `stop_clip`,
+  `start_playing`, `stop_playing`), renames, and every read tool. A view that
+  jumps on each volume nudge is exactly what would make someone ask for the
+  off switch we're not building.
+- **Show the pane, don't just select in it.** Selecting a clip is invisible
+  from Arrangement view, and the validation run's user wasn't in Session view
+  at all — so the vendored address should be a general `show_view`
+  (`Session`, `Detail/Clip`, `Detail/DeviceChain`), not a clip-editor-only
+  one. A clip write shows Session + Detail/Clip; a device load shows
+  Detail/DeviceChain. Register it in
+  [abletonosc-api-docs.md](abletonosc-api-docs.md) — `vendored_addresses_test`
+  enforces both directions.
 - The view address goes into the AbletonOSC fork at `priv/AbletonOSC` as an
   ordinary commit — two commits, submodule then pin; re-run
   `mix abletonosc.install`.
-- Make it easy to toggle off (config or tool) — auto-yanking the view can be
-  wrong when the user is studying something else; default on.
-- Free adjunct worth bundling: name clips at write time (`set_clip_name`
-  exists) so occupied slots carry visible text — grid readouts report clip
-  names too.
+- **The indices are mostly already in hand — the handlers just discard them.**
+  `create_and_name_track` reads `num_tracks` before creating
+  ([registry.ex:209](../lib/seshat/commands/registry.ex#L209)),
+  `:create_return_track` already returns the new index, and `capture_midi`
+  diffs the clip grid so it knows exactly which clips appeared. The one real
+  gap is `load_device`: `/live/browser/load_item` replies with the name only.
+  Extend that vendored reply with the new device index rather than paying a
+  `get_track_devices` round trip — it's our file.
+- **Returns are in scope; the master isn't.** `/live/view/set/selected_track`
+  is upstream and only reaches `song.tracks`, so following a return-track
+  create/delete needs a second vendored address selecting from
+  `song.return_tracks` — same file as the rest of `return_track.py`. The
+  master needs nothing: its only tool is `set_master_volume`, a parameter
+  tweak, which doesn't steer.
+- **No transport-state exception** — steering during playback is fine, and
+  often the whole point: `capture_midi` runs *while* the user is playing and
+  is precisely when they most need to see where the take landed. One hazard
+  belongs to #3 rather than here: selecting a scene changes which slot row
+  session record targets.
+- No toggle — not config, not a tool. Done right this should feel natural
+  enough that nobody asks to turn it off; if it ever feels intrusive, the
+  when-to-steer rule is wrong and gets fixed rather than switched off.
+- Free adjunct worth bundling: an optional, model-supplied `name` on
+  `write_midi_notes` and `capture_midi`, so occupied slots carry visible text
+  (grid readouts report clip names too). No auto-generated fallback — "Clip 3"
+  is noise, and with the clip selected and the editor open the name is a
+  nice-to-have rather than the fix. `set_clip_name` already covers renaming.
+- **The testable seam**: every steering send is fire-and-forget UDP with no
+  reply, so there is nothing to assert at the wire. Keep the decision — tool
+  plus result → which view calls, in what order — in a pure function the tests
+  can drive, and cover the new address in `vendored_addresses_test` plus a
+  line in the `/smoke-test` checklist.
 - The fallback register when Seshat *must* instruct (something its tools
   can't reach) is in the findings file: shortest complete path, keys located
   physically, each step confirmed by what appears on screen.
