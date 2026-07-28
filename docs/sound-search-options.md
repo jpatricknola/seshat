@@ -55,11 +55,12 @@ residual needs a **new signal**, not new weights.
 
 **5 · Nobody ever listens, and a wrong pick is expensive.** The final "which
 of these five is *the* sound" judgment is made on names and tags — never by
-ear. And `load_device` is one-way: no `delete_device`, no bypass, so trying a
-candidate costs a manual cleanup in Live. That pushes the whole system toward
-one-shot precision when the honest answer for the last mile is *iteration* —
-metadata will never distinguish two `Soft` pads as well as ten seconds of
-audio.
+ear. `load_device` used to be one-way; `delete_device` + `bypass_device` (see
+lever №3 below, shipped 2026-07-28) closed that, so trying a candidate no
+longer costs a manual cleanup in Live. That still pushes the whole system
+toward one-shot precision when the honest answer for the last mile is
+*iteration* — metadata will never distinguish two `Soft` pads as well as ten
+seconds of audio.
 
 **6 · Nothing is learned from success.** `use_count`/recency bias future
 rankings (good), but the association that matters — *this description* led to
@@ -74,7 +75,7 @@ requests that end badly today, what share does this lever rescue?
 |---|---|---|---|---|
 | 1 | Teach the vocabulary proactively, with axes | **High** | Low | — |
 | 2 | Read tag axes + preset→device from Live's DB | **High** (enables 1, 5) | Low-Med | — |
-| 3 | Close the loop: delete_device + hot-swap audition | **High** | Med (already Priority 1) | — |
+| 3 | Close the loop: delete_device + hot-swap audition | **High** | Med (shipped 2026-07-28) | — |
 | 4 | Widen the slate at tied bands | Med-High | Low | — |
 | 5 | LLM enrichment at reindex | **Highest ceiling** | High | API key / MCP turn |
 | 6 | Browser preview audition | Med-High | Med | vendored handler |
@@ -127,13 +128,14 @@ posture (axis becomes `nil`, search degrades to today's behaviour).
 
 ### 3 · Close the loop: delete_device + bypass + hot-swap — High impact on the outcome, not on search
 
-Already ROADMAP Priority 1, but worth restating *as part of this mission*:
-forgiveness beats precision. If trying a candidate costs one sentence
-("next"), a slate that's merely *good* still ends with the right sound loaded
-— the user's ear does the last-mile ranking no metadata can. The loop:
-`load_device` → listen → "try the next one" → `delete_device` + load next.
-`/live/track/delete_device` is confirmed present upstream; bypass may already
-be free via parameter 0 ("Device On").
+**Shipped 2026-07-28** — see
+[archive/PLAN_audition_loop.md](archive/PLAN_audition_loop.md). Restated here
+because the thesis holds beyond this one feature: forgiveness beats
+precision. If trying a candidate costs one sentence ("next"), a slate that's
+merely *good* still ends with the right sound loaded — the user's ear does
+the last-mile ranking no metadata can. The loop: `load_device` → listen →
+"try the next one" → `delete_device` + load next; `bypass_device` gives
+effects the same A/B.
 
 *Estimated effect:* converts most "close but not quite" outcomes — which no
 retrieval improvement fully eliminates — from failures into one extra turn.
@@ -250,8 +252,8 @@ gold set for breadth, with the human set as anchor.)
    win, attacks the funnel's mouth.
 3. **№4 widened tied-band slate** (hours) — closes the roadmap's "ranking
    headroom" item honestly.
-4. **№3 delete_device / hot-swap** — already Priority 1; do it next as the
-   universal last-mile loop.
+4. **№3 delete_device / hot-swap** — shipped 2026-07-28, the universal
+   last-mile loop.
 5. **№8 accepted-search memory** (a day) — start accruing personalization now.
 6. Then measure, and let the numbers pick between **№5 enrichment**, **№6
    preview**, and **№7 samples** — enrichment only if the eval still shows

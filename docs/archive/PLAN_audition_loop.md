@@ -1,3 +1,12 @@
+> **Archived 2026-07-28 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `delete_device` and
+> `bypass_device` live in `Seshat.Tools.Definitions` / `Handlers`; both
+> open questions (parameter-0 identity, delete-while-playing) still want a
+> live-Ableton smoke pass — see `/smoke-test`. The lighter browser-preview
+> audition cousin (catalog lever №6) remains open, tracked in
+> [sound-search-options.md](../sound-search-options.md) and referenced from
+> [ROADMAP.md](../ROADMAP.md).
+
 # Plan — The audition loop (device removal & bypass)
 
 Roadmap Priority 1. Two new tools — `delete_device` and `bypass_device` — plus
