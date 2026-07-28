@@ -476,7 +476,7 @@ defmodule Seshat.Session.State do
       Transport.send_message("/live/song/start_listen/#{prop}", [])
     end
 
-    # Seshat extensions (priv/abletonosc/song_structure.py), kept out of
+    # Seshat extensions (the fork's song_structure.py), kept out of
     # @listened_song_properties because their push carries a list of names rather
     # than a scalar — and because upstream serves neither address.
     Transport.send_message("/live/song/start_listen/tracks", [])
@@ -528,9 +528,10 @@ defmodule Seshat.Session.State do
   # `update_track/4` handles a deleted track. Nothing on this side clears a
   # listener — `Session.State` never sends `stop_listen`, and a refresh only
   # re-subscribes the indices that currently exist — so the guarantee that a
-  # push arriving under index N really describes return N is enforced in
-  # `return_track.py`, by `_stop_listen_stored` unbinding the old object before
-  # an index is re-bound. Without that a deleted return leaves its neighbour
+  # push arriving under index N really describes return N is enforced in the
+  # fork's `AbletonOSCHandler._stop_listen`, which unbinds the object a callback
+  # was registered on rather than whatever the index now resolves to, before an
+  # index is re-bound. Without that a deleted return leaves its neighbour
   # listening under two indices at once, and this function would faithfully
   # write one return's name onto another.
   defp update_return(state, index, key, value) do

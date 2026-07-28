@@ -1,0 +1,3 @@
+[submodule "priv/AbletonOSC"]
+	path = priv/AbletonOSC
+	url = https://github.com/jpatricknola/AbletonOSC.git

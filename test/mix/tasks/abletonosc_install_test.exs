@@ -1,187 +1,154 @@
 defmodule Mix.Tasks.Abletonosc.InstallTest do
   @moduledoc """
-  Exercises `mix abletonosc.install` against a fixture that mimics an AbletonOSC
-  checkout, so the whole multi-handler install is covered without writing to the
-  user's real Remote Scripts directory.
+  Exercises `mix abletonosc.install` against fixtures in a tmp dir, so the whole
+  install is covered without writing to the user's real Remote Scripts directory.
 
-  The task is the whole delivery mechanism for `/live/browser/*`,
-  `/live/return_track/*`, `/live/master/*` and the song-structure listeners: if
-  it copies a file but skips a
-  registration line, every one of those addresses goes quietly unanswered and
-  the tools blame a missing install forever. Re-running it is also the documented
-  fix for "my addresses stopped answering", so idempotence is a promise, not an
-  implementation detail.
+  The task is the whole delivery mechanism for Seshat's fork of AbletonOSC —
+  every `/live/browser/*`, `/live/return_track/*`, `/live/master/*` and
+  song-structure address, plus the base-class listener fix. If it drops a file
+  or leaves a stale one behind, those addresses go quietly unanswered (or worse,
+  answer from old code) and the tools blame a missing install forever.
+  Re-running it is also the documented fix for "my addresses stopped
+  answering", so idempotence is a promise, not an implementation detail.
 
-  `track_listeners.py` fails quieter still. It overrides addresses upstream
-  already serves, so a missed registration line leaves every one of them
-  answering normally — with the stale-listener bug the override exists to fix
-  silently back in place. Hence the ordering test below.
+  The install is a wholesale directory replacement, which is what makes the
+  stale-file case testable at all: plant a file the fork doesn't have, and it
+  must be gone afterwards.
   """
 
   use ExUnit.Case, async: false
 
-  @init_py """
-  from .handler import AbletonOSCHandler
-  from .song import SongHandler
-  from .midimap import MidiMapHandler
-  from .view import ViewHandler
-  """
+  @source "priv/AbletonOSC"
 
-  # The anchor sits inside a list literal, so its indentation is load-bearing:
-  # a line inserted flush-left here is a Python syntax error.
-  #
-  # TrackHandler is here because it is load-bearing too: track_listeners.py
-  # re-registers five of its addresses and only wins by being instantiated later,
-  # so the fixture has to reproduce upstream's ordering (TrackHandler above
-  # MidiMapHandler, the anchor) for that to be testable at all.
-  @manager_py """
-  class Manager:
-      def init_api(self):
-          self.handlers = [
-              abletonosc.SongHandler(self),
-              abletonosc.TrackHandler(self),
-              abletonosc.MidiMapHandler(self),
-              abletonosc.ViewHandler(self),
-          ]
-  """
+  setup_all do
+    unless File.regular?(Path.join(@source, "manager.py")) do
+      raise """
+      #{@source} is empty — the AbletonOSC submodule isn't checked out.
+
+          git submodule update --init
+
+      Git worktrees don't populate submodules on creation, so you need this
+      once per worktree.
+      """
+    end
+
+    :ok
+  end
 
   setup do
-    install_dir =
-      Path.join(System.tmp_dir!(), "abletonosc_fixture_#{System.unique_integer([:positive])}")
-
-    File.mkdir_p!(Path.join(install_dir, "abletonosc"))
-
-    File.write!(Path.join(install_dir, "manager.py"), @manager_py)
-
-    File.write!(
-      Path.join([install_dir, "abletonosc", "handler.py"]),
-      "class AbletonOSCHandler:\n    pass\n"
-    )
-
-    File.write!(Path.join([install_dir, "abletonosc", "__init__.py"]), @init_py)
-
-    on_exit(fn -> File.rm_rf!(install_dir) end)
+    tmp = Path.join(System.tmp_dir!(), "abletonosc_fixture_#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf!(tmp) end)
 
     shell = Mix.shell()
     Mix.shell(Mix.Shell.Quiet)
     on_exit(fn -> Mix.shell(shell) end)
 
-    {:ok, install_dir: install_dir}
+    {:ok, tmp: tmp}
   end
 
   describe "run/1" do
-    test "copies every handler and registers each one exactly once", %{install_dir: dir} do
+    test "installs fresh into a path that doesn't exist yet", %{tmp: tmp} do
+      dir = Path.join(tmp, "AbletonOSC")
+
       Mix.Tasks.Abletonosc.Install.run([dir])
 
-      for file <- ["browser.py", "return_track.py", "song_structure.py", "track_listeners.py"] do
+      assert File.regular?(Path.join(dir, "manager.py"))
+      assert File.regular?(Path.join([dir, "abletonosc", "handler.py"]))
+
+      # Seshat's own three handlers are the reason this task exists.
+      for file <- ~w(browser.py return_track.py song_structure.py) do
         assert File.read!(Path.join([dir, "abletonosc", file])) ==
-                 File.read!("priv/abletonosc/#{file}"),
+                 File.read!(Path.join([@source, "abletonosc", file])),
                "#{file} was not copied verbatim"
       end
 
+      # pythonosc is vendored inside AbletonOSC and imported by osc_server —
+      # a copy that flattened or skipped it would leave Live with a dead script.
+      assert File.dir?(Path.join(dir, "pythonosc"))
+    end
+
+    test "leaves git bookkeeping and the fork's test suite behind", %{tmp: tmp} do
+      dir = Path.join(tmp, "AbletonOSC")
+
+      Mix.Tasks.Abletonosc.Install.run([dir])
+
+      refute File.exists?(Path.join(dir, ".git"))
+      refute File.exists?(Path.join(dir, ".github"))
+      refute File.exists?(Path.join(dir, "tests"))
+    end
+
+    test "replaces an existing install wholesale", %{tmp: tmp} do
+      dir = Path.join(tmp, "AbletonOSC")
+      File.mkdir_p!(Path.join(dir, "abletonosc"))
+      File.write!(Path.join(dir, "manager.py"), "# an old, patched manager\n")
+      File.write!(Path.join([dir, "abletonosc", "handler.py"]), "# old handler\n")
+
+      # An install carried forward from the patch-in-place era: a file the fork
+      # no longer has, and a registration line for it in __init__.py.
+      File.write!(Path.join([dir, "abletonosc", "track_listeners.py"]), "# stale override\n")
+
+      File.write!(
+        Path.join([dir, "abletonosc", "__init__.py"]),
+        "from .track_listeners import TrackListenerHandler\n"
+      )
+
+      Mix.Tasks.Abletonosc.Install.run([dir])
+
+      refute File.exists?(Path.join([dir, "abletonosc", "track_listeners.py"])),
+             "a file the fork doesn't have survived the install"
+
       init = File.read!(Path.join([dir, "abletonosc", "__init__.py"]))
-      assert occurrences(init, "from .browser import BrowserHandler") == 1
-      assert occurrences(init, "from .return_track import ReturnTrackHandler") == 1
-      assert occurrences(init, "from .song_structure import SongStructureHandler") == 1
-      assert occurrences(init, "from .track_listeners import TrackListenerHandler") == 1
+      refute init =~ "track_listeners", "the old __init__.py survived the install"
+      assert init =~ "from .browser import BrowserHandler"
 
-      manager = File.read!(Path.join(dir, "manager.py"))
-      assert occurrences(manager, "abletonosc.BrowserHandler(self),") == 1
-      assert occurrences(manager, "abletonosc.ReturnTrackHandler(self),") == 1
-      assert occurrences(manager, "abletonosc.SongStructureHandler(self),") == 1
-      assert occurrences(manager, "abletonosc.TrackListenerHandler(self),") == 1
+      assert File.read!(Path.join(dir, "manager.py")) ==
+               File.read!(Path.join(@source, "manager.py"))
     end
 
-    # track_listeners.py only takes effect because it is registered after
-    # upstream's TrackHandler — add_handler is a dict assignment, so the last
-    # registration for an address wins. The anchor is what puts it there, and a
-    # fixture whose TrackHandler sat below MidiMapHandler would make this pass
-    # while the real install broke, so the fixture ordering is asserted too.
-    test "registers the track override below upstream's TrackHandler", %{install_dir: dir} do
-      Mix.Tasks.Abletonosc.Install.run([dir])
-
-      lines = dir |> Path.join("manager.py") |> File.read!() |> String.split("\n")
-
-      upstream = Enum.find_index(lines, &String.contains?(&1, "abletonosc.TrackHandler(self),"))
-      anchor = Enum.find_index(lines, &String.contains?(&1, "abletonosc.MidiMapHandler(self),"))
-
-      override =
-        Enum.find_index(lines, &String.contains?(&1, "abletonosc.TrackListenerHandler(self),"))
-
-      assert upstream < anchor, "fixture drifted: TrackHandler must precede the install anchor"
-
-      assert override > upstream,
-             "TrackListenerHandler is registered before TrackHandler, so upstream's " <>
-               "listeners win and the override silently does nothing"
-    end
-
-    test "matches the anchor's indentation so manager.py still parses", %{install_dir: dir} do
-      Mix.Tasks.Abletonosc.Install.run([dir])
-
-      lines = dir |> Path.join("manager.py") |> File.read!() |> String.split("\n")
-
-      for line <- Enum.filter(lines, &String.contains?(&1, "Handler(self),")) do
-        assert String.starts_with?(line, "            "),
-               "#{inspect(line)} lost the anchor's indentation"
-      end
-    end
-
-    test "is a no-op on the second run", %{install_dir: dir} do
-      Mix.Tasks.Abletonosc.Install.run([dir])
-
-      after_first = %{
-        init: File.read!(Path.join([dir, "abletonosc", "__init__.py"])),
-        manager: File.read!(Path.join(dir, "manager.py"))
-      }
-
-      Mix.Tasks.Abletonosc.Install.run([dir])
-
-      assert File.read!(Path.join([dir, "abletonosc", "__init__.py"])) == after_first.init
-      assert File.read!(Path.join(dir, "manager.py")) == after_first.manager
-    end
-
-    test "refuses a directory that isn't an AbletonOSC install" do
-      not_an_install =
-        Path.join(System.tmp_dir!(), "not_abletonosc_#{System.unique_integer([:positive])}")
-
+    test "refuses an existing directory that isn't an AbletonOSC install", %{tmp: tmp} do
+      not_an_install = Path.join(tmp, "my_documents")
       File.mkdir_p!(not_an_install)
-      on_exit(fn -> File.rm_rf!(not_an_install) end)
+      File.write!(Path.join(not_an_install, "important.txt"), "please don't")
 
       assert_raise Mix.Error, ~r/doesn't look like an AbletonOSC installation/, fn ->
         Mix.Tasks.Abletonosc.Install.run([not_an_install])
       end
+
+      assert File.regular?(Path.join(not_an_install, "important.txt"))
     end
 
-    test "reports the manual edit when an anchor is missing rather than guessing", %{
-      install_dir: dir
-    } do
-      File.write!(
-        Path.join([dir, "abletonosc", "__init__.py"]),
-        "from .song import SongHandler\n"
-      )
+    test "is idempotent", %{tmp: tmp} do
+      dir = Path.join(tmp, "AbletonOSC")
 
-      # The manual instructions go to Mix.shell().error, which Mix.Shell.Quiet
-      # still prints — so swap in the IO shell and capture both streams.
-      output =
-        ExUnit.CaptureIO.capture_io(:stderr, fn ->
-          ExUnit.CaptureIO.capture_io(fn ->
-            Mix.shell(Mix.Shell.IO)
-            Mix.Tasks.Abletonosc.Install.run([dir])
-            Mix.shell(Mix.Shell.Quiet)
-          end)
-        end)
+      Mix.Tasks.Abletonosc.Install.run([dir])
+      after_first = tree(dir)
 
-      assert output =~ "from .browser import BrowserHandler"
-      assert output =~ "from .return_track import ReturnTrackHandler"
-      assert output =~ "from .song_structure import SongStructureHandler"
+      Mix.Tasks.Abletonosc.Install.run([dir])
 
-      # The handler files are still copied — only the registration is left to the
-      # user, so a hand-edit is all that's needed to finish.
-      assert File.regular?(Path.join([dir, "abletonosc", "return_track.py"]))
+      assert tree(dir) == after_first
+    end
+
+    test "errors helpfully when the submodule is uninitialised", %{tmp: tmp} do
+      # The task reads its source relative to the cwd, so an empty project root
+      # is how "submodule not checked out" is reproduced.
+      empty_project = Path.join(tmp, "seshat")
+      File.mkdir_p!(Path.join(empty_project, "priv/AbletonOSC"))
+
+      File.cd!(empty_project, fn ->
+        assert_raise Mix.Error, ~r/git submodule update --init/, fn ->
+          Mix.Tasks.Abletonosc.Install.run([Path.join(tmp, "AbletonOSC")])
+        end
+      end)
     end
   end
 
-  defp occurrences(haystack, needle) do
-    haystack |> String.split(needle) |> length() |> Kernel.-(1)
+  # Path -> contents for every file under `dir`, so idempotence is asserted on
+  # the whole tree rather than on a handful of files that happen to be checked.
+  defp tree(dir) do
+    dir
+    |> Path.join("**")
+    |> Path.wildcard(match_dot: true)
+    |> Enum.filter(&File.regular?/1)
+    |> Map.new(&{Path.relative_to(&1, dir), File.read!(&1)})
   end
 end

@@ -38,7 +38,7 @@ that are *absent* from the diff, which no amount of staring at hunks reveals.
    conditions in GenServer/PubSub code. Seshat-specific traps:
    - Every OSC address must appear verbatim in
      [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) (or be one of
-     ours in [priv/abletonosc/browser.py](priv/abletonosc/browser.py)). UDP
+     ours in [priv/AbletonOSC/abletonosc/browser.py](priv/AbletonOSC/abletonosc/browser.py)). UDP
      fails silently — a plausible-looking address is the most dangerous bug
      in this codebase. Check every one.
    - Handler clauses see string keys only; track indices are 0-based; pan is

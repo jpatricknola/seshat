@@ -183,7 +183,7 @@ biggest hammer and the easiest to over-credit.
 Live's Python API has `Browser.preview_item(item)` / `stop_preview()`
 (confirmed in the [Live API stub](https://github.com/cylab/AbletonLive-API-Stub/blob/master/Live.xml);
 it's what Push uses to audition the browser). Two additions to the vendored
-[browser.py](../priv/abletonosc/browser.py) (`/live/browser/preview_item`,
+[browser.py](../priv/AbletonOSC/abletonosc/browser.py) (`/live/browser/preview_item`,
 `/live/browser/stop_preview`) plus `preview_sound` / `stop_preview` tools
 give the flow: present five candidates → preview each for the user → load the
 one they name. No track mutation, no cleanup, works for samples too (where

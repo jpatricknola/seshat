@@ -27,7 +27,7 @@ be able to say yes/no to each one.
      [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) — exact
      address, exact argument list, reply shape. If the capability isn't
      there, the plan gains a Python half: a handler in
-     [priv/abletonosc/browser.py](priv/abletonosc/browser.py)-style vendored
+     [priv/AbletonOSC/abletonosc/browser.py](priv/AbletonOSC/abletonosc/browser.py)-style vendored
      extension (see that file and `mix abletonosc.install`).
    - Grep the codebase for every touchpoint: which `Handlers` clauses,
      whether it's single-message (Transport direct) or multi-step

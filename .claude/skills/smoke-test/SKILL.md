@@ -25,14 +25,14 @@ user's MCP client does.
    real work in progress (named tracks, clips), create your own scratch
    tracks rather than modifying existing ones.**
 
-## First, if the change touches a vendored address
+## First, if the change touches the bridge
 
 `/live/browser/*`, `/live/return_track/*` and `/live/master/*` are Seshat's own
-— served by [priv/abletonosc/browser.py](priv/abletonosc/browser.py) and
-[priv/abletonosc/return_track.py](priv/abletonosc/return_track.py), installed
-by `mix abletonosc.install`. `mix test` cannot reach them at all, so a smoke
-test is the *only* thing standing behind that whole surface. Before anything
-else:
+— served by [priv/AbletonOSC/abletonosc/browser.py](priv/AbletonOSC/abletonosc/browser.py) and
+[priv/AbletonOSC/abletonosc/return_track.py](priv/AbletonOSC/abletonosc/return_track.py) in our
+fork of AbletonOSC, installed by `mix abletonosc.install`. `mix test` cannot
+reach them at all, so a smoke test is the *only* thing standing behind that
+whole surface. Before anything else:
 
 - Run `mix abletonosc.install` and **restart Live** (or toggle AbletonOSC off
   and on under Preferences > Link/Tempo/MIDI). `/live/api/reload` does not pick
@@ -47,6 +47,15 @@ else:
   count — not a ~2s timeout. A timeout here means the extension isn't loaded,
   and that distinction is the point of the envelope: if a bad index hangs
   instead, the handler is stale and needs reinstalling.
+- **Watch Live's `Log.txt`.** Since the fork it should stay clean during
+  ordinary work — upstream raised a `RemoteScriptError` on every clip-slot
+  operation, so a traceback appearing during `write_midi_notes`,
+  `delete_clip`, `duplicate_clip` or `get_clip_slots` means an old AbletonOSC
+  is still installed. (`~/Library/Preferences/Ableton/Live <version>/Log.txt`.)
+- **The listener fix, by hand in Live's UI.** Delete a track, then rename a
+  different one, then call `get_session_state`. Every name must be under the
+  right index. This is the one fix whose failure is silent — every address
+  still answers — so nothing but this check finds it.
 
 ## Exercise the change
 
@@ -62,6 +71,32 @@ else:
 4. Where state should change, **read it back** rather than trusting the send:
    session state for track properties, `get_device_parameters` for device
    changes, `get_track_devices` after loading.
+
+## If the change touches an address with no tool yet
+
+`/live/clip/quantize` and `/live/browser/preview_item` / `stop_preview` are
+served by the fork but have no Seshat tool (roadmap #9 and #16), so the MCP
+surface can't reach them. Drive them by raw OSC — **send-only**, so nothing
+binds port 11001 and Seshat's own reader stays alive:
+
+```bash
+python3 -c '
+import sys; sys.path.insert(0, "priv/AbletonOSC")
+from pythonosc.udp_client import SimpleUDPClient
+c = SimpleUDPClient("127.0.0.1", 11000)
+c.send_message("/live/clip/quantize", [0, 0, 8, 1.0])   # track 0, clip 0, 1/16, full
+'
+```
+
+- **Quantize**: record or write a deliberately sloppy MIDI clip, then quantize
+  it. Grid `8` is sixteenths — if it lands on half notes, the handler took the
+  wrong enum. Then undo and re-run with amount `0.5`: the notes should move
+  halfway toward the grid, not all the way.
+- **Preview**: `preview_item` with a `uri` from `search_library`, with Live's
+  cue output routed somewhere audible and the cue level up. Confirm it sounds
+  *without* anything being added to the set, and that `stop_preview` silences
+  it. A silent preview with cue routed nowhere is expected, not a bug — which
+  is exactly why the cue caveat has to reach the eventual tool's description.
 
 ## If the change touches the sound catalog
 

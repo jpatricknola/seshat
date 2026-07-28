@@ -52,7 +52,7 @@ step 5, change nothing in the doc.
      exact address, exact argument list, reply shape. Derive them yourself;
      do not trust the plan's transcription. Addresses that are ours rather
      than upstream's live in
-     [priv/abletonosc/browser.py](priv/abletonosc/browser.py)-style
+     [priv/AbletonOSC/abletonosc/browser.py](priv/AbletonOSC/abletonosc/browser.py)-style
      vendored handlers. Downstream will re-check these — but only once code
      exists, which is exactly why you do it now.
    - **Adequacy.** Fully implemented, does this plan deliver the roadmap

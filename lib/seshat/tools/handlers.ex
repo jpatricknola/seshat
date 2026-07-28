@@ -944,10 +944,10 @@ defmodule Seshat.Tools.Handlers do
   #
   # Sends belong to the *regular* track that feeds the return, so they use
   # upstream's /live/track/get|set/send. Everything about the returns themselves
-  # and the master comes from priv/abletonosc/return_track.py — a Seshat
-  # extension, so an un-run `mix abletonosc.install` means no reply at all rather
-  # than an error. Each mutation therefore reads its own value back first: the
-  # guard is the difference between an error and a lie.
+  # and the master comes from the fork's return_track.py — a Seshat extension, so
+  # an un-run `mix abletonosc.install` means no reply at all rather than an
+  # error. Each mutation therefore reads its own value back first: the guard is
+  # the difference between an error and a lie.
 
   defp do_call("set_track_send", %{"track" => track, "send" => send_index, "value" => value}) do
     with {:ok, old} <-
@@ -1293,8 +1293,8 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Browser / device loading ---
   #
-  # Both addresses are Seshat extensions to AbletonOSC, served by
-  # priv/abletonosc/browser.py — see `mix abletonosc.install`.
+  # Both addresses are Seshat extensions to AbletonOSC, served by the fork's
+  # browser.py — see `mix abletonosc.install`.
 
   defp do_call("list_browser_items", %{"category" => category} = params) do
     filter = Map.get(params, "filter", "")

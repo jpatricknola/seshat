@@ -45,7 +45,7 @@ it via `get_session_state` rather than querying Ableton field by field.
 
 It stays fresh by push, not by polling: every mirrored value has a listener
 behind it, including the *structure* of the session (tracks and returns added,
-deleted, duplicated or reordered by hand in Live) via the vendored
+deleted, duplicated or reordered by hand in Live) via the fork's
 `song_structure.py`, and `/live/startup` triggers a full refresh whenever
 AbletonOSC re-initialises — a set load or a Live restart otherwise leaves the
 mirror not just stale but permanently deaf, since the old song's listeners are
@@ -90,11 +90,8 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
-| [priv/abletonosc/browser.py](priv/abletonosc/browser.py) | Vendored AbletonOSC handler extension — the browser API upstream doesn't have |
-| [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) | Vendored AbletonOSC handler extension — return-track and master addresses upstream doesn't have (`/live/return_track/*`, `/live/master/*`), including their listeners |
-| [priv/abletonosc/song_structure.py](priv/abletonosc/song_structure.py) | Vendored AbletonOSC handler extension — track-list and return-list listeners (`/live/song/start_listen/tracks`, `.../return_tracks`); upstream can only listen to scalar song properties |
-| [priv/abletonosc/track_listeners.py](priv/abletonosc/track_listeners.py) | Vendored *override* of five upstream track listeners (name, mute, solo, volume, panning) — registers no new addresses; upstream's unbind from the wrong track once an index is reused |
-| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies all four handlers into AbletonOSC and registers them |
+| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes to upstream's own code. `SESHAT.md` at its root lists every divergence |
+| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies the fork wholesale into Live's Remote Scripts |
 
 ## Adding a tool
 
@@ -114,26 +111,30 @@ wrong address fails silently (it's UDP, with no reply).
 collects the conventions and gotchas the address tables don't show (ports,
 irregular naming, listener pattern, ordering hazards).
 
-`/live/browser/*` is ours, not upstream's: `priv/abletonosc/browser.py` vendors
-a handler that `mix abletonosc.install` copies into the user's AbletonOSC.
-`/live/return_track/*` and `/live/master/*` are the same story, vendored in
-`priv/abletonosc/return_track.py` — upstream's track addresses only reach
-`song.tracks` (regular tracks), not returns or the master. So are
-`/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
-vendored in `priv/abletonosc/song_structure.py` — the only two addresses of ours
-living under a prefix upstream otherwise owns. Any future address upstream
-doesn't provide goes into one of those files the same way.
+Some of those addresses are ours, not upstream's — they exist only in the fork
+at `priv/AbletonOSC`, in three handler modules there:
 
-`priv/abletonosc/track_listeners.py` is the one file that adds no addresses: it
-*re-registers* five of upstream's (`/live/track/{start,stop}_listen/` for name,
-mute, solo, volume, panning), because upstream's unbind a listener from the wrong
-track once an index has been reused — delete a track, rename another, and the
-mirror gets one track's name under another's index. It wins because
-`add_handler` is a dict assignment and `mix abletonosc.install` anchors our
-handlers below `TrackHandler`. That makes it the one vendored file whose absence
-is invisible: every address still answers. `abletonosc_install_test` guards the
-anchor ordering; `vendored_addresses_test` guards that the override covers
-everything `Session.State`'s `@listened_properties` subscribes to.
+- `/live/browser/*` — `abletonosc/browser.py`. Upstream has no browser API at all.
+- `/live/return_track/*` and `/live/master/*` — `abletonosc/return_track.py`.
+  Upstream's track addresses only reach `song.tracks` (regular tracks), not
+  returns or the master.
+- `/live/song/start_listen/tracks` and `.../return_tracks` —
+  `abletonosc/song_structure.py`. The only two addresses of ours living under a
+  prefix upstream otherwise owns; upstream can only listen to *scalar* song
+  properties.
+
+Any future address upstream doesn't provide goes into one of those files the
+same way. `vendored_addresses_test` is the tripwire in both directions: every
+such address `lib/` sends must be registered in Python, and everything Python
+registers must be in the address docs.
+
+The fork also **fixes** upstream code, most importantly
+`AbletonOSCHandler._stop_listen`, which unbound a listener from the wrong object
+once an index had been reused — delete a track, rename another, and the mirror
+gets one track's name under another's index. Seshat used to patch that from
+outside with a `track_listeners.py` override; that file is gone.
+`vendored_addresses_test` greps for the fix, because losing it in an upstream
+merge would be completely invisible: every address still answers.
 
 ## Verification
 
@@ -157,7 +158,7 @@ everything `Session.State`'s `@listened_properties` subscribes to.
 ## Design decisions worth knowing
 
 - **AbletonOSC is one bridge, not the architecture.** `OSC.Transport` isolates the wire mechanics (UDP, OSC encoding, reply correlation); the `/live/...` address strings deliberately live inline in `Handlers`, `Registry`, and `Session.State` — no abstraction layer, all sites greppable via `"/live/`. If the bridge ever changed, the stable seam is the tool contract in `Definitions`: the tool names and schemas stay, everything below `Handlers` gets reimplemented. Alternatives were weighed in [docs/bridge-options.md](docs/bridge-options.md) — staying on AbletonOSC is a decision, not an accident.
-- **Patch AbletonOSC in place, don't fork it — yet.** The vendored handlers ride on the user's own AbletonOSC install via `mix abletonosc.install`'s anchor patching. [docs/fork-options.md](docs/fork-options.md) records the trade-off, the concrete triggers that would flip the decision (chiefly: a second override on top of `track_listeners.py`), and the migration playbook — consult it when planning roadmap #19/#22 or anything that edits an upstream file.
+- **We maintain the bridge.** Seshat runs [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), a fork of `ideoforms/AbletonOSC`, as a submodule at `priv/AbletonOSC`; `mix abletonosc.install` copies it wholesale into Live's Remote Scripts. Forked 2026-07-28 because two things could no longer be done by patching: a second dict-assignment override, and edits to upstream files with no `add_handler` seam at all ([docs/fork-options.md](docs/fork-options.md) records the reasoning and the merge playbook; the fork's own `SESHAT.md` lists every divergence). Two consequences worth internalising: **editing bridge Python is two commits** — one in the submodule, one bumping the pin here — and **git worktrees don't populate submodules**, so a fresh worktree needs `git submodule update --init` or the Python-grepping tests fail.
 - **MCP mode is primary.** It needs no API key — the user's Claude subscription covers the reasoning. API-key mode exists for dev and for users without an MCP client.
 - **Only one Seshat can read Ableton at a time.** AbletonOSC replies to a fixed port (11001), so the second instance to start is deaf — it can send but never receives. `.mcp.json` therefore points MCP clients at the running server's HTTP endpoint rather than spawning `mix mcp`, which means the server must be running for the tools to exist. Reasoning and rejected alternatives in [docs/osc-port-contention.md](docs/osc-port-contention.md).
 - **The LLM does the resolving.** Track names → indices, "the reverb" → device index, note names → MIDI numbers. Tools stay dumb and mechanical; the prompt in `Seshat.Agent` carries the music theory.
