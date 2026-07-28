@@ -179,4 +179,4 @@ All 49 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 
 ---
 
-_Seshat MCP tool audit · living document · 48 tools as of 28 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._
+_Seshat MCP tool audit · living document · 49 tools as of 28 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._

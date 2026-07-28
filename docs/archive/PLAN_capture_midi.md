@@ -1,6 +1,20 @@
+> **Archived 2026-07-28 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `capture_midi` lives in
+> `Seshat.Tools.Definitions` / `Handlers` (`snapshot_grid/0`,
+> `snapshot_tracks/2`, `capture_diff/2`, `captured_reply/4`,
+> `nothing_captured_reply/2`). The open questions below about Arrangement
+> routing, capture-to-clip timing, and a nothing-buffered capture still want
+> a live-Ableton smoke pass (`docs/PLAN_capture_midi.md`'s own smoke items
+> 1–5, still tracked). The follow-ups it names remain open on
+> [ROADMAP.md](../ROADMAP.md) under their current numbers: session record
+> (#3), per-clip loop brace/length (#4), quantize (#7), groove (#8), follow
+> cam (#2), and clip-grid-into-session-state promotion (#21) — all renumbered
+> since this plan shipped and capture's own slot (formerly #2) was removed.
+
 # Plan — `capture_midi`: "keep that"
 
-Roadmap #2. One new tool — `capture_midi` — that retroactively captures what
+Roadmap #2 (at time of writing; shipped and removed — see banner above). One
+new tool — `capture_midi` — that retroactively captures what
 the user just played into a Session clip, via the upstream
 `/live/song/capture_midi` address. No parameters, no `%Command{}` sequence,
 and **no fork changes**: everything rides on addresses the installed
