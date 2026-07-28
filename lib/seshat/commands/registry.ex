@@ -4,7 +4,7 @@ defmodule Seshat.Commands.Registry do
 
   Single-message tools call `Seshat.OSC.Transport` directly from
   `Seshat.Tools.Handlers` — a Command only exists for operations that need
-  ordering: query-then-create, ensure-then-write, clear-then-rebuild.
+  ordering: query-then-create, ensure-then-write.
 
   OSC addresses per AbletonOSC:
     /live/song/create_midi_track  [index]               (-1 = append)
@@ -12,7 +12,6 @@ defmodule Seshat.Commands.Registry do
     /live/track/set/name          [track_index, name]
     /live/clip_slot/create_clip   [track_index, slot, length]
     /live/clip/add/notes          [track_index, slot, pitch, start, dur, vel, mute, ...]
-    /live/song/delete_track       [track_index]
     /live/song/create_return_track                        (no args — appends)
     /live/return_track/get/count  []                    → [count]        (Seshat ext.)
     /live/return_track/set/name   [return_index, name]                   (Seshat ext.)
@@ -74,16 +73,6 @@ defmodule Seshat.Commands.Registry do
     with :ok <- ensure_clip(track, slot, length),
          :ok <- add_notes(track, slot, notes) do
       Logger.info("Wrote #{Enum.count(notes)} notes to track #{track}, clip slot #{slot}")
-      :ok
-    end
-  end
-
-  def execute(%Command{command: :new_project, tracks: tracks}) do
-    with :ok <- open_new_set(),
-         :ok <- wait_for_ableton(),
-         :ok <- clear_default_tracks(),
-         :ok <- create_tracks(tracks) do
-      Seshat.Session.State.refresh()
       :ok
     end
   end
@@ -221,62 +210,6 @@ defmodule Seshat.Commands.Registry do
          :ok <- Transport.send_message(osc_address, [-1]),
          :ok <- Transport.send_message("/live/track/set/name", [count, name]) do
       :ok
-    end
-  end
-
-  defp create_tracks(tracks) do
-    Enum.reduce_while(tracks, :ok, fn %{track_type: type, name: name}, :ok ->
-      case create_and_name_track(type, name) do
-        :ok -> {:cont, :ok}
-        error -> {:halt, error}
-      end
-    end)
-  end
-
-  defp open_new_set do
-    case System.cmd("osascript", [
-           "-e",
-           "tell application \"Ableton Live 12\" to activate",
-           "-e",
-           "tell application \"System Events\" to keystroke \"n\" using command down"
-         ]) do
-      {_output, 0} ->
-        Logger.info("Sent Cmd+N to Ableton via AppleScript")
-        :ok
-
-      {output, code} ->
-        Logger.error("AppleScript failed (exit #{code}): #{output}")
-        {:error, "Failed to open new Ableton set"}
-    end
-  end
-
-  defp wait_for_ableton(retries \\ 20, delay_ms \\ 500) do
-    case Transport.query("/live/test", []) do
-      {:ok, _} ->
-        :ok
-
-      {:error, _} when retries > 0 ->
-        Process.sleep(delay_ms)
-        wait_for_ableton(retries - 1, delay_ms)
-
-      {:error, reason} ->
-        Logger.error("Ableton not responding after new set: #{inspect(reason)}")
-        {:error, "Ableton not responding after opening new set"}
-    end
-  end
-
-  defp clear_default_tracks do
-    case Transport.query("/live/song/get/num_tracks", []) do
-      {:ok, {_addr, [count]}} ->
-        # Delete tracks in reverse order to avoid index shifting
-        Enum.each((count - 1)..0//-1, fn i ->
-          Transport.send_message("/live/song/delete_track", [i])
-        end)
-
-        :ok
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 end

@@ -7,11 +7,10 @@ defmodule Seshat.Commands.Command do
   """
 
   @type t :: %__MODULE__{
-          command: :create_track | :create_return_track | :new_project | :write_notes,
+          command: :create_track | :create_return_track | :write_notes,
           track: non_neg_integer() | nil,
           track_type: :midi | :audio | nil,
           name: String.t() | nil,
-          tracks: [%{track_type: :midi | :audio, name: String.t()}] | nil,
           clip_slot: non_neg_integer() | nil,
           clip_length: float() | nil,
           notes: [map()] | nil
@@ -22,7 +21,6 @@ defmodule Seshat.Commands.Command do
     :track,
     :track_type,
     :name,
-    :tracks,
     :clip_slot,
     :clip_length,
     :notes

@@ -1,6 +1,6 @@
 # Seshat MCP — Tool Audit
 
-_Living doc · MCP design review · 47 tools reviewed · 25 Jul 2026 — update as tools change._
+_Living doc · MCP design review · 46 tools in the surface · 25 Jul 2026 — update as tools change._
 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
@@ -36,7 +36,14 @@ _Living doc · MCP design review · 47 tools reviewed · 25 Jul 2026 — update 
 > hardcoded list. See
 > [archive/PLAN_catalog_result_quality.md](archive/PLAN_catalog_result_quality.md).
 
-**At a glance:** 47 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
+> **`create_project` removed 28 Jul 2026.** The 25 Jul "Keep" verdict didn't
+> survive the validation run: the tool's AppleScript Cmd+N step only worked
+> when redundant, and its default-track cleanup was both racy and impossible
+> to complete (Live keeps a set's last track). Replaced by a stripped Default
+> Live Set plus ordinary `create_track` calls — see
+> [archive/create-project-removal.md](archive/create-project-removal.md).
+
+**At a glance:** 46 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -105,7 +112,7 @@ Description quality is a real strength here. Two behaviors, though, were correct
 
 ## 05 · Full Inventory
 
-All 47 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
+All 46 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
@@ -116,7 +123,6 @@ All 47 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 | `get_device_parameters` | Read      | Keep   | Great "trust the min/max" guidance.                      |
 | `undo`                  | History   | Keep   | —                                                        |
 | `redo`                  | History   | Keep   | —                                                        |
-| `create_project`        | Structure | Keep   | —                                                        |
 | `create_track`          | Structure | Keep   | —                                                        |
 | `create_scene`          | Structure | Keep   | Position param `index` vs `scene` elsewhere.             |
 | `delete_track`          | Structure | Keep   | —                                                        |
@@ -169,4 +175,4 @@ All 47 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 
 ---
 
-_Seshat MCP tool audit · living document · 47 tools as of 26 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._
+_Seshat MCP tool audit · living document · 46 tools as of 28 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._

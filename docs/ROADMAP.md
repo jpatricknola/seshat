@@ -9,39 +9,17 @@ The canonical OSC address reference is
 [abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
 address.
 
+**Next up: Priority 1 — device removal & bypass**, immediately below.
+
+How to read the ordering: Priority 1 is the only project-wide ranked item.
+Everything after it is grouped by *topic*, not sequenced — a section's position
+in the file carries no priority. Where a section contains its own numbered
+sequence (the levers under sound catalog follow-ups, say), that sequence orders
+work *within* that area only; it does not compete with Priority 1 for the
+project's next slot. So a lever ranked first inside its own section is still
+downstream of Priority 1 unless you decide to make that whole area the focus.
+
 ---
-
-## Known bugs — `create_project`
-
-Found by the validation run (the same run that produced the push-based session
-state work, see
-[archive/PLAN_session_state_push.md](archive/PLAN_session_state_push.md)).
-"Let's start a new project. Make me three MIDI tracks" left **7** tracks in the
-session. A fresh Live set has 4 default tracks (2 MIDI + 2 audio), so 4 + 3 is
-the whole story: the new set *did* open, and
-[`clear_default_tracks`](../lib/seshat/commands/registry.ex#L268) failed to
-remove the defaults. (The validation note reads it as "a new project was not
-opened" — understandable from the chair, but the arithmetic says otherwise.)
-
-The step order at
-[registry.ex:81-85](../lib/seshat/commands/registry.ex#L81-L85) is already
-correct (open → wait → clear → create), and `/live/song/delete_track` is the
-right address. Two live suspects, both needing Ableton to confirm:
-
-- **Settling.** `wait_for_ableton/2` polls `/live/test`, which answers as soon
-  as the control surface is up — not when the new set has finished loading.
-  The four `delete_track` sends are fire-and-forget into that window, and
-  `create_tracks` immediately re-queries `num_tracks` behind them.
-- **The AppleScript app name.** `open_new_set/0` targets
-  `"Ableton Live 12"` while the installed app is `"Ableton Live 12 Suite"`.
-  This one did *not* bite here (Cmd+N clearly landed), but it is fragile —
-  the process name is always `"Live"`, so target that.
-
-Also worth fixing while in here: `clear_default_tracks` deletes **every** track
-`(count-1)..0`, not just defaults. It is only safe because `open_new_set`
-precedes it — if that ever succeeds without actually opening a new set, this
-wipes the user's open work. It should verify it is looking at a fresh set
-before deleting anything, and there is no `can_undo` guard for an unsaved set.
 
 ## Priority 1 — Device removal & bypass
 
@@ -105,6 +83,12 @@ read → remove → rewrite by hand.
 doc for this whole area — it ranks nine levers by measured impact on the real
 dev catalog and proposes a sequence. Read it before picking any item below;
 the numbered references (№1–№9) point into it.
+
+That sequence orders *this section's* work, and only applies once you've
+decided search quality is the focus — it is not a competing claim on the
+project's next slot, and the doc itself defers to Priority 1 on `delete_device`
+(its lever №3). Note that `delete_device` therefore pays off twice: it closes
+the one-way device workflow *and* it is the last-mile audition loop here.
 
 Left out of catalog v1 (see
 [archive/PLAN_sound_catalog.md](archive/PLAN_sound_catalog.md) for context),

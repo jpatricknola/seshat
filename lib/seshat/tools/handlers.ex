@@ -5,7 +5,7 @@ defmodule Seshat.Tools.Handlers do
   Shared by both MCP and API key modes. Takes a tool name and input map and
   returns a result suitable for sending back to the LLM. Single-message tools
   talk to `Seshat.OSC.Transport` directly; multi-step sequences (create_track,
-  write_midi_notes, create_project) build a `%Command{}` and execute it via
+  create_return_track, write_midi_notes) build a `%Command{}` and execute it via
   `Seshat.Commands.Registry`.
   """
 
@@ -721,24 +721,6 @@ defmodule Seshat.Tools.Handlers do
     case Registry.execute(command) do
       :ok -> {:ok, "Created #{type} track '#{name}'"}
       {:error, reason} -> {:error, inspect(reason)}
-    end
-  end
-
-  defp do_call("create_project", %{"tracks" => tracks}) when is_list(tracks) do
-    parsed_tracks =
-      Enum.map(tracks, fn %{"track_type" => type, "name" => name} ->
-        %{track_type: to_track_type(type), name: name}
-      end)
-
-    command = %Command{command: :new_project, tracks: parsed_tracks}
-
-    case Registry.execute(command) do
-      :ok ->
-        names = Enum.map_join(parsed_tracks, ", ", & &1.name)
-        {:ok, "Created new project with tracks: #{names}"}
-
-      {:error, reason} ->
-        {:error, inspect(reason)}
     end
   end
 

@@ -109,35 +109,6 @@ defmodule Seshat.Tools.Definitions do
       }
     },
     %{
-      name: "create_project",
-      description:
-        "Start a new Ableton Live project with a set of tracks. " <>
-          "Opens a fresh set and creates the specified tracks. " <>
-          "Use 'midi' for software instruments, 'audio' for external recording.",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "tracks" => %{
-            type: "array",
-            items: %{
-              type: "object",
-              properties: %{
-                "track_type" => %{
-                  type: "string",
-                  enum: ["midi", "audio"],
-                  description: "midi = software instruments, audio = external recording"
-                },
-                "name" => %{type: "string", description: "Short descriptive label"}
-              },
-              required: ["track_type", "name"]
-            },
-            description: "List of tracks to create in the new project"
-          }
-        },
-        required: ["tracks"]
-      }
-    },
-    %{
       name: "write_midi_notes",
       description:
         "Write MIDI notes into a clip on a track in Ableton Live. " <>

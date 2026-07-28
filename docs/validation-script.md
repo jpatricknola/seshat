@@ -552,11 +552,14 @@ You now have a small but real lo-fi sketch. Save it if you like it.
 ## What this covered
 
 The 41 tools this walkthrough was written against, in the order they appear
-above (Seshat has since grown to 47 — see below):
+above (Seshat has since grown to 46 — see below; `create_project` was removed
+after the 2026-07-27 run, so Part 1's "new project" prompt now resolves to
+`create_track` calls against the blank Default Set — see
+[archive/create-project-removal.md](archive/create-project-removal.md)):
 
 | Part | Tools exercised |
 |---|---|
-| 1 | `create_project`, `get_session_state`, `set_tempo`, `set_metronome` |
+| 1 | `create_track`, `get_session_state`, `set_tempo`, `set_metronome` |
 | 2 | `reindex_library`, `search_library`, `load_device`, `list_browser_items`, `get_track_devices` |
 | 3 | `write_midi_notes`, `get_clip_slots`, `fire_clip`, `start_playing`, `stop_playing` |
 | 4 | `write_midi_notes`, `get_clip_notes`, `fire_scene`, `stop_clip` |
