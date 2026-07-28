@@ -1,6 +1,11 @@
 # AbletonOSC API Reference
 
-> Source: https://github.com/ideoforms/AbletonOSC
+> Source: https://github.com/jpatricknola/AbletonOSC — Seshat's fork of
+> [ideoforms/AbletonOSC](https://github.com/ideoforms/AbletonOSC), checked out
+> as a submodule at `priv/AbletonOSC` and installed by `mix abletonosc.install`.
+> Addresses marked "Seshat extension" below exist only in the fork; `SESHAT.md`
+> at the fork root lists every divergence, including its fixes to upstream's
+> own code.
 > Protocol: OSC over UDP
 > Send port: 11000
 > Reply port: 11001
@@ -22,11 +27,11 @@
 
 ⚠️ **Don't reach for `/live/api/reload`.** Two problems, both observed:
 
-1. It doesn't reload `abletonosc/browser.py` at all. `reload_imports` in
-   `manager.py` names each module explicitly and our vendored one isn't on the
-   list, so edits to it need Live restarted — or AbletonOSC toggled off and
-   back on under Preferences > Link/Tempo/MIDI > Control Surface — exactly like
-   a brand new module.
+1. It reloads modules, not files on disk that Live never imported. Editing the
+   Python in `priv/AbletonOSC` does nothing until `mix abletonosc.install`
+   copies it across, and a reload won't pick up a *new* module either — that
+   needs Live restarted, or AbletonOSC toggled off and back on under
+   Preferences > Link/Tempo/MIDI > Control Surface.
 2. It can take the whole API down. `clear_handlers()` runs first, then
    `clear_api()` raises `KeyError` on any listener registered against a track
    that no longer exists — leaving zero handlers registered and no way to
@@ -195,39 +200,30 @@ Volume, panning, send, mute, solo, devices, clips.
 Listen via `/live/track/start_listen/<property> <track_index>`, responses on `/live/track/get/<property>` with `<track_index> <value>`. `*` in place of the
 index subscribes every track.
 
-> ⚠️ **Five of those listeners are overridden by Seshat**, in
-> `priv/abletonosc/track_listeners.py` — same addresses, same arguments, same
-> pushes, so nothing calling them can tell the difference:
+> ⚠️ **These listeners are fixed in the fork**, in `AbletonOSCHandler._stop_listen`
+> and `TrackHandler`'s mixer-listener pair. Same addresses, same arguments, same
+> pushes — nothing calling them can tell the difference, which is exactly why the
+> bug is worth writing down.
 >
-> | Address | Query Params |
-> |---|---|
-> | `/live/track/start_listen/name` | `track_index` or `*` |
-> | `/live/track/stop_listen/name` | `track_index` or `*` |
-> | `/live/track/start_listen/mute` | `track_index` or `*` |
-> | `/live/track/stop_listen/mute` | `track_index` or `*` |
-> | `/live/track/start_listen/solo` | `track_index` or `*` |
-> | `/live/track/stop_listen/solo` | `track_index` or `*` |
-> | `/live/track/start_listen/volume` | `track_index` or `*` |
-> | `/live/track/stop_listen/volume` | `track_index` or `*` |
-> | `/live/track/start_listen/panning` | `track_index` or `*` |
-> | `/live/track/stop_listen/panning` | `track_index` or `*` |
->
-> Upstream's versions are keyed by track index but bound to a track *object*, and
-> they unbind from whatever object the index resolves to at teardown time. Delete
-> a track and every later index shifts, so re-subscribing tries to unbind the old
+> A listener is keyed by track index but bound to a track *object*, and upstream
+> unbinds it from whatever object the index resolves to at teardown time. Delete a
+> track and every later index shifts, so re-subscribing tries to unbind the old
 > callback from the wrong track: the removal fails, the base class swallows it as
 > "likely benign", and the old listener stays alive pushing under an index that
 > now belongs to someone else. A rename afterwards writes one track's name onto
-> another in `Seshat.Session.State`. The override unbinds the object the callback
-> was actually registered on, which the base class already records in
-> `listener_objects`. It also registers `listener_objects` for the two mixer
-> properties, which upstream omits — without that, `_clear_listeners` raises
-> `KeyError` on reload once a volume or panning listener is active.
+> another in `Seshat.Session.State`. The fork unbinds from the object the callback
+> was actually registered on, which `_start_listen` already records in
+> `listener_objects`.
 >
-> This works because `OSCServer.add_handler` is a plain dict assignment, so the
-> last registration for an address wins, and `mix abletonosc.install` anchors
-> Seshat's handlers after `MidiMapHandler` — below `TrackHandler` in
-> `manager.py`. Every other track listener keeps upstream's behaviour.
+> The mixer listeners (volume, panning) had a second bug: they never recorded
+> anything in `listener_objects` at all, so `_clear_listeners` raised `KeyError`
+> on script reload once either was active. They now key as
+> `("value", (track_id, prop))` with the `DeviceParameter` stored, and stop
+> through the fixed base class.
+>
+> Seshat used to fix this from outside, by re-registering the five affected
+> addresses from a `track_listeners.py` that had to be instantiated after
+> `TrackHandler`. That file no longer exists.
 
 ### Track Methods
 
@@ -329,6 +325,12 @@ Container for clips. Create, delete, and query clip existence.
 | `/live/clip_slot/set/has_stop_button` | `track_index, clip_index, has_stop_button` | | Set stop button (1=on, 0=off) |
 | `/live/clip_slot/duplicate_clip_to` | `track_index, clip_index, target_track, target_clip` | | Duplicate clip to target slot |
 
+> ⚠️ **`duplicate_clip_to` is a merge hazard.** Upstream PRs #182 and #185 rename
+> it to `duplicate_to` with no alias, and Seshat's `duplicate_clip` tool depends
+> on the old name — so merging either into the fork breaks the tool silently
+> (an unknown address over UDP just does nothing). Recorded in `SESHAT.md` at the
+> fork root; the `audit-osc` workflow is what catches it.
+
 ---
 
 ## Clip API
@@ -340,6 +342,7 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/fire` | `track_id, clip_id` | | Start clip |
 | `/live/clip/stop` | `track_id, clip_id` | | Stop clip |
 | `/live/clip/duplicate_loop` | `track_id, clip_id` | | Duplicate clip loop |
+| `/live/clip/quantize` | `track_id, clip_id, grid, amount` | | **Seshat extension** (fork only). Quantize the clip's notes. `grid` is Live's `GridQuantization` enum — see below. `amount` is 0.0–1.0 (Live's UI shows it as a percentage). No reply, ever |
 | `/live/clip/get/notes` | `track_id, clip_id, [start_pitch, pitch_span, start_time, time_span]` | `track_id, clip_id, pitch, start_time, duration, velocity, mute, ...` | Query notes (optional range) |
 | `/live/clip/add/notes` | `track_id, clip_id, pitch, start_time, duration, velocity, mute, ...` | | Add MIDI notes |
 | `/live/clip/remove/notes` | `[start_pitch, pitch_span, start_time, time_span]` | | Remove notes (no params = all) |
@@ -395,6 +398,23 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/set/start_marker` | `track_id, clip_id, start_marker` | | Set start marker (beats) |
 | `/live/clip/get/end_marker` | `track_id, clip_id` | `track_id, clip_id, end_marker` | End marker |
 | `/live/clip/set/end_marker` | `track_id, clip_id, end_marker` | | Set end marker (beats) |
+
+### Quantization grid
+
+`/live/clip/quantize`'s `grid` argument is Live's `GridQuantization` enum, which
+is **not** the `RecordingQuantization` enum used elsewhere in Live's API. Getting
+the two confused quantizes sixteenths to half notes, silently.
+
+| Value | Grid | | Value | Grid |
+|---|---|---|---|---|
+| 0 | none | | 5 | 1/2 |
+| 1 | 8 bars | | 6 | 1/4 |
+| 2 | 4 bars | | 7 | 1/8 |
+| 3 | 2 bars | | 8 | 1/16 |
+| 4 | 1 bar | | 9 | 1/32 |
+
+There are no triplet grids: swing comes from the song's `swing_amount`, which
+`quantize` honours.
 
 ---
 
@@ -485,10 +505,10 @@ Listen for parameter changes via `/live/device/start_listen/parameter/value <tra
 
 ## Browser API (Seshat extension — not in upstream AbletonOSC)
 
-⚠️ These three addresses do **not** exist in stock AbletonOSC. They are served
-by `priv/abletonosc/browser.py` in this repo, installed with
+⚠️ These five addresses do **not** exist in stock AbletonOSC. They are served by
+`abletonosc/browser.py` in Seshat's fork (`priv/AbletonOSC`), installed with
 `mix abletonosc.install` (restart Live afterwards). Without that install all
-three addresses are unknown and queries time out.
+five addresses are unknown and queries time out.
 
 Unlike the rest of AbletonOSC, these always reply — including on every error
 path — so a query resolves instead of hanging.
@@ -501,6 +521,19 @@ path — so a query resolves instead of hanging.
 | `/live/browser/load_item` | | `track_id, uri, 'error', message` | Bad track index, unknown uri, or load failed |
 | `/live/browser/export` | `dest_path` | `dest_path, 'ok', total_items` | Walk every category and write the whole index to a JSON file |
 | `/live/browser/export` | | `dest_path, 'error', message` | Missing path, no category indexable, or the write failed |
+| `/live/browser/preview_item` | `uri` | `uri, 'ok', name` | Audition a browser item without loading it — nothing in the set changes |
+| `/live/browser/preview_item` | | `uri, 'error', message` | Missing or unknown uri, or the preview call failed |
+| `/live/browser/stop_preview` | | `'ok'` | Stop the running preview |
+| `/live/browser/stop_preview` | | `'error', message` | The stop call failed |
+
+- `preview_item` plays through Live's **cue** bus, so audibility depends on the
+  set's cue routing: with cue routed nowhere the preview is silent. That is a
+  property of the user's set, not something the handler can detect, so a silent
+  preview still replies `'ok'`. Whether a given preset carries a preview at all
+  is Live's business too.
+- `stop_preview` takes no argument and so has no bad-index failure to report,
+  but it replies anyway — unlike the index-less getters below, nothing else
+  confirms that the preview stopped.
 
 - `category`: `instruments`, `sounds`, `drums`, `audio_effects`, `midi_effects`,
   `plugins`, `samples`, `user_library`
@@ -555,8 +588,8 @@ directory and deletes the file afterwards.
 ## Return Track & Master API (Seshat extension — not in upstream AbletonOSC)
 
 ⚠️ These thirteen addresses do **not** exist in stock AbletonOSC. They are served
-by `priv/abletonosc/return_track.py` in this repo, installed with
-`mix abletonosc.install` (restart Live afterwards). Without that install all
+by `abletonosc/return_track.py` in Seshat's fork (`priv/AbletonOSC`), installed
+with `mix abletonosc.install` (restart Live afterwards). Without that install all
 thirteen addresses are unknown and queries time out.
 
 They exist because upstream reaches regular tracks only: every `/live/track/*`
@@ -624,21 +657,21 @@ track needs no index at all.
   `_start_listen`, which would derive `/live/return_track/get/value`.
 - **Re-subscribing an index unbinds the object it used to mean.** These
   listeners are keyed by return index but bound to a return-track object, and
-  deleting a return renumbers everything after it. The base class's
-  `_stop_listen` removes the callback from whatever target it is *handed*, so
-  re-subscribing index 0 after a delete would try to unbind it from the wrong
-  object, silently fail, and leave the old listener pushing under an index that
-  now belongs to someone else. `return_track.py` therefore stops via
-  `_stop_listen_stored`, which unbinds the object the callback was actually
-  registered on. Any future index-keyed listener we vendor needs the same.
+  deleting a return renumbers everything after it. Upstream's `_stop_listen`
+  removes the callback from whatever target it is *handed*, so re-subscribing
+  index 0 after a delete would try to unbind it from the wrong object, silently
+  fail, and leave the old listener pushing under an index that now belongs to
+  someone else. The fork's base class unbinds from the object the callback was
+  actually registered on, which is what makes any index-keyed listener safe —
+  see the note under the Track API above.
 
 ---
 
 ## Song Structure API (Seshat extension — not in upstream AbletonOSC)
 
 ⚠️ These four addresses do **not** exist in stock AbletonOSC. They are served by
-`priv/abletonosc/song_structure.py` in this repo, installed with
-`mix abletonosc.install` (restart Live afterwards).
+`abletonosc/song_structure.py` in Seshat's fork (`priv/AbletonOSC`), installed
+with `mix abletonosc.install` (restart Live afterwards).
 
 Upstream's `SongHandler` registers `start_listen` only for the *scalar* Song
 properties in its hardcoded list (tempo, root_note, is_playing, …). `tracks` and

@@ -28,7 +28,7 @@ All of it comes down to one thing: **TCP reliability you can see.**
 - **The device must be in the set** — every project, or baked into the user's
   default template. A Remote Script installs once, globally.
 - **A new toolchain.** A Max patch plus its JS runtime, with its own quirks —
-  versus Python we already know and already extend (`priv/abletonosc/browser.py`).
+  versus Python we already know and already extend (`priv/AbletonOSC/abletonosc/browser.py`).
 - **A rewrite of everything below `Handlers`.** The tool contract in
   `Seshat.Tools.Definitions` survives; the transport, address vocabulary,
   value conventions, and listener mechanism don't. All current sites are

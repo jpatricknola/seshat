@@ -65,8 +65,8 @@ Changes are then pushed to 11001 as if they were get replies:
 Upstream registers `start_listen` only for the scalars in each handler's
 hardcoded property list. A property holding a *list of LOM objects* — `tracks`,
 `return_tracks` — is not in any of them, so nothing upstream fires when a track
-is added, deleted or reordered. Those two are ours, vendored in
-`priv/abletonosc/song_structure.py`, which pushes a tuple of names via the base
+is added, deleted or reordered. Those two are ours, added in the fork's
+`abletonosc/song_structure.py`, which pushes a tuple of names via the base
 class's optional `getter` argument. Don't assume a property is listenable
 because it is gettable; check the handler's list first.
 
@@ -81,12 +81,12 @@ Two gotchas that don't show in the address tables:
 
 - **An index-keyed listener must be unbound from the object it was registered
   on.** Listeners are keyed by index but bound to a LOM object, and indices
-  renumber on delete or reorder. The base `_stop_listen` unbinds from the target
-  it is *handed*, which after a renumber is the wrong object — it fails
-  silently, the base swallows it as "likely benign", and the old listener keeps
-  pushing under an index that now means someone else. `return_track.py` and
-  `track_listeners.py` both stop via `_stop_listen_stored`; copy that for any
-  new index-keyed listener.
+  renumber on delete or reorder. Unbinding from the target you were *handed* is
+  the wrong object after a renumber — it fails silently, the base swallows it as
+  "likely benign", and the old listener keeps pushing under an index that now
+  means someone else. Upstream did exactly that; the fork's base `_stop_listen`
+  resolves through `listener_objects` instead, so every handler gets it right by
+  default. Don't hand-roll a stop that passes an index-resolved object.
 - **`/live/startup` invalidates every listener.** AbletonOSC sends it whenever
   its control surface initialises (Live launching, a set loading, the surface
   toggled). Every listener registered against the previous song object is dead

@@ -56,6 +56,15 @@ Start every agent prompt with this preamble, verbatim:
 > explicitly direct it. Do not modify anything under .claude/skills/ or
 > .claude/workflows/ — that is the tooling running you, out of scope for the
 > feature regardless of what you notice about it.
+>
+> If `priv/AbletonOSC` is empty, run `git submodule update --init` before
+> anything else — it is the AbletonOSC fork, git worktrees do not populate
+> submodules, and two test files fail without it. If your phase changes the
+> Python in there, `git -C priv/AbletonOSC checkout master` first (a fresh
+> `submodule update` leaves a detached HEAD), commit and push inside the
+> submodule, and `git add priv/AbletonOSC` from the root to stage the pin.
+> Note in your report that Live still runs the copy installed by
+> `mix abletonosc.install`, so no test in this repo has executed that Python.
 
 And end every prompt with:
 

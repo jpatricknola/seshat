@@ -22,7 +22,7 @@ _Living doc · MCP design review · 48 tools in the surface · 25 Jul 2026 — u
 > `delete_return_track`, `set_return_track_volume`, `set_master_volume`),
 > closing §02's top gap and the master/return level gap with it. Returns and the
 > master needed a second vendored AbletonOSC handler
-> (`priv/abletonosc/return_track.py`) because upstream reaches `song.tracks`
+> (`priv/AbletonOSC/abletonosc/return_track.py`) because upstream reaches `song.tracks`
 > only — see [archive/PLAN_send_levels.md](archive/PLAN_send_levels.md).
 
 > **`search_library` result quality shipped 27 Jul 2026.** Two things §04

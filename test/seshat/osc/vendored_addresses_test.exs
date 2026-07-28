@@ -4,20 +4,44 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
   `/live/browser/*`, `/live/return_track/*` and `/live/master/*` are ours, as are
   two addresses under upstream's own `/live/song/` prefix: they exist only
-  because `priv/abletonosc/browser.py`, `priv/abletonosc/return_track.py` and
-  `priv/abletonosc/song_structure.py` register them. A typo on either side of
-  that seam fails the way every OSC mistake fails — silently, over UDP, with no
-  reply — and the guard timeouts that catch it look exactly like "Ableton isn't
-  running". These tests close the loop without needing Ableton at all:
+  because `browser.py`, `return_track.py` and `song_structure.py` in the
+  `priv/AbletonOSC` fork register them. A typo on either side of that seam fails
+  the way every OSC mistake fails — silently, over UDP, with no reply — and the
+  guard timeouts that catch it look exactly like "Ableton isn't running". These
+  tests close the loop without needing Ableton at all:
 
     * every vendored address the Elixir code sends must be registered in Python
     * every address Python registers must be in the canonical address docs
 
   Upstream `/live/` addresses are out of scope here — verifying those against
-  the installed AbletonOSC source is what the `audit-osc` workflow is for.
+  the fork's source is what the `audit-osc` workflow is for.
+
+  There used to be a fourth file, `track_listeners.py`, which registered no new
+  addresses: it overrode five of upstream's, whose listeners unbind from the
+  wrong object once a track index has been reused. It had its own describe block
+  here, pinning that it covered everything `Session.State` subscribes to. The
+  fork fixes that bug in `AbletonOSCHandler._stop_listen` instead, so there is
+  nothing left to override and nothing left to keep in sync.
   """
 
   use ExUnit.Case, async: true
+
+  @source "priv/AbletonOSC"
+
+  setup_all do
+    unless File.regular?(Path.join(@source, "manager.py")) do
+      raise """
+      #{@source} is empty — the AbletonOSC submodule isn't checked out.
+
+          git submodule update --init
+
+      Git worktrees don't populate submodules on creation, so you need this
+      once per worktree.
+      """
+    end
+
+    :ok
+  end
 
   @vendored_prefixes ["/live/browser/", "/live/return_track/", "/live/master/"]
 
@@ -38,12 +62,11 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   # `Session.State` still matches on them, so they are documented like any other.
   @push_only_addresses ["/live/song/get/tracks", "/live/song/get/return_tracks"]
 
-  @handler_files [
-    "priv/abletonosc/browser.py",
-    "priv/abletonosc/return_track.py",
-    "priv/abletonosc/song_structure.py",
-    "priv/abletonosc/track_listeners.py"
-  ]
+  @browser_file "priv/AbletonOSC/abletonosc/browser.py"
+  @return_track_file "priv/AbletonOSC/abletonosc/return_track.py"
+  @song_structure_file "priv/AbletonOSC/abletonosc/song_structure.py"
+
+  @handler_files [@browser_file, @return_track_file, @song_structure_file]
 
   @docs "docs/abletonosc-api-docs.md"
 
@@ -64,7 +87,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                Registered: #{Enum.join(Enum.sort(registered), ", ")}
 
                An unregistered address is silently dropped by AbletonOSC — add it
-               to a handler in priv/abletonosc/, or fix the typo.
+               to a handler in #{@source}, or fix the typo.
                """
       end
     end
@@ -102,7 +125,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       for address <- registered_addresses() do
         assert String.contains?(docs, address),
                """
-               #{address} is registered in priv/abletonosc/ but missing from #{@docs}.
+               #{address} is registered in #{@source} but missing from #{@docs}.
 
                That file is the canonical list every tool is written against, and
                .claude/rules/osc.md says an address that isn't in it doesn't exist.
@@ -115,7 +138,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
       for address <- @push_only_addresses do
         assert String.contains?(docs, address),
-               "#{address} is pushed by priv/abletonosc/song_structure.py but missing from #{@docs}."
+               "#{address} is pushed by #{@song_structure_file} but missing from #{@docs}."
 
         refute address in registered_addresses(),
                """
@@ -126,8 +149,18 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       end
     end
 
+    test "the browser handler registers exactly the five documented addresses" do
+      assert Enum.sort(registered_addresses(@browser_file)) == [
+               "/live/browser/export",
+               "/live/browser/get/items",
+               "/live/browser/load_item",
+               "/live/browser/preview_item",
+               "/live/browser/stop_preview"
+             ]
+    end
+
     test "the return/master handler registers exactly the thirteen documented addresses" do
-      assert Enum.sort(registered_addresses("priv/abletonosc/return_track.py")) == [
+      assert Enum.sort(registered_addresses(@return_track_file)) == [
                "/live/master/get/volume",
                "/live/master/set/volume",
                "/live/master/start_listen/volume",
@@ -145,7 +178,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     end
 
     test "the song structure handler registers exactly the four documented addresses" do
-      assert Enum.sort(registered_addresses("priv/abletonosc/song_structure.py")) == [
+      assert Enum.sort(registered_addresses(@song_structure_file)) == [
                "/live/song/start_listen/return_tracks",
                "/live/song/start_listen/tracks",
                "/live/song/stop_listen/return_tracks",
@@ -154,81 +187,54 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     end
   end
 
-  # track_listeners.py is the one file here that registers no new addresses: it
-  # re-registers upstream's, to replace listeners that unbind from the wrong
-  # object once a track index has been reused. That makes it invisible to the
-  # tripwires above — a `/live/track/*` address resolves whether or not the
-  # override loaded — so it gets its own.
-  describe "the track listener override" do
-    @override_file "priv/abletonosc/track_listeners.py"
+  # The fork's one fix whose loss is completely invisible: every address still
+  # answers, and the only symptom is one track's name appearing under another's
+  # index some time later. SESHAT.md lists it as a merge hazard for exactly that
+  # reason, and an upstream merge is the realistic way it gets dropped. A grep is
+  # a crude guard, but the alternative is a live Ableton.
+  describe "the base-class listener fix" do
+    @handler_base "priv/AbletonOSC/abletonosc/handler.py"
 
-    test "overrides both verbs for every property it touches" do
-      expected =
-        for prop <- overridden_properties(), verb <- ["start_listen", "stop_listen"] do
-          "/live/track/#{verb}/#{prop}"
-        end
-
-      assert Enum.sort(registered_addresses(@override_file)) == Enum.sort(expected),
+    test "_stop_listen unbinds from the stored object, not the one it was passed" do
+      assert File.read!(@handler_base) =~ "self.listener_objects.get(listener_key, target)",
              """
-             The override registers start_listen without stop_listen (or the reverse)
-             for some property. Both verbs have to be overridden together: a
-             stop_listen left with upstream unbinds from the wrong object and drops
-             the bookkeeping entry, which is the bug this file exists to fix.
+             #{@handler_base}'s _stop_listen no longer resolves its target through
+             listener_objects.
+
+             Without it, a listener keyed by an index that has since been renumbered
+             is unbound from the wrong object: the removal raises, is swallowed as
+             "likely benign", and the bookkeeping entry is dropped anyway — leaving
+             the old listener alive and pushing under an index that now means someone
+             else. Seshat.Session.State's mirror then reports one track's name under
+             another's index.
+
+             This is the fix that let priv/abletonosc/track_listeners.py be deleted.
+             If an upstream merge reverted it, reapply it — see SESHAT.md in the fork.
              """
     end
 
-    # The override deliberately covers only what Session.State subscribes to.
-    # Adding a property to @listened_properties without adding it here would put
-    # that listener back on upstream's path — silently, since the address answers
-    # either way.
-    test "covers every property Session.State subscribes to" do
-      covered = overridden_properties()
-
-      for prop <- listened_properties() do
-        assert prop in covered,
+    # The stored-object contract has two halves: the base class *reads*
+    # listener_objects, and every hand-rolled DeviceParameter listener has to
+    # *populate* it. An upstream merge can revert track.py or device.py while
+    # leaving handler.py intact — every address still answers, the grep above
+    # stays green, and mixer/parameter listeners silently regain both bugs.
+    test "every DeviceParameter listener stores the object it registered on" do
+      for file <- [
+            "priv/AbletonOSC/abletonosc/track.py",
+            "priv/AbletonOSC/abletonosc/device.py"
+          ] do
+        assert File.read!(file) =~ "self.listener_objects[listener_key] = parameter_object",
                """
-               Seshat.Session.State listens to /live/track/start_listen/#{prop}, but
-               #{@override_file} doesn't override it — so it uses upstream's listener,
-               which unbinds from the wrong track once an index has been reused.
+               #{file} no longer stores the DeviceParameter it registered its
+               listener on in listener_objects.
 
-               Add start_listen and stop_listen handlers for #{inspect(prop)} there,
-               using _start_listen_plain (a Track property) or _start_listen_mixer
-               (a mixer_device DeviceParameter).
-
-               Covered: #{Enum.join(covered, ", ")}
+               Without that entry, the base _stop_listen falls back to unbinding
+               from the object it was handed — the wrong one once an index has been
+               renumbered — and _clear_listeners raises KeyError on script reload.
+               Those are the two bugs the fork fixes. See SESHAT.md's merge hazards.
                """
       end
     end
-
-    test "registers nothing but addresses upstream already owns" do
-      for address <- registered_addresses(@override_file) do
-        assert String.starts_with?(address, "/live/track/"),
-               "#{address} is not an upstream track address — a genuinely new address " <>
-                 "belongs in its own handler file, not in the override."
-      end
-    end
-
-    defp overridden_properties do
-      @override_file
-      |> registered_addresses()
-      |> Enum.flat_map(fn address ->
-        case String.split(address, "/live/track/start_listen/") do
-          ["", prop] -> [prop]
-          _ -> []
-        end
-      end)
-    end
-  end
-
-  # `@listened_properties ~w(panning volume mute solo name)` in Session.State.
-  defp listened_properties do
-    [_match, body] =
-      Regex.run(
-        ~r/@listened_properties\s+~w\(([^)]*)\)/,
-        File.read!("lib/seshat/session/state.ex")
-      )
-
-    String.split(body, ~r/\s+/, trim: true)
   end
 
   # `add_handler("/live/...", ...)` — the one way a handler registers an address.

@@ -81,7 +81,7 @@ const results = await parallel(
 
 Canonical sources:
 - docs/abletonosc-api-docs.md — the authoritative address list with argument signatures. An address absent from this file does not exist upstream.
-- priv/abletonosc/browser.py — the ONLY authority for /live/browser/* addresses (they are vendored, not upstream). Check the handler registrations in this file for those.
+- priv/AbletonOSC/abletonosc/browser.py — the ONLY authority for /live/browser/* addresses (they are vendored, not upstream). Check the handler registrations in this file for those.
 - .claude/docs/ableton-osc-reference.md — conventions and gotchas (ordering hazards, listener pattern).
 
 For each site below, open the referenced file at the given line to see the real code in context, then verify:

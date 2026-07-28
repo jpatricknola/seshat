@@ -12,8 +12,16 @@ this order and do not skip the verification step.
 
 1. **Find the OSC address** in [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md).
    Do not guess or infer it from a similar address — AbletonOSC's naming is
-   irregular and a wrong address fails silently. If the capability isn't in
-   that file, stop and say so rather than inventing an address.
+   irregular and a wrong address fails silently.
+
+   If the capability isn't in that file, **we own the bridge and can add it** —
+   `priv/AbletonOSC` is our fork, not a read-only dependency. That is a bigger
+   job than a tool (Python, a reinstall, a Live restart, a smoke test the pure
+   suite can't reach), so say what the address would need to be and let the user
+   decide whether to take it on before you start writing Python. The workflow,
+   once they say yes, is in [.claude/rules/osc.md](.claude/rules/osc.md).
+   Inventing an Elixir-side address for a handler that doesn't exist is still
+   the one thing never to do: it fails silently, forever.
 
 2. **Add the definition** to `@tools` in
    [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex). Write the

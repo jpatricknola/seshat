@@ -9,41 +9,47 @@ sends OSC to a running copy of Ableton Live.
 ## Prerequisites
 
 1. **Ableton Live** (tested against Live 12).
-2. **[AbletonOSC](https://github.com/ideoforms/AbletonOSC)** — a Python MIDI
-   Remote Script. Install it into Ableton's Remote Scripts folder and enable it
-   under Preferences → Link/MIDI → Control Surface. It listens on UDP 11000 and
-   replies on 11001.
-3. **Elixir 1.15+**.
+2. **Elixir 1.15+**.
+
+Nothing else to download: the AbletonOSC bridge ships with Seshat as a
+submodule, and `mix abletonosc.install` below puts it in place. You enable it
+under Preferences → Link/MIDI → Control Surface once it's installed. It listens
+on UDP 11000 and replies on 11001.
 
 No database required.
 
 ## Setup
 
 ```bash
+git submodule update --init   # checks out Seshat's AbletonOSC fork
 mix setup
-mix abletonosc.install     # adds Seshat's handler extensions to AbletonOSC
+mix abletonosc.install        # installs it into Ableton Live
 ```
 
-`mix abletonosc.install` copies two vendored handlers into AbletonOSC and
-registers both, because upstream AbletonOSC is missing two things Seshat
-needs:
+Seshat runs its own fork of AbletonOSC —
+[jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), checked
+out as a submodule at `priv/AbletonOSC`. `mix abletonosc.install` copies it
+wholesale into Live's Remote Scripts directory, replacing any existing
+AbletonOSC install. The fork adds what upstream is missing:
 
-- [priv/abletonosc/browser.py](priv/abletonosc/browser.py) — a browser API,
-  without which `search_library`, `list_browser_items` and `load_device` don't
-  work.
-- [priv/abletonosc/return_track.py](priv/abletonosc/return_track.py) — return
-  track and master addresses (upstream only reaches regular tracks), without
-  which `set_track_send`, `get_track_sends`, `create_return_track`,
-  `delete_return_track`, `set_return_track_volume`, `set_master_volume`, and
-  the return/master lines in `get_session_state` don't work.
+- **A browser API**, without which `search_library`, `list_browser_items` and
+  `load_device` don't work.
+- **Return track and master addresses** — upstream only reaches regular tracks
+  — without which `set_track_send`, `get_track_sends`, `create_return_track`,
+  `delete_return_track`, `set_return_track_volume`, `set_master_volume`, and the
+  return/master lines in `get_session_state` don't work.
+- **Track-list listeners**, so the session mirror follows tracks added, deleted
+  or reordered by hand in Live.
 
-The task probes for your AbletonOSC install (pass the path if it can't find
-it), copies both files in, and registers both handlers. **Restart Ableton Live
+It also fixes bugs in upstream's own code that have no extension seam — most
+importantly a listener that unbinds from the wrong object once a track index has
+been reused. `SESHAT.md` at the fork root lists every divergence.
+
+The task probes for your AbletonOSC install (pass the path if it can't find it,
+or if you want a fresh install somewhere specific). **Restart Ableton Live
 afterwards** (or toggle AbletonOSC off and back on under Preferences >
-Link/Tempo/MIDI > Control Surface) — `/live/api/reload` never reloads these
-files, and can leave AbletonOSC with no handlers at all.
-
-Everything else works without it.
+Link/Tempo/MIDI > Control Surface) — `/live/api/reload` won't pick up a new
+install, and can leave AbletonOSC with no handlers at all.
 
 ### Build the sound catalog (once)
 
@@ -59,28 +65,22 @@ even with Ableton closed. Re-run it after installing new Packs or plugins, or
 after saving your own presets.
 
 <details>
-<summary>Manual install (if the task can't patch your AbletonOSC)</summary>
+<summary>Manual install</summary>
 
-Copy both `priv/abletonosc/browser.py` and `priv/abletonosc/return_track.py`
-to `<AbletonOSC>/abletonosc/`, then:
+The task is a directory copy, so doing it by hand is one command. From the
+Seshat project root, with Live closed:
 
-1. In `<AbletonOSC>/abletonosc/__init__.py`, alongside the other handler
-   imports, add:
+```bash
+rm -rf "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC"
+cp -R priv/AbletonOSC "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC"
+rm -rf "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/.git" \
+       "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/.github" \
+       "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/.gitignore" \
+       "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/tests"
+```
 
-   ```python
-   from .browser import BrowserHandler
-   from .return_track import ReturnTrackHandler
-   ```
-
-2. In `<AbletonOSC>/manager.py`, inside the `self.handlers = [` list in
-   `init_api`, add:
-
-   ```python
-   abletonosc.BrowserHandler(self),
-   abletonosc.ReturnTrackHandler(self),
-   ```
-
-Restart Ableton Live.
+There is nothing to register: the fork's `__init__.py` and `manager.py` already
+list every handler. Restart Ableton Live.
 </details>
 
 For API-key mode, set an Anthropic key — either an env var:

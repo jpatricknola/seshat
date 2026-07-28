@@ -1,158 +1,131 @@
 defmodule Mix.Tasks.Abletonosc.Install do
   @moduledoc """
-  Installs Seshat's handler extensions into an existing AbletonOSC installation.
+  Installs Seshat's fork of AbletonOSC into Ableton Live's Remote Scripts.
 
-  Upstream AbletonOSC has no browser API, so `list_browser_items` and
-  `load_device` need an extra handler on the Python side; it also reaches
-  regular tracks only, so the return-track and master addresses the send/level
-  tools need come from a second one; and it can only listen to *scalar* song
-  properties, so the track-list listeners that keep `Seshat.Session.State` from
-  going stale come from a third. A fourth, `track_listeners.py`, registers no new
-  addresses at all — it overrides upstream's own track listeners, which unbind
-  from the wrong object once a track index has been reused. This task copies all
-  four files from `priv/abletonosc/` into AbletonOSC and registers them.
+  Seshat runs `jpatricknola/AbletonOSC`, a fork of `ideoforms/AbletonOSC`. The
+  fork carries the addresses upstream doesn't have (`/live/browser/*`,
+  `/live/return_track/*`, `/live/master/*`, the song-structure listeners) plus
+  fixes to upstream's own code that have no handler seam to override — chiefly
+  the base class unbinding a listener from the wrong object once an index has
+  been reused. `SESHAT.md` at the fork root lists every divergence.
+
+  The fork is a git submodule at `priv/AbletonOSC`, so this task is a
+  locate-and-copy: no patching, no anchors, no per-file registration. The
+  install directory is **replaced wholesale**, which is what keeps a file
+  deleted in the fork from lingering in an old install.
 
   ## Usage
 
-      mix abletonosc.install                 # probe for AbletonOSC
+      mix abletonosc.install                 # probe for an existing install
       mix abletonosc.install /path/to/AbletonOSC
 
-  ## What it changes
+  With no argument the task probes the usual Remote Scripts locations. If it
+  finds an existing AbletonOSC install, that directory is replaced. If it finds
+  none, it installs fresh to
+  `~/Music/Ableton/User Library/Remote Scripts/AbletonOSC`.
 
-  For each of `browser.py`, `return_track.py`, `song_structure.py` and
-  `track_listeners.py`:
+  A directory that already exists but doesn't look like an AbletonOSC install
+  (no `manager.py`, no `abletonosc/handler.py`) is refused rather than replaced,
+  so a mistyped path can't delete something else.
 
-  1. Copies `priv/abletonosc/<file>` -> `<install>/abletonosc/<file>`
-  2. Adds its `from .<module> import <Handler>` line to `<install>/abletonosc/__init__.py`
-  3. Adds `abletonosc.<Handler>(self),` to the handler list in `<install>/manager.py`
+  ## Prerequisite
 
-  Every step is idempotent - re-running the task is safe. If AbletonOSC
-  has drifted and a patch anchor can't be found, the task prints the exact
-  manual edit rather than guessing where the line belongs.
+  The submodule has to be checked out:
 
-  Restart Ableton Live afterwards — or toggle AbletonOSC off and back on under
+      git submodule update --init
+
+  Git worktrees don't populate submodules on creation, so this is once per
+  worktree, not once per machine.
+
+  ## Afterwards
+
+  Restart Ableton Live — or toggle AbletonOSC off and back on under
   Preferences > Link/Tempo/MIDI > Control Surface. `/live/api/reload` is not a
-  shortcut here: `reload_imports` names the modules it reloads and none of ours
-  is among them, so it never
-  picks up an edit to these files, new module or not. It can also leave
-  AbletonOSC with no handlers at all — see the warning in
+  shortcut: it can leave AbletonOSC with no handlers at all — see the warning in
   docs/abletonosc-api-docs.md.
   """
 
   use Mix.Task
 
-  @shortdoc "Install Seshat's AbletonOSC handler extensions"
+  @shortdoc "Install Seshat's AbletonOSC fork into Ableton Live"
 
-  @handlers [
-    %{
-      file: "browser.py",
-      init_line: "from .browser import BrowserHandler",
-      manager_line: "abletonosc.BrowserHandler(self),"
-    },
-    %{
-      file: "return_track.py",
-      init_line: "from .return_track import ReturnTrackHandler",
-      manager_line: "abletonosc.ReturnTrackHandler(self),"
-    },
-    %{
-      file: "song_structure.py",
-      init_line: "from .song_structure import SongStructureHandler",
-      manager_line: "abletonosc.SongStructureHandler(self),"
-    },
-    %{
-      file: "track_listeners.py",
-      init_line: "from .track_listeners import TrackListenerHandler",
-      manager_line: "abletonosc.TrackListenerHandler(self),"
-    }
-  ]
+  @source_dir "priv/AbletonOSC"
 
-  # Every handler inserts after the same anchor. `patch/3` is idempotent per line
-  # and each insert lands directly after the anchor, so the order our four end up
-  # in relative to each other is arbitrary and harmless — they register disjoint
-  # addresses.
-  #
-  # Where the anchor sits is *not* arbitrary. `OSCServer.add_handler` is a plain
-  # dict assignment, so for an address registered twice the last handler
-  # instantiated wins, and `track_listeners.py` deliberately re-registers five of
-  # upstream's own addresses. MidiMapHandler is the last entry in upstream's list
-  # and TrackHandler is several lines above it, so anchoring here is what makes
-  # the override take effect. Moving it above TrackHandler would leave every
-  # address answering but silently reinstate the bug it fixes.
-  @init_anchor "from .midimap import MidiMapHandler"
-  @manager_anchor "abletonosc.MidiMapHandler(self),"
+  # Git's own bookkeeping (`.git` is a *file* in a submodule checkout, not a
+  # directory) and the fork's test suite. Everything else AbletonOSC ships with
+  # goes across — `client/` and `run-console.py` are part of its normal
+  # distribution and cost nothing sitting unused next to it.
+  @excluded ~w(.git .github .gitignore tests)
 
   @impl true
   def run(args) do
-    sources =
-      Map.new(@handlers, fn handler ->
-        source = Path.expand("priv/abletonosc/#{handler.file}", File.cwd!())
-
-        unless File.regular?(source) do
-          Mix.raise(
-            "Can't find priv/abletonosc/#{handler.file} - run this task from the Seshat " <>
-              "project root."
-          )
-        end
-
-        {handler.file, source}
-      end)
-
+    source = source!()
     install_dir = locate!(args)
-    Mix.shell().info("AbletonOSC found at #{install_dir}")
 
-    results =
-      Enum.flat_map(@handlers, fn handler ->
-        copy_handler(Map.fetch!(sources, handler.file), install_dir, handler.file)
+    Mix.shell().info("Installing #{@source_dir} -> #{install_dir}")
 
-        [
-          patch(
-            Path.join([install_dir, "abletonosc", "__init__.py"]),
-            @init_anchor,
-            handler.init_line
-          ),
-          patch(Path.join(install_dir, "manager.py"), @manager_anchor, handler.manager_line)
-        ]
-      end)
+    replace!(source, install_dir)
 
-    if Enum.any?(results, &(&1 == :anchor_not_found)) do
-      print_manual_instructions(install_dir)
-    else
-      Mix.shell().info("""
+    Mix.shell().info("""
 
-      Done. Restart Ableton Live (or toggle AbletonOSC off and back on under
-      Preferences > Link/MIDI > Control Surface) to pick up the new handlers.
-      """)
+    Done. Restart Ableton Live (or toggle AbletonOSC off and back on under
+    Preferences > Link/MIDI > Control Surface) to pick up the new handlers.
+    """)
+  end
+
+  # --- Source ---
+
+  defp source! do
+    source = Path.expand(@source_dir, File.cwd!())
+
+    cond do
+      not File.dir?(source) ->
+        Mix.raise("""
+        Can't find #{@source_dir} - run this task from the Seshat project root.
+        """)
+
+      not File.regular?(Path.join(source, "manager.py")) ->
+        Mix.raise("""
+        #{@source_dir} is empty - the AbletonOSC submodule isn't checked out.
+
+            git submodule update --init
+
+        Git worktrees don't populate submodules on creation, so you need this
+        once per worktree.
+        """)
+
+      true ->
+        source
     end
   end
 
-  # --- Locating AbletonOSC ---
+  # --- Locating the install directory ---
 
   defp locate!([path | _]) do
     expanded = Path.expand(path)
 
-    if abletonosc_install?(expanded) do
-      expanded
-    else
+    if File.exists?(expanded) and not abletonosc_install?(expanded) do
       Mix.raise("""
-      #{expanded} doesn't look like an AbletonOSC installation.
+      #{expanded} already exists and doesn't look like an AbletonOSC installation.
 
-      Expected to find manager.py and abletonosc/handler.py inside it.
+      Expected to find manager.py and abletonosc/handler.py inside it. Refusing
+      to replace it — pass a path that is either an AbletonOSC install or
+      doesn't exist yet.
       """)
     end
+
+    expanded
   end
 
   defp locate!([]) do
     case Enum.find(candidate_paths(), &abletonosc_install?/1) do
       nil ->
-        Mix.raise("""
-        Couldn't find AbletonOSC. Looked in:
-
-        #{Enum.map_join(candidate_paths(), "\n", &"  #{&1}")}
-
-        Pass the path explicitly:
-
-            mix abletonosc.install /path/to/AbletonOSC
-        """)
+        # Nothing installed anywhere we know to look, so this is a fresh
+        # install. The user library is the right home for it: Live's own app
+        # bundle is wiped by a Live upgrade.
+        fresh = hd(candidate_paths())
+        Mix.shell().info("No existing AbletonOSC found — installing fresh.")
+        fresh
 
       path ->
         path
@@ -181,89 +154,22 @@ defmodule Mix.Tasks.Abletonosc.Install do
       File.regular?(Path.join([path, "abletonosc", "handler.py"]))
   end
 
-  # --- Steps ---
+  # --- Copying ---
 
-  defp copy_handler(source, install_dir, file) do
-    target = Path.join([install_dir, "abletonosc", file])
+  # Delete then copy, rather than copying over the top. An install carried
+  # forward from the patch-in-place era has files the fork doesn't (most
+  # notably `track_listeners.py`, whose whole reason for existing is now fixed
+  # in the base class), and a merge would leave them loaded.
+  defp replace!(source, install_dir) do
+    File.rm_rf!(install_dir)
+    File.mkdir_p!(install_dir)
 
-    case File.cp(source, target) do
-      :ok ->
-        Mix.shell().info("  copied  abletonosc/#{file}")
-
-      {:error, reason} ->
-        Mix.raise("Couldn't write #{target}: #{:file.format_error(reason)}")
-    end
-  end
-
-  # Inserts `line` directly after `anchor`, matching the anchor's indentation.
-  # Returns :ok, :already_patched, or :anchor_not_found.
-  defp patch(file, anchor, line) do
-    relative = Path.basename(file)
-    contents = read!(file)
-    lines = String.split(contents, "\n")
-
-    already_patched? = Enum.any?(lines, &(String.trim(&1) == line))
-    anchor_index = Enum.find_index(lines, &(String.trim(&1) == anchor))
-
-    case {already_patched?, anchor_index} do
-      {true, _} ->
-        Mix.shell().info("  skipped #{relative} (already patched)")
-        :already_patched
-
-      {false, nil} ->
-        Mix.shell().error(
-          "  FAILED  #{relative} - couldn't find the anchor line #{inspect(anchor)}"
-        )
-
-        :anchor_not_found
-
-      {false, index} ->
-        indent = indentation_of(Enum.at(lines, index))
-        patched = List.insert_at(lines, index + 1, indent <> line)
-        File.write!(file, Enum.join(patched, "\n"))
-        Mix.shell().info("  patched #{relative}")
-        :ok
-    end
-  end
-
-  defp indentation_of(line) do
-    case Regex.run(~r/^\s*/, line) do
-      [indent] -> indent
-      _ -> ""
-    end
-  end
-
-  defp read!(file) do
-    case File.read(file) do
-      {:ok, contents} ->
-        contents
-
-      {:error, reason} ->
-        Mix.raise("Couldn't read #{file}: #{:file.format_error(reason)}")
-    end
-  end
-
-  defp print_manual_instructions(install_dir) do
-    init_lines = Enum.map_join(@handlers, "\n", &"           #{&1.init_line}")
-    manager_lines = Enum.map_join(@handlers, "\n", &"           #{&1.manager_line}")
-
-    Mix.shell().error("""
-
-    AbletonOSC has changed since this task was written, so at least one patch
-    was skipped. The handler files have been copied - apply the edits by hand
-    (skip any line that is already there):
-
-    1. In #{Path.join([install_dir, "abletonosc", "__init__.py"])}, alongside the
-       other handler imports, add:
-
-    #{init_lines}
-
-    2. In #{Path.join(install_dir, "manager.py")}, inside the `self.handlers = [`
-       list in `init_api`, add:
-
-    #{manager_lines}
-
-    Then restart Ableton Live.
-    """)
+    source
+    |> File.ls!()
+    |> Enum.reject(&(&1 in @excluded))
+    |> Enum.each(fn entry ->
+      File.cp_r!(Path.join(source, entry), Path.join(install_dir, entry))
+      Mix.shell().info("  copied  #{entry}")
+    end)
   end
 end

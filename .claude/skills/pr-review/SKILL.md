@@ -17,6 +17,22 @@ that are *absent* from the diff, which no amount of staring at hunks reveals.
    `git log` for the commit story. Read every changed file in full, not just
    the hunks — you need the surrounding code to judge the change.
 
+   **If the diff touches `priv/AbletonOSC`, you have not seen the change.** A
+   submodule bump renders as two lines — `-Subproject commit <old>` /
+   `+Subproject commit <new>` — and every line of Python behind it is
+   invisible. Expand it before reviewing anything else:
+
+   ```
+   git -C priv/AbletonOSC log --oneline <old>..<new>
+   git -C priv/AbletonOSC diff <old>..<new>
+   ```
+
+   Review that Python as carefully as the Elixir: it runs inside Live, it
+   cannot be unit-tested here, and a mistake in it fails silently over UDP.
+   Check the fork's `SESHAT.md` was updated too — it is the only record of
+   what diverges from upstream, and a divergence missing from it is invisible
+   at the next upstream merge.
+
 2. **Find the implementation plan.** Look, in order: a `docs/PLAN_*.md`
    matching the feature, the relevant [docs/ROADMAP.md](docs/ROADMAP.md)
    entry, the PR description, the commit messages. Read it before reading
@@ -38,7 +54,7 @@ that are *absent* from the diff, which no amount of staring at hunks reveals.
    conditions in GenServer/PubSub code. Seshat-specific traps:
    - Every OSC address must appear verbatim in
      [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) (or be one of
-     ours in [priv/abletonosc/browser.py](priv/abletonosc/browser.py)). UDP
+     ours in [priv/AbletonOSC/abletonosc/browser.py](priv/AbletonOSC/abletonosc/browser.py)). UDP
      fails silently — a plausible-looking address is the most dangerous bug
      in this codebase. Check every one.
    - Handler clauses see string keys only; track indices are 0-based; pan is

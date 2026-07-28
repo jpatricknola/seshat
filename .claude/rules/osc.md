@@ -1,7 +1,7 @@
 ---
 paths:
   - "lib/**"
-  - "priv/abletonosc/**"
+  - "priv/AbletonOSC/**"
 ---
 
 # OSC safety rules
@@ -17,18 +17,40 @@ exist because a typo'd address looks exactly like success.
   an address. Conventions and gotchas (ports, listener pattern, ordering
   hazards) are in
   [.claude/docs/ableton-osc-reference.md](../docs/ableton-osc-reference.md).
+- **The bridge is our fork, and editing it is two commits.**
+  [priv/AbletonOSC](../../priv/AbletonOSC) is a git submodule
+  ([jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC)), so an
+  address upstream lacks is ours to add rather than ours to work around. The
+  sequence, in order, with the trap in each step:
+
+  1. `git -C priv/AbletonOSC checkout master` **first**. `git submodule update
+     --init` leaves a *detached HEAD*, and a commit made there belongs to no
+     branch and pushes nowhere.
+  2. Edit the Python, then `commit` and `push` **inside** `priv/AbletonOSC`.
+  3. `git add priv/AbletonOSC` from the Seshat root — that stages the new SHA,
+     not the files. Put it in the same Seshat commit as the Elixir side, so the
+     pin and the code depending on it move together.
+  4. `mix abletonosc.install` and **restart Live**. The tests grep the submodule
+     in this repo; Live runs the *copy* in Remote Scripts. Skip this and a green
+     suite is telling you about Python that Live has never loaded. That failure
+     mode is new with the fork — treat a passing test on unreinstalled Python as
+     no evidence at all.
+
+  A fresh git worktree (`/lifecycle`, worktree-isolated agents) has an empty
+  `priv/AbletonOSC` until step 0, `git submodule update --init`; the
+  Python-grepping tests fail with that hint until it runs.
 - **`/live/browser/*`, `/live/return_track/*`, and `/live/master/*` are ours,
   not upstream's** — those handlers live in
-  [priv/abletonosc/browser.py](../../priv/abletonosc/browser.py) and
-  [priv/abletonosc/return_track.py](../../priv/abletonosc/return_track.py)
-  respectively, and both are installed by `mix abletonosc.install`. Upstream's
-  track addresses only reach `song.tracks` (regular tracks) — returns and the
-  master come from the second file. Any new address upstream doesn't provide
-  goes there the same way.
+  [priv/AbletonOSC/abletonosc/browser.py](../../priv/AbletonOSC/abletonosc/browser.py)
+  and
+  [priv/AbletonOSC/abletonosc/return_track.py](../../priv/AbletonOSC/abletonosc/return_track.py)
+  respectively. Upstream's track addresses only reach `song.tracks` (regular
+  tracks) — returns and the master come from the second file. Any new address
+  upstream doesn't provide goes there the same way.
 - **Two addresses of ours live under a prefix upstream owns**:
   `/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
   from
-  [priv/abletonosc/song_structure.py](../../priv/abletonosc/song_structure.py).
+  [priv/AbletonOSC/abletonosc/song_structure.py](../../priv/AbletonOSC/abletonosc/song_structure.py).
   Upstream can only listen to *scalar* song properties, so nothing of its own
   fires when tracks are added, deleted or reordered. They push on
   `/live/song/get/tracks` and `/live/song/get/return_tracks` — push-only
@@ -53,20 +75,15 @@ exist because a typo'd address looks exactly like success.
   guarded by its getter first, and nothing waits on one.
 - **An index-keyed listener must be unbound from the object it was registered
   on.** Listeners are keyed by track/return index but bound to a LOM object, and
-  indices renumber when something is deleted or reordered. AbletonOSC's base
-  `_stop_listen` unbinds from the target it is *handed*, which after a renumber
-  is the wrong object — it fails silently and leaves the old listener pushing
-  under an index that now means someone else, so a later rename writes one
-  track's name onto another. `return_track.py` and `track_listeners.py` both stop
-  via `_stop_listen_stored`; copy that pattern for any new index-keyed listener.
-- **`track_listeners.py` overrides upstream rather than extending it** — five
-  `/live/track/{start,stop}_listen/*` addresses (name, mute, solo, volume,
-  panning), for the reason above. It works only because `add_handler` is a dict
-  assignment and `mix abletonosc.install` anchors our handlers *below*
-  `TrackHandler`; move that anchor and every address still answers while the bug
-  quietly returns. Adding a property to `Session.State`'s
-  `@listened_properties` means adding it there too — `vendored_addresses_test`
-  fails if you don't.
+  indices renumber when something is deleted or reordered. Unbinding from the
+  target you were *handed* is the wrong object after a renumber — it fails
+  silently and leaves the old listener pushing under an index that now means
+  someone else, so a later rename writes one track's name onto another. The
+  fork's `AbletonOSCHandler._stop_listen` resolves through `listener_objects`
+  instead, which makes this correct for every handler by default. Don't
+  reintroduce a hand-rolled stop that passes an index-resolved object.
+  `vendored_addresses_test` greps for that fix: it is the one change whose loss
+  is completely invisible, since every address still answers without it.
 - **All OSC goes through `Seshat.OSC.Transport`** — nothing sends UDP
   directly. Address strings deliberately live inline in `Handlers`,
   `Registry`, and `Session.State` (greppable via `"/live/`) — do not add an

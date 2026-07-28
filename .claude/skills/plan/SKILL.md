@@ -26,9 +26,19 @@ be able to say yes/no to each one.
    - Verify every OSC address in
      [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) — exact
      address, exact argument list, reply shape. If the capability isn't
-     there, the plan gains a Python half: a handler in
-     [priv/abletonosc/browser.py](priv/abletonosc/browser.py)-style vendored
-     extension (see that file and `mix abletonosc.install`).
+     there, **the plan gains a Python half** — `priv/AbletonOSC` is our fork,
+     so a missing address is ours to add, whether that means a new handler
+     (see [browser.py](priv/AbletonOSC/abletonosc/browser.py)) or an edit to
+     upstream's own files. Verify the Live API call against the real source
+     in `priv/AbletonOSC`, not against the installed copy in Remote Scripts,
+     which is an output of `mix abletonosc.install` and may lag the fork.
+
+     A Python half is not free, and the plan must say so: it lands as a
+     commit in the submodule plus a pin bump here, it puts a
+     `mix abletonosc.install` + Live restart on the user, and **no test in
+     this repo executes it** — so its verification is a `/smoke-test` item by
+     construction. Say which parts only Ableton can confirm rather than
+     implying the suite covers them.
    - Grep the codebase for every touchpoint: which `Handlers` clauses,
      whether it's single-message (Transport direct) or multi-step
      (`%Command{}` + Registry), whether `Session.State` needs a new field
@@ -36,9 +46,10 @@ be able to say yes/no to each one.
    - Read any related archived plan or decision doc for constraints already
      discovered — don't rediscover what
      [docs/bridge-options.md](docs/bridge-options.md) already settled.
-   - Anything you could not verify (needs live Ableton, needs the installed
-     AbletonOSC source) goes in the plan flagged with ⚠️, not silently
-     assumed.
+   - Anything you could not verify (needs live Ableton, needs Live's own API
+     stubs) goes in the plan flagged with ⚠️, not silently assumed. The
+     AbletonOSC source itself is *not* in that category any more — it's
+     checked into `priv/AbletonOSC`, so read it.
 
 3. **Write the plan** to `docs/PLAN_<snake_case_name>.md`, matching the house
    style of the docs in [docs/archive/](docs/archive/):
