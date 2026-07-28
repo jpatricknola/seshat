@@ -41,6 +41,14 @@ are often no-ops, but check rather than assume.
    tools are added, how commands flow, or added OSC gotchas, update the
    matching doc.
 
+   If the feature touched `priv/AbletonOSC`, check two more: every new address
+   is in [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md), and the
+   divergence is listed in the fork's `SESHAT.md`. `vendored_addresses_test`
+   enforces the first only for our own prefixes (`/live/browser/*`,
+   `/live/return_track/*`, `/live/master/*`, the two song-structure
+   addresses) — an address added under a prefix upstream owns, like
+   `/live/clip/quantize`, is documented by hand or not at all.
+
 6. **Verify** with `mix precommit` if anything outside `docs/` changed, then
    summarize: what was removed from the roadmap, what was archived, what
    follow-ups were added.

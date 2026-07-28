@@ -19,12 +19,26 @@ exist because a typo'd address looks exactly like success.
   [.claude/docs/ableton-osc-reference.md](../docs/ableton-osc-reference.md).
 - **The bridge is our fork, and editing it is two commits.**
   [priv/AbletonOSC](../../priv/AbletonOSC) is a git submodule
-  ([jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC)):
-  change the Python there, commit *in the submodule*, then commit the bumped
-  pin in Seshat. `mix abletonosc.install` copies the tree wholesale into Live's
-  Remote Scripts — nothing is patched in place any more. A fresh git worktree
-  has an empty `priv/AbletonOSC` until `git submodule update --init`, and the
-  Python-grepping tests fail until it does.
+  ([jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC)), so an
+  address upstream lacks is ours to add rather than ours to work around. The
+  sequence, in order, with the trap in each step:
+
+  1. `git -C priv/AbletonOSC checkout master` **first**. `git submodule update
+     --init` leaves a *detached HEAD*, and a commit made there belongs to no
+     branch and pushes nowhere.
+  2. Edit the Python, then `commit` and `push` **inside** `priv/AbletonOSC`.
+  3. `git add priv/AbletonOSC` from the Seshat root — that stages the new SHA,
+     not the files. Put it in the same Seshat commit as the Elixir side, so the
+     pin and the code depending on it move together.
+  4. `mix abletonosc.install` and **restart Live**. The tests grep the submodule
+     in this repo; Live runs the *copy* in Remote Scripts. Skip this and a green
+     suite is telling you about Python that Live has never loaded. That failure
+     mode is new with the fork — treat a passing test on unreinstalled Python as
+     no evidence at all.
+
+  A fresh git worktree (`/lifecycle`, worktree-isolated agents) has an empty
+  `priv/AbletonOSC` until step 0, `git submodule update --init`; the
+  Python-grepping tests fail with that hint until it runs.
 - **`/live/browser/*`, `/live/return_track/*`, and `/live/master/*` are ours,
   not upstream's** — those handlers live in
   [priv/AbletonOSC/abletonosc/browser.py](../../priv/AbletonOSC/abletonosc/browser.py)

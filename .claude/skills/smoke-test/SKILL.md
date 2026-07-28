@@ -36,7 +36,10 @@ whole surface. Before anything else:
 
 - Run `mix abletonosc.install` and **restart Live** (or toggle AbletonOSC off
   and on under Preferences > Link/Tempo/MIDI). `/live/api/reload` does not pick
-  these up.
+  these up. This is not optional bookkeeping: `mix test` greps the submodule in
+  the repo, while Live runs the copy in Remote Scripts, so a green suite says
+  nothing about what Live has actually loaded. If the branch touched
+  `priv/AbletonOSC` at all, reinstall before you believe a single result below.
 - Confirm the extension is actually answering before you judge anything else:
   `get_session_state` prints the return tracks and master volume when
   `return_track.py` is loaded, and a single "Return/master state unavailable"
