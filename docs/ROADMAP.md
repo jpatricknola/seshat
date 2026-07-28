@@ -9,35 +9,12 @@ The canonical OSC address reference is
 [abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
 address.
 
-**Next up: Priority 1 — device removal & bypass**, immediately below.
-
-How to read the ordering: Priority 1 is the only project-wide ranked item.
-Everything after it is grouped by *topic*, not sequenced — a section's position
+Sections below are grouped by *topic*, not sequenced — a section's position
 in the file carries no priority. Where a section contains its own numbered
-sequence (the levers under sound catalog follow-ups, say), that sequence orders
-work *within* that area only; it does not compete with Priority 1 for the
-project's next slot. So a lever ranked first inside its own section is still
-downstream of Priority 1 unless you decide to make that whole area the focus.
+sequence (the levers under sound catalog follow-ups, say), that sequence
+orders work *within* that area only.
 
 ---
-
-## Priority 1 — Device removal & bypass
-
-Audit: Med-High. `load_device` + `set_device_parameter` make the device
-workflow one-way — a wrong load can't be undone, and there's no A/B. Also
-unlocks the catalog audition/hot-swap loop (below).
-
-- `delete_device` — **upstream has it after all**: `/live/track/delete_device`
-  is registered as a track *method* in the installed AbletonOSC
-  (`abletonosc/track.py`, `methods = ["delete_device", "stop_all_clips"]`).
-  Argument shape confirmed against that source and already added to
-  [abletonosc-api-docs.md](abletonosc-api-docs.md) — `track_id, device_id`, no
-  reply. No vendored Python needed; this is only a tool away.
-- Bypass may be free: every Live device's parameter 0 is "Device On", so
-  `set_device_parameter` can already A/B a device — verify, then either add a
-  `bypass_device` convenience or just teach the `set_device_parameter`
-  description the trick.
-- Reordering the chain is out of scope until a workflow demands it.
 
 ## Capture MIDI & session record
 
@@ -85,10 +62,12 @@ dev catalog and proposes a sequence. Read it before picking any item below;
 the numbered references (№1–№9) point into it.
 
 That sequence orders *this section's* work, and only applies once you've
-decided search quality is the focus — it is not a competing claim on the
-project's next slot, and the doc itself defers to Priority 1 on `delete_device`
-(its lever №3). Note that `delete_device` therefore pays off twice: it closes
-the one-way device workflow *and* it is the last-mile audition loop here.
+decided search quality is the focus. Its lever №3 — `delete_device` +
+`bypass_device`, the audition loop — has shipped (see
+[archive/PLAN_audition_loop.md](archive/PLAN_audition_loop.md)): search finds the
+candidates, delete/bypass make swapping between them possible. It paid off
+twice — it closed the one-way device workflow *and* it was the last mile of
+this section's listening loop.
 
 Left out of catalog v1 (see
 [archive/PLAN_sound_catalog.md](archive/PLAN_sound_catalog.md) for context),
@@ -107,8 +86,11 @@ plus what the result-quality work found and did not close:
   hours rather than by another pass over the scorer.
 - **№8 remember what a description resolved to** — accepted-search memory,
   compounds over time.
-- **№6 audition without loading (browser preview)** — the ear-in-the-loop
-  lever; sequence it after the eval can show whether it's still needed.
+- **№6 audition without loading (browser preview)** — the lighter cousin of
+  the (now shipped) audition loop: play a preset's browser preview instead of
+  loading it, so the agent can flip through ten candidates in the time one
+  heavy preset takes to instantiate. Sequence it after the eval can show
+  whether it's still needed once search quality improves.
 
 - **№7 coverage: an opt-in `samples` index.** The only category still invisible
   to the catalog. Excluded by design as huge and rarely tag-searched — yet it
@@ -140,8 +122,6 @@ plus what the result-quality work found and did not close:
 - **User XMP tags** — read `User Library/Ableton Folder Info/12/`.
 - **Windows DB location** for `Seshat.Library.AbletonDB` (currently macOS only;
   returns `{:error, :not_found}` cleanly elsewhere).
-- **Audition / hot-swap loop** — needs `delete_device`, now tracked under
-  Priority 1 (device removal & bypass) above.
 
 Not planned: embeddings or a semantic index. The LLM is already the semantic
 layer and has the musical context.
@@ -196,8 +176,9 @@ CLI flags that may have drifted) in
   arrangement addresses (`/live/track/get/arrangement_clips/*`, arrangement
   overdub, song position) — revisit if a real workflow needs the timeline.
 - Return/master-track device loading, device *reordering* (removal & bypass
-  are now Priority 1 above), rack inner chains, parameter listeners (live
-  meters/automation following) — revisit if a real workflow needs them.
+  shipped — see `delete_device`/`bypass_device`), rack inner chains, parameter
+  listeners (live meters/automation following) — revisit if a real workflow
+  needs them.
 - Replacing AbletonOSC with a Max for Live WebSocket bridge — weighed and
   declined in [bridge-options.md](bridge-options.md); reopen only if a Remote
   Script fundamentally can't do something we need.

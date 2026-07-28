@@ -233,7 +233,7 @@ index subscribes every track.
 
 | Address | Query Params | Description |
 |---|---|---|
-| `/live/track/delete_device` | `track_id, device_id` | Delete a device from the track's chain (no reply) |
+| `/live/track/delete_device` | `track_id, device_id` | Delete a device from the track's chain. **No reply, ever** — `_call_method` returns nothing, and a bad index raises inside the callback, so success and failure look identical on the wire. Callers must verify by re-reading `/live/track/get/num_devices` |
 | `/live/track/stop_all_clips` | `track_id` | Stop all clips on track |
 
 ### Track Getters
@@ -445,6 +445,17 @@ Listen via `/live/scene/start_listen/<property> <scene_index>`, responses on `/l
 ## Device API
 
 Instruments and effects. Query/set parameters.
+
+Every `/live/device/*` address resolves its track through `song.tracks`
+(`device.py`, `create_device_callback`) — **regular tracks only**. Devices on
+return tracks and the master are unreachable through this API.
+
+Parameter 0 of every device is its "Device On" switch — the power button in the
+device's corner — so `/live/device/set/parameter/value <track> <device> 0 0.0`
+bypasses a device and `1.0` re-enables it. ⚠️ The parameter's identity comes
+from the Live Object Model, not from a smoke test; `bypass_device` reads
+parameter 0's `value_string` and refuses unless it reads On/Off rather than
+trusting it blind.
 
 Listen for parameter changes via `/live/device/start_listen/parameter/value <track_index> <device_index> <parameter_index>`.
 

@@ -47,6 +47,10 @@ defmodule Seshat.Tools.Handlers do
                       "track index with get_session_state; failing that, check Ableton is " <>
                       "running with AbletonOSC enabled."
 
+  @device_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check " <>
+                       "the track and device indices with get_track_devices first; failing " <>
+                       "that, check Ableton is running with AbletonOSC enabled."
+
   # The return/master addresses are Seshat's own, and they always reply — a bad
   # index comes back as an error envelope, not silence. So unlike the upstream
   # families above, a timeout here isn't a bad index at all: it means nothing is
@@ -304,6 +308,99 @@ defmodule Seshat.Tools.Handlers do
 
     "#{length(names)} device(s) on track #{track}:\n\n#{lines}"
   end
+
+  @doc """
+  The out-of-range error for `delete_device`, raised in Elixir before anything
+  reaches the wire.
+
+  `/live/track/delete_device` never replies, and a bad device index only raises
+  inside AbletonOSC's callback — so an unchecked index costs a full verification
+  timeout and still can't say what went wrong. Checking against the chain we
+  just read says it immediately, and prints the chain so the retry is one step.
+  """
+  @spec device_out_of_range_error(integer(), integer(), list()) :: String.t()
+  def device_out_of_range_error(track, device, []) do
+    "Track #{track} has no devices, so there is nothing to delete (asked for device " <>
+      "#{device}). Check the chain with get_track_devices."
+  end
+
+  def device_out_of_range_error(track, device, names) do
+    "Track #{track} has #{length(names)} device(s) (indices 0–#{length(names) - 1}) — there " <>
+      "is no device #{device}. Chain: #{format_chain_inline(names)}."
+  end
+
+  @doc """
+  The success reply for `delete_device`, listing the chain that is left.
+
+  Every device after the deleted one has just moved down an index, so any index
+  the model noted earlier is now wrong. Re-listing the chain from the names read
+  before the delete costs nothing and saves a `get_track_devices` round trip
+  that the model would otherwise have to know to make.
+  """
+  @spec deleted_device_reply(integer(), integer(), list()) :: String.t()
+  def deleted_device_reply(track, device, names) do
+    deleted = Enum.at(names, device)
+
+    case List.delete_at(names, device) do
+      [] ->
+        "Deleted '#{deleted}' (device #{device}) from track #{track}. Its device chain is now " <>
+          "empty."
+
+      remaining ->
+        "Deleted '#{deleted}' (device #{device}) from track #{track}. Remaining chain: " <>
+          "#{format_chain_inline(remaining)} — later device indices have shifted down by one."
+    end
+  end
+
+  defp format_chain_inline(names) do
+    names
+    |> Enum.with_index()
+    |> Enum.map_join(", ", fn {name, index} -> "#{index}: #{name}" end)
+  end
+
+  @doc """
+  Refuses the bypass unless parameter 0's display value reads On/Off.
+
+  Turns "parameter 0 is the Device On switch" from a load-bearing assumption
+  into a refusal that prints what it actually found — the whole tool hangs on
+  this guard until the assumption is smoke-tested against a live Ableton.
+  """
+  @spec ensure_on_off_switch(String.t(), term()) :: :ok | {:error, String.t()}
+  def ensure_on_off_switch(name, display) do
+    if String.downcase(to_string(display)) in ["on", "off"] do
+      :ok
+    else
+      {:error,
+       "Parameter 0 of '#{name}' reads '#{display}', not On/Off — this device doesn't expose " <>
+         "the standard Device On switch at parameter 0, so nothing was changed. Inspect it " <>
+         "with get_device_parameters instead."}
+    end
+  end
+
+  @doc """
+  The success reply for `bypass_device`, once the toggle is confirmed.
+  """
+  @spec bypass_reply(String.t(), integer(), integer(), boolean()) :: String.t()
+  def bypass_reply(name, track, device, true) do
+    "'#{name}' (device #{device} on track #{track}) is now On."
+  end
+
+  def bypass_reply(name, track, device, false) do
+    "'#{name}' (device #{device} on track #{track}) is now Off — bypassed, settings kept."
+  end
+
+  @doc """
+  The no-op reply for `bypass_device` — parameter 0 already read the requested
+  state, so nothing was written and the reply must not claim otherwise.
+  """
+  @spec bypass_noop_reply(String.t(), integer(), integer(), boolean()) :: String.t()
+  def bypass_noop_reply(name, track, device, enabled) do
+    "'#{name}' (device #{device} on track #{track}) was already #{on_off_label(enabled)} — " <>
+      "nothing to do."
+  end
+
+  defp on_off_label(true), do: "On"
+  defp on_off_label(false), do: "Off"
 
   @doc """
   Formats the parallel parameter name/value/min/max lists of the
@@ -1323,6 +1420,49 @@ defmodule Seshat.Tools.Handlers do
          "get_device_parameters."}
   end
 
+  # `/live/track/delete_device` never replies — AbletonOSC's `_call_method`
+  # returns nothing, and a bad device index raises inside the callback — so
+  # success and failure are indistinguishable on the wire. Hence the sandwich:
+  # read the chain first (which validates the track index, bounds-checks the
+  # device index in Elixir, and captures the names for the reply), then re-read
+  # the count afterwards as the only confirmation available.
+  defp do_call("delete_device", %{"track" => track, "device" => device}) do
+    with {:ok, names} <- read_device_names(track),
+         {:ok, device} <- ensure_device_index(track, device, names),
+         :ok <- Transport.send_message("/live/track/delete_device", [track, device]),
+         :ok <- confirm_device_count(track, length(names) - 1) do
+      {:ok, deleted_device_reply(track, device, names)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  # Parameter 0 of every Live device is its "Device On" switch, so bypass is a
+  # parameter write — but only if that really is what parameter 0 holds on this
+  # device. The display value is read *before* the write and the write refused
+  # unless it reads On/Off, so a device that breaks the assumption gets a clean,
+  # self-diagnosing error instead of a wrong parameter silently changed.
+  defp do_call("bypass_device", %{"track" => track, "device" => device, "enabled" => enabled}) do
+    subject = "device #{device} on track #{track}"
+
+    with {:ok, name} <-
+           query_echoed("/live/device/get/name", [track, device], subject, @device_index_hint),
+         {:ok, prior} <-
+           query_echoed(
+             "/live/device/get/parameter/value_string",
+             [track, device, 0],
+             "the on/off switch of #{subject}",
+             @device_index_hint
+           ),
+         :ok <- ensure_on_off_switch(name, prior) do
+      set_device_enabled(track, device, name, enabled, prior)
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
   # Reads only, so direct Transport.query — no %Command{}/Registry (Registry
   # is for mutation sequences). One bulk track_data query per batch of tracks
   # plus one tiny query per scene name; parsing and formatting are pure.
@@ -1548,6 +1688,131 @@ defmodule Seshat.Tools.Handlers do
     end
   catch
     :exit, _ -> ""
+  end
+
+  # --- Device chain guards ---
+
+  # The pre-delete read: it validates the track index and captures the chain in
+  # one query. It can't ride `query_echoed/4` — that helper's `unwrap_payload/1`
+  # only reads single-value payloads and this reply is a whole list — so the echo
+  # check and its reissue-once stale defence are spelled out here for exactly the
+  # same reason: Transport correlates replies by address alone, so a reply
+  # abandoned by an earlier timeout can answer this query with another track's
+  # chain.
+  defp read_device_names(track, reissued? \\ false) do
+    case Transport.query("/live/track/get/devices/name", [track], @guard_timeout) do
+      {:ok, {_addr, [echoed | names]}} when echoed == track ->
+        {:ok, names}
+
+      {:ok, {_addr, _mismatched}} ->
+        if reissued? do
+          {:error, stale_reply_error("the devices on track #{track}")}
+        else
+          read_device_names(track, true)
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error, guard_timeout_error("the devices on track #{track}", @device_index_hint)}
+  end
+
+  # Floats are tolerated the way `query_echoed/5` documents for indices — 1.0
+  # reaches Ableton as device 1 — so the bounds check normalises rather than
+  # rejects, and hands back the index the rest of the sequence should use.
+  defp ensure_device_index(track, device, names) do
+    index = if is_number(device), do: trunc(device), else: device
+
+    if is_integer(index) and index >= 0 and index < length(names) do
+      {:ok, index}
+    else
+      {:error, device_out_of_range_error(track, device, names)}
+    end
+  end
+
+  # The only defence the no-reply delete address allows. Raw `Transport.query`
+  # deliberately, not `query_echoed/4`: that helper's timeout wording says
+  # "nothing further was sent", which is false once the delete is on the wire —
+  # a post-mutation confirmation needs its own wording (`set_device_parameter`'s
+  # readback sets the precedent).
+  defp confirm_device_count(track, expected) do
+    case Transport.query("/live/track/get/num_devices", [track]) do
+      {:ok, {_addr, [echoed, ^expected]}} when echoed == track ->
+        :ok
+
+      {:ok, {_addr, [echoed, actual]}} when echoed == track ->
+        {:error,
+         "The delete did not go through — track #{track} still reports #{actual} device(s), " <>
+           "not #{expected}. Check Ableton and re-read the chain with get_track_devices."}
+
+      {:ok, {_addr, args}} ->
+        {:error,
+         "The reply confirming the delete was not about track #{track} " <>
+           "(got #{inspect(args)}) — likely left over from an earlier timed-out query, so it " <>
+           "is unknown whether the device was removed. Verify with get_track_devices."}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "The delete was sent but confirming it timed out, so it is unknown whether the device " <>
+         "was removed — verify with get_track_devices."}
+  end
+
+  defp set_device_enabled(track, device, name, enabled, prior) do
+    if String.downcase(to_string(prior)) == String.downcase(on_off_label(enabled)) do
+      {:ok, bypass_noop_reply(name, track, device, enabled)}
+    else
+      with :ok <-
+             Transport.send_message(
+               "/live/device/set/parameter/value",
+               [track, device, 0, if(enabled, do: 1.0, else: 0.0)]
+             ),
+           :ok <- confirm_device_enabled(track, device, enabled) do
+        {:ok, bypass_reply(name, track, device, enabled)}
+      else
+        {:error, reason} when is_binary(reason) -> {:error, reason}
+        {:error, reason} -> {:error, inspect(reason)}
+      end
+    end
+  end
+
+  # Numeric readback rather than the display string: "Device On" is quantized to
+  # exactly 0.0/1.0, so the comparison is safe, and it can't be confused by
+  # however a given device chooses to spell its display value. Raw
+  # `Transport.query` for the same reason as `confirm_device_count/2`.
+  defp confirm_device_enabled(track, device, enabled) do
+    expected = if enabled, do: 1.0, else: 0.0
+
+    case Transport.query("/live/device/get/parameter/value", [track, device, 0]) do
+      {:ok, {_addr, [t, d, p, value]}}
+      when t == track and d == device and p == 0 and is_number(value) ->
+        if value / 1.0 == expected do
+          :ok
+        else
+          {:error,
+           "The toggle was sent but device #{device} on track #{track} still reports its " <>
+             "on/off parameter as #{format_number(value)}, not #{expected} — check it with " <>
+             "get_device_parameters."}
+        end
+
+      {:ok, {_addr, args}} ->
+        {:error,
+         "The reply confirming the toggle was not about the on/off switch of device " <>
+           "#{device} on track #{track} (got #{inspect(args)}) — likely left over from an " <>
+           "earlier timed-out query. Verify with get_device_parameters."}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "The toggle was sent but reading it back timed out — verify with get_device_parameters."}
   end
 
   # --- Guards ---

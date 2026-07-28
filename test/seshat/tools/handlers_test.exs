@@ -459,6 +459,80 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "device_out_of_range_error/3" do
+    # The delete_device / bypass_device do_call clauses aren't tested here: both
+    # lead with a guarded Transport read, which needs a live Ableton.
+    test "names the real index range and prints the chain" do
+      result = Handlers.device_out_of_range_error(2, 3, ["Operator", "Reverb"])
+
+      assert result =~ "Track 2 has 2 device(s) (indices 0–1)"
+      assert result =~ "there is no device 3"
+      assert result =~ "Chain: 0: Operator, 1: Reverb."
+    end
+
+    test "an empty chain gets its own message" do
+      result = Handlers.device_out_of_range_error(0, 0, [])
+
+      assert result =~ "Track 0 has no devices"
+      assert result =~ "nothing to delete (asked for device 0)"
+      assert result =~ "get_track_devices"
+    end
+  end
+
+  describe "deleted_device_reply/3" do
+    test "names the deleted device and re-indexes what is left" do
+      result = Handlers.deleted_device_reply(2, 1, ["Operator", "Compressor", "Reverb"])
+
+      assert result =~ "Deleted 'Compressor' (device 1) from track 2"
+      assert result =~ "Remaining chain: 0: Operator, 1: Reverb"
+      assert result =~ "shifted down by one"
+    end
+
+    test "says so when the last device is gone" do
+      result = Handlers.deleted_device_reply(0, 0, ["Reverb"])
+
+      assert result =~ "Deleted 'Reverb' (device 0) from track 0"
+      assert result =~ "device chain is now empty"
+      refute result =~ "Remaining chain"
+    end
+  end
+
+  describe "ensure_on_off_switch/2" do
+    test "accepts On/Off case-insensitively" do
+      assert :ok = Handlers.ensure_on_off_switch("Reverb", "On")
+      assert :ok = Handlers.ensure_on_off_switch("Reverb", "off")
+      assert :ok = Handlers.ensure_on_off_switch("Reverb", "ON")
+    end
+
+    test "refuses anything else, printing what it actually found" do
+      assert {:error, message} = Handlers.ensure_on_off_switch("Weird Rack", "1.0")
+
+      assert message =~ "Parameter 0 of 'Weird Rack' reads '1.0', not On/Off"
+      assert message =~ "nothing was changed"
+      assert message =~ "get_device_parameters"
+    end
+  end
+
+  describe "bypass_device replies" do
+    test "the off reply says bypassed with settings kept" do
+      result = Handlers.bypass_reply("Compressor", 2, 1, false)
+
+      assert result == "'Compressor' (device 1 on track 2) is now Off — bypassed, settings kept."
+    end
+
+    test "the on reply" do
+      assert Handlers.bypass_reply("Compressor", 2, 1, true) ==
+               "'Compressor' (device 1 on track 2) is now On."
+    end
+
+    test "the no-op reply names the unchanged state and claims no change" do
+      result = Handlers.bypass_noop_reply("Compressor", 2, 1, false)
+
+      assert result =~ "was already Off — nothing to do"
+      refute result =~ "is now"
+    end
+  end
+
   describe "format_device_parameters/7" do
     test "formats one line per parameter with value and range" do
       result =
