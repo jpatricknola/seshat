@@ -16,16 +16,32 @@ address.
 Found by the validation run (the same run that produced the push-based session
 state work, see
 [archive/PLAN_session_state_push.md](archive/PLAN_session_state_push.md)).
-"Let's start a new project" silently did *not* open a new set — it added the
-three requested tracks to the set already open. Root cause at
-[registry.ex:236](../lib/seshat/commands/registry.ex#L236):
+"Let's start a new project. Make me three MIDI tracks" left **7** tracks in the
+session. A fresh Live set has 4 default tracks (2 MIDI + 2 audio), so 4 + 3 is
+the whole story: the new set *did* open, and
+[`clear_default_tracks`](../lib/seshat/commands/registry.ex#L268) failed to
+remove the defaults. (The validation note reads it as "a new project was not
+opened" — understandable from the chair, but the arithmetic says otherwise.)
 
-- The AppleScript targets `"Ableton Live 12"`, but the installed app is
-  `"Ableton Live 12 Suite"`. The process name is always `"Live"` — target that
-  instead of any edition-specific name.
-- No `can_undo` guard for an unsaved set.
-- Create-before-delete ordering: the new tracks land before the old set's
-  tracks are cleared.
+The step order at
+[registry.ex:81-85](../lib/seshat/commands/registry.ex#L81-L85) is already
+correct (open → wait → clear → create), and `/live/song/delete_track` is the
+right address. Two live suspects, both needing Ableton to confirm:
+
+- **Settling.** `wait_for_ableton/2` polls `/live/test`, which answers as soon
+  as the control surface is up — not when the new set has finished loading.
+  The four `delete_track` sends are fire-and-forget into that window, and
+  `create_tracks` immediately re-queries `num_tracks` behind them.
+- **The AppleScript app name.** `open_new_set/0` targets
+  `"Ableton Live 12"` while the installed app is `"Ableton Live 12 Suite"`.
+  This one did *not* bite here (Cmd+N clearly landed), but it is fragile —
+  the process name is always `"Live"`, so target that.
+
+Also worth fixing while in here: `clear_default_tracks` deletes **every** track
+`(count-1)..0`, not just defaults. It is only safe because `open_new_set`
+precedes it — if that ever succeeds without actually opening a new set, this
+wipes the user's open work. It should verify it is looking at a fresh set
+before deleting anything, and there is no `can_undo` guard for an unsaved set.
 
 ## Priority 1 — Device removal & bypass
 
