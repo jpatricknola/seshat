@@ -591,7 +591,9 @@ path — so a query resolves instead of hanging.
   **`-1`** when the device isn't on the chain to be indexed: some VST/AU plugins
   instantiate asynchronously and aren't there yet when the reply is built.
   `load_item` does not always append at the end (an instrument lands *before*
-  existing audio effects), so the index is found by name match, not assumed.
+  existing audio effects), so the index is found by diffing the chain against
+  what it held immediately before the load — the device that's new — falling
+  back to a name match, then the last device, when diffing doesn't resolve it.
 - Regular tracks only (`song.tracks`) — return and master tracks aren't
   addressable here.
 

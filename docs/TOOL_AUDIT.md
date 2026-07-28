@@ -56,7 +56,7 @@ _Living doc · MCP design review · 49 tools in the surface · 25 Jul 2026 — u
 > no auto-generated fallback. The decision lives in
 > `Seshat.Tools.FollowCam.calls/2` (pure, fully unit-tested); the panes needed
 > three new vendored OSC addresses. See
-> [PLAN_follow_cam.md](PLAN_follow_cam.md).
+> [archive/PLAN_follow_cam.md](archive/PLAN_follow_cam.md).
 
 **At a glance:** 49 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
 
@@ -87,7 +87,7 @@ Operations a producer would expect that no tool currently reaches, ranked by how
 | ~~**Sends / return tracks**~~ · **ADDRESSED 07/2026**                     | ~~High~~ | Was the top gap. `set_track_send` / `get_track_sends` / `create_return_track` / `delete_return_track` now cover the reverb-and-delay workflow. Loading a device *onto* a return is still manual. |
 | ~~**Remove / bypass a device**~~ · **ADDRESSED 07/2026** | ~~Med-High~~ | `delete_device` and `bypass_device` close the audition loop — a wrong load is undoable and a device can be A/B'd in place. Regular tracks only (upstream reaches `song.tracks` alone). |
 | **Reorder the device chain**                                              | Low      | The remaining half of the old one-way-device-workflow gap: a device can be added, bypassed and removed, but not moved. Deliberately not planned until a workflow demands it. |
-| **Record into a slot** (`session_record`) · capture half **ADDRESSED 07/2026** | Medium   | `capture_midi` now keeps the MIDI just played, from Live's retroactive buffer — the "keep that" move needs no arming and no mouse. A *deliberate* take (arm, count in, record into a slot) still has no tool; that's `session_record`, roadmap #4. |
+| **Record into a slot** (`session_record`) · capture half **ADDRESSED 07/2026** | Medium   | `capture_midi` now keeps the MIDI just played, from Live's retroactive buffer — the "keep that" move needs no arming and no mouse. A *deliberate* take (arm, count in, record into a slot) still has no tool; that's `session_record`, roadmap #2. |
 | **Per-clip properties** (clip loop/start/end, launch mode)                | Medium   | `set_loop` is the _song_ loop, not a clip's loop. No control of a clip's own loop brace, length after creation, or launch quantization.             |
 | **Quantize notes** (`quantize_clip`)                                      | Medium   | The most common MIDI cleanup move, currently impossible without a full read→remove→rewrite by hand.                                                 |
 | **Set time signature** (`set_time_signature`)                             | Low-Med  | `get_session_state` reports it and `set_tempo` exists, but there's no setter. Cheap, obvious symmetry win.                                          |

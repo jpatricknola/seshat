@@ -1,3 +1,15 @@
+> **Archived 2026-07-29 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The steering decision lives
+> in `Seshat.Tools.FollowCam` (`calls/2` pure, `steer/2` fire-and-forget); the
+> handler wiring is in `Seshat.Tools.Handlers` and `Seshat.Commands.Registry`;
+> the three vendored addresses and the extended `load_item` reply are in the
+> `priv/AbletonOSC` fork's `abletonosc/view.py`, `return_track.py`, and
+> `browser.py`. All five open questions below are still open — they are
+> Ableton-only checks with in-shape fallbacks, folded into the `/smoke-test`
+> checklist rather than blocking the ship. No test in this repo executes the
+> fork's Python; `mix abletonosc.install` + a Live restart are required before
+> any of it does anything in the running app.
+
 # Plan: Follow cam — every action visibly lands on screen
 
 ## Context
