@@ -265,6 +265,22 @@ defmodule Seshat.Tools.Definitions do
         required: ["track", "armed"]
       }
     },
+    %{
+      name: "capture_midi",
+      description:
+        "Retroactively capture the MIDI the user just played into a new Session clip — " <>
+          "Ableton Live keeps a buffer of recent MIDI input even when nothing was armed or " <>
+          "recording, so this is the \"keep that\" move when the user stumbles onto something " <>
+          "good while noodling. Call it right away: the buffer is ephemeral, and re-playing an " <>
+          "idea never feels the same. No parameters — Live itself decides which track(s) the " <>
+          "material belongs to (the tracks that received the MIDI) and where the clip lands. " <>
+          "The reply reports exactly which clip(s) appeared (track, slot, length, whether Live " <>
+          "started them playing) and whether Live adjusted the song tempo to match the playing " <>
+          "— it does that when the transport was stopped. MIDI only; audio can't be captured. " <>
+          "If nothing MIDI was played since the last capture, the reply says nothing appeared. " <>
+          "Follow up with get_clip_notes to inspect what was kept, or set_clip_name to label it.",
+      parameters: %{type: "object", properties: %{}, required: []}
+    },
     # --- Undo / Redo ---
     %{
       name: "undo",

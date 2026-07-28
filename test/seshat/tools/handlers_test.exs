@@ -777,6 +777,159 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "capture_diff/2" do
+    # The capture_midi do_call clause itself isn't tested here: it goes through
+    # Transport.query, which needs a live Ableton. This exercises the pure diff
+    # of two snapshot_grid/0 results, which is the tool's only evidence that
+    # anything was captured (/live/song/capture_midi never replies).
+    defp capture_track(name, slots) do
+      %{name: name, midi?: true, group?: false, slots: slots}
+    end
+
+    defp capture_clip(overrides \\ %{}) do
+      Map.merge(%{name: "", length: 4.0, playing?: false, recording?: false}, overrides)
+    end
+
+    defp capture_grid(num_scenes, tracks), do: %{num_scenes: num_scenes, tracks: tracks}
+
+    test "reports nothing when the grid is unchanged" do
+      grid = capture_grid(2, [capture_track("Keys", [capture_clip(), nil])])
+
+      assert Handlers.capture_diff(grid, grid) == {[], 0}
+    end
+
+    test "finds a single newly occupied slot" do
+      before_grid = capture_grid(2, [capture_track("Keys", [nil, nil])])
+
+      after_grid =
+        capture_grid(2, [
+          capture_track("Keys", [nil, capture_clip(%{name: "Keys", length: 8.0, playing?: true})])
+        ])
+
+      assert {[clip], 0} = Handlers.capture_diff(before_grid, after_grid)
+
+      assert clip.track_index == 0
+      assert clip.track_name == "Keys"
+      assert clip.slot_index == 1
+      assert clip.clip.length == 8.0
+      assert clip.clip.playing? == true
+    end
+
+    test "ignores slots that were already occupied" do
+      before_grid = capture_grid(1, [capture_track("Keys", [capture_clip(%{name: "Old"})])])
+      after_grid = capture_grid(1, [capture_track("Keys", [capture_clip(%{name: "Old"})])])
+
+      assert Handlers.capture_diff(before_grid, after_grid) == {[], 0}
+    end
+
+    test "finds new clips on two tracks at once, in track order" do
+      before_grid =
+        capture_grid(1, [capture_track("Keys", [nil]), capture_track("Drums", [nil])])
+
+      after_grid =
+        capture_grid(1, [
+          capture_track("Keys", [capture_clip()]),
+          capture_track("Drums", [capture_clip()])
+        ])
+
+      assert {[first, second], 0} = Handlers.capture_diff(before_grid, after_grid)
+
+      assert {first.track_index, first.track_name} == {0, "Keys"}
+      assert {second.track_index, second.track_name} == {1, "Drums"}
+    end
+
+    test "counts a clip landing in a scene that didn't exist before" do
+      before_grid = capture_grid(1, [capture_track("Keys", [capture_clip(%{name: "Old"})])])
+
+      after_grid =
+        capture_grid(2, [capture_track("Keys", [capture_clip(%{name: "Old"}), capture_clip()])])
+
+      assert {[clip], 1} = Handlers.capture_diff(before_grid, after_grid)
+      assert clip.slot_index == 1
+    end
+
+    test "treats everything as new when the before-grid was empty" do
+      before_grid = capture_grid(0, [])
+      after_grid = capture_grid(1, [capture_track("Keys", [capture_clip()])])
+
+      assert {[clip], 1} = Handlers.capture_diff(before_grid, after_grid)
+      assert clip.track_index == 0
+    end
+  end
+
+  describe "captured_reply/4" do
+    defp captured_clip(overrides \\ %{}) do
+      Map.merge(
+        %{
+          track_index: 0,
+          track_name: "Keys",
+          slot_index: 1,
+          clip: %{name: "", length: 8.0, playing?: false, recording?: false}
+        },
+        overrides
+      )
+    end
+
+    test "names the track, slot, length and playing state" do
+      reply = Handlers.captured_reply([captured_clip()], 0, 120.0, 120.0)
+
+      assert reply =~ "Captured 1 new clip(s):"
+      assert reply =~ ~s{Track 0 "Keys", slot 1: (unnamed) — 8.0 beats}
+      refute reply =~ "[playing]"
+      refute reply =~ "tempo"
+      refute reply =~ "scene"
+    end
+
+    test "flags a clip Live started playing, and a clip Live named" do
+      clip =
+        captured_clip(%{clip: %{name: "Keys", length: 4.0, playing?: true, recording?: false}})
+
+      reply = Handlers.captured_reply([clip], 0, 120.0, 120.0)
+
+      assert reply =~ ~s{"Keys" — 4.0 beats [playing]}
+    end
+
+    test "reports an added scene" do
+      reply = Handlers.captured_reply([captured_clip()], 1, 120.0, 120.0)
+
+      assert reply =~ "Live added 1 scene(s) to hold it."
+    end
+
+    test "reports Live's inferred tempo, rounded to one decimal" do
+      reply = Handlers.captured_reply([captured_clip()], 0, 120.0, 97.6543)
+
+      assert reply =~ "Live set the tempo to 97.7 BPM to match the playing (was 120.0)."
+    end
+
+    test "one line per clip when several were captured" do
+      clips = [captured_clip(), captured_clip(%{track_index: 1, track_name: "Drums"})]
+
+      reply = Handlers.captured_reply(clips, 0, 120.0, 120.0)
+
+      assert reply =~ "Captured 2 new clip(s):"
+      assert reply =~ ~s{Track 0 "Keys"}
+      assert reply =~ ~s{Track 1 "Drums"}
+    end
+  end
+
+  describe "nothing_captured_reply/2" do
+    test "explains the causes when the tempo didn't move" do
+      reply = Handlers.nothing_captured_reply(120.0, 120.0)
+
+      assert reply =~ "no new clip appeared"
+      assert reply =~ "armed or monitoring its input"
+      assert reply =~ "Arrangement view"
+      refute reply =~ "did change the tempo"
+    end
+
+    test "a tempo change with no clip is evidence the capture landed elsewhere" do
+      reply = Handlers.nothing_captured_reply(120.0, 97.6543)
+
+      assert reply =~ "Live did change the tempo (120.0 → 97.7 BPM), so something *was* captured"
+      assert reply =~ "Arrangement view"
+    end
+  end
+
   describe "note_range_args/1" do
     # AbletonOSC's handler raises unless it gets exactly 0 or 4 range args.
     test "sends nothing when no range param was given" do

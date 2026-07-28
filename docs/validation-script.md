@@ -570,10 +570,10 @@ after the 2026-07-27 run, so Part 1's "new project" prompt now resolves to
 
 **Not covered:** send levels and return tracks (`set_track_send`,
 `get_track_sends`, `create_return_track`, `delete_return_track`,
-`set_return_track_volume`, `set_master_volume`) shipped after this
-walkthrough was written and aren't part of it yet — see `/smoke-test` for
-that surface in the meantime. MIDI capture (`capture_midi`) isn't built yet;
-it's on [ROADMAP.md](ROADMAP.md).
+`set_return_track_volume`, `set_master_volume`), device removal/bypass
+(`delete_device`, `bypass_device`), and MIDI capture (`capture_midi`) all
+shipped after this walkthrough was written and aren't part of it yet — see
+`/smoke-test` for that surface in the meantime.
 
 ---
 

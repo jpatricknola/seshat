@@ -81,6 +81,11 @@ defmodule Seshat.Tools.Handlers do
   # a mystery timeout). One batch covers any normal set.
   @track_data_target_values 4000
 
+  # How long `capture_midi` waits before its single re-read, for the case where
+  # Live defers inserting the captured clip past the LOM call's return. Short
+  # enough to be invisible next to the round trips either side of it.
+  @capture_retry_delay 250
+
   @spec call(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
   def call(name, params) when is_binary(name) and is_map(params) do
     do_call(name, stringify_keys(params))
@@ -633,6 +638,125 @@ defmodule Seshat.Tools.Handlers do
     "slots #{ranges}"
   end
 
+  @doc """
+  Diffs two `snapshot_grid/0` results: what `capture_midi` made appear.
+
+  Returns `{new_clips, scenes_added}` — one map per slot that is occupied in
+  `after_grid` and empty in `before_grid`, in track then slot order, plus how
+  many scenes the grid grew by (capture adds one when it needs somewhere to put
+  the clip).
+
+  Tracks are matched by index, which is safe because capture never creates or
+  reorders tracks. A slot beyond `before_grid`'s scene count — or on a track
+  `before_grid` didn't have — counts as newly occupied: there was nothing there
+  to be occupied before.
+  """
+  @spec capture_diff(map(), map()) :: {[map()], non_neg_integer()}
+  def capture_diff(before_grid, after_grid) do
+    new_clips =
+      after_grid.tracks
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {track, track_index} ->
+        new_clips_on_track(before_grid, track, track_index)
+      end)
+
+    {new_clips, max(after_grid.num_scenes - before_grid.num_scenes, 0)}
+  end
+
+  defp new_clips_on_track(before_grid, track, track_index) do
+    before_slots =
+      case Enum.at(before_grid.tracks, track_index) do
+        nil -> []
+        before_track -> before_track.slots
+      end
+
+    for {slot, slot_index} <- Enum.with_index(track.slots),
+        not is_nil(slot),
+        is_nil(Enum.at(before_slots, slot_index)) do
+      %{
+        track_index: track_index,
+        track_name: track.name,
+        slot_index: slot_index,
+        clip: slot
+      }
+    end
+  end
+
+  @doc """
+  The success reply for `capture_midi`: what appeared, and what Live changed.
+
+  Every fact here comes from the after-snapshot rather than from assumption —
+  including whether Live started the clip playing, which depends on the
+  transport state at capture time. The tempo line only appears when the two
+  readings actually differ, which is Live's tempo inference showing up (it
+  happens when the transport was stopped and Live guessed a tempo from the
+  playing).
+  """
+  @spec captured_reply([map()], non_neg_integer(), number(), number()) :: String.t()
+  def captured_reply(new_clips, scenes_added, tempo_before, tempo_after) do
+    header = "Captured #{length(new_clips)} new clip(s):"
+    lines = Enum.map_join(new_clips, "\n", &captured_clip_line/1)
+
+    extras =
+      [scene_added_line(scenes_added), tempo_change_line(tempo_before, tempo_after)]
+      |> Enum.reject(&is_nil/1)
+
+    Enum.join([header <> "\n" <> lines | extras], "\n\n")
+  end
+
+  defp captured_clip_line(%{track_index: track, track_name: name, slot_index: slot, clip: clip}) do
+    clip_name = if clip.name in [nil, ""], do: "(unnamed)", else: ~s("#{clip.name}")
+    playing = if clip.playing?, do: " [playing]", else: ""
+
+    ~s{Track #{track} "#{name}", slot #{slot}: #{clip_name} — } <>
+      "#{format_number(clip.length)} beats#{playing}"
+  end
+
+  defp scene_added_line(0), do: nil
+
+  defp scene_added_line(count) do
+    "Live added #{count} scene(s) to hold it."
+  end
+
+  defp tempo_change_line(tempo_before, tempo_after) when tempo_before == tempo_after, do: nil
+
+  defp tempo_change_line(tempo_before, tempo_after) do
+    "Live set the tempo to #{format_tempo(tempo_after)} BPM to match the playing " <>
+      "(was #{format_tempo(tempo_before)})."
+  end
+
+  defp format_tempo(tempo), do: Float.round(tempo / 1, 1)
+
+  @doc """
+  The reply for a `capture_midi` that produced no new Session clip.
+
+  An error rather than a soft success: the user asked to keep what they played
+  and nothing was kept, so the model needs to say so and can act on the causes.
+  A tempo change with *no* new clip is positive evidence that the capture landed
+  somewhere the Session grid can't see, which upgrades the Arrangement caveat
+  from a guess to the likely cause.
+  """
+  @spec nothing_captured_reply(number(), number()) :: String.t()
+  def nothing_captured_reply(tempo_before, tempo_after) do
+    base =
+      "Capture ran but no new clip appeared in the Session grid. Live only buffers MIDI that " <>
+        "was played *into* a track — the track has to be armed or monitoring its input — and " <>
+        "the buffer is cleared by the previous capture, so there may be nothing left to keep. " <>
+        "Audio can't be captured at all."
+
+    if tempo_before == tempo_after do
+      base <>
+        " If Arrangement view was focused, Live may have captured there instead, where this " <>
+        "tool can't see it."
+    else
+      base <>
+        " Live did change the tempo (#{format_tempo(tempo_before)} → " <>
+        "#{format_tempo(tempo_after)} BPM), so something *was* captured — most likely into " <>
+        "Arrangement view, which Live captures into when that view is focused and which this " <>
+        "tool can't see."
+    end
+  end
+
   @range_params ~w(start_pitch pitch_span start_time time_span)
 
   @doc """
@@ -938,6 +1062,29 @@ defmodule Seshat.Tools.Handlers do
       :ok -> {:ok, "#{if armed, do: "Armed", else: "Disarmed"} track #{track}"}
       {:error, reason} -> {:error, inspect(reason)}
     end
+  end
+
+  # `/live/song/capture_midi` never replies: AbletonOSC's `_call_method` calls
+  # `song.capture_midi()` and returns nothing, and it *catches* whatever the
+  # call raises — so a capture with nothing buffered is exactly as silent as one
+  # that worked. The only evidence available is the session itself, hence the
+  # sandwich: snapshot the clip grid and the tempo before, fire, snapshot again,
+  # and report the difference. Deliberately behaviour-agnostic — Live's
+  # placement rules (which track, which slot, whether a scene gets added) are
+  # observed rather than modelled.
+  defp do_call("capture_midi", _params) do
+    with {:ok, tempo_before} <- query_tempo(),
+         {:ok, before_grid} <- snapshot_grid() do
+      fire_capture(tempo_before, before_grid)
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out reading the session before capturing, so nothing was sent. Check that " <>
+         "Ableton is running with AbletonOSC enabled."}
   end
 
   # --- Sends, return tracks, master ---
@@ -1467,11 +1614,19 @@ defmodule Seshat.Tools.Handlers do
   # is for mutation sequences). One bulk track_data query per batch of tracks
   # plus one tiny query per scene name; parsing and formatting are pure.
   defp do_call("get_clip_slots", _params) do
-    with {:ok, {_addr, [num_tracks]}} <- Transport.query("/live/song/get/num_tracks", []),
-         {:ok, {_addr, [num_scenes]}} <- Transport.query("/live/song/get/num_scenes", []) do
-      read_clip_grid(num_tracks, num_scenes)
-    else
-      {:error, reason} -> {:error, inspect(reason)}
+    case snapshot_grid() do
+      {:ok, %{tracks: []}} ->
+        {:ok, "No tracks in the session — the clip grid is empty."}
+
+      {:ok, %{num_scenes: num_scenes, tracks: tracks}} ->
+        case query_scene_names(num_scenes) do
+          {:ok, scenes} -> {:ok, format_clip_slots(scenes, tracks)}
+          {:error, reason} when is_binary(reason) -> {:error, reason}
+          {:error, reason} -> {:error, inspect(reason)}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   catch
     :exit, _ ->
@@ -1540,18 +1695,99 @@ defmodule Seshat.Tools.Handlers do
   defp to_track_type("midi"), do: :midi
   defp to_track_type("audio"), do: :audio
 
-  defp read_clip_grid(num_tracks, num_scenes) when num_tracks < 1 or num_scenes < 1 do
-    {:ok, "No tracks in the session — the clip grid is empty."}
-  end
-
-  defp read_clip_grid(num_tracks, num_scenes) do
-    with {:ok, scenes} <- query_scene_names(num_scenes),
-         {:ok, values} <- query_track_data(num_tracks, num_scenes),
-         {:ok, tracks} <- parse_track_data(values, num_scenes, num_tracks) do
-      {:ok, format_clip_slots(scenes, tracks)}
+  # The clip grid as structured data — shared by `get_clip_slots` (which then
+  # reads scene names and formats) and `capture_midi` (which takes two of these
+  # and diffs them). Scene *names* deliberately stay out: they cost one query
+  # per scene, and the capture diff needs occupancy only, so folding them in
+  # here would double a per-scene query burst for strings nobody reads.
+  #
+  # An empty session answers `{:ok, %{num_scenes: 0, tracks: []}}` rather than
+  # an error — capture on an empty set is a legitimate nothing-appeared, not a
+  # failure to read.
+  defp snapshot_grid do
+    with {:ok, {_addr, [num_tracks]}} <- Transport.query("/live/song/get/num_tracks", []),
+         {:ok, {_addr, [num_scenes]}} <- Transport.query("/live/song/get/num_scenes", []) do
+      snapshot_tracks(num_tracks, num_scenes)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp snapshot_tracks(num_tracks, num_scenes) when num_tracks < 1 or num_scenes < 1 do
+    {:ok, %{num_scenes: 0, tracks: []}}
+  end
+
+  defp snapshot_tracks(num_tracks, num_scenes) do
+    with {:ok, values} <- query_track_data(num_tracks, num_scenes),
+         {:ok, tracks} <- parse_track_data(values, num_scenes, num_tracks) do
+      {:ok, %{num_scenes: num_scenes, tracks: tracks}}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  # --- capture_midi ---
+
+  defp query_tempo do
+    case Transport.query("/live/song/get/tempo", []) do
+      {:ok, {_addr, [tempo]}} when is_number(tempo) ->
+        {:ok, tempo}
+
+      {:ok, {_addr, args}} ->
+        {:error, "Unexpected reply from /live/song/get/tempo: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  end
+
+  # Everything from here on runs *after* the capture message is on the wire, so
+  # no failure text may imply nothing happened — the `set_device_parameter`
+  # precedent. AbletonOSC processes datagrams in arrival order and
+  # `song.capture_midi()` runs synchronously inside its callback, so the tempo
+  # query sent afterwards reads the post-capture value.
+  defp fire_capture(tempo_before, before_grid) do
+    with :ok <- Transport.send_message("/live/song/capture_midi", []),
+         {:ok, tempo_after} <- query_tempo(),
+         {:ok, after_grid} <- snapshot_grid() do
+      report_capture(before_grid, after_grid, tempo_before, tempo_after)
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Capture was sent but reading the session back timed out — check the result with " <>
+         "get_clip_slots."}
+  end
+
+  defp report_capture(before_grid, after_grid, tempo_before, tempo_after) do
+    case capture_diff(before_grid, after_grid) do
+      {[], _scenes_added} ->
+        retry_capture_diff(before_grid, tempo_before, tempo_after)
+
+      {clips, scenes_added} ->
+        {:ok, captured_reply(clips, scenes_added, tempo_before, tempo_after)}
+    end
+  end
+
+  # ⚠️ Unconfirmed whether Live has inserted the clip by the time the LOM call
+  # returns — it may defer the insertion to a later UI tick. One bounded re-read
+  # covers that case without turning a genuine nothing-captured into a stall.
+  defp retry_capture_diff(before_grid, tempo_before, tempo_after) do
+    Process.sleep(@capture_retry_delay)
+
+    with {:ok, after_grid} <- snapshot_grid() do
+      case capture_diff(before_grid, after_grid) do
+        {[], _scenes_added} ->
+          {:error, nothing_captured_reply(tempo_before, tempo_after)}
+
+        {clips, scenes_added} ->
+          {:ok, captured_reply(clips, scenes_added, tempo_before, tempo_after)}
+      end
     end
   end
 
