@@ -64,6 +64,8 @@ the best impact-to-effort ratio on this list.
 
 ## #2 · `capture_midi` — "keep that"
 
+**Plan:** [PLAN_capture_midi.md](PLAN_capture_midi.md)
+
 **Goal:** a single tool that retroactively captures what the user just played
 into a clip, via `/live/song/capture_midi`.
 
