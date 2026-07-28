@@ -157,6 +157,7 @@ everything `Session.State`'s `@listened_properties` subscribes to.
 ## Design decisions worth knowing
 
 - **AbletonOSC is one bridge, not the architecture.** `OSC.Transport` isolates the wire mechanics (UDP, OSC encoding, reply correlation); the `/live/...` address strings deliberately live inline in `Handlers`, `Registry`, and `Session.State` — no abstraction layer, all sites greppable via `"/live/`. If the bridge ever changed, the stable seam is the tool contract in `Definitions`: the tool names and schemas stay, everything below `Handlers` gets reimplemented. Alternatives were weighed in [docs/bridge-options.md](docs/bridge-options.md) — staying on AbletonOSC is a decision, not an accident.
+- **Patch AbletonOSC in place, don't fork it — yet.** The vendored handlers ride on the user's own AbletonOSC install via `mix abletonosc.install`'s anchor patching. [docs/fork-options.md](docs/fork-options.md) records the trade-off, the concrete triggers that would flip the decision (chiefly: a second override on top of `track_listeners.py`), and the migration playbook — consult it when planning roadmap #19/#22 or anything that edits an upstream file.
 - **MCP mode is primary.** It needs no API key — the user's Claude subscription covers the reasoning. API-key mode exists for dev and for users without an MCP client.
 - **Only one Seshat can read Ableton at a time.** AbletonOSC replies to a fixed port (11001), so the second instance to start is deaf — it can send but never receives. `.mcp.json` therefore points MCP clients at the running server's HTTP endpoint rather than spawning `mix mcp`, which means the server must be running for the tools to exist. Reasoning and rejected alternatives in [docs/osc-port-contention.md](docs/osc-port-contention.md).
 - **The LLM does the resolving.** Track names → indices, "the reverb" → device index, note names → MIDI numbers. Tools stay dumb and mechanical; the prompt in `Seshat.Agent` carries the music theory.
@@ -164,9 +165,10 @@ everything `Session.State`'s `@listened_properties` subscribes to.
 ## Current focus
 
 [docs/ROADMAP.md](docs/ROADMAP.md) is the single living list of what's not
-built yet — send levels first, then capture MIDI, and the rest. Keep it
-current: when something ships, run the `/ship` skill (or by hand: remove it
-there, archive its plan doc). [docs/archive/](docs/archive/)
+built yet, written as a priority-ordered issue queue — #1 is the biggest win,
+work top to bottom; the play-and-keep arc (capture MIDI, session record, clip
+cleanup) leads. Keep it current: when something ships, run the `/ship` skill
+(or by hand: remove its issue there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
