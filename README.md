@@ -9,11 +9,12 @@ sends OSC to a running copy of Ableton Live.
 ## Prerequisites
 
 1. **Ableton Live** (tested against Live 12).
-2. **[AbletonOSC](https://github.com/ideoforms/AbletonOSC)** — a Python MIDI
-   Remote Script. Install it into Ableton's Remote Scripts folder and enable it
-   under Preferences → Link/MIDI → Control Surface. It listens on UDP 11000 and
-   replies on 11001.
-3. **Elixir 1.15+**.
+2. **Elixir 1.15+**.
+
+Nothing else to download: the AbletonOSC bridge ships with Seshat as a
+submodule, and `mix abletonosc.install` below puts it in place. You enable it
+under Preferences → Link/MIDI → Control Surface once it's installed. It listens
+on UDP 11000 and replies on 11001.
 
 No database required.
 
@@ -73,6 +74,8 @@ Seshat project root, with Live closed:
 rm -rf "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC"
 cp -R priv/AbletonOSC "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC"
 rm -rf "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/.git" \
+       "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/.github" \
+       "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/.gitignore" \
        "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/tests"
 ```
 

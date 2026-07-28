@@ -46,6 +46,12 @@ jobs:
       MIX_ENV: test
     steps:
       - uses: actions/checkout@v4
+        with:
+          # priv/AbletonOSC is the bridge fork. Two test files grep it, and
+          # without it they raise in setup_all. Checking it out here also means
+          # a pin bumped to a commit that was never pushed fails loudly on the
+          # PR instead of reaching another machine as a SHA that exists nowhere.
+          submodules: true
 
       - name: Read .tool-versions
         id: versions
