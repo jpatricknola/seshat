@@ -687,7 +687,9 @@ defmodule Seshat.Tools.Definitions do
           "Loading an audio effect appends it to the end of the track's device chain, after the " <>
           "instrument, so effects can be stacked by calling this repeatedly. " <>
           "The reply names the device that actually landed on the track — check it matches what " <>
-          "you asked for before telling the user it worked.",
+          "you asked for before telling the user it worked. " <>
+          "A wrong or unwanted load is not permanent: delete_device removes it, which is how to " <>
+          "audition candidates in place (load, listen, delete, load the next).",
       parameters: %{
         type: "object",
         properties: %{
@@ -711,8 +713,9 @@ defmodule Seshat.Tools.Definitions do
           "MIDI effect, in chain order, with its 0-based device index. " <>
           "Track indices are 0-based: 'track 1' = index 0. " <>
           "Use this to see what load_device actually put on a track, to resolve a device name " <>
-          "('the reverb') to the device index that get_device_parameters and " <>
-          "set_device_parameter need, or to check whether a track has an instrument at all. " <>
+          "('the reverb') to the device index that get_device_parameters, " <>
+          "set_device_parameter, delete_device and bypass_device all need, or to check whether " <>
+          "a track has an instrument at all. " <>
           "Racks (e.g. an Instrument Rack preset) appear as a single device — their inner " <>
           "chain is not listed. " <>
           "When talking to the user, refer to tracks by name or 1-based UI number, never raw " <>
@@ -760,7 +763,9 @@ defmodule Seshat.Tools.Definitions do
           "The reply echoes the parameter's new human-readable display value (e.g. '2.5 kHz', " <>
           "'-12 dB') — check it against what the user asked for. " <>
           "For relative changes ('a bit brighter'), read the current value first and move it " <>
-          "a small fraction of the range.",
+          "a small fraction of the range. " <>
+          "To switch a whole device on or off (bypass), use bypass_device instead of setting " <>
+          "parameter 0 by hand.",
       parameters: %{
         type: "object",
         properties: %{
@@ -779,6 +784,60 @@ defmodule Seshat.Tools.Definitions do
           }
         },
         required: ["track", "device", "parameter", "value"]
+      }
+    },
+    %{
+      name: "delete_device",
+      description:
+        "Delete a device from a track's chain in Ableton Live — the undo for load_device, and " <>
+          "one half of the audition loop: delete the current candidate, load the next, compare " <>
+          "by ear. " <>
+          "Track and device indices are 0-based — ALWAYS call get_track_devices first to " <>
+          "confirm which index is which. " <>
+          "Deleting a device shifts every later device's index down by one, so indices noted " <>
+          "before the delete are stale; the reply lists the remaining chain with its fresh " <>
+          "indices. " <>
+          "Regular tracks only — devices on return or master tracks are out of reach. " <>
+          "To compare with/without a device instead of removing it, use bypass_device.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "device" => %{
+            type: "integer",
+            description: "0-indexed device on the track, as returned by get_track_devices"
+          }
+        },
+        required: ["track", "device"]
+      }
+    },
+    %{
+      name: "bypass_device",
+      description:
+        "Switch a device on or off in place. Off is a bypass: the device stays in the chain " <>
+          "with all its settings intact but stops processing — the way to A/B a sound with and " <>
+          "without it ('here's the drums with the compressor… and without'). " <>
+          "enabled: false switches it off, enabled: true brings it back unchanged. " <>
+          "Track and device indices are 0-based — call get_track_devices first to find the " <>
+          "device index. " <>
+          "This toggles the device's own power switch (its parameter 0, 'Device On'), exactly " <>
+          "like clicking the device's on/off button in Live. " <>
+          "Bypassing an instrument silences its track. Regular tracks only. " <>
+          "To remove the device from the chain entirely, use delete_device.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "device" => %{
+            type: "integer",
+            description: "0-indexed device on the track, as returned by get_track_devices"
+          },
+          "enabled" => %{
+            type: "boolean",
+            description: "false bypasses the device, true re-enables it"
+          }
+        },
+        required: ["track", "device", "enabled"]
       }
     },
     %{

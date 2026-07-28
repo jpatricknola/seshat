@@ -1,6 +1,6 @@
 # Seshat MCP — Tool Audit
 
-_Living doc · MCP design review · 46 tools in the surface · 25 Jul 2026 — update as tools change._
+_Living doc · MCP design review · 48 tools in the surface · 25 Jul 2026 — update as tools change._
 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
@@ -43,7 +43,7 @@ _Living doc · MCP design review · 46 tools in the surface · 25 Jul 2026 — u
 > Live Set plus ordinary `create_track` calls — see
 > [archive/create-project-removal.md](archive/create-project-removal.md).
 
-**At a glance:** 46 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
+**At a glance:** 48 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -70,7 +70,8 @@ Operations a producer would expect that no tool currently reaches, ranked by how
 | Gap                                                                       | Priority | Why it matters                                                                                                                                      |
 | ------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ~~**Sends / return tracks**~~ · **ADDRESSED 07/2026**                     | ~~High~~ | Was the top gap. `set_track_send` / `get_track_sends` / `create_return_track` / `delete_return_track` now cover the reverb-and-delay workflow. Loading a device *onto* a return is still manual. |
-| **Remove / bypass / reorder a device** (`delete_device`, `bypass_device`) | Med-High | You can `load_device` and tweak params, but can't undo a wrong load, turn a device off (A/B), or reorder the chain. The device workflow is one-way. |
+| ~~**Remove / bypass a device**~~ · **ADDRESSED 07/2026** | ~~Med-High~~ | `delete_device` and `bypass_device` close the audition loop — a wrong load is undoable and a device can be A/B'd in place. Regular tracks only (upstream reaches `song.tracks` alone). |
+| **Reorder the device chain**                                              | Low      | The remaining half of the old one-way-device-workflow gap: a device can be added, bypassed and removed, but not moved. Deliberately not planned until a workflow demands it. |
 | **Capture / record into a slot** (`session_record`, `capture_midi`)       | Medium   | `set_track_arm` + `start_playing` exist, but nothing actually records or captures played MIDI. The record loop is incomplete.                       |
 | **Per-clip properties** (clip loop/start/end, launch mode)                | Medium   | `set_loop` is the _song_ loop, not a clip's loop. No control of a clip's own loop brace, length after creation, or launch quantization.             |
 | **Quantize notes** (`quantize_clip`)                                      | Medium   | The most common MIDI cleanup move, currently impossible without a full read→remove→rewrite by hand.                                                 |
@@ -112,7 +113,7 @@ Description quality is a real strength here. Two behaviors, though, were correct
 
 ## 05 · Full Inventory
 
-All 46 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
+All 48 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
@@ -153,7 +154,9 @@ All 46 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 | `remove_notes`          | MIDI      | Keep   | Default-all is a mild footgun.                           |
 | `list_browser_items`    | Devices   | Keep   | Fallback note already present — overlap resolved.        |
 | `load_device`           | Devices   | Keep   | Good echo-and-verify pattern.                            |
-| `set_device_parameter`  | Devices   | Keep   | Exemplary. No delete/bypass companion.                   |
+| `set_device_parameter`  | Devices   | Keep   | Exemplary. Points at `bypass_device` for parameter 0.    |
+| `delete_device`         | Devices   | Keep   | New 07/2026. Bounds-checks, then verifies by re-count (the address never replies). |
+| `bypass_device`         | Devices   | Keep   | New 07/2026. Refuses unless parameter 0 reads On/Off.    |
 | `search_library`        | Library   | Keep   | Scored 07/2026. Tags rank, don't gate; replies teach tags. |
 | `reindex_library`       | Library   | Keep   | Reports the library's real tag vocabulary (07/2026).     |
 | `get_track_sends`       | Read      | Keep   | New 07/2026. Labels each send with its return.           |
@@ -169,10 +172,10 @@ All 46 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 
 1. ✅ **Make `write_midi_notes` error on audio tracks** — done 26 Jul, and on group tracks too (they report MIDI input but hold no clips, so they were the same phantom success by another route). Kills the one silent-failure that could make me report a write that never happened.
 2. ✅ **Build sends / return tracks** — done 26 Jul: `set_track_send`, `get_track_sends`, `create_return_track`, `delete_return_track`, plus `set_return_track_volume` / `set_master_volume` riding along. Reverb/delay mixing is unlocked; only *loading* an effect onto a return is still a manual step in Live.
-3. **Add device removal & bypass** — so the device workflow isn't one-way; you can undo a wrong load and A/B. Roadmap Priority 2. (`/live/track/delete_device` exists in the installed AbletonOSC but is missing from our address docs — cheaper than it looked.)
+3. ✅ **Add device removal & bypass** — done 28 Jul: `delete_device` and `bypass_device` close the audition loop (load, listen, delete, load the next; or A/B via the device's own on/off switch). Reordering the chain stays out of scope.
 4. ✅ **Fix the `set_track_volume` scale + echo dB** — done 26 Jul: 0.85 is unity, 1.0 is +6 dB, and both mixer setters now echo a display value.
 5. ✅ **Clarify `search_library` vs `list_browser_items`** — already in place on both sides; no change was needed.
 
 ---
 
-_Seshat MCP tool audit · living document · 46 tools as of 28 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._
+_Seshat MCP tool audit · living document · 48 tools as of 28 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._
