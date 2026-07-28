@@ -9,6 +9,8 @@ defmodule Seshat.Tools.Handlers do
   `Seshat.Commands.Registry`.
   """
 
+  require Logger
+
   alias Seshat.Commands.{Command, Registry}
   alias Seshat.Library.Catalog
   alias Seshat.Music.Pitch
@@ -1818,9 +1820,16 @@ defmodule Seshat.Tools.Handlers do
   # kind of object are left — and the optional clip name.
 
   # Ordering matters: this query runs *before* the clause's own `State.refresh()`
-  # cast, so its reply can't interleave with the refresh's queries to the same
-  # address (Transport correlates replies by address alone). The steering sends
-  # themselves are fire-and-forget and race nothing.
+  # cast, so its reply can't interleave with that explicit refresh's queries to
+  # the same address (Transport correlates replies by address alone, with a
+  # single `pending` slot — a second in-flight query to the same address steals
+  # the first caller's reply). That does *not* cover every source of contention:
+  # the delete itself makes `song_structure.py` push `/live/song/get/tracks`,
+  # which `Session.State` turns into its own synchronous read of this same
+  # address, independent of the cast below and capable of racing this query.
+  # If that race is lost, this call reports `:error` (see `remaining_count/1`)
+  # and steering is simply skipped for that delete — never a crash or a wrong
+  # index. The steering sends themselves are fire-and-forget and race nothing.
   defp steer_after_delete(tool, facts, count_address) do
     case remaining_count(count_address) do
       {:ok, remaining} -> FollowCam.steer(tool, Map.put(facts, :remaining, remaining))
@@ -1853,9 +1862,32 @@ defmodule Seshat.Tools.Handlers do
 
   defp maybe_name_clip(_track, _slot, nil), do: :ok
 
+  # Fire-and-forget, like `set_clip_name`'s own send — but this runs *after* a
+  # mutation (write_midi_notes, capture_midi) that already succeeded, inside a
+  # function whose own `catch :exit` assumes nothing past that point can still
+  # exit. Left uncaught, a dead/restarting Transport here would surface as the
+  # enclosing tool's timeout message, denying a write or capture that actually
+  # landed. Catch and log instead: worst case the clip keeps its default name.
   defp maybe_name_clip(track, slot, name) do
-    Transport.send_message("/live/clip/set/name", [track, slot, name])
-    :ok
+    case Transport.send_message("/live/clip/set/name", [track, slot, name]) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.debug(
+          "maybe_name_clip: /live/clip/set/name failed for track #{track}, slot #{slot}: " <>
+            inspect(reason)
+        )
+
+        :ok
+    end
+  catch
+    :exit, _ ->
+      Logger.debug(
+        "maybe_name_clip: transport unavailable, skipped naming clip at track #{track}, slot #{slot}"
+      )
+
+      :ok
   end
 
   defp clip_name_note(nil), do: ""
@@ -1939,20 +1971,42 @@ defmodule Seshat.Tools.Handlers do
     {:ok, captured_reply(clips, scenes_added, tempo_before, tempo_after)}
   end
 
-  defp name_captured_clip(clip, nil), do: clip
+  @doc """
+  Applies `capture_midi`'s optional model-supplied `name` to one captured clip.
 
-  defp name_captured_clip(%{track_index: track, slot_index: slot} = new_clip, name) do
+  Fires the rename (`maybe_name_clip/3`, itself exit-safe) and, independently
+  of whether that send lands, substitutes the name into the returned map so
+  `captured_reply/4` prints what was asked for rather than the `""` Live gave
+  the clip by default.
+  """
+  @spec name_captured_clip(map(), String.t() | nil) :: map()
+  def name_captured_clip(clip, nil), do: clip
+
+  def name_captured_clip(%{track_index: track, slot_index: slot} = new_clip, name) do
     maybe_name_clip(track, slot, name)
     %{new_clip | clip: %{new_clip.clip | name: name}}
   end
 
-  # Several new clips means one take spread across tracks; the first in
-  # track-then-slot order is the one to show.
-  defp steer_to_captured([%{track_index: track, slot_index: slot} | _rest]) do
-    FollowCam.steer("capture_midi", %{track: track, slot: slot})
-  end
+  @doc """
+  Which of `capture_midi`'s new clips gets the follow cam.
 
-  defp steer_to_captured([]), do: :ok
+  Several new clips means one take spread across tracks; `clips` is already in
+  track-then-slot order (`capture_diff/2`'s own ordering), so the first entry
+  is the one to show. `nil` when nothing was captured.
+  """
+  @spec captured_steer_target([map()]) ::
+          %{track: non_neg_integer(), slot: non_neg_integer()} | nil
+  def captured_steer_target([%{track_index: track, slot_index: slot} | _rest]),
+    do: %{track: track, slot: slot}
+
+  def captured_steer_target([]), do: nil
+
+  defp steer_to_captured(clips) do
+    case captured_steer_target(clips) do
+      nil -> :ok
+      facts -> FollowCam.steer("capture_midi", facts)
+    end
+  end
 
   # No bulk scene-name address exists, so one query per scene — tiny replies,
   # fine at real-world scene counts.
