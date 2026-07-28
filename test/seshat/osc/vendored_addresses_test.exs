@@ -212,6 +212,29 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              If an upstream merge reverted it, reapply it — see SESHAT.md in the fork.
              """
     end
+
+    # The stored-object contract has two halves: the base class *reads*
+    # listener_objects, and every hand-rolled DeviceParameter listener has to
+    # *populate* it. An upstream merge can revert track.py or device.py while
+    # leaving handler.py intact — every address still answers, the grep above
+    # stays green, and mixer/parameter listeners silently regain both bugs.
+    test "every DeviceParameter listener stores the object it registered on" do
+      for file <- [
+            "priv/AbletonOSC/abletonosc/track.py",
+            "priv/AbletonOSC/abletonosc/device.py"
+          ] do
+        assert File.read!(file) =~ "self.listener_objects[listener_key] = parameter_object",
+               """
+               #{file} no longer stores the DeviceParameter it registered its
+               listener on in listener_objects.
+
+               Without that entry, the base _stop_listen falls back to unbinding
+               from the object it was handed — the wrong one once an index has been
+               renumbered — and _clear_listeners raises KeyError on script reload.
+               Those are the two bugs the fork fixes. See SESHAT.md's merge hazards.
+               """
+      end
+    end
   end
 
   # `add_handler("/live/...", ...)` — the one way a handler registers an address.
