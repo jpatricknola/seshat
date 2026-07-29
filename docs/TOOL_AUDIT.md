@@ -178,7 +178,7 @@ category, not of any one tool.
 | `set_device_parameter`  | Devices   | Keep   | Exemplary. Points at `bypass_device` for parameter 0.    |
 | `delete_device`         | Devices   | Keep   | New 07/2026. Bounds-checks, then verifies by re-count (the address never replies). |
 | `bypass_device`         | Devices   | Keep   | New 07/2026. Refuses unless parameter 0 reads On/Off.    |
-| `search_library`        | Library   | Keep   | Scored 07/2026. Tags rank, don't gate; replies teach tags. |
+| `search_library`        | Library   | Keep   | Scored 07/2026. Tags rank, don't gate; replies teach tags, and mark that steering text model-internal. |
 | `reindex_library`       | Library   | Keep   | Reports the library's real tag vocabulary (07/2026).     |
 | `get_track_sends`       | Read      | Keep   | New 07/2026. Labels each send with its return.           |
 | `set_track_send`        | Mixer     | Keep   | New 07/2026. No dB echo — send curve unconfirmed.        |

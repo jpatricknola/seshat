@@ -39,6 +39,11 @@ Seshat.MCP.Server                      Seshat.Agent
             AbletonOSC → Ableton Live
 ```
 
+Both modes also share one prompt source: `Seshat.Instructions` carries the
+session-level conventions no single tool description can, sent by MCP mode as
+server `instructions` at connect time and prepended to `Seshat.Agent`'s system
+prompt in API-key mode.
+
 `Seshat.Session.State` subscribes to the `"osc:in"` PubSub topic and mirrors
 track state (names, volume, pan, mute, solo, tempo, time signature). Tools read
 it via `get_session_state` rather than querying Ableton field by field.
@@ -77,6 +82,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All tool definitions (name, description, JSON Schema). Single source of truth. |
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Single-message tools hit Transport directly; multi-step ones go via Registry. |
 | [lib/seshat/tools/follow_cam.ex](lib/seshat/tools/follow_cam.ex) | View steering — after a create/write/delete succeeds, selects what it touched and shows the pane it's in. `calls/2` is the pure decision; `steer/2` sends it best-effort |
+| [lib/seshat/instructions.ex](lib/seshat/instructions.ex) | Session-level guidance shared by both modes — the conventions no single tool description can carry |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
 | [lib/seshat/mcp/tools.ex](lib/seshat/mcp/tools.ex) | Generates one MCP component per tool definition |

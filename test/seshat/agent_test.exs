@@ -228,4 +228,47 @@ defmodule Seshat.AgentTest do
       assert result.response =~ "panned left"
     end
   end
+
+  describe "system prompt" do
+    test "carries this mode's own material" do
+      # The MIDI crash course exists because this mode runs a small model; it is
+      # deliberately not part of the shared instructions.
+      assert Agent.system_prompt() =~ "Track indices are 0-based"
+      assert Agent.system_prompt() =~ "MIDI note writing"
+    end
+
+    test "carries the shared instructions when there are any" do
+      # Text-agnostic on purpose: asserts the wiring, never the wording. While
+      # Seshat.Instructions.text/0 is nil the nil branch guards the join instead
+      # — no leading blank line from composing with nothing — and the other
+      # branch starts guarding for real the moment the text lands.
+      prompt = Agent.system_prompt()
+
+      case Seshat.Instructions.text() do
+        nil -> refute String.starts_with?(prompt, "\n")
+        text -> assert String.contains?(prompt, text)
+      end
+    end
+
+    test "is what actually reaches the API" do
+      # The regression this guards: call_api/3 drifting back to a stale module
+      # attribute, so the shared source is composed but never sent.
+      Req.Test.expect(Seshat.Agent, fn conn ->
+        {:ok, body, _conn} = Plug.Conn.read_body(conn)
+        request = Jason.decode!(body)
+
+        assert request["system"] == Agent.system_prompt()
+
+        Req.Test.json(conn, %{
+          "id" => "msg_1",
+          "type" => "message",
+          "role" => "assistant",
+          "stop_reason" => "end_turn",
+          "content" => [%{"type" => "text", "text" => "Done."}]
+        })
+      end)
+
+      assert {:ok, _result} = Agent.run("what's the tempo?")
+    end
+  end
 end

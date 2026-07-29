@@ -35,6 +35,18 @@ defmodule Seshat.Tools.Handlers do
   @default_max_results 25
   @default_catalog_results 15
 
+  # TODO - phase 2
+  # Marks search steering text as model-internal, at the point of use. The
+  # 2026-07-28 validation run had "No 'Warm' tag exists in your library" relayed
+  # verbatim to a musician who never asked about tags: the diagnose/facet text
+  # did its real job (steering the model's retry) but was never meant to be
+  # quoted. It travels with the text it governs rather than sitting in the tool
+  # description, so it reaches the model exactly when it matters, in both modes.
+  # Wording ships in phase 1 because it is self-contained and needed either way;
+  # revisit in phase 2 for consistency with the session instructions' voice.
+  @diagnostics_internal "(Diagnostics are for refining your search — present results musically; " <>
+                          "don't mention tags to the user.)"
+
   # Advice appended to a guard timeout, per address family. A timeout means "no
   # reply at all", which for an upstream address is nearly always a bad index and
   # for one of Seshat's own is that plus "the extension was never installed".
@@ -187,7 +199,8 @@ defmodule Seshat.Tools.Handlers do
 
         true ->
           "Showing #{length(entries)} of #{total} matches — top tags among them: " <>
-            "#{format_tag_counts(facets)}. Add one as a tag to narrow."
+            "#{format_tag_counts(facets)}. Add one as a tag to narrow. " <>
+            @diagnostics_internal
       end
 
     "#{header}\n\n#{listing}"
@@ -206,8 +219,12 @@ defmodule Seshat.Tools.Handlers do
         ]
 
     case Enum.reject(notes, &(&1 == "")) do
-      [] -> ""
-      notes -> " " <> Enum.join(notes, " ") <> " " <> retry_advice(diagnosis)
+      [] ->
+        ""
+
+      notes ->
+        " " <>
+          Enum.join(notes, " ") <> " " <> retry_advice(diagnosis) <> " " <> @diagnostics_internal
     end
   end
 
