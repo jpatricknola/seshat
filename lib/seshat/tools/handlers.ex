@@ -1241,12 +1241,16 @@ defmodule Seshat.Tools.Handlers do
   # Arming is done for the user rather than asked about: "record me a take on the
   # keys" is consent to arm, and the reply discloses it.
   #
-  # `record_length/1` is placed before every OSC-issuing guard on purpose: it is
-  # the only step in this chain that can exit *without* one of the query helpers'
-  # own `catch` turning that into an `{:error, _}` first (it reads `State.song()`
-  # directly). Keeping it ahead of `ensure_armed/1` means the outer `catch` below —
-  # whose text says nothing was sent — can never fire after the track has already
-  # been armed.
+  # `record_length/1` is placed before every OSC-issuing guard on purpose: it reads
+  # `State.song()` directly, so it is the one step whose timeout is *not* already
+  # turned into an `{:error, _}` by a query helper's own `catch`. Keeping it ahead
+  # of `ensure_armed/1` keeps the realistic timeout — a session mirror that isn't
+  # answering — from landing in the outer `catch` below with the track already
+  # armed, since that catch's text says nothing was sent. It is not an absolute
+  # guarantee: `Transport.send_message/2` is itself a `GenServer.call`, so a
+  # transport that dies between the arm and the fire still reaches that clause.
+  # Nothing cheaper distinguishes the two, and a dead transport has already made
+  # the reply moot.
   #
   # Once the fire itself is sent, `report_record_started/5` is responsible for
   # never repeating that "nothing was sent" framing: `record_echo/2`'s own guard
@@ -1258,10 +1262,10 @@ defmodule Seshat.Tools.Handlers do
     with :ok <- ensure_bars(bars),
          {:ok, beats} <- record_length(bars),
          :ok <- ensure_slot_empty(track, slot),
-         {:ok, armed_now?} <- ensure_armed(track),
-         :ok <- ensure_will_record(track, slot, armed_now?),
+         {:ok, just_armed?} <- ensure_armed(track),
+         :ok <- ensure_will_record(track, slot, just_armed?),
          :ok <- fire_for_record(track, slot, beats) do
-      report_record_started(track, slot, bars, beats, armed_now?)
+      report_record_started(track, slot, bars, beats, just_armed?)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
@@ -1287,8 +1291,8 @@ defmodule Seshat.Tools.Handlers do
 
       {:ok,
        "Finishing the take in track #{track}, slot #{slot} — it ends at the next quantization " <>
-         "boundary and keeps looping. get_clip_notes or get_clip_properties to inspect it; " <>
-         "delete_clip to scrap it."}
+         "boundary and keeps looping. get_clip_properties to inspect it (get_clip_notes too, " <>
+         "if it's MIDI — an audio take has no notes to read); delete_clip to scrap it."}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
@@ -2347,7 +2351,8 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # Returns whether *we* armed the track, so the reply can disclose it. A track
+  # Returns whether *this call* armed the track — `false` for one that was armed
+  # already — so the reply can disclose an arm the user didn't ask for. A track
   # that is already armed skips the `can_be_armed` read: it self-evidently could.
   defp ensure_armed(track) do
     case query_flag("/live/track/get/arm", [track], "whether track #{track} is armed") do
@@ -2392,11 +2397,11 @@ defmodule Seshat.Tools.Handlers do
   end
 
   # The definitive precondition, and the last one before anything is sent: Live
-  # itself answering "would firing this slot record?". `armed_now?` is threaded
+  # itself answering "would firing this slot record?". `just_armed?` is threaded
   # through so the false branch can disclose an arm this same call just made —
   # `ensure_armed/1`'s `/live/track/set/arm` already reached Live, so the track
   # is left armed (and monitoring possibly live) even though the fire never was.
-  defp ensure_will_record(track, slot, armed_now?) do
+  defp ensure_will_record(track, slot, just_armed?) do
     case query_flag(
            "/live/clip_slot/get/will_record_on_start",
            [track, slot],
@@ -2407,9 +2412,9 @@ defmodule Seshat.Tools.Handlers do
 
       {:ok, false} ->
         {:error,
-         "Live reports that firing slot #{slot} on track #{track} would not record, so " <>
-           "nothing was sent.#{armed_disclosure(armed_now?)} The track is armed, so this is " <>
-           "usually the track's input: check its input routing and monitoring in Live."}
+         "Live reports that firing slot #{slot} on track #{track} would not record, so no " <>
+           "take was fired. The track is armed, so this is usually the track's input: check " <>
+           "its input routing and monitoring in Live.#{armed_disclosure(just_armed?)}"}
 
       {:error, message} ->
         {:error, message}
@@ -2417,7 +2422,7 @@ defmodule Seshat.Tools.Handlers do
   end
 
   defp armed_disclosure(true) do
-    " The track was armed in the process — disarm it with set_track_arm if that isn't wanted."
+    " This call armed the track on the way in — disarm it with set_track_arm if that isn't wanted."
   end
 
   defp armed_disclosure(false), do: ""
@@ -2442,11 +2447,11 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp report_record_started(track, slot, bars, beats, armed_now?) do
+  defp report_record_started(track, slot, bars, beats, just_armed?) do
     case record_echo(track, slot) do
       {:ok, status} ->
         FollowCam.steer("record_clip", %{track: track, slot: slot})
-        {:ok, record_reply(track, slot, bars, beats, armed_now?, status)}
+        {:ok, record_reply(track, slot, bars, beats, just_armed?, status)}
 
       {:error, message} ->
         # `record_echo/2` shares its guard helpers with the pre-fire checks, so
@@ -2502,19 +2507,21 @@ defmodule Seshat.Tools.Handlers do
       {:ok, false} ->
         {:error,
          "Fired slot #{slot} on track #{track} but Live reports nothing recording or waiting " <>
-           "to start there, so the take did not begin. That usually means the track has no " <>
-           "input to record — check its input routing and monitoring in Live, then try again."}
+           "to start there, so the take did not begin. Live had just answered that firing " <>
+           "this slot would record, so something changed underneath — most likely the slot " <>
+           "or the track's arm was touched by hand in Live between the two. Check with " <>
+           "get_clip_slots and call record_clip again."}
 
       {:error, message} ->
         {:error, message}
     end
   end
 
-  defp record_reply(track, slot, bars, beats, armed_now?, status) do
+  defp record_reply(track, slot, bars, beats, just_armed?, status) do
     [
       record_headline(track, slot, bars, beats),
       record_status_line(status),
-      if(armed_now?, do: "Armed the track first.")
+      if(just_armed?, do: "Armed the track first.")
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" ")

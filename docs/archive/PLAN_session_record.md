@@ -9,10 +9,11 @@
 > `record_length` argument. The four ⚠️ open questions below (record-length
 > beat counting in odd meters, re-fire-to-stop behavior, `is_triggered`'s
 > queued-window reading, and exclusive-arm interaction) were never resolved
-> against a live Ableton and are carried forward as smoke-test items — see
-> `feature/session-record`'s PR for the full list. Any remaining roadmap
-> follow-ups (a `/smoke-test` section for these tools, the clip-grid-in-
-> session-state trigger) live in `docs/ROADMAP.md`.
+> against a live Ableton. They are carried forward in the `/smoke-test` skill,
+> which has a section for these two tools listing all nine checks — that, not
+> this document, is where the open questions now live. The one roadmap
+> follow-up (the clip-grid-in-session-state trigger, which session record was
+> the event this item waited on) is noted in `docs/ROADMAP.md` #19.
 
 Roadmap #1 (at the time this was written). Two new tools — `record_clip` and `stop_recording` — that close
 the record loop: a deliberate take into a chosen Session slot, fixed-length

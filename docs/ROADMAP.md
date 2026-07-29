@@ -335,7 +335,7 @@ reindex time, using an API key or an MCP-client-driven tagging turn.
 
 **Why:** lever №5 — highest ceiling (it attacks the thin-signal problem
 directly: ~200 of 5,795 entries say anything real about their sound) and
-highest cost. Last resort: buy only if the #10 eval still shows first-slate
+highest cost. Last resort: buy only if the #9 eval still shows first-slate
 misses on thin-tagged entries after everything above. Concrete evidence from
 the 2026-07-28 validation run: for "warm, slightly out-of-tune electric
 piano," the character lived only in preset *names* — E-Piano Rusty, Old

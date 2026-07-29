@@ -78,7 +78,7 @@ whole surface. Before anything else:
 ## If the change touches an address with no tool yet
 
 `/live/clip/quantize` and `/live/browser/preview_item` / `stop_preview` are
-served by the fork but have no Seshat tool (roadmap #8 and #15), so the MCP
+served by the fork but have no Seshat tool (roadmap #5 and #12), so the MCP
 surface can't reach them. Drive them by raw OSC — **send-only**, so nothing
 binds port 11001 and Seshat's own reader stays alive:
 
@@ -195,6 +195,61 @@ rather than from any run:
    rather than burning fourteen timeouts.
 7. **Follow cam.** A brace edit leaves the clip selected with the note editor
    open.
+
+## If the change touches the recording tools (`record_clip` / `stop_recording`)
+
+These shipped 2026-07-29 having **never executed against Live** — the only
+verification behind them was one raw-OSC fire in 4/4. Four assumptions are load-
+bearing and unreachable by `mix test`; each names its own fix. Items 1, 2 and 5
+are the ones that must pass before anyone trusts the pair.
+
+1. **Fixed-length take.** Empty slot, armed MIDI track, transport stopped,
+   `record_clip bars: 2` → recording starts immediately, Live stops it itself,
+   and `get_clip_properties` shows exactly 8.0 beats, looping. This also
+   exercises `will_record_on_start` on the happy path: if Live gates that
+   property on anything beyond "armed track, empty slot", `record_clip` errors
+   on *every* call and it surfaces here first.
+2. **Auto-arm.** Same on a **disarmed** track → the tool arms it and the reply
+   says "Armed the track first." Then check what Live's exclusive-arm
+   preference did to whatever was armed before — the disclosure currently
+   doesn't mention it, and if exclusive arm silently disarms another track
+   that sentence needs to say so. If `set/arm` doesn't land at all, the re-read
+   in `arm_track/1` turns it into a loud error rather than a lie, so a failure
+   here is visible either way.
+3. **Open-ended take and the re-fire.** ⚠️ `stop_recording` assumes that firing
+   a recording slot ends the take at the next launch-quantization boundary and
+   drops the clip into looped playback. `record_clip` with no `bars`, then
+   `stop_recording` → confirm it ends on the bar line and keeps looping. If
+   Live does something else, the fallback is
+   `/live/song/set/session_record 0` (immediate, unquantized) — a different
+   address and a different reply.
+4. **Echo wording.** ⚠️ Fire with the transport **playing** → the reply must say
+   "Queued". That depends on `is_triggered` reading true between the fire and
+   the boundary; if it reads false, `queued_or_nothing/2` mislabels a perfectly
+   healthy take as a hard failure. Fire with the transport **stopped** →
+   "Recording now."
+5. **Audio take — the headline.** An audio track with an input routed, 4 bars →
+   audible material in the clip. This is the capability the whole feature
+   exists for and the one thing `capture_midi` can never do. A silent take
+   means the input isn't set, which Seshat cannot see or fix.
+6. **Non-4/4.** ⚠️ In a 6/8 set, `bars: 2` must give **two bars**, not four.
+   `record_length_beats/3` assumes `record_length` counts quarter-note song
+   beats (so 6/8 × 2 bars = 6.0), which is unverified — the 2026-07-29 check
+   was 4/4, where the two conventions coincide. Wrong ⇒ one line in that
+   function.
+7. **Guards, each producing its own error with nothing fired:** an occupied
+   slot (names `delete_clip`), a group track (`can_be_armed` false), and an
+   armable track whose `will_record_on_start` stays false (unroute its input).
+8. **`stop_recording` boundaries.** On a fixed-length take it ends it early. On
+   a slot that is merely *playing* it errors and the clip **keeps playing** —
+   the guard must run before any fire, or the re-fire restarts the clip. On a
+   slot in the queued window (fired, boundary not reached) it currently errors
+   with "Slot S on track T is empty… nothing was fired", which is safe but
+   misleading; note whether that window is long enough in practice to be worth
+   a better message.
+9. **Follow cam.** `record_clip` lands the view on the reddening slot in
+   Session with the detail pane left alone; `stop_recording` opens the finished
+   take in the note editor (or waveform, for audio).
 
 ## If the change touches session guidance (`Seshat.Instructions` or a tool description)
 

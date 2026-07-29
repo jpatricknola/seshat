@@ -88,7 +88,7 @@ Operations a producer would expect that no tool currently reaches, ranked by how
 | ~~**Remove / bypass a device**~~ · **ADDRESSED 07/2026** | ~~Med-High~~ | `delete_device` and `bypass_device` close the audition loop — a wrong load is undoable and a device can be A/B'd in place. Regular tracks only (upstream reaches `song.tracks` alone). |
 | **Reorder the device chain**                                              | Low      | The remaining half of the old one-way-device-workflow gap: a device can be added, bypassed and removed, but not moved. Deliberately not planned until a workflow demands it. |
 | ~~**Record into a slot**~~ · **ADDRESSED 07/2026** | ~~Medium~~ | `capture_midi` keeps the MIDI just played from Live's retroactive buffer; `record_clip` and `stop_recording` now cover the *deliberate* take — arm (automatic), record into a chosen slot, fixed-length or open-ended, on MIDI **and audio** tracks. Both ride `/live/clip_slot/fire`'s optional `record_length`, so no fork change was needed. Still out deliberately: global multi-track session record (`/live/song/set/session_record` — different user story, no slot choice) and count-in (`count_in_duration`/`is_counting_in` are in Live 12's LOM but unregistered upstream; a one-line fork commit plus an install if takes prove to start before the user is ready). |
-| ~~**Per-clip properties** (clip loop/start/end, launch mode)~~ · **ADDRESSED 07/2026** | ~~Medium~~ | `get_clip_properties` and `set_clip_properties` reach a clip's own loop brace, play markers, launch mode/quantization, legato and velocity amount, plus gain/warp for audio clips — so a captured clip can now be trimmed to the good bars. Length still has no direct setter (Live has none); it follows from the markers or the loop. Still out: `muted`, `color`, `position`, `pitch_coarse`/`pitch_fine`, `ram_mode` and `duplicate_loop` — grab-bag territory, roadmap #21. |
+| ~~**Per-clip properties** (clip loop/start/end, launch mode)~~ · **ADDRESSED 07/2026** | ~~Medium~~ | `get_clip_properties` and `set_clip_properties` reach a clip's own loop brace, play markers, launch mode/quantization, legato and velocity amount, plus gain/warp for audio clips — so a captured clip can now be trimmed to the good bars. Length still has no direct setter (Live has none); it follows from the markers or the loop. Still out: `muted`, `color`, `position`, `pitch_coarse`/`pitch_fine`, `ram_mode` and `duplicate_loop` — grab-bag territory, roadmap #20. |
 | **Quantize notes** (`quantize_clip`)                                      | Medium   | The most common MIDI cleanup move, currently impossible without a full read→remove→rewrite by hand.                                                 |
 | **Set time signature** (`set_time_signature`)                             | Low-Med  | `get_session_state` reports it and `set_tempo` exists, but there's no setter. Cheap, obvious symmetry win.                                          |
 | ~~**Master & return volume**~~ · **ADDRESSED 07/2026**                    | ~~Low-Med~~ | `set_master_volume` and `set_return_track_volume` ride along with the sends work, and `get_session_state` now reports both. Pan/mute/solo on returns and the master are still out. |
@@ -130,10 +130,12 @@ Description quality is a real strength here. Two behaviors, though, were correct
 
 All 53 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
 
-Every **Structure**, **MIDI** and device-mutating tool below (nineteen in total
-— the sixteen in the follow-cam note above, plus `set_clip_properties`,
-`record_clip` and `stop_recording`) steers Live's view onto what it changed. Rows aren't annotated individually: it is a
-property of the category, not of any one tool.
+Nineteen tools below steer Live's view onto what they changed: every
+**Structure**, **MIDI** and device-mutating one (the sixteen in the follow-cam
+note above), plus three that create or reshape a clip without belonging to those
+categories — `set_clip_properties`, and the `record_clip`/`stop_recording` pair
+listed here under **Transport**. Rows aren't annotated individually: steering
+follows from what a tool *does to a clip*, not from any one row.
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
