@@ -14,14 +14,13 @@ defmodule Seshat.Agent do
 
   @max_iterations 10
 
-  # TODO - phase 2
   # API-key-mode-only prompt. The MIDI crash course and note-editing loop exist
   # because this mode runs a small model (claude-haiku-4-5); MCP mode's client
-  # needs none of it. Three rules here are general rather than API-mode-specific
-  # — refer to tracks by name or 1-based UI number; read get_session_state
-  # before relative changes; resolve track names through get_session_state — so
-  # if the phase 2 instructions come to state them, this prompt will say them
-  # twice. Deduplicating then is optional; see docs/PLAN_mcp_server_instructions.md.
+  # needs none of it. Three rules here also appear in Seshat.Instructions
+  # (name/1-based track references, read state before relative changes, resolve
+  # names via get_session_state) — kept deliberately: this copy is phrased for
+  # the small model, costs ~50 tokens per request in this mode only, and the
+  # shared text is the authoritative wording if the two ever disagree.
   @agent_specific """
   You are an assistant for Ableton Live. You control the DAW using the tools provided.
 

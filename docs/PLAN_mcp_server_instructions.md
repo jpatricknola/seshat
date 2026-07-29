@@ -380,10 +380,14 @@ they are exactly what Phase 2 is for.
    an opinion and say why musically, name the trade-off, offer the next
    production move), leave voice emergent, or restructure the whole text
    around character with the guardrails as consequences.
-   *Direction chosen 2026-07-29: voice becomes pluggable — producer personas,
-   ROADMAP #4, stubs in [priv/producers/](../priv/producers/). The base text
-   here stays guardrails-only; Phase 2 should write it knowing a persona will
-   compose on top rather than folding a voice section in.*
+   *Direction chosen 2026-07-29, refined same day: **taste** becomes
+   pluggable (producer personas, ROADMAP #4, stubs in
+   [priv/producers/](../priv/producers/)) but **voice stays here**. Personas
+   carry only the aesthetic palette; register, opinionatedness, and slate
+   style are behavior, consistent across personas — so Phase 2 does write a
+   voice section, persona-neutral, with the taste slot left open for #4 to
+   fill. Expect this text to keep being dialed in after it ships — it, more
+   than the personas, is the living prompt.*
 2. **Ask before loading, always?** The draft's default costs a turn on every
    sound choice, including "just load me a warm pad." Alternative: slate by
    default, act on directive phrasing and name the runners-up — cheaper to

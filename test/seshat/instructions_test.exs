@@ -22,14 +22,15 @@ defmodule Seshat.InstructionsTest do
     end
 
     test "stays short enough to ride along in every session" do
-      case Instructions.text() do
-        nil -> :ok
-        text -> assert String.length(text) < @max_length
-      end
+      assert String.length(Instructions.text() || "") < @max_length
     end
 
     test "is never an empty string — nil is how 'nothing to send' is expressed" do
       refute Instructions.text() == ""
+    end
+
+    test "carries no leftover work markers" do
+      refute (Instructions.text() || "") =~ "TODO"
     end
   end
 end

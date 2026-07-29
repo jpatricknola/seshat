@@ -35,15 +35,13 @@ defmodule Seshat.Tools.Handlers do
   @default_max_results 25
   @default_catalog_results 15
 
-  # TODO - phase 2
   # Marks search steering text as model-internal, at the point of use. The
   # 2026-07-28 validation run had "No 'Warm' tag exists in your library" relayed
   # verbatim to a musician who never asked about tags: the diagnose/facet text
   # did its real job (steering the model's retry) but was never meant to be
   # quoted. It travels with the text it governs rather than sitting in the tool
   # description, so it reaches the model exactly when it matters, in both modes.
-  # Wording ships in phase 1 because it is self-contained and needed either way;
-  # revisit in phase 2 for consistency with the session instructions' voice.
+  # Wording matches the session instructions' "speak music, not plumbing" rule.
   @diagnostics_internal "(Diagnostics are for refining your search — present results musically; " <>
                           "don't mention tags to the user.)"
 

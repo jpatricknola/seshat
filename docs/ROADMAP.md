@@ -111,19 +111,20 @@ standing audit gap (clip length can't be changed after creation).
 
 ## #4 · Producer personas — switchable musical taste
 
-**Goal:** layer a *persona* — voice + musical taste — onto the base session
-instructions. Personas live one per file in [priv/producers/](../priv/producers/)
+**Goal:** layer a *persona* — musical taste, and only taste — onto the base
+session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
 (five stubs exist; `mona_dust.md` is the default); the default composes onto
 `Seshat.Instructions` at the same seam `Seshat.Agent.system_prompt/0` already
 uses, and a `load_producer` tool (plus `list_producers`) switches mid-session:
 "load me Volt Kessler" changes the session's whole aesthetic.
 
-**Why:** the base instructions (#1) are deliberately guardrails-only, but the
-2026-07-28 validation run's strongest *positive* finding was voice — the
-opinionated "my gut for an 86 BPM lo-fi track…" register flagged as the shape
-to keep. Making voice pluggable keeps the base text pure and turns taste into
-a feature instead of a wording debate: different producer, different
-instincts, same tools.
+**Why:** taste as a feature instead of a wording debate: different producer,
+different palette, same tools. The split is strict (Patrick, 2026-07-29):
+personas carry *only* aesthetic taste — sonic palette, genre instincts.
+Everything behavioral — slate style, opinionatedness, register, the
+"my gut for an 86 BPM lo-fi track…" voice from the 2026-07-28 run — lives in
+the base text (#1) and stays consistent across personas. Swapping producers
+changes what Seshat reaches for, never how it works.
 
 **Planner notes:**
 - **MCP `instructions` are delivered once, at initialize** — mid-session
@@ -135,8 +136,23 @@ instincts, same tools.
 - Personas are musically expressed, never machine-specific — "warm and
   dusty," not tag names; the model maps taste onto this machine's library via
   `search_library`'s replies. Same rule that governs tool descriptions.
+- **The taste hierarchy (Patrick, 2026-07-29): the user's communicated taste
+  always leads; the persona is the *default* — the prior that fills in when
+  the user hasn't said yet.** The base text's voice section is already
+  written as read-and-execute-the-user's-taste, so a persona slots in
+  underneath it; add one line to the base stating the hierarchy when this
+  ships.
 - Flesh the five stubs out from one sentence to a real (but short) voice each
   — a persona rides on top of the base text in every session's context.
+- **Constant iteration is the expected mode** (Patrick, 2026-07-29): personas
+  will be dialed in mid-work based on responses, so `load_producer` must read
+  the persona file from disk at call time — edit the file, re-invoke the
+  tool, and the new text lands in context with no recompile, restart, or
+  reconnect. Do not compile personas in. (The base text will be iterated
+  even more, but its loop is connect-bound regardless — instructions are
+  delivered at initialize. If the recompile step in that loop grates,
+  `Seshat.Instructions.text/0` can trivially become a runtime file read;
+  decide when the friction is actually felt.)
 - Decide persistence: does a chosen producer survive reconnect (a small file
   under `~/.seshat/`, still not a database) or reset to the default each
   session?

@@ -238,16 +238,14 @@ defmodule Seshat.AgentTest do
     end
 
     test "carries the shared instructions when there are any" do
-      # Text-agnostic on purpose: asserts the wiring, never the wording. While
-      # Seshat.Instructions.text/0 is nil the nil branch guards the join instead
-      # — no leading blank line from composing with nothing — and the other
-      # branch starts guarding for real the moment the text lands.
+      # Text-agnostic on purpose: asserts the wiring, never the wording. Both
+      # asserts hold whether the shared text is present or nil: no leading
+      # blank line from composing with nothing, and containment of the shared
+      # text (trivially true on nil).
       prompt = Agent.system_prompt()
 
-      case Seshat.Instructions.text() do
-        nil -> refute String.starts_with?(prompt, "\n")
-        text -> assert String.contains?(prompt, text)
-      end
+      refute String.starts_with?(prompt, "\n")
+      assert String.contains?(prompt, Seshat.Instructions.text() || "")
     end
 
     test "is what actually reaches the API" do
