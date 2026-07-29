@@ -37,6 +37,8 @@ among them come from the 2026-07-28 validation run
 `/live/song/set/session_record [1|0]`, `/live/song/trigger_session_record`,
 `/live/song/get/session_record_status`.
 
+**Plan:** [PLAN_session_record.md](PLAN_session_record.md).
+
 **Why:** `set_track_arm` and `start_playing` exist, but nothing actually
 records — the record loop is incomplete, so those tools currently lead
 nowhere. Two things it buys that `capture_midi` cannot: the deliberate take
@@ -46,22 +48,65 @@ or any hardware has no route into the set today. That second one is the real
 capability gap, and it is the reason this outranks everything below it.
 
 **Planner notes:**
-- **Settle who ends the take before anything else.** Session record runs until
-  something stops it, and the user's hands are on an instrument — they cannot
-  type "stop". There is no fixed-bar record, and **no count-in address**
-  (`Song.count_in_duration` is not in the API docs; checked 2026-07-29), so
-  "an eight-bar take" has to be built out of what exists: launch quantization
-  on a fired empty slot, the user stopping by hand, or a second conversational
-  turn. This is the question the issue turns on — the three addresses above
-  are the easy part.
+- **Fixed-length record already works today — build the take on it.**
+  `ClipSlot.fire()` takes `record_length` in beats as its first optional
+  positional argument, and AbletonOSC forwards everything after the two
+  indices straight into the method (`params[2:]`,
+  [clip_slot.py](../priv/AbletonOSC/abletonosc/clip_slot.py) line 19). So
+  `/live/clip_slot/fire <track> <slot> <beats>` is a fixed-length take with
+  **no fork change at all**. Verified against Live 12.4.3 on 2026-07-29:
+  firing an empty slot on an armed track with `8.0` recorded for exactly two
+  bars, stopped itself, and left an 8.0-beat clip playing with its loop brace
+  and play markers already at 0.0–8.0; the same fire with no argument was
+  still recording (length `6.3072e7`, Live's placeholder) long past that.
+  Live's own control surfaces use the same call —
+  `novation/fixed_length_recording.pyc` and `APC64/recording.pyc` both do
+  `slot.fire(record_length=…)`.
+- **So "who ends the take" is largely answered: Live does.** "Record me an
+  eight-bar take on the keys" is one fire with `bars × beats_per_bar` from the
+  mirrored time signature. What's left is the *open-ended* take — "just record
+  until I stop you" — which still needs the user stopping by hand or a second
+  conversational turn, because their hands are on an instrument and they
+  cannot type "stop". Decide whether the tool takes an optional length and
+  falls back to open-ended, and what stops an open-ended one
+  (`/live/clip_slot/stop`, or firing the recording slot again to drop into
+  playback).
+- **Count-in is reachable, just unexposed.** `count_in_duration` and
+  `is_counting_in` are both in Live 12's LOM (checked against the name table
+  in `_MxDCore/LomTypes.pyc`, 2026-07-29) — AbletonOSC simply doesn't register
+  them, which is not the same as Live not having them. Adding each is one line
+  in `song.py`'s `properties_rw` / `properties_r`, an ordinary fork commit.
+  Buy it only if the take design actually calls for a count-in.
 - `/live/clip_slot/fire` on an empty slot of an armed track is the actual
   "record into *this* slot" mechanic; `session_record` is the global switch.
-  Decide which one the tool drives, and check both against the API docs.
+  Decide which one the tool drives.
+- **The arm precondition cannot be checked against the mirror.**
+  `Seshat.Session.State` does not mirror `arm`, so the tool can't know from
+  memory whether the track will actually record — and firing an empty slot on
+  a disarmed track launches nothing, silently, which is the failure mode this
+  project least tolerates. `/live/track/get/arm` exists; decide whether the
+  tool queries it, arms the track itself, or reports the precondition back to
+  the user.
+- **The echo has to work before the clip exists.**
+  `/live/clip/get/is_recording` needs a clip to already be there — on the
+  empty slot just fired, there isn't one. The pre-start echo is clip-slot
+  level: `will_record_on_start`, `is_triggered`, `playing_status`. Upstream's
+  `clip_slot.py` registers all three; they were missing from the address docs
+  until 2026-07-29 and are documented now.
 - `/live/song/get|set/midi_recording_quantization` shapes what the take comes
   out as. Decide whether the tool touches it or leaves it to Live's own
   setting — and note it is a *different* enum from `quantize_clip`'s (#6).
-- `/live/clip/get/is_recording` and `will_record_on_start` give a verifiable
-  echo, the way other tools verify against the mirror rather than assuming.
+- **The follow cam covers this.** A take is a clip appearing in a slot, which
+  is exactly what `Seshat.Tools.FollowCam` steers to — the `{track, slot}`
+  clause in [follow_cam.ex](../lib/seshat/tools/follow_cam.ex) already lists
+  `capture_midi` and the record tool joins it. Mind the timing: the clip is
+  worth looking at when recording *starts*, not when the reply is written.
+- Decide where record state lives. `session_record` and
+  `session_record_status` are both listenable, so "report record state" is a
+  `Session.State` field vs. a query-in-the-reply choice, not a new address.
+  `Handlers.capture_diff/2` + `snapshot_grid/0` already answer "what clip
+  appeared" if a diff is wanted — though a take into a *chosen* slot knows
+  where to look and can just read that slot back.
 - Scope is Session view only: arrangement overdub and punch in/out stay out
   (see Deliberately not planned).
 - Decide the tool shape: one `session_record` tool with a state param vs.
