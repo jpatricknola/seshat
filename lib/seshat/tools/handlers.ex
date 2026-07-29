@@ -867,6 +867,23 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  @doc """
+  How many beats `record_clip` should ask Live to record for a number of bars.
+
+  `ClipSlot.fire`'s `record_length` is measured in Live's song-time beat, which
+  is a quarter note regardless of the time signature — so a bar is
+  `numerator × 4 / denominator` of them: four in 4/4, three in 3/4, but three
+  (not six) in 6/8. Returns a float, which is what the OSC argument wants.
+
+  ⚠️ The beat-unit assumption is unverified in odd meters (the 2026-07-29 raw-OSC
+  check was 4/4, where the two conventions coincide). If Live turns out to count
+  signature beats instead, this function is the one line to change.
+  """
+  @spec record_length_beats(number(), number(), number()) :: float()
+  def record_length_beats(bars, numerator, denominator) do
+    bars * numerator * 4 / denominator
+  end
+
   @range_params ~w(start_pitch pitch_span start_time time_span)
 
   @doc """
@@ -1209,6 +1226,77 @@ defmodule Seshat.Tools.Handlers do
       {:error,
        "Timed out reading the session before capturing, so nothing was sent. Check that " <>
          "Ableton is running with AbletonOSC enabled."}
+  end
+
+  # --- Session recording ---
+  #
+  # The deliberate take, and the only route audio has into a set. It rides on
+  # `/live/clip_slot/fire`'s optional `record_length` (in beats): given one, Live
+  # ends the take itself and leaves the clip looping; without one the take runs
+  # until `stop_recording` re-fires the slot.
+  #
+  # Everything before the fire is a guard, because a fire is silent and every way
+  # this goes wrong looks identical on the wire — an occupied slot *launches* that
+  # clip, a disarmed track records nothing, a group track has no slots of its own.
+  # Arming is done for the user rather than asked about: "record me a take on the
+  # keys" is consent to arm, and the reply discloses it.
+  #
+  # `record_length/1` is placed before every OSC-issuing guard on purpose: it reads
+  # `State.song()` directly, so it is the one step whose timeout is *not* already
+  # turned into an `{:error, _}` by a query helper's own `catch`. Keeping it ahead
+  # of `ensure_armed/1` keeps the realistic timeout — a session mirror that isn't
+  # answering — from landing in the outer `catch` below with the track already
+  # armed, since that catch's text says nothing was sent. It is not an absolute
+  # guarantee: `Transport.send_message/2` is itself a `GenServer.call`, so a
+  # transport that dies between the arm and the fire still reaches that clause.
+  # Nothing cheaper distinguishes the two, and a dead transport has already made
+  # the reply moot.
+  #
+  # Once the fire itself is sent, `report_record_started/5` is responsible for
+  # never repeating that "nothing was sent" framing: `record_echo/2`'s own guard
+  # errors still say it (they're shared with the pre-fire guards), so it rewraps
+  # them instead of returning them verbatim.
+  defp do_call("record_clip", %{"track" => track, "clip_slot" => slot} = params) do
+    bars = Map.get(params, "bars")
+
+    with :ok <- ensure_bars(bars),
+         {:ok, beats} <- record_length(bars),
+         :ok <- ensure_slot_empty(track, slot),
+         {:ok, just_armed?} <- ensure_armed(track),
+         :ok <- ensure_will_record(track, slot, just_armed?),
+         :ok <- fire_for_record(track, slot, beats) do
+      report_record_started(track, slot, bars, beats, just_armed?)
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out checking the track and slot before recording, so nothing was sent. Check " <>
+         "that Ableton is running with AbletonOSC enabled."}
+  end
+
+  # Finishing a take is a second fire at the *same* slot: Live ends the recording
+  # at the next launch-quantization boundary and drops the clip into looped
+  # playback. Both guards exist to stop that fire ever reaching an empty slot,
+  # where the identical message would *start* a recording instead.
+  defp do_call("stop_recording", %{"track" => track, "clip_slot" => slot}) do
+    hint = " Nothing is recording there, and nothing was fired."
+
+    with :ok <- ensure_clip(track, slot, hint),
+         :ok <- ensure_recording(track, slot),
+         :ok <- Transport.send_message("/live/clip_slot/fire", [track, slot]) do
+      FollowCam.steer("stop_recording", %{track: track, slot: slot})
+
+      {:ok,
+       "Finishing the take in track #{track}, slot #{slot} — it ends at the next quantization " <>
+         "boundary and keeps looping. get_clip_properties to inspect it (get_clip_notes too, " <>
+         "if it's MIDI — an audio take has no notes to read); delete_clip to scrap it."}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
   end
 
   # --- Sends, return tracks, master ---
@@ -2208,6 +2296,250 @@ defmodule Seshat.Tools.Handlers do
     with {:ok, batches} <- result do
       {:ok, batches |> Enum.reverse() |> Enum.concat()}
     end
+  end
+
+  # --- Session recording helpers ---
+
+  defp ensure_bars(nil), do: :ok
+  defp ensure_bars(bars) when is_number(bars) and bars > 0, do: :ok
+
+  defp ensure_bars(bars) do
+    {:error,
+     "bars must be a positive number of bars (got #{inspect(bars)}), so nothing was " <>
+       "recorded. Omit it for a take that runs until stop_recording."}
+  end
+
+  defp record_length(nil), do: {:ok, nil}
+
+  defp record_length(bars) do
+    song = State.song()
+    {:ok, record_length_beats(bars, song.time_sig_numerator, song.time_sig_denominator)}
+  end
+
+  # A third OSC argument is `ClipSlot.fire()`'s first optional positional one,
+  # `record_length` — AbletonOSC's clip_slot handler forwards everything past the
+  # two indices verbatim. Omitting it is what makes the take open-ended.
+  defp fire_for_record(track, slot, nil) do
+    Transport.send_message("/live/clip_slot/fire", [track, slot])
+  end
+
+  defp fire_for_record(track, slot, beats) do
+    Transport.send_message("/live/clip_slot/fire", [track, slot, beats])
+  end
+
+  # The inverse of `ensure_clip/3`, and the reason `record_clip` is not just
+  # `fire_clip` with a length: firing an *occupied* slot launches that clip
+  # rather than recording anything, and says nothing about it.
+  defp ensure_slot_empty(track, slot) do
+    case query_flag(
+           "/live/clip_slot/get/has_clip",
+           [track, slot],
+           "whether slot #{slot} on track #{track} holds a clip"
+         ) do
+      {:ok, false} ->
+        :ok
+
+      {:ok, true} ->
+        {:error,
+         "Slot #{slot} on track #{track} already holds a clip, so nothing was recorded — " <>
+           "firing it would have launched that clip instead. Record into an empty slot " <>
+           "(get_clip_slots shows which are free), or delete_clip this one first if the " <>
+           "take is meant to replace it."}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  # Returns whether *this call* armed the track — `false` for one that was armed
+  # already — so the reply can disclose an arm the user didn't ask for. A track
+  # that is already armed skips the `can_be_armed` read: it self-evidently could.
+  defp ensure_armed(track) do
+    case query_flag("/live/track/get/arm", [track], "whether track #{track} is armed") do
+      {:ok, true} -> {:ok, false}
+      {:ok, false} -> arm_track(track)
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  # `/live/track/set/arm` is silent, so the re-read is the whole guard: without
+  # it a track Live refused to arm would go on to a fire that records nothing and
+  # a reply claiming a take is running.
+  defp arm_track(track) do
+    case query_flag(
+           "/live/track/get/can_be_armed",
+           [track],
+           "whether track #{track} can be armed"
+         ) do
+      {:ok, false} ->
+        {:error,
+         "Track #{track} can't be armed for recording, so nothing was recorded. Group tracks " <>
+           "have no clip slots of their own — record into one of the tracks inside the " <>
+           "group; get_clip_slots labels group tracks 'group'."}
+
+      {:ok, true} ->
+        with :ok <- Transport.send_message("/live/track/set/arm", [track, 1]),
+             {:ok, armed?} <-
+               query_flag("/live/track/get/arm", [track], "whether track #{track} is armed") do
+          if armed? do
+            {:ok, true}
+          else
+            {:error,
+             "Asked Ableton to arm track #{track} but it still reads as disarmed, so nothing " <>
+               "was recorded. Arm it by hand in Live — the round button in the track's mixer " <>
+               "row — and try again."}
+          end
+        end
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  # The definitive precondition, and the last one before anything is sent: Live
+  # itself answering "would firing this slot record?". `just_armed?` is threaded
+  # through so the false branch can disclose an arm this same call just made —
+  # `ensure_armed/1`'s `/live/track/set/arm` already reached Live, so the track
+  # is left armed (and monitoring possibly live) even though the fire never was.
+  defp ensure_will_record(track, slot, just_armed?) do
+    case query_flag(
+           "/live/clip_slot/get/will_record_on_start",
+           [track, slot],
+           "whether firing slot #{slot} on track #{track} would record"
+         ) do
+      {:ok, true} ->
+        :ok
+
+      {:ok, false} ->
+        {:error,
+         "Live reports that firing slot #{slot} on track #{track} would not record, so no " <>
+           "take was fired. The track is armed, so this is usually the track's input: check " <>
+           "its input routing and monitoring in Live.#{armed_disclosure(just_armed?)}"}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  defp armed_disclosure(true) do
+    " This call armed the track on the way in — disarm it with set_track_arm if that isn't wanted."
+  end
+
+  defp armed_disclosure(false), do: ""
+
+  defp ensure_recording(track, slot) do
+    case query_flag(
+           "/live/clip/get/is_recording",
+           [track, slot],
+           "whether the clip in slot #{slot} on track #{track} is recording"
+         ) do
+      {:ok, true} ->
+        :ok
+
+      {:ok, false} ->
+        {:error,
+         "Nothing is recording in slot #{slot} on track #{track}, so nothing was fired — " <>
+           "get_clip_slots marks the slot that is. Use stop_clip to stop a clip that is " <>
+           "merely playing."}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  defp report_record_started(track, slot, bars, beats, just_armed?) do
+    case record_echo(track, slot) do
+      {:ok, status} ->
+        FollowCam.steer("record_clip", %{track: track, slot: slot})
+        {:ok, record_reply(track, slot, bars, beats, just_armed?, status)}
+
+      {:error, message} ->
+        # `record_echo/2` shares its guard helpers with the pre-fire checks, so
+        # its errors still carry their "nothing was sent" framing — false here,
+        # since the fire already went out. Rewrap rather than return verbatim.
+        {:error,
+         "The take was fired on track #{track}, slot #{slot}, but confirming it failed: " <>
+           "#{message} That doesn't mean nothing is recording — check with get_clip_slots, " <>
+           "and stop_recording track #{track} slot #{slot} if it turns out to be running."}
+    end
+  end
+
+  # The fire is silent, so the session itself is the only honest signal that the
+  # take started. `has_clip` first: once Live has made the clip, `is_recording`
+  # is definitive. Before that — a fire with the transport already playing waits
+  # for the launch-quantization boundary — the evidence is slot-level
+  # `is_triggered`. Deliberately no `playing_status`: its enum is documented
+  # nowhere. Live handles datagrams in arrival order, so all three reads see a
+  # session in which the fire has already been processed.
+  defp record_echo(track, slot) do
+    case query_flag(
+           "/live/clip_slot/get/has_clip",
+           [track, slot],
+           "whether slot #{slot} on track #{track} holds a clip"
+         ) do
+      {:ok, true} -> recording_or_queued(track, slot)
+      {:ok, false} -> queued_or_nothing(track, slot)
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  defp recording_or_queued(track, slot) do
+    case query_flag(
+           "/live/clip/get/is_recording",
+           [track, slot],
+           "whether the clip in slot #{slot} on track #{track} is recording"
+         ) do
+      {:ok, true} -> {:ok, :recording}
+      {:ok, false} -> queued_or_nothing(track, slot)
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  defp queued_or_nothing(track, slot) do
+    case query_flag(
+           "/live/clip_slot/get/is_triggered",
+           [track, slot],
+           "whether slot #{slot} on track #{track} is waiting to start"
+         ) do
+      {:ok, true} ->
+        {:ok, :queued}
+
+      {:ok, false} ->
+        {:error,
+         "Fired slot #{slot} on track #{track} but Live reports nothing recording or waiting " <>
+           "to start there, so the take did not begin. Live had just answered that firing " <>
+           "this slot would record, so something changed underneath — most likely the slot " <>
+           "or the track's arm was touched by hand in Live between the two. Check with " <>
+           "get_clip_slots and call record_clip again."}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  defp record_reply(track, slot, bars, beats, just_armed?, status) do
+    [
+      record_headline(track, slot, bars, beats),
+      record_status_line(status),
+      if(just_armed?, do: "Armed the track first.")
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
+  end
+
+  defp record_headline(track, slot, nil, _beats) do
+    "Recording into track #{track}, slot #{slot} until stop_recording."
+  end
+
+  defp record_headline(track, slot, bars, beats) do
+    "Recording #{format_number(bars)} bars (#{format_number(beats)} beats) into track " <>
+      "#{track}, slot #{slot} — Live stops the take itself and leaves the clip looping."
+  end
+
+  defp record_status_line(:recording), do: "Recording now."
+
+  defp record_status_line(:queued) do
+    "Queued: it starts at the next launch-quantization boundary, usually the next bar."
   end
 
   # --- Return tracks & master reads ---

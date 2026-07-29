@@ -349,13 +349,34 @@ Container for clips. Create, delete, and query clip existence.
 
 | Address | Query Params | Response Params | Description |
 |---|---|---|---|
-| `/live/clip_slot/fire` | `track_index, clip_index` | | Fire clip slot |
+| `/live/clip_slot/fire` | `track_index, clip_index, [record_length]` | | Fire clip slot — with `record_length` (beats), records for exactly that long (see note below) |
+| `/live/clip_slot/stop` | `track_index, clip_index` | | Stop the slot's playing clip |
 | `/live/clip_slot/create_clip` | `track_index, clip_index, length` | | Create clip in slot |
 | `/live/clip_slot/delete_clip` | `track_index, clip_index` | | Delete clip |
 | `/live/clip_slot/get/has_clip` | `track_index, clip_index` | `track_index, clip_index, has_clip` | Has clip? |
+| `/live/clip_slot/get/controls_other_clips` | `track_index, clip_index` | `track_index, clip_index, controls_other_clips` | Group slot controlling the clips below it? |
+| `/live/clip_slot/get/is_group_slot` | `track_index, clip_index` | `track_index, clip_index, is_group_slot` | Slot belongs to a group track? |
+| `/live/clip_slot/get/is_playing` | `track_index, clip_index` | `track_index, clip_index, is_playing` | Slot's clip playing? |
+| `/live/clip_slot/get/is_triggered` | `track_index, clip_index` | `track_index, clip_index, is_triggered` | Fired and waiting on quantization? |
+| `/live/clip_slot/get/playing_status` | `track_index, clip_index` | `track_index, clip_index, playing_status` | Slot playing status |
+| `/live/clip_slot/get/will_record_on_start` | `track_index, clip_index` | `track_index, clip_index, will_record_on_start` | Firing this slot would record (armed track, empty slot)? |
 | `/live/clip_slot/get/has_stop_button` | `track_index, clip_index` | `track_index, clip_index, has_stop_button` | Has stop button? |
 | `/live/clip_slot/set/has_stop_button` | `track_index, clip_index, has_stop_button` | | Set stop button (1=on, 0=off) |
 | `/live/clip_slot/duplicate_clip_to` | `track_index, clip_index, target_track, target_clip` | | Duplicate clip to target slot |
+
+Every `get/` property above also has
+`/live/clip_slot/start_listen/<property>` and `stop_listen/<property>`.
+
+> ℹ️ **`fire` takes an optional `record_length`, and that is fixed-length
+> recording.** The handler passes everything after the two indices straight
+> into `ClipSlot.fire()`, whose first optional positional argument is
+> `record_length` in beats (then `launch_quantization`, `force_legato`). Fire
+> an empty slot on an armed track with a length and Live records exactly that
+> long, stops itself, and leaves a clip of that length playing — loop brace
+> and play markers already set. With no length it records until something
+> stops it. Verified against Live 12.4.3, 2026-07-29; it is also how Live's
+> own control surfaces implement fixed-length record. This is what `record_clip`
+> and `stop_recording` are built on.
 
 > ⚠️ **`duplicate_clip_to` is a merge hazard.** Upstream PRs #182 and #185 rename
 > it to `duplicate_to` with no alias, and Seshat's `duplicate_clip` tool depends

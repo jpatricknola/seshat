@@ -30,7 +30,10 @@ defmodule Seshat.Tools.FollowCam do
   off switch, and there is deliberately no off switch. `set_clip_properties`
   counts as a write despite reading like a parameter tweak: its headline use is
   reshaping a clip's audible extent right after a capture, and the moved loop
-  brace in the note editor *is* the confirmation.
+  brace in the note editor *is* the confirmation. The recording pair widens the
+  rule the same way: `record_clip` is where a take *begins* (the slot reddening
+  in the grid is the whole feedback a recording gives), and `stop_recording` is
+  the moment the recorded thing exists and can be looked at.
   """
 
   alias Seshat.OSC.Transport
@@ -68,13 +71,26 @@ defmodule Seshat.Tools.FollowCam do
              "remove_notes",
              "duplicate_clip",
              "capture_midi",
-             "set_clip_properties"
+             "set_clip_properties",
+             "stop_recording"
            ] do
     [
       {"/live/view/set/selected_clip", [track, slot]},
       {"/live/view/set/detail_clip", [track, slot]},
       {"/live/view/show_view", ["Session"]},
       {"/live/view/show_view", ["Detail/Clip"]}
+    ]
+  end
+
+  # No detail pane either, for the opposite reason: at steer time the clip may
+  # not exist yet — a fire with the transport playing waits for the launch
+  # quantization boundary — and `detail_clip` on an empty slot is a silent no-op
+  # that would leave the *previous* clip sitting in the editor. The slot going
+  # red in the grid is the confirmation, and it arrives when the take starts.
+  def calls("record_clip", %{track: track, slot: slot}) do
+    [
+      {"/live/view/set/selected_clip", [track, slot]},
+      {"/live/view/show_view", ["Session"]}
     ]
   end
 

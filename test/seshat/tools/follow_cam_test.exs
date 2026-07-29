@@ -25,10 +25,18 @@ defmodule Seshat.Tools.FollowCamTest do
     # tweak but its headline use is reshaping a clip's audible extent right
     # after a capture, and the moved loop brace in the note editor is the
     # confirmation.
-    test "remove_notes, duplicate_clip, capture_midi and set_clip_properties steer the same way" do
+    test "remove_notes, duplicate_clip, capture_midi, set_clip_properties and stop_recording steer the same way" do
       expected = FollowCam.calls("write_midi_notes", %{track: 0, slot: 3})
 
-      for tool <- ["remove_notes", "duplicate_clip", "capture_midi", "set_clip_properties"] do
+      tools = [
+        "remove_notes",
+        "duplicate_clip",
+        "capture_midi",
+        "set_clip_properties",
+        "stop_recording"
+      ]
+
+      for tool <- tools do
         assert FollowCam.calls(tool, %{track: 0, slot: 3}) == expected
       end
     end
@@ -38,6 +46,17 @@ defmodule Seshat.Tools.FollowCamTest do
     test "a delete shows the emptied slot in Session and nothing else" do
       assert FollowCam.calls("delete_clip", %{track: 1, slot: 4}) == [
                {"/live/view/set/selected_clip", [1, 4]},
+               {"/live/view/show_view", ["Session"]}
+             ]
+    end
+
+    # Same shape as a delete, for the opposite reason: at steer time the clip may
+    # not exist yet (a fire with the transport playing waits for the launch
+    # quantization boundary), and `detail_clip` on an empty slot is a silent
+    # no-op that would leave the previous clip in the editor.
+    test "starting a take shows the recording slot in Session and opens no detail pane" do
+      assert FollowCam.calls("record_clip", %{track: 2, slot: 0}) == [
+               {"/live/view/set/selected_clip", [2, 0]},
                {"/live/view/show_view", ["Session"]}
              ]
     end
