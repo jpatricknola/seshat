@@ -14,7 +14,14 @@ defmodule Seshat.Agent do
 
   @max_iterations 10
 
-  @system_prompt """
+  # API-key-mode-only prompt. The MIDI crash course and note-editing loop exist
+  # because this mode runs a small model (claude-haiku-4-5); MCP mode's client
+  # needs none of it. Three rules here also appear in Seshat.Instructions
+  # (name/1-based track references, read state before relative changes, resolve
+  # names via get_session_state) — kept deliberately: this copy is phrased for
+  # the small model, costs ~50 tokens per request in this mode only, and the
+  # shared text is the authoritative wording if the two ever disagree.
+  @agent_specific """
   You are an assistant for Ableton Live. You control the DAW using the tools provided.
 
   Rules:
@@ -47,6 +54,21 @@ defmodule Seshat.Agent do
           response: String.t() | nil,
           commands_executed: [map()]
         }
+
+  @doc """
+  The system prompt sent to the Anthropic API.
+
+  Session conventions come from `Seshat.Instructions`, shared with MCP mode, so
+  the two entry points can't drift apart; `@agent_specific` adds what only this
+  mode needs. Composed at call time rather than compile time — while the shared
+  text is `nil` this is `@agent_specific` alone.
+  """
+  @spec system_prompt() :: String.t()
+  def system_prompt do
+    [Seshat.Instructions.text(), @agent_specific]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join("\n\n")
+  end
 
   @spec run(String.t(), list()) :: {:ok, result()} | {:error, String.t()}
   def run(input, history \\ []) do
@@ -169,7 +191,7 @@ defmodule Seshat.Agent do
         json: %{
           model: "claude-haiku-4-5-20251001",
           max_tokens: 1024,
-          system: @system_prompt,
+          system: system_prompt(),
           tools: tools,
           messages: messages
         }

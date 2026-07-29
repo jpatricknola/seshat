@@ -161,6 +161,58 @@ on more than one kind of device:
    that one" — the set ends holding only the winner. Then an effect A/B via
    `bypass_device`.
 
+## If the change touches session guidance (`Seshat.Instructions` or a tool description)
+
+The only checks in this repo that exercise **what the model says** rather than
+what the code does. Nothing in `mix test` reaches any of this, so a rule can be
+deleted, truncated away, or moved to a description that swallows it, and every
+suite stays green.
+
+**Check delivery first — it is silent when it fails.** Instructions reach the
+model only in a conversation set to run **on your computer**; a cloud session
+reaching the Mac through the remote-devices bridge gets the tools (namespaced
+`mcp__remote-devices__seshat__*`) and no instructions at all. And the client
+truncates at **2,048 characters** mid-sentence without saying so, dropping the
+*end* of the text. Confirm both in one question, in a fresh conversation:
+
+> Quote the seshat server instructions you were given, in full.
+
+The tools should be `mcp__seshat__*`, and the quote should end with the last
+line of `@text` in [lib/seshat/instructions.ex](lib/seshat/instructions.ex).
+If it stops early, the text is over the cap and everything past the cut is
+being written for nobody.
+
+Then the behaviours, each tied to a rule and to where that rule now lives:
+
+1. **Out of reach** (instructions) — "switch my audio output to the
+   headphones." Expect: says plainly it can't, names where the setting lives
+   in Live, offers no improvised workaround.
+2. **Manual steps** (instructions) — a "why can't I see X?" question. Expect
+   the shortest complete path, keys located physically ("press Tab, above the
+   Caps Lock key"), each step confirmed by what appears on screen. Not a
+   lecture, and not an assumption of Live fluency.
+3. **The view follows you** (instructions) — after a `write_midi_notes`, ask
+   "where is it?" Expect a description of what is *already* on screen, not
+   navigation directions. This one is pure instruction: the follow cam moves
+   Live's view but tells the model nothing, so its own smoke test passes
+   whether or not this rule survives.
+4. **Speak music, not plumbing** (instructions + `get_session_state`) — any
+   multi-track exchange. Expect track names or 1-based numbers throughout,
+   and no tool names, raw indices, tags, or catalog internals leaking into
+   prose — including in replies that have nothing to do with reading state,
+   which is what would show the rule being read too narrowly since it moved.
+5. **Directive acts, open offers** (`search_library`) — "load me a warm pad"
+   should load the closest match, say why in a phrase, and name a runner-up.
+   "What should we use for the pad?" should offer a short slate with a musical
+   reason each. Two different shapes from one tool.
+6. **Diagnostics stay internal** (`search_library` reply) — a search with a
+   vocabulary miss ("warm electric piano"). Expect musical choices; expect no
+   mention of tags, tag counts, or "no such tag" reaching the user.
+
+Report which rules held and which drifted, and say which channel each one is
+in — a rule that fails after moving into a tool description is evidence about
+the division in `Seshat.Instructions`'s moduledoc, not just about wording.
+
 ## Clean up and report
 
 5. Delete any scratch tracks/scenes/clips you created (`delete_track`,

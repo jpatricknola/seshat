@@ -311,6 +311,43 @@ defmodule Seshat.Tools.HandlersTest do
                "No catalog matches. If the catalog has never been built, run " <>
                  "reindex_library."
     end
+
+    # The 2026-07-28 validation run had "No 'Warm' tag exists in your library"
+    # relayed verbatim to a musician who never asked about tags. The steering
+    # text is for the model's next search; the marker says so where the text is,
+    # rather than in the tool description far from the point of use.
+    test "a diagnosis marks itself model-internal" do
+      result =
+        Handlers.format_catalog_entries([], 0, %{
+          query: "guitar",
+          query_matches: 187,
+          category: nil,
+          category_matches: nil,
+          narrowing_tags: [{"Snappy", 38}],
+          tags: [%{tag: "Warm", matches: 0, nearest: []}]
+        })
+
+      assert result =~ "present results musically; don't mention tags to the user"
+    end
+
+    test "a truncated result with facets marks its tag advice model-internal" do
+      result = Handlers.format_catalog_entries([entry(%{})], 127, [{"Analog", 40}])
+
+      assert result =~ "Add one as a tag to narrow."
+      assert result =~ "present results musically; don't mention tags to the user"
+    end
+
+    test "a complete result has nothing to leak, so carries no marker" do
+      refute Handlers.format_catalog_entries([entry(%{})], 1, []) =~ "don't mention tags"
+    end
+
+    test "a truncated result without facets names no tags, so carries no marker" do
+      refute Handlers.format_catalog_entries([entry(%{})], 42, []) =~ "don't mention tags"
+    end
+
+    test "an empty catalog carries no marker — there is no diagnosis to misread" do
+      refute Handlers.format_catalog_entries([], 0, []) =~ "don't mention tags"
+    end
   end
 
   describe "reindex_library reply" do

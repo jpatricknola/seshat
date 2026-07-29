@@ -5,7 +5,7 @@
 Natural-language control of Ableton Live. The LLM calls tools; the tools send
 OSC to Ableton. Built with Elixir/Phoenix LiveView.
 
-**Not in production; one user (the author).** Backwards compatibility is never
+**Not in production** Backwards compatibility is never
 a goal: no fallback layers, migration shims, or compat paths for older
 installs or older data. When a change needs `mix abletonosc.install` re-run,
 a catalog rebuild, or a restart, just require it and say so — design for the
@@ -38,6 +38,20 @@ Seshat.MCP.Server                      Seshat.Agent
                        ▼
             AbletonOSC → Ableton Live
 ```
+
+Both modes also share one prompt source: `Seshat.Instructions` carries the
+session-level conventions no single tool description can, sent by MCP mode as
+server `instructions` at connect time and prepended to `Seshat.Agent`'s system
+prompt in API-key mode. One rule decides what goes there: **if it matters when
+using a particular tool, it belongs in that tool's description; what belongs to
+no tool goes in `Instructions`.** That division is enforced by a hard 2,048-
+character cap — Claude Desktop truncates server instructions mid-sentence past
+that and says nothing (measured 2026-07-29), while tool schemas have no such
+limit, so a rule is free in a description and scarce here. Instructions also
+only arrive when the conversation runs *on your computer*; a cloud session
+bridged to the Mac gets the tools and none of the guidance (see
+[README.md](README.md)). Nothing in `mix test` can see any of this — the
+`/smoke-test` skill has the behavioural checks.
 
 `Seshat.Session.State` subscribes to the `"osc:in"` PubSub topic and mirrors
 track state (names, volume, pan, mute, solo, tempo, time signature). Tools read
@@ -77,6 +91,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All tool definitions (name, description, JSON Schema). Single source of truth. |
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Single-message tools hit Transport directly; multi-step ones go via Registry. |
 | [lib/seshat/tools/follow_cam.ex](lib/seshat/tools/follow_cam.ex) | View steering — after a create/write/delete succeeds, selects what it touched and shows the pane it's in. `calls/2` is the pure decision; `steer/2` sends it best-effort |
+| [lib/seshat/instructions.ex](lib/seshat/instructions.ex) | Session-level guidance shared by both modes — the conventions no single tool description can carry |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
 | [lib/seshat/mcp/tools.ex](lib/seshat/mcp/tools.ex) | Generates one MCP component per tool definition |

@@ -590,7 +590,8 @@ defmodule Seshat.Tools.Definitions do
           "WHEN CHOOSING: weigh the musical context — the tempo, the other tracks and the genre " <>
           "from get_session_state and from what the user has said — and present the top 3–5 " <>
           "candidates with a one-line reason each, then let the user pick. Only load the first " <>
-          "hit without asking if the user told you to just pick one. " <>
+          "hit without asking if the user told you to just pick one — then say why in a phrase " <>
+          "and name the runner-up, so redirecting costs the user one sentence. " <>
           "Each result is one preset: `name — tags [folder paths] (uri)`. A preset Live files " <>
           "under several devices lists all of them, so 'Analog/Synth Lead · Operator/Synth Lead' " <>
           "is a single sound either device can play — not two options. The uri goes straight to " <>
@@ -760,9 +761,7 @@ defmodule Seshat.Tools.Definitions do
           "set_device_parameter, delete_device and bypass_device all need, or to check whether " <>
           "a track has an instrument at all. " <>
           "Racks (e.g. an Instrument Rack preset) appear as a single device — their inner " <>
-          "chain is not listed. " <>
-          "When talking to the user, refer to tracks by name or 1-based UI number, never raw " <>
-          "index.",
+          "chain is not listed.",
       parameters: %{
         type: "object",
         properties: %{
