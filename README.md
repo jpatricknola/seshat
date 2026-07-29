@@ -103,19 +103,39 @@ config :seshat, :anthropic_api_key, "sk-ant-..."
 Seshat runs as an MCP server; the reasoning happens in your MCP client, so no
 API key is needed — your Claude subscription covers it.
 
-For **Claude Desktop**, add to `claude_desktop_config.json`:
+For **Claude Desktop**, start `mix phx.server` first, then add to
+`claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "seshat": {
-      "command": "mix",
-      "args": ["mcp"],
-      "cwd": "/path/to/seshat"
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:4000/mcp"]
     }
   }
 }
 ```
+
+`mcp-remote` bridges Desktop's stdio to the running server's HTTP endpoint.
+Don't spawn `mix mcp` here instead — that starts a *second* Seshat alongside
+the server, and only one of them can read Ableton (see
+[Only one Seshat at a time](#only-one-seshat-at-a-time)).
+
+**Set the conversation to run on your computer, not in the cloud.** Claude
+Desktop can run a chat locally or as a cloud session that reaches your Mac
+through its remote-devices bridge. Only the local setting delivers Seshat's
+session instructions (`Seshat.Instructions`) to the model. In a bridged
+session the tools still work — they arrive namespaced
+`mcp__remote-devices__seshat__*` rather than `mcp__seshat__*` — but the
+server's `instructions` field does not survive the hop, so the model loses
+every session-level convention and behaves like a bare tool-caller.
+
+Verified 2026-07-29 by putting a marker phrase in the instructions and asking
+for it back: delivered when run locally, absent when bridged. The same test
+found the client truncates instructions at 2,048 characters without saying
+so, which is why `Seshat.Instructions` has a hard ceiling — see the comment
+above `@text` in [lib/seshat/instructions.ex](lib/seshat/instructions.ex).
 
 For **Claude Code**, the repo ships a `.mcp.json` — approve the `seshat` server
 when prompted. It connects over HTTP to a running `mix phx.server`, so start

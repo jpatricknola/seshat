@@ -18,7 +18,7 @@ The canonical OSC address reference is
 [abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
 address — naming is irregular, and a wrong address fails silently.
 
-**The play-and-keep arc (#2 · #3 · #7 · #8):** today the agent generates and
+**The play-and-keep arc (#1 · #2 · #7 · #8):** today the agent generates and
 the user listens. `capture_midi` (shipped 2026-07-28) was the first step;
 these four remaining issues — session record, per-clip properties, quantize,
 groove — carry the rest: the user plays, Seshat keeps it and cleans it up.
@@ -29,40 +29,7 @@ quick wins interleaved among them come from the 2026-07-28 validation run
 
 ---
 
-## #1 · MCP server instructions — a home for session-level guidance
-
-**Plan:** [PLAN_mcp_server_instructions.md](PLAN_mcp_server_instructions.md)
-
-**Goal:** send server-level `instructions` from `Seshat.MCP.Server` (it
-currently declares only `capabilities: [:tools]`) carrying the cross-tool
-conventions no single tool description can: clear empty default tracks when
-the user starts a new project; explain where a setting lives instead of
-improvising when a request is outside Seshat's reach; when manual steps are
-unavoidable, give the shortest complete path with keys located physically
-("press the Tab key, above Caps Lock") and each step confirmed by what
-appears on screen; offer choices from searches; read state before relative
-changes; assume no Live UI fluency unless the user demonstrates it.
-
-**Why:** the strongest recurring theme of the 2026-07-28 validation run —
-four separate findings each needed a session-level rule and had nowhere to
-put it ([validation-script-thoughts-and-findings.md](validation-script-thoughts-and-findings.md)).
-In MCP mode (the primary mode) there is no Seshat-owned system prompt: tool
-descriptions speak per tool, and behavior *between* tools is currently
-unguided luck. An afternoon of writing that upgrades every future session —
-the best impact-to-effort ratio on this list.
-
-**Planner notes:**
-- Keep it short — instructions ride along in every session's context.
-- Include the don't-leak-plumbing rule: `search_library`'s facet/diagnose
-  text exists to steer the model's retries, not to be relayed ("No 'Warm'
-  tag exists in your library" reached the user this run). Consider also
-  marking that text as model-internal in the reply itself.
-- Nothing machine-specific (tag vocabulary etc.) — same rule that governs
-  tool descriptions.
-- API-key mode parity: `Seshat.Agent`'s system prompt should carry the same
-  guidance from one shared source, not a diverging copy.
-
-## #2 · Session record — deliberate takes into clip slots
+## #1 · Session record — deliberate takes into clip slots
 
 **Goal:** tools to start/stop Session-view recording and report record state:
 `/live/song/set/session_record [1|0]`, `/live/song/trigger_session_record`,
@@ -86,7 +53,7 @@ the agent as engineer (arm, count in, record, stop) while the user performs.
   see [TOOL_AUDIT.md](TOOL_AUDIT.md) §04 for the exemplary-description
   pattern.
 
-## #3 · Per-clip properties — loop brace, length, launch settings
+## #2 · Per-clip properties — loop brace, length, launch settings
 
 **Goal:** read/write a clip's own loop points and launch behavior:
 `/live/clip/get|set/loop_start`, `loop_end`, `looping`, launch
@@ -109,6 +76,51 @@ standing audit gap (clip length can't be changed after creation).
   The audit's finding that granular-by-object beats polymorphic merges
   ([TOOL_AUDIT.md](TOOL_AUDIT.md) §01) is the relevant prior.
 
+## #3 · `start_new_project` — the setup wizard, and prompt budget back
+
+**Goal:** a tool that catches "let's start a new project" / "start fresh" and
+runs the opening of a session: report what's in the open set, name any empty
+leftover track, and gather the one-line brief (genre, tempo, mood, reference)
+its reply asks for. It **reads and guides; it does not mutate** — the actual
+work stays with `create_track` / `delete_track`, with the model in the loop.
+
+**Why:** two wins at once. It fixes finding #1 of the 2026-07-28 validation
+run ("start a new project" only appended tracks, leaving the default set's
+leftovers behind), and it moves that rule off the *instructions* budget,
+which is hard-capped — see below. A tool description routes a user utterance
+far more reliably than a bullet in a block that gets truncated from the
+bottom, and a reply can name the empty track it actually found instead of
+asserting a cleanup unconditionally and hoping the model checks.
+
+**Planner notes:**
+- **The 2,048-character ceiling is the point.** Claude Desktop truncates
+  server `instructions` mid-sentence at 2,048 characters and says nothing
+  (measured 2026-07-29; see the comment above `@text` in
+  [lib/seshat/instructions.ex](../lib/seshat/instructions.ex)). Tool schemas
+  have no such cap — ~36KB ships every request. So moving a rule from the
+  instructions into a tool description or reply costs nothing in total
+  context and buys room on the one budget that silently drops content.
+- **The "New project" bullet is already gone from `Seshat.Instructions`**
+  (removed 2026-07-29, ~230 characters back). Nothing states replace-not-append
+  until this ships — the model will append tracks, as it did before that rule
+  was written. That gap is deliberate: the rule was bought back as budget on
+  the assumption this tool follows.
+- **No file operations, ever.** Opening or saving a set is a human step —
+  Live's save dialog swallows keystrokes and no code should discard a user's
+  work. That is settled; see
+  [archive/create-project-removal.md](archive/create-project-removal.md).
+- **Read-only is what keeps it from repeating history.** Every failure of the
+  removed `create_project` came from fire-and-forget mutation through Live's
+  post-load settling window. A tool that only reads `Session.State` and
+  returns guidance cannot reproduce any of it.
+- The default set is now a single blank MIDI track, so "leftovers" is at most
+  one track — the reply should say what it found, not describe a mess.
+- Trigger phrasing carries the whole routing job now, so the description has
+  to cover the ways the intent is actually spoken. Standard `/add-tool`
+  discipline, load-bearing here.
+- Sequenced above personas: smaller, fixes a named validation finding, and
+  frees budget the persona work will want.
+
 ## #4 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* — musical taste, and only taste — onto the base
@@ -123,7 +135,8 @@ different palette, same tools. The split is strict (Patrick, 2026-07-29):
 personas carry *only* aesthetic taste — sonic palette, genre instincts.
 Everything behavioral — slate style, opinionatedness, register, the
 "my gut for an 86 BPM lo-fi track…" voice from the 2026-07-28 run — lives in
-the base text (#1) and stays consistent across personas. Swapping producers
+the base text ([lib/seshat/instructions.ex](../lib/seshat/instructions.ex),
+shipped 2026-07-29) and stays consistent across personas. Swapping producers
 changes what Seshat reaches for, never how it works.
 
 **Planner notes:**
@@ -156,8 +169,13 @@ changes what Seshat reaches for, never how it works.
 - Decide persistence: does a chosen producer survive reconnect (a small file
   under `~/.seshat/`, still not a database) or reset to the default each
   session?
-- Sequenced after #1 ships — the composition seam, length budget, and the
-  canary's proof of delivery all come from there.
+- The groundwork is already in place, from the session-instructions work
+  (shipped 2026-07-29): the composition seam is
+  `Seshat.Agent.system_prompt/0`, the 2,048-character delivery ceiling and its
+  proof are recorded in
+  [archive/PLAN_mcp_server_instructions.md](archive/PLAN_mcp_server_instructions.md),
+  and the base text's voice section already reads as execute-the-user's-taste,
+  which is what a persona slots underneath.
 
 ## #5 · Catalog vocabulary — read tag axes, teach the menu proactively
 
@@ -213,7 +231,7 @@ stays announced and cause-driven instead of manual or unprompted.
 quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
 
 **Why:** "tighten the timing" is the most common cleanup move on played
-MIDI — the direct follow-up to `capture_midi`/session record (#2). Today it
+MIDI — the direct follow-up to `capture_midi`/session record (#1). Today it
 takes a full
 read → remove → rewrite by hand, which loses Live-native swing handling and
 burns tool calls.
@@ -360,7 +378,7 @@ reindex time, using an API key or an MCP-client-driven tagging turn.
 
 **Why:** lever №5 — highest ceiling (it attacks the thin-signal problem
 directly: ~200 of 5,795 entries say anything real about their sound) and
-highest cost. Last resort: buy only if the #11 eval still shows first-slate
+highest cost. Last resort: buy only if the #12 eval still shows first-slate
 misses on thin-tagged entries after everything above. Concrete evidence from
 the 2026-07-28 validation run: for "warm, slightly out-of-tune electric
 piano," the character lived only in preset *names* — E-Piano Rusty, Old
@@ -425,8 +443,8 @@ into push-fresh `Session.State`.
 (tracks × scenes × properties). The standing decision
 ([archive/PLAN_clip_slot_state.md](archive/PLAN_clip_slot_state.md)) is to
 wait for evidence the grid is read constantly. Revisit after session record
-(#2) ships — `capture_midi` (shipped) and record will raise grid-read
-frequency. Index-keyed listeners like #17's — these are ordinary fork
+(#1) ships — `capture_midi` (shipped) and record will raise grid-read
+frequency. Index-keyed listeners like #18's — these are ordinary fork
 commits on the fixed base class.
 
 ## #22 · Small OSC breadth — grab bag

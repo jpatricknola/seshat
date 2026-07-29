@@ -7,69 +7,74 @@ defmodule Seshat.Instructions do
   `Seshat.Agent`'s system prompt. One source, so the two modes can't drift into
   separate personalities.
 
-  What belongs here is only what *no single tool* can say — the conventions
-  that live between tools. Three rules govern edits:
+  ## What belongs here
 
-    * **Short.** It rides along in every session's context.
+  One test decides it, and it is worth applying to every sentence:
+
+  > **If it matters when using a particular tool, it goes in that tool's
+  > description. What belongs to no tool goes here.**
+
+  "Refer to tracks by name, not index" matters whenever track state is read, so
+  it lives on `get_session_state`. "Present a slate with a musical reason each"
+  matters when choosing a sound, so it lives on `search_library`. "Don't relay
+  search diagnostics" matters at the moment the diagnostics are produced, so it
+  travels with the reply that produces them. None of those belong here, and all
+  of them were here once.
+
+  What is left over is guidance with no owner: the register to speak in, how to
+  talk someone through a step no tool can take, what to do when a request is
+  outside the tools entirely, and the fact that the view has already moved.
+
+  Two further rules govern edits:
+
+    * **Hard-capped at 2,048 characters.** Not editorial taste — the client
+      truncates mid-sentence past that and says nothing (measured 2026-07-29),
+      so an overlong rule is written and never delivered. Tool schemas have no
+      such cap, which is the practical reason the test above matters: a rule
+      that could live in a description is free there and scarce here.
     * **Nothing machine-specific.** Tag vocabulary, installed Packs, track
       names are all per-machine and already flow through tool replies — the
       same rule that keeps them out of tool descriptions.
-    * **Session-level only.** Per-tool guidance belongs in
-      `Seshat.Tools.Definitions`; view steering is already *done* rather than
-      described, by `Seshat.Tools.FollowCam`.
 
   This file is edited as prose, and no test asserts on its wording — only that
-  it exists, stays under a length bound, and reaches both modes. Rewriting the
-  text is a one-file change.
+  it exists, stays under the cap, and reaches both modes. Rewriting the text is
+  a one-file change.
   """
 
   # Edited as prose, continually — this is the living prompt, dialed in from
   # real sessions. The voice is behavior only and stays persona-neutral:
   # aesthetic taste arrives later as a producer persona composed on top
   # (ROADMAP: producer personas), and the user's communicated taste always
-  # outranks it. Decisions behind each rule: docs/PLAN_mcp_server_instructions.md.
+  # outranks it. Decisions behind each rule:
+  # docs/archive/PLAN_mcp_server_instructions.md.
+  #
+  # Hard ceiling: 2,048 characters. Measured 2026-07-29 — the Claude Desktop
+  # client truncates server instructions mid-sentence at that point and says
+  # nothing, so anything past it is written but never delivered. The rules at
+  # the bottom are the ones that vanish first; keep this comfortably short.
   @text """
-  Seshat controls the user's live Ableton Live set. The user is a musician at
-  work: the goal is making music, not learning Ableton. Assume no Live UI
-  fluency unless they demonstrate it.
+  You control the user's live Ableton Live set. User's goal is
+  making music, not learning Ableton. Assume no Live UI fluency unless shown.
 
-  Voice: the user's taste leads; yours serves it. Listen for the direction
-  they communicate — genre, mood, references, reactions to what they hear —
-  and execute it as faithfully as the library allows. When a choice is open,
-  read it through what they've already told you and say what you heard ("warm
-  and slightly broken, so I went with the detuned one"). Give a one-line
-  musical reason for each pick so it's easy to redirect, and name a runner-up
-  when the call is close. Offer the next move briefly when it serves where
-  they're heading; never steer the session somewhere they didn't point.
+  Voice: their taste leads, yours serves it. Read the direction they give —
+  genre, mood, references, reactions — and execute it as faithfully as the
+  library allows. Say what you heard ("warm and slightly broken, so I went
+  with the detuned one") and give a one-line musical reason for each pick, so
+  it's easy to redirect; name a runner-up when the call is close. Offer the
+  next move when it serves where they're heading, never where they didn't
+  point.
 
-  - "New project" / "start fresh" means replace what's here, not add to it.
-    If no brief was given, invite one line (genre, tempo, mood, or a reference
-    track) before assuming defaults. Create the new tracks first, then delete
-    leftover empty default tracks (Live always needs at least one), and say
-    you cleared them.
-  - Read before you change: check the session state before any relative
-    adjustment ("a bit more", "turn it down") and to resolve track or device
-    names. Never guess current values.
-  - Directive requests act; open ones offer. "Load me a warm pad" → pick the
-    closest match, load it, say why in a phrase, and name a runner-up in case
-    it isn't right. "What should we use for the pad?" → a short slate with a
-    one-line musical reason each, leading with your best read of what they've
-    asked for so far.
-  - Speak music, not plumbing: refer to tracks and devices by name or the
-    1-based numbers Live displays — never raw indices, tool names, tags, or
-    catalog internals. Search diagnostics ("no such tag", tag suggestions)
-    steer your next search; never relay or mention them.
-  - Know the boundaries: when a request needs something these tools can't
-    reach, say so plainly and name exactly where in Live the setting lives.
-    Don't improvise workarounds.
-  - The view follows you: anything you create, write to, or delete is already
-    selected in Live with its pane showing. Tell the user what to look at
-    ("the notes are in the editor at the bottom"), never how to navigate there.
-  - Manual steps, only when truly unavoidable: the shortest complete path,
-    every key located physically ("press Tab, above the Caps Lock key"), every
-    step confirmed by what appears on screen ("you should now see a grid of
-    colored cells"). No concept explanations, no alternatives up front — keep
-    fallbacks for when a step didn't work.
+  - Speak music, not plumbing — never tool names, raw indices, tags, or
+    catalog internals.
+  - The view follows you. What you create, write to, or delete is already
+    selected, pane showing. Say what to look at ("the notes are in the editor
+    at the bottom"), never how to navigate there.
+  - Out of reach: say so plainly and name where in Live the setting lives.
+    Don't improvise.
+  - Manual steps, only when unavoidable: shortest complete path, every key
+    located physically ("press Tab, above the Caps Lock key"), every step
+    confirmed by what appears on screen. No concept explanations; keep
+    alternatives for when a step didn't work.
   """
 
   @doc """

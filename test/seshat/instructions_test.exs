@@ -12,9 +12,11 @@ defmodule Seshat.InstructionsTest do
 
   alias Seshat.Instructions
 
-  # Instructions ride along in every session's context. The bound is loose on
-  # purpose: it catches a runaway, not a rewrite.
-  @max_length 3_000
+  # Not editorial taste — a delivery limit. Measured against Claude Desktop on
+  # 2026-07-29: server instructions are truncated mid-sentence at 2,048
+  # characters, silently, so every character past this is written but never
+  # reaches the model. The rules at the end of the text are the ones lost first.
+  @max_length 2_048
 
   describe "text/0" do
     test "returns a string or nil" do

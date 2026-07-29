@@ -1,8 +1,77 @@
 # Plan — MCP server instructions: a home for session-level guidance
 
+> **Archived 2026-07-29 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The text and the rule
+> governing what belongs in it live in
+> [lib/seshat/instructions.ex](../../lib/seshat/instructions.ex), reaching MCP
+> mode through `Seshat.MCP.Server.server_instructions/0` and API-key mode
+> through `Seshat.Agent.system_prompt/0`; the behavioural checks the suite
+> can't make are in the `/smoke-test` skill. Two follow-ups went to
+> [ROADMAP.md](../ROADMAP.md): the "new project means replace, not append"
+> rule this work evicted for budget is now issue #3 (`start_new_project`), and
+> the taste layer it deliberately left out is issue #4 (producer personas).
+> The 2,048-character delivery ceiling measured here is the constraint both
+> inherit.
+
 ROADMAP #1. Send server-level `instructions` from `Seshat.MCP.Server`,
 carrying the cross-tool conventions no single tool description can, from one
 source shared with API-key mode's system prompt.
+
+---
+
+> ## Status, 2026-07-29 — both phases shipped; the phase split below is history
+>
+> The two-phase sequencing that structures this document was overtaken on the
+> day it was written. **Phase 2's prose shipped in the same PR as Phase 1's
+> plumbing**, so everything below describing `@text` as `nil`, the
+> `TODO - phase 2` markers, and "Phase 1 sends nothing" is a record of the
+> plan, not of the code. Read it for the reasoning; read
+> [lib/seshat/instructions.ex](../../lib/seshat/instructions.ex) for what exists.
+>
+> ### Open question 1 is answered: yes, with a hard limit
+>
+> The canary in §1.7 was run. Results, all measured:
+>
+> - The server emits `instructions` correctly — verified by `curl` against the
+>   `initialize` endpoint, and byte-identical through the `mcp-remote` proxy
+>   Claude Desktop connects with.
+> - **Claude Desktop delivers it to the model, but truncates at 2,048
+>   characters, mid-sentence, silently.** Confirmed by marker phrases planted
+>   either side of the boundary: those at characters 257 and 1,987 arrived,
+>   those at 2,183 and 2,745 did not.
+> - **Only when the conversation runs on your computer.** In a cloud session
+>   reaching the Mac through the remote-devices bridge, the tools arrive
+>   namespaced `mcp__remote-devices__seshat__*` and the instructions do not
+>   arrive at all. Setup requirement now recorded in [README.md](../../README.md).
+>
+> The text as first shipped was 2,692 characters, so its last two rules — the
+> follow-cam rule and the manual-steps register — were written and never
+> delivered. The 3,000-character bound in `instructions_test.exs` was above the
+> real ceiling and so passed while content was dropped; it is now 2,048.
+>
+> ### The cap sharpened the division
+>
+> The rule, now stated in the moduledoc: **if it matters when using a particular
+> tool, it goes in that tool's description; what belongs to no tool goes here.**
+> The cap is what makes that enforceable rather than aspirational — tool schemas
+> have no limit (~36KB ships every request), so a rule is free in a description
+> and scarce here. Four moved out accordingly, and the text went 2,692 → 1,225
+> characters with no rule lost:
+>
+> | rule | where it lives now |
+> |---|---|
+> | refer to tracks by name / 1-based number | `get_session_state` description |
+> | read state before relative changes | `get_session_state` description |
+> | slate with reasons, or act on a directive | `search_library` description |
+> | "new project" means replace, not append | nowhere yet — ROADMAP #4 |
+>
+> The first three were already in those descriptions and had been carrying the
+> behaviour since before this plan existed; the instructions copy was the
+> duplicate. The fourth is a real gap until its tool ships.
+>
+> What remains is the residue nothing else can carry: voice, the manual-steps
+> register, out-of-reach, the follow-cam rule, and "never tool names or catalog
+> internals" — which is what the moduledoc always said this file was for.
 
 **Sequencing (Patrick, 2026-07-29): plumbing first, wording last.**
 
@@ -34,11 +103,11 @@ the same comment, so `grep -rn "TODO - phase 2" lib/` is the complete agenda:
 
 Two facts make the split clean rather than wishful, both verified in the dep:
 `Anubis.Server.Session` calls `module.server_instructions()` at session init
-([session.ex:163](../deps/anubis_mcp/lib/anubis/server/session.ex)), so our
+([session.ex:163](../../deps/anubis_mcp/lib/anubis/server/session.ex)), so our
 callback resolves `Seshat.Instructions.text()` at runtime — Phase 2 recompiles
 one module and reconnects, and `server.ex` is never touched again. And
 `maybe_put_instructions/2` skips the field entirely on `nil`
-([session.ex:1708-1710](../deps/anubis_mcp/lib/anubis/server/session.ex)),
+([session.ex:1708-1710](../../deps/anubis_mcp/lib/anubis/server/session.ex)),
 which is exactly the Phase 1 behavior we want: an unfinished prompt is not
 sent at all, rather than sent empty.
 
@@ -49,7 +118,7 @@ descriptions speak per tool; behavior *between* tools (what "start a new
 project" implies, how to talk a user through a manual step, what not to relay
 from tool replies) is unguided luck. The 2026-07-28 validation run produced
 four findings that each needed a session-level rule and had nowhere to put it
-([validation-script-thoughts-and-findings.md](validation-script-thoughts-and-findings.md)):
+([validation-script-thoughts-and-findings.md](../validation-script-thoughts-and-findings.md)):
 
 1. "Start a new project" only appended tracks, leaving the default set's
    leftover empty track for the user to notice.
@@ -66,7 +135,7 @@ four findings that each needed a session-level rule and had nowhere to put it
 MCP's `initialize` response has a first-class field for exactly this:
 `instructions`, which clients "MAY add to the system prompt". Anubis already
 supports it — `Anubis.Server` defines an overridable `server_instructions/0`
-callback ([deps/anubis_mcp/lib/anubis/server.ex:192](../deps/anubis_mcp/lib/anubis/server.ex))
+callback ([deps/anubis_mcp/lib/anubis/server.ex:192](../../deps/anubis_mcp/lib/anubis/server.ex))
 whose non-nil return `Anubis.Server.Session` puts into the `initialize`
 result. `Seshat.MCP.Server` currently declares only `capabilities: [:tools]`
 and inherits the default `nil`. So the transport work is one callback; the
@@ -91,7 +160,7 @@ Key constraints, all inherited from how tool descriptions are governed:
 The follow cam shipped 2026-07-29 (was ROADMAP #3, now closed). That was the
 *acting* fix for finding 3's underlying problem: after a create, write or
 delete, `Seshat.Tools.FollowCam` already selects what the tool touched and
-shows the pane it lives in ([lib/seshat/tools/follow_cam.ex](../lib/seshat/tools/follow_cam.ex)).
+shows the pane it lives in ([lib/seshat/tools/follow_cam.ex](../../lib/seshat/tools/follow_cam.ex)).
 Two consequences for this issue:
 
 - The manual-steps register now covers a genuinely narrower case — only what
@@ -102,7 +171,7 @@ Two consequences for this issue:
   cam instead of complementing it. Carried into the Phase 2 agenda.
 
 Cross-references also renumbered as things shipped: catalog staleness is now
-ROADMAP #5, `screenshot_live` #9, LLM enrichment #15.
+ROADMAP #7, `screenshot_live` #11, LLM enrichment #17.
 
 ## Contract
 
@@ -112,7 +181,7 @@ No OSC surface — this feature sends nothing to Ableton. The contract is MCP's
 - `Seshat.MCP.Server.server_instructions/0` (arity 0, `@impl Anubis.Server`)
   returns `String.t() | nil`. Non-nil → Anubis serialises it as the
   `instructions` field of the `initialize` result. Verified in
-  [deps/anubis_mcp/lib/anubis/server/session.ex](../deps/anubis_mcp/lib/anubis/server/session.ex)
+  [deps/anubis_mcp/lib/anubis/server/session.ex](../../deps/anubis_mcp/lib/anubis/server/session.ex)
   (`module.server_instructions()` captured at session init;
   `maybe_put_instructions/2` on the result).
 - Both transports (stdio via `mix mcp`, streamable HTTP) use the same server
@@ -166,7 +235,7 @@ future reader knows a rewrite is a one-file change.
 
 ## 1.2 `Seshat.MCP.Server` — send it
 
-[lib/seshat/mcp/server.ex](../lib/seshat/mcp/server.ex): add
+[lib/seshat/mcp/server.ex](../../lib/seshat/mcp/server.ex): add
 
 ```elixir
 @impl Anubis.Server
@@ -181,7 +250,7 @@ guidance is sent as server instructions from `Seshat.Instructions`.
 
 ## 1.3 `Seshat.Agent` — same source, no diverging copy
 
-[lib/seshat/agent.ex](../lib/seshat/agent.ex): rename the `@system_prompt`
+[lib/seshat/agent.ex](../../lib/seshat/agent.ex): rename the `@system_prompt`
 attribute to `@agent_specific` with its **content unchanged**, and compose:
 
 ```elixir
@@ -223,8 +292,8 @@ The one Phase 1 item that ships real prose — and it still gets the marker, so
 Phase 2 reviews its wording alongside everything else.
 
 Guidance alone didn't stop the leak reaching the user, so the reply also marks
-itself. In [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex),
-`format_catalog_entries/3` ([handlers.ex:168-194](../lib/seshat/tools/handlers.ex#L168-L194))
+itself. In [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex),
+`format_catalog_entries/3` ([handlers.ex:168-194](../../lib/seshat/tools/handlers.ex#L168-L194))
 gains a module attribute appended to the two branches that emit steering text:
 
 ```elixir
@@ -262,16 +331,16 @@ without edits.
 - New `test/seshat/mcp/server_test.exs`:
   `Seshat.MCP.Server.server_instructions() == Seshat.Instructions.text()` —
   the parity guard, same spirit as the existing MCP⟷Definitions parity tests
-  in [test/seshat/mcp/tools_test.exs](../test/seshat/mcp/tools_test.exs). Real
+  in [test/seshat/mcp/tools_test.exs](../../test/seshat/mcp/tools_test.exs). Real
   value in Phase 1: it holds at `nil` and keeps holding when text appears.
 - Unit test on `Seshat.Agent.system_prompt/0`: contains the `@agent_specific`
   material, and contains `Seshat.Instructions.text()` whenever that is
   non-nil. Covers the nil branch now and the composed branch later.
-- [test/seshat/agent_test.exs](../test/seshat/agent_test.exs): in a `Req.Test`
+- [test/seshat/agent_test.exs](../../test/seshat/agent_test.exs): in a `Req.Test`
   intercept, assert the request body's `system` field equals
   `Seshat.Agent.system_prompt()` — the guard against `call_api/3` drifting
   back to a stale attribute, which is the actual regression risk here.
-- [test/seshat/tools/handlers_test.exs](../test/seshat/tools/handlers_test.exs):
+- [test/seshat/tools/handlers_test.exs](../../test/seshat/tools/handlers_test.exs):
   `format_catalog_entries/3` cases — zero-result-with-diagnosis and
   truncated-with-facets replies contain the internal marker; full-result
   replies don't.
@@ -280,10 +349,10 @@ No tool added or removed → no `definitions_test.exs` count bump.
 
 ## 1.6 Docs
 
-- [CLAUDE.md](../CLAUDE.md): add `lib/seshat/instructions.ex` to the module
+- [CLAUDE.md](../../CLAUDE.md): add `lib/seshat/instructions.ex` to the module
   map; one line in the "Two entry points" section noting both modes share
   `Seshat.Instructions`.
-- [docs/TOOL_AUDIT.md](TOOL_AUDIT.md): note on the `search_library` inventory
+- [docs/TOOL_AUDIT.md](../TOOL_AUDIT.md): note on the `search_library` inventory
   row that the diagnostic-leak wart is fixed (reply now marks diagnostics as
   internal).
 
@@ -381,8 +450,8 @@ they are exactly what Phase 2 is for.
    production move), leave voice emergent, or restructure the whole text
    around character with the guardrails as consequences.
    *Direction chosen 2026-07-29, refined same day: **taste** becomes
-   pluggable (producer personas, ROADMAP #4, stubs in
-   [priv/producers/](../priv/producers/)) but **voice stays here**. Personas
+   pluggable (producer personas, ROADMAP #5, stubs in
+   [priv/producers/](../../priv/producers/)) but **voice stays here**. Personas
    carry only the aesthetic palette; register, opinionatedness, and slate
    style are behavior, consistent across personas — so Phase 2 does write a
    voice section, persona-neutral, with the taste slot left open for #4 to
@@ -423,15 +492,15 @@ nothing to smoke-test — it sends `nil` by design.
   `Seshat.Agent` is the only *system prompt* in `lib/`, but it is not the only
   text the model reads. Two bodies stay untouched, deliberately:
   - **Tool and parameter descriptions** — 145 `description:` fields in
-    [lib/seshat/tools/definitions.ex](../lib/seshat/tools/definitions.ex).
+    [lib/seshat/tools/definitions.ex](../../lib/seshat/tools/definitions.ex).
     These are prompts, and most of Seshat's model-facing words live here.
-    They are governed already (house style, [TOOL_AUDIT.md](TOOL_AUDIT.md) §04
+    They are governed already (house style, [TOOL_AUDIT.md](../TOOL_AUDIT.md) §04
     as the exemplar) and revising them is a standing audit job, not this
     issue's. The instructions exist for what *no* tool description can say;
     anything a single tool can state belongs in its description and stays
     there.
   - **Handler reply text** — every `{:ok, …}` / `{:error, …}` string in
-    [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex) steers the
+    [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex) steers the
     model's next move. Phase 1 touches exactly one (1.4's diagnostics marker,
     because it is the specific leak a validation finding named) and leaves the
     rest.
@@ -445,7 +514,7 @@ nothing to smoke-test — it sends `nil` by design.
 - **New-project kickoff flow as tooling** (a brief that persists, kickoff
   questions steering search) — the instructions carry its practical core
   ("invite a one-line brief"); anything stateful stays a roadmap discussion.
-- **Catalog staleness surfacing** — ROADMAP #5, even though it may one day
+- **Catalog staleness surfacing** — ROADMAP #7, even though it may one day
   want a line here.
 - **`AssistantLive` UI changes** — the browser UI already gets the shared text
   through `Seshat.Agent`; nothing to show the user.

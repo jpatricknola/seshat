@@ -98,10 +98,24 @@ track a new property:
 Only do this for properties read often. One-off reads should query in the
 handler.
 
-## Adding music-theory knowledge
+## Adding guidance the model needs
 
-If the model needs to know something to *use* a tool correctly (chord
-intervals, drum-map pitches, warp modes), it goes in `@system_prompt` in
-`Seshat.Agent` — but note this only affects API-key mode. In MCP mode the
-client's own model does the reasoning with no system prompt from us, so
-anything essential must be in the **tool description** instead.
+Three places, and the choice is not a matter of taste:
+
+1. **The tool description** — anything that matters when using *this* tool:
+   chord intervals, drum-map pitches, warp modes, index bases, which tool to
+   call first, how to present the result. This is the default, and it is the
+   only one of the three with no length limit (~36KB of schemas ships every
+   request).
+2. **`Seshat.Instructions`** — only what belongs to *no* tool: register, what
+   to do when a request is outside the tools entirely, the fact that the view
+   has already moved. Hard-capped at 2,048 characters, because Claude Desktop
+   truncates past that silently — so a rule that could live in a description
+   is free there and scarce here. Reaches both modes.
+3. **`@agent_specific` in `Seshat.Agent`** — API-key mode only, for what that
+   loop needs and MCP mode gets from its own client (its own identity, its own
+   turn budget). Nothing user-facing belongs here alone; it would be invisible
+   in the primary mode.
+
+Nothing in `mix test` checks what any of this makes the model *say* — the
+`/smoke-test` skill has the behavioural checks, one per rule.
