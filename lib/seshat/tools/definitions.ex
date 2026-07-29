@@ -402,6 +402,122 @@ defmodule Seshat.Tools.Definitions do
         required: ["track", "clip_slot", "name"]
       }
     },
+    %{
+      name: "get_clip_properties",
+      description:
+        "Read one clip's playback properties: clip type (MIDI/audio), name, length in beats, " <>
+          "loop on/off and loop brace (loop_start/loop_end), play markers " <>
+          "(start_marker/end_marker), launch mode and quantization, legato, velocity amount — " <>
+          "plus gain (with its dB display value), warp mode, and warping for audio clips. " <>
+          "Track and clip_slot are 0-based; slot N sits in scene N. All beat positions count " <>
+          "from the clip's own start (beat 0). Use get_clip_slots first to find which slots " <>
+          "hold clips, and this tool before set_clip_properties to see the current values — " <>
+          "e.g. what length and loop brace Live inferred for a captured clip.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+        },
+        required: ["track", "clip_slot"]
+      }
+    },
+    %{
+      name: "set_clip_properties",
+      description:
+        "Set a clip's own loop brace, play markers, launch behavior, or (audio clips only) " <>
+          "gain/warp. This is the clip's OWN loop — distinct from set_loop, which moves the " <>
+          "song's global arrangement loop. Track and clip_slot are 0-based; slot N sits in " <>
+          "scene N. All properties are optional — send only what you're changing, at least " <>
+          "one. Positions are in beats from the clip's start. To loop a section: set looping " <>
+          "true with loop_start/loop_end, and usually start_marker to the loop start so launch " <>
+          "begins there — note loop_start/loop_end only act as the loop brace while looping is " <>
+          "on (while off, Live treats them as the play start/end markers). To trim or extend a " <>
+          "non-looping clip, set start_marker/end_marker. There is no direct length setter — " <>
+          "length follows from the markers (or the loop while looping), and the reply echoes " <>
+          "every value Live actually applied (each write is verified by re-read): check it " <>
+          "matched the intent. launch_mode: 0=Trigger, 1=Gate, 2=Toggle, 3=Repeat. " <>
+          "launch_quantization: 0=Global, 1=None, 2=8 bars, 3=4 bars, 4=2 bars, 5=1 bar, " <>
+          "6=1/2, 7=1/2T, 8=1/4, 9=1/4T, 10=1/8, 11=1/8T, 12=1/16, 13=1/16T, 14=1/32. " <>
+          "velocity_amount is 0.0–1.0. Audio only — gain: nonlinear 0.0–1.0, trust the dB the " <>
+          "reply echoes rather than the number; warp_mode: 0=Beats, 1=Tones, 2=Texture, " <>
+          "3=Re-Pitch, 4=Complex, 6=Complex Pro; warping: on/off. Audio-only properties on a " <>
+          "MIDI clip are rejected with an error. Use get_clip_properties first to see current " <>
+          "values.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"},
+          "looping" => %{
+            type: "boolean",
+            description: "true = the clip loops over its brace, false = it plays through once"
+          },
+          "loop_start" => %{
+            type: "number",
+            minimum: 0,
+            description: "Loop brace start, in beats from the clip's start"
+          },
+          "loop_end" => %{
+            type: "number",
+            minimum: 0,
+            description: "Loop brace end, in beats from the clip's start"
+          },
+          "start_marker" => %{
+            type: "number",
+            minimum: 0,
+            description: "Where playback begins on launch, in beats from the clip's start"
+          },
+          "end_marker" => %{
+            type: "number",
+            minimum: 0,
+            description: "Where a non-looping clip stops, in beats from the clip's start"
+          },
+          "launch_mode" => %{
+            type: "integer",
+            enum: [0, 1, 2, 3],
+            description: "0=Trigger, 1=Gate, 2=Toggle, 3=Repeat"
+          },
+          "launch_quantization" => %{
+            type: "integer",
+            minimum: 0,
+            maximum: 14,
+            description:
+              "0=Global, 1=None, 2=8 bars, 3=4 bars, 4=2 bars, 5=1 bar, 6=1/2, 7=1/2T, 8=1/4, " <>
+                "9=1/4T, 10=1/8, 11=1/8T, 12=1/16, 13=1/16T, 14=1/32"
+          },
+          "legato" => %{
+            type: "boolean",
+            description: "true = a relaunch continues from the current playback position"
+          },
+          "velocity_amount" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description: "How much MIDI velocity affects clip volume, 0.0–1.0"
+          },
+          "gain" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description:
+              "Audio clips only. Nonlinear 0.0–1.0 — trust the dB value the reply echoes"
+          },
+          "warp_mode" => %{
+            type: "integer",
+            enum: [0, 1, 2, 3, 4, 6],
+            description:
+              "Audio clips only. 0=Beats, 1=Tones, 2=Texture, 3=Re-Pitch, 4=Complex, " <>
+                "6=Complex Pro"
+          },
+          "warping" => %{
+            type: "boolean",
+            description: "Audio clips only. true = the clip follows the song tempo"
+          }
+        },
+        required: ["track", "clip_slot"]
+      }
+    },
     # --- Scene control ---
     %{
       name: "fire_scene",
@@ -467,7 +583,10 @@ defmodule Seshat.Tools.Definitions do
     %{
       name: "set_loop",
       description:
-        "Turn looping on or off and optionally set the loop range in Ableton Live. " <>
+        "Turn the song's global loop on or off and optionally set its range in Ableton Live. " <>
+          "This is the arrangement/transport loop that spans the whole song — NOT a clip's own " <>
+          "loop brace; for 'loop this clip' or 'loop the good two bars' use " <>
+          "set_clip_properties. " <>
           "Loop start and length are in beats (e.g. bar 5 in 4/4 = beat 16.0, 4 bars = 16.0 beats).",
       parameters: %{
         type: "object",
