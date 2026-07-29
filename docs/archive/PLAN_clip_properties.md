@@ -1,5 +1,22 @@
 # Plan — Per-clip properties: loop brace, markers, launch settings
 
+> **Archived 2026-07-29 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `get_clip_properties` and
+> `set_clip_properties` live in `Seshat.Tools.Definitions` / `Handlers`
+> (`clip_property_writes/2` is the pure, unit-tested write-orderer). No
+> Python changed, so nothing here has run `mix abletonosc.install` or
+> touched a live Ableton — the plan's four open questions and its Testing
+> section's seven smoke items are all still unconfirmed and now belong to
+> `/smoke-test`. PR review (2026-07-29) additionally found that the
+> pair-context read driving the write order runs *before* a `looping`
+> toggle in the same call, which can see stale (pre-toggle) values on a
+> clip whose stored loop brace differs from its play markers — recorded as
+> a known wart on `set_clip_properties` in
+> [TOOL_AUDIT.md](../TOOL_AUDIT.md) §05, to confirm and fix alongside smoke
+> item 2. The roadmap issue this shipped is gone from
+> [ROADMAP.md](../ROADMAP.md); its former follow-on, session record, is now
+> #1.
+
 Roadmap #1. Two new tools — `get_clip_properties` and `set_clip_properties` —
 covering a clip's own loop brace (`looping`, `loop_start`, `loop_end`), its
 play markers (`start_marker`, `end_marker`), its launch behaviour

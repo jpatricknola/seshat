@@ -18,58 +18,20 @@ The canonical OSC address reference is
 [abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
 address — naming is irregular, and a wrong address fails silently.
 
-**The play-and-keep arc (#1 · #2 · #7 · #8):** today the agent generates and
-the user listens. `capture_midi` (shipped 2026-07-28) was the first step;
-these four remaining issues — per-clip properties, session record, quantize,
-groove — carry the rest: the user plays, Seshat keeps it and cleans it up.
-That is the largest gap between the current state and the mission, and it is
-cheap: mostly upstream addresses, and quantize's now ships with the fork. The
-quick wins interleaved among them come from the 2026-07-28 validation run
+**The play-and-keep arc (#1 · #6 · #7):** today the agent generates and
+the user listens. `capture_midi` (shipped 2026-07-28) and per-clip properties
+(shipped 2026-07-29 — a clip's own loop brace, play markers, and launch
+settings are now readable and writable) were the first two steps; these three
+remaining issues — session record, quantize, groove — carry the rest: the
+user plays, Seshat keeps it and cleans it up. That is the largest gap between
+the current state and the mission, and it is cheap: mostly upstream
+addresses, and quantize's now ships with the fork. The quick wins interleaved
+among them come from the 2026-07-28 validation run
 ([validation-script-thoughts-and-findings.md](validation-script-thoughts-and-findings.md)).
 
 ---
 
-## #1 · Per-clip properties — loop brace, length, launch settings
-
-**Goal:** read/write a clip's own loop points and launch behavior:
-`/live/clip/get|set/loop_start`, `loop_end`, `start_marker`, `end_marker`,
-`launch_mode`, `launch_quantization`; warp mode and clip gain for audio clips.
-
-**Why:** `set_loop` is the *song* loop — a clip's own loop brace is
-unreachable. This blocks the natural sentence right after a capture: "loop
-the good two bars." Captured clips arrive with whatever length and brace Live
-inferred, so `capture_midi` is only half-usable without this — and a recorded
-take (#2) arrives with exactly the same problem, which is why this comes
-first: doing it after would ship a second half-usable way to keep a
-performance. It also fixes a standing audit gap (clip length can't be changed
-after creation). Cheapest issue of its size on the list — every address is
-upstream, so no fork commit, no `mix abletonosc.install`, no Live restart,
-and every write verifies by re-read.
-
-**Plan:** [PLAN_clip_properties.md](PLAN_clip_properties.md) — note it
-overturns the `looping` planner note below: the toggle is registered in the
-fork's `clip.py` (upstream code); only the docs row was missing.
-
-**Planner notes:**
-- Check every address against
-  [abletonosc-api-docs.md](abletonosc-api-docs.md) individually — clip
-  address naming is irregular; do not infer one address from another.
-  Confirmed present 2026-07-29: `loop_start`/`loop_end`,
-  `start_marker`/`end_marker`, `launch_mode`, `launch_quantization`,
-  `warp_mode`, `gain`, `legato`, `velocity_amount`, plus read-only `length`.
-- **`looping` — the clip's loop on/off switch — is not exposed upstream**
-  (checked 2026-07-29: the loop *points* are there, the toggle is not). Either
-  add it to the fork the way the other extensions were added, or cut it and
-  say so in the tool description. It is not free; don't let the goal line
-  above imply otherwise.
-- Audio-clip properties (warp, gain) only apply to audio clips — the tool
-  should error cleanly on MIDI clips rather than silently no-op, matching the
-  `write_midi_notes` guard precedent.
-- Decide granularity: one `set_clip_properties` tool vs. per-property tools.
-  The audit's finding that granular-by-object beats polymorphic merges
-  ([TOOL_AUDIT.md](TOOL_AUDIT.md) §01) is the relevant prior.
-
-## #2 · Session record — deliberate takes into clip slots
+## #1 · Session record — deliberate takes into clip slots
 
 **Goal:** tools to start/stop Session-view recording and report record state:
 `/live/song/set/session_record [1|0]`, `/live/song/trigger_session_record`,
@@ -97,7 +59,7 @@ capability gap, and it is the reason this outranks everything below it.
   Decide which one the tool drives, and check both against the API docs.
 - `/live/song/get|set/midi_recording_quantization` shapes what the take comes
   out as. Decide whether the tool touches it or leaves it to Live's own
-  setting — and note it is a *different* enum from `quantize_clip`'s (#7).
+  setting — and note it is a *different* enum from `quantize_clip`'s (#6).
 - `/live/clip/get/is_recording` and `will_record_on_start` give a verifiable
   echo, the way other tools verify against the mirror rather than assuming.
 - Scope is Session view only: arrangement overdub and punch in/out stay out
@@ -110,7 +72,7 @@ capability gap, and it is the reason this outranks everything below it.
   see [TOOL_AUDIT.md](TOOL_AUDIT.md) §04 for the exemplary-description
   pattern.
 
-## #3 · `start_new_project` — the setup wizard, and prompt budget back
+## #2 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -155,7 +117,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #4 · Producer personas — switchable musical taste
+## #3 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* — musical taste, and only taste — onto the base
 session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
@@ -211,7 +173,7 @@ changes what Seshat reaches for, never how it works.
   and the base text's voice section already reads as execute-the-user's-taste,
   which is what a persona slots underneath.
 
-## #5 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #4 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -238,7 +200,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #6 · Catalog staleness check — reindex without being asked
+## #5 · Catalog staleness check — reindex without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -259,13 +221,13 @@ stays announced and cause-driven instead of manual or unprompted.
 - Decide the surfacing point: a line in `search_library` replies, a startup
   check, or both.
 
-## #7 · `quantize_clip` — the most common MIDI cleanup
+## #6 · `quantize_clip` — the most common MIDI cleanup
 
 **Goal:** quantize a clip's notes to a grid with an amount (0–1 for partial
 quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
 
 **Why:** "tighten the timing" is the most common cleanup move on played
-MIDI — the direct follow-up to `capture_midi`/session record (#2). Today it
+MIDI — the direct follow-up to `capture_midi`/session record (#1). Today it
 takes a full
 read → remove → rewrite by hand, which loses Live-native swing handling and
 burns tool calls.
@@ -284,7 +246,7 @@ burns tool calls.
 - Partial quantize (amount < 1.0) is the musically useful form — full
   quantize kills feel. The description should teach that.
 
-## #8 · Groove amount — "make it swing"
+## #7 · Groove amount — "make it swing"
 
 **Goal:** read/set the global groove amount:
 `/live/song/get|set/groove_amount`.
@@ -295,7 +257,7 @@ Small, upstream, and it completes the play-and-keep arc's editing vocabulary.
 **Planner notes:** single scalar property, transport-tool shaped. Check the
 value range in the API docs rather than assuming 0–1.
 
-## #9 · `set_time_signature`
+## #8 · `set_time_signature`
 
 **Goal:** `/live/song/set/signature_numerator` +
 `/live/song/set/signature_denominator`.
@@ -307,7 +269,7 @@ with a manual step today.
 **Planner notes:** two addresses, one tool. Session state already listens to
 both properties, so the echo can verify against the mirror.
 
-## #10 · `screenshot_live` — let Seshat see the screen
+## #9 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -328,16 +290,16 @@ the follow cam (shipped 2026-07-29) covers that.
 - API-key mode would need image blocks threaded through `Seshat.Agent`'s
   loop — decide whether to support it there or keep this MCP-only.
 
-## #11 · Search eval harness — numbers before opinions
+## #10 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
 lever gets measured instead of argued.
 
 **Why:** lever №9 of [sound-search-options.md](sound-search-options.md),
-estimated at a morning's work. It exists to **gate #12–#17**: after #5 lands,
+estimated at a morning's work. It exists to **gate #11–#16**: after #4 lands,
 the eval decides whether any of the remaining catalog levers are still worth
-buying. Sequenced after #5 because #5 is a certain win with or without
+buying. Sequenced after #4 because #4 is a certain win with or without
 numbers.
 
 **Planner notes:** the result-quality work already used a six-query/77-slot
@@ -348,12 +310,12 @@ catalog — no Ableton needed.
 
 ---
 
-**Gate: issues #12–#17 are catalog levers that wait on #11's eval.** Buy each
-only if the eval still shows the miss it targets after #5 lands. They're
+**Gate: issues #11–#16 are catalog levers that wait on #10's eval.** Buy each
+only if the eval still shows the miss it targets after #4 lands. They're
 ranked by [sound-search-options.md](sound-search-options.md)'s
 impact-per-effort ordering.
 
-## #12 · Widen the search slate at tied score bands
+## #11 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -363,7 +325,7 @@ pretending rank means something inside it.
 provably can't close (a graded per-term variant measured +1 slot across six
 queries and was rejected). Hours of work, honest fix.
 
-## #13 · Accepted-search memory
+## #12 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -376,7 +338,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #14 · Browser preview audition
+## #13 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -392,7 +354,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #15 · Opt-in `samples` index
+## #14 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -405,21 +367,21 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #16 · LLM enrichment at reindex
+## #15 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an API key or an MCP-client-driven tagging turn.
 
 **Why:** lever №5 — highest ceiling (it attacks the thin-signal problem
 directly: ~200 of 5,795 entries say anything real about their sound) and
-highest cost. Last resort: buy only if the #12 eval still shows first-slate
+highest cost. Last resort: buy only if the #11 eval still shows first-slate
 misses on thin-tagged entries after everything above. Concrete evidence from
 the 2026-07-28 validation run: for "warm, slightly out-of-tune electric
 piano," the character lived only in preset *names* — E-Piano Rusty, Old
 School, MKII Old, Cheap were invisible to tag scoring because no warm/aged/
 detuned vocabulary exists to carry them.
 
-## #17 · User XMP tags
+## #16 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -430,7 +392,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #18 · Device list per track in session state
+## #17 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -442,13 +404,13 @@ gain is latency and tokens, not user-visible experience, hence the rank.
 
 **Planner notes:** needs device add/remove listeners per track — check what
 upstream offers before assuming a new handler is required. The clip-grid
-precedent applies (see #21 note): query-on-demand shipped first, promotion to
+precedent applies (see #20 note): query-on-demand shipped first, promotion to
 push state only once usage justified the subscription surface. Usage now
 plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #19 · Return/master mixer completeness
+## #18 · Return/master mixer completeness
 
 **Goal:** return-track pan/mute/solo, master pan, cue volume.
 
@@ -460,7 +422,7 @@ LOM details: return mute/solo are plain listenable props, master pan is
 `mixer_device.panning`, cue volume is `mixer_device.cue_volume`, and the
 master has no mute/solo/arm.)
 
-## #20 · Modify a note in place
+## #19 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -468,7 +430,7 @@ read → remove range → rewrite.
 **Why:** the current path works but is three calls and a footgun
 (`remove_notes` ranges). Cleaner, not urgent.
 
-## #21 · Clip grid in session state — only if usage demands it
+## #20 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -477,11 +439,11 @@ into push-fresh `Session.State`.
 (tracks × scenes × properties). The standing decision
 ([archive/PLAN_clip_slot_state.md](archive/PLAN_clip_slot_state.md)) is to
 wait for evidence the grid is read constantly. Revisit after session record
-(#2) ships — `capture_midi` (shipped) and record will raise grid-read
-frequency. Index-keyed listeners like #18's — these are ordinary fork
+(#1) ships — `capture_midi` (shipped) and record will raise grid-read
+frequency. Index-keyed listeners like #17's — these are ordinary fork
 commits on the fixed base class.
 
-## #22 · Small OSC breadth — grab bag
+## #21 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -494,7 +456,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
 - **Sends on return tracks** (return→return routing, feedback sends) —
   niche, needs Live's "sends only" awareness, no named workflow yet.
 
-## #23 · MCP mode in the browser UI
+## #22 · MCP mode in the browser UI
 
 **Goal:** give `AssistantLive` a second backend — headless Claude Code
 (`claude -p`) as a subprocess consuming Seshat's own `/mcp` endpoint — so the

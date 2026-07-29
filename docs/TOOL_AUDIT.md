@@ -187,7 +187,7 @@ property of the category, not of any one tool.
 | `create_return_track`   | Structure | Keep   | New 07/2026. Errors at Live's 12-return cap.             |
 | `delete_return_track`   | Structure | Keep   | New 07/2026. Warns that send letters shift.              |
 | `get_clip_properties`   | Read      | Keep   | New 07/2026. Fourteen targeted reads of one clip; skips the audio-only set on a MIDI clip rather than timing out. |
-| `set_clip_properties`   | Clips     | Keep   | New 07/2026. One object, several optional properties (the `set_loop` shape). Orders paired writes so `start < end` holds after every message, then verifies each by re-read — clip setters never reply. |
+| `set_clip_properties`   | Clips     | Keep   | New 07/2026. One object, several optional properties (the `set_loop` shape). Orders paired writes so `start < end` holds after every message, then verifies each by re-read — clip setters never reply. **Known wart (PR review, 07/2026):** the pair-context read that drives that ordering runs *before* a `looping` toggle in the same call is sent, so on a clip whose stored loop brace differs from its play markers, ordering a simultaneous `looping: true` + brace move can see stale (pre-toggle) values. The read-back echo would still surface any resulting mismatch — nothing is silently corrupted — but the ordering guarantee doesn't hold in that one case. Fix is cheap (send `looping` first, then re-read); confirm against real Live behavior alongside smoke item 2 before or while fixing. |
 
 ---
 
