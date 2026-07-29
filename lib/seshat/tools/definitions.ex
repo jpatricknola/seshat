@@ -306,6 +306,62 @@ defmodule Seshat.Tools.Definitions do
         required: []
       }
     },
+    %{
+      name: "record_clip",
+      description:
+        "Record a take into a chosen Session clip slot in Ableton Live — the deliberate " <>
+          "\"record me eight bars on the keys\" move, and the only way to record audio " <>
+          "(capture_midi is retroactive and MIDI-only). Track and slot indices are 0-based; " <>
+          "the slot must be empty — use get_clip_slots first to pick a free slot, or " <>
+          "delete_clip a bad take. Arms the track automatically if it isn't armed (the reply " <>
+          "says so). With bars given, Live records exactly that many bars of the current time " <>
+          "signature, stops recording by itself, and leaves the clip looping — no stop call " <>
+          "needed. Without bars the take runs until stop_recording. Timing: if the transport " <>
+          "is already playing, recording starts at the next launch-quantization boundary " <>
+          "(usually the next bar) — start playback first when the user wants a predictable " <>
+          "punch-in; from a stopped transport it starts immediately, so make sure the user is " <>
+          "ready *before* calling. Audio tracks record whatever input is routed to them in " <>
+          "Live — Seshat cannot choose or check the input, so a silent take usually means the " <>
+          "input isn't set. The reply says whether recording is running or queued for the " <>
+          "boundary. The view follows: the slot is selected in the Session grid, turning red " <>
+          "as it records.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{
+            type: "integer",
+            description: "0-indexed scene/clip slot — must be empty"
+          },
+          "bars" => %{
+            type: "number",
+            description:
+              "How many bars to record, in the set's current time signature. Omit for an " <>
+                "open-ended take finished later with stop_recording."
+          }
+        },
+        required: ["track", "clip_slot"]
+      }
+    },
+    %{
+      name: "stop_recording",
+      description:
+        "Finish a take that is recording in a Session clip slot (started by record_clip, or " <>
+          "any clip Ableton Live is session-recording): recording ends at the next " <>
+          "launch-quantization boundary — a musically aligned loop end — and the clip drops " <>
+          "straight into looped playback; it keeps playing. Also ends a fixed-length take " <>
+          "early. Track and slot are 0-based — the ones record_clip's reply named; " <>
+          "get_clip_slots marks the recording slot if unsure. Errors if nothing is recording " <>
+          "there. To scrap a take instead: stop it, then delete_clip.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+        },
+        required: ["track", "clip_slot"]
+      }
+    },
     # --- Undo / Redo ---
     %{
       name: "undo",

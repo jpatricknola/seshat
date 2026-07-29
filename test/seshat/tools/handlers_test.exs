@@ -814,6 +814,34 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "record_length_beats/3" do
+    # The record_clip clause itself isn't tested here: every guard goes through
+    # Transport.query, which needs a live Ableton. This is the one piece of it
+    # that is pure — and the one whose being wrong produces a clip of the wrong
+    # length rather than an error.
+    test "a bar is the signature's beats when the beat is a quarter note" do
+      assert Handlers.record_length_beats(8, 4, 4) == 32.0
+      assert Handlers.record_length_beats(4, 3, 4) == 12.0
+      assert Handlers.record_length_beats(1, 7, 4) == 7.0
+    end
+
+    # record_length counts Live song-time beats (quarter notes), not signature
+    # beats, so two bars of 6/8 is six quarter notes rather than twelve.
+    test "eighth-note signatures are converted to quarter-note beats" do
+      assert Handlers.record_length_beats(2, 6, 8) == 6.0
+      assert Handlers.record_length_beats(1, 7, 8) == 3.5
+    end
+
+    test "half-note signatures and fractional bars" do
+      assert Handlers.record_length_beats(2, 2, 2) == 8.0
+      assert Handlers.record_length_beats(0.5, 4, 4) == 2.0
+    end
+
+    test "always returns a float, so the OSC argument is never an integer" do
+      assert is_float(Handlers.record_length_beats(8, 4, 4))
+    end
+  end
+
   describe "capture_diff/2" do
     # The capture_midi do_call clause itself isn't tested here: it goes through
     # Transport.query, which needs a live Ableton. This exercises the pure diff
