@@ -43,6 +43,21 @@ _Living doc · MCP design review · 49 tools in the surface · 25 Jul 2026 — u
 > Live Set plus ordinary `create_track` calls — see
 > [archive/create-project-removal.md](archive/create-project-removal.md).
 
+> **Follow cam shipped 28 Jul 2026.** No new tools: sixteen existing ones
+> (`create_track`, `duplicate_track`, `create_return_track`, `create_scene`,
+> `duplicate_scene`, `write_midi_notes`, `remove_notes`, `capture_midi`,
+> `duplicate_clip`, `load_device`, `delete_device`, `bypass_device`,
+> `delete_track`, `delete_return_track`, `delete_scene`, `delete_clip`) now end
+> by steering Live's view onto what they changed — selection plus the pane it
+> lives in — so the change is visible without the model being asked to select
+> anything. Parameter tweaks, transport, renames and reads deliberately do not
+> steer, and there is no toggle. `write_midi_notes` and `capture_midi` also
+> gained an optional `name`, so an occupied slot carries visible text; there is
+> no auto-generated fallback. The decision lives in
+> `Seshat.Tools.FollowCam.calls/2` (pure, fully unit-tested); the panes needed
+> three new vendored OSC addresses. See
+> [archive/PLAN_follow_cam.md](archive/PLAN_follow_cam.md).
+
 **At a glance:** 49 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
@@ -72,7 +87,7 @@ Operations a producer would expect that no tool currently reaches, ranked by how
 | ~~**Sends / return tracks**~~ · **ADDRESSED 07/2026**                     | ~~High~~ | Was the top gap. `set_track_send` / `get_track_sends` / `create_return_track` / `delete_return_track` now cover the reverb-and-delay workflow. Loading a device *onto* a return is still manual. |
 | ~~**Remove / bypass a device**~~ · **ADDRESSED 07/2026** | ~~Med-High~~ | `delete_device` and `bypass_device` close the audition loop — a wrong load is undoable and a device can be A/B'd in place. Regular tracks only (upstream reaches `song.tracks` alone). |
 | **Reorder the device chain**                                              | Low      | The remaining half of the old one-way-device-workflow gap: a device can be added, bypassed and removed, but not moved. Deliberately not planned until a workflow demands it. |
-| **Record into a slot** (`session_record`) · capture half **ADDRESSED 07/2026** | Medium   | `capture_midi` now keeps the MIDI just played, from Live's retroactive buffer — the "keep that" move needs no arming and no mouse. A *deliberate* take (arm, count in, record into a slot) still has no tool; that's `session_record`, roadmap #4. |
+| **Record into a slot** (`session_record`) · capture half **ADDRESSED 07/2026** | Medium   | `capture_midi` now keeps the MIDI just played, from Live's retroactive buffer — the "keep that" move needs no arming and no mouse. A *deliberate* take (arm, count in, record into a slot) still has no tool; that's `session_record`, roadmap #2. |
 | **Per-clip properties** (clip loop/start/end, launch mode)                | Medium   | `set_loop` is the _song_ loop, not a clip's loop. No control of a clip's own loop brace, length after creation, or launch quantization.             |
 | **Quantize notes** (`quantize_clip`)                                      | Medium   | The most common MIDI cleanup move, currently impossible without a full read→remove→rewrite by hand.                                                 |
 | **Set time signature** (`set_time_signature`)                             | Low-Med  | `get_session_state` reports it and `set_tempo` exists, but there's no setter. Cheap, obvious symmetry win.                                          |
@@ -115,6 +130,11 @@ Description quality is a real strength here. Two behaviors, though, were correct
 
 All 49 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
 
+Every **Structure**, **MIDI** and device-mutating tool below (sixteen in total —
+the list is in the follow-cam note above) steers Live's view onto what it changed
+as of 28 Jul 2026. Rows aren't annotated individually: it is a property of the
+category, not of any one tool.
+
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
 | `get_session_state`     | Read      | Keep   | Track-level state. Solid. Stays fresh by push; `refresh: true` is the backstop. |
@@ -147,11 +167,11 @@ All 49 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** =
 | `set_tempo`             | Transport | Keep   | Pairs with a missing `set_time_signature`.               |
 | `set_metronome`         | Transport | Keep   | —                                                        |
 | `set_loop`              | Transport | Keep   | Song loop — distinct from per-clip loop gap.             |
-| `capture_midi`          | Transport | Keep   | New 07/2026. Verifies by clip-grid diff (the address never replies); reports Live's tempo inference. |
+| `capture_midi`          | Transport | Keep   | New 07/2026. Verifies by clip-grid diff (the address never replies); reports Live's tempo inference. Optional `name` (07/2026). |
 | `fire_clip`             | Launch    | Keep   | Fixed 07/2026 — empty slot errors, not a silent stop.    |
 | `fire_scene`            | Launch    | Keep   | —                                                        |
 | `stop_clip`             | Launch    | Keep   | —                                                        |
-| `write_midi_notes`      | MIDI      | Keep   | Fixed 07/2026 — audio and group tracks error.            |
+| `write_midi_notes`      | MIDI      | Keep   | Fixed 07/2026 — audio and group tracks error. Optional `name` (07/2026). |
 | `remove_notes`          | MIDI      | Keep   | Default-all is a mild footgun.                           |
 | `list_browser_items`    | Devices   | Keep   | Fallback note already present — overlap resolved.        |
 | `load_device`           | Devices   | Keep   | Good echo-and-verify pattern.                            |

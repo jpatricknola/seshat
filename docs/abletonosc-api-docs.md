@@ -183,6 +183,38 @@ User interface control — selecting tracks, scenes, clips, devices.
 | `/live/view/start_listen/selected_track` | | `selected_track` | Listen for track selection changes |
 | `/live/view/stop_listen/selected_scene` | | | Stop listening for scene changes |
 | `/live/view/stop_listen/selected_track` | | | Stop listening for track changes |
+| `/live/view/show_view` | `view_name` | | ⚠️ **Seshat extension** — bring a pane into view |
+| `/live/view/set/detail_clip` | `track_index, scene_index` | | ⚠️ **Seshat extension** — put a clip in the Detail view |
+
+- `/live/view/set/selected_track` resolves its index through `song.tracks`, so
+  it reaches **regular tracks only** — a return track cannot be selected on it at
+  any index. Use `/live/return_track/select` (Seshat extension, see the Return
+  Track & Master API below).
+
+### View extensions (Seshat — not in upstream AbletonOSC)
+
+⚠️ The last two rows do **not** exist in stock AbletonOSC. They are served by
+`abletonosc/view.py` in Seshat's fork (`priv/AbletonOSC`), installed with
+`mix abletonosc.install` (restart Live afterwards) — the only Seshat addresses
+that live in an *upstream* file. Without that install both are unknown and
+silently do nothing.
+
+Upstream can *select* a track, scene, clip or device, but it cannot show the
+pane those live in: `Application.View.show_view` and `song.view.detail_clip`
+have no upstream address. Seshat's view steering needs both — selecting a clip
+nobody can see is not confirmation that anything happened.
+
+- `show_view` takes one of Live's own pane names: `Browser`, `Arranger`,
+  `Session`, `Detail`, `Detail/Clip`, `Detail/DeviceChain`. Seshat sends
+  `Session`, `Detail/Clip` and `Detail/DeviceChain`.
+- `set/detail_clip` puts `song.tracks[track_index].clip_slots[scene_index]`'s
+  clip into the Detail view. Pair it with `show_view Detail/Clip` to open the
+  note editor on it.
+- **Both are silent**, like upstream's setters — an unknown view name or an
+  empty clip slot is logged to Live's `Log.txt` and nothing goes on the wire.
+  They are view steering that follows an already-successful tool, and steering
+  must never fail or delay the thing it follows, so the ok/error envelope the
+  fork's *getters* use deliberately does not apply.
 
 ---
 
@@ -517,7 +549,7 @@ path — so a query resolves instead of hanging.
 |---|---|---|---|
 | `/live/browser/get/items` | `category, filter, max_results` | `category, filter, 'ok', returned, total, [name, path, uri, ...]` | Search a browser category |
 | `/live/browser/get/items` | | `category, filter, 'error', message` | Unknown category, or indexing failed |
-| `/live/browser/load_item` | `track_id, uri` | `track_id, uri, 'ok', device_name` | Load a browser item onto a track |
+| `/live/browser/load_item` | `track_id, uri` | `track_id, uri, 'ok', device_name, device_index` | Load a browser item onto a track |
 | `/live/browser/load_item` | | `track_id, uri, 'error', message` | Bad track index, unknown uri, or load failed |
 | `/live/browser/export` | `dest_path` | `dest_path, 'ok', total_items` | Walk every category and write the whole index to a JSON file |
 | `/live/browser/export` | | `dest_path, 'error', message` | Missing path, no category indexable, or the write failed |
@@ -553,6 +585,15 @@ path — so a query resolves instead of hanging.
   the last walk.
 - `load_item` selects the target track and loads in one operation, then reads
   the track's device list back so `device_name` reflects what actually landed.
+- `device_index` is that device's position in `track.devices` — the index
+  `/live/view/set/selected_device` and every `/live/device/*` address take — so
+  the caller can act on what it just loaded without re-reading the chain. It is
+  **`-1`** when the device isn't on the chain to be indexed: some VST/AU plugins
+  instantiate asynchronously and aren't there yet when the reply is built.
+  `load_item` does not always append at the end (an instrument lands *before*
+  existing audio effects), so the index is found by diffing the chain against
+  what it held immediately before the load — the device that's new — falling
+  back to a name match, then the last device, when diffing doesn't resolve it.
 - Regular tracks only (`song.tracks`) — return and master tracks aren't
   addressable here.
 
@@ -587,16 +628,18 @@ directory and deletes the file afterwards.
 
 ## Return Track & Master API (Seshat extension — not in upstream AbletonOSC)
 
-⚠️ These thirteen addresses do **not** exist in stock AbletonOSC. They are served
+⚠️ These fourteen addresses do **not** exist in stock AbletonOSC. They are served
 by `abletonosc/return_track.py` in Seshat's fork (`priv/AbletonOSC`), installed
 with `mix abletonosc.install` (restart Live afterwards). Without that install all
-thirteen addresses are unknown and queries time out.
+fourteen addresses are unknown and queries time out.
 
 They exist because upstream reaches regular tracks only: every `/live/track/*`
 handler resolves its index through `song.tracks`. Return tracks live in
 `song.return_tracks` and the master in `song.master_track`, so upstream can
 create and delete a return track but can neither name one nor touch its level,
-and the master fader is unreachable entirely.
+and the master fader is unreachable entirely. `/live/view/set/selected_track`
+indexes `song.tracks` too, which is why selecting a return needs an address of
+ours as well.
 
 Return-track indices are 0-based **within `song.return_tracks`** — a separate
 index space from regular tracks. Return N is the target of send N on every
@@ -612,6 +655,7 @@ track needs no index at all.
 | `/live/return_track/get/volume` | `return_index` | `return_index, "ok", volume` | Return fader, 0.0 to 1.0 |
 | | | `return_index, "error", message` | Index out of range |
 | `/live/return_track/set/volume` | `return_index, volume` | | Set the return fader |
+| `/live/return_track/select` | `return_index` | | Select a return track in Live's UI |
 | `/live/master/get/volume` | | `volume` | Master fader, 0.0 to 1.0 |
 | `/live/master/set/volume` | `volume` | | Set the master fader |
 | `/live/return_track/start_listen/name` | `return_index` | | Push `/live/return_track/get/name [return_index, name]` on every change |
@@ -633,6 +677,9 @@ track needs no index at all.
 - **Setters are silent**, like upstream's. Every caller guards with the matching
   getter immediately beforehand, so a bad index has already been reported by the
   time a setter goes out, and nothing waits on one.
+- `select` is silent too, for a stronger reason: it is view steering that follows
+  a tool which has already succeeded, and steering must never fail — or delay —
+  the thing it follows. A bad index is logged in Live and nothing happens.
 - Volume is `mixer_device.volume.value` on Live's fader scale, the same property
   and scale as `/live/track/get|set/volume`.
 - Creating and deleting return tracks is upstream's job:

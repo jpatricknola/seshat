@@ -124,7 +124,10 @@ defmodule Seshat.Tools.Definitions do
           "Use get_session_state first to resolve track names to indices and to check the current time signature. " <>
           "Use get_clip_slots first to pick an empty slot on an actually-MIDI track: writing to " <>
           "an audio track or a group track is rejected with an error and nothing is written. " <>
-          "Clip slot N sits in scene N — slot 0 is the first scene.",
+          "Clip slot N sits in scene N — slot 0 is the first scene. " <>
+          "Optionally pass name to label the clip. After the write, Live's view follows " <>
+          "automatically — the clip is selected with the note editor open — so no select_track " <>
+          "call is needed to show the result.",
       parameters: %{
         type: "object",
         properties: %{
@@ -135,6 +138,14 @@ defmodule Seshat.Tools.Definitions do
           "clip_slot" => %{
             type: "integer",
             description: "0-indexed scene/clip slot. Defaults to 0 if omitted."
+          },
+          "name" => %{
+            type: "string",
+            description:
+              "Optional clip name, shown on the clip in Live's Session grid and in " <>
+                "get_clip_slots readouts. Only used when creating or writing the clip — omit " <>
+                "to leave it unnamed (there is no auto-generated fallback); set_clip_name " <>
+                "renames later."
           },
           "clip_length" => %{
             type: "number",
@@ -272,14 +283,28 @@ defmodule Seshat.Tools.Definitions do
           "Ableton Live keeps a buffer of recent MIDI input even when nothing was armed or " <>
           "recording, so this is the \"keep that\" move when the user stumbles onto something " <>
           "good while noodling. Call it right away: the buffer is ephemeral, and re-playing an " <>
-          "idea never feels the same. No parameters — Live itself decides which track(s) the " <>
-          "material belongs to (the tracks that received the MIDI) and where the clip lands. " <>
+          "idea never feels the same. Nothing about placement is yours to choose — Live itself " <>
+          "decides which track(s) the material belongs to (the tracks that received the MIDI) " <>
+          "and where the clip lands; the only parameter is an optional name for what it keeps. " <>
           "The reply reports exactly which clip(s) appeared (track, slot, length, whether Live " <>
           "started them playing) and whether Live adjusted the song tempo to match the playing " <>
           "— it does that when the transport was stopped. MIDI only; audio can't be captured. " <>
           "If nothing MIDI was played since the last capture, the reply says nothing appeared. " <>
-          "Follow up with get_clip_notes to inspect what was kept, or set_clip_name to label it.",
-      parameters: %{type: "object", properties: %{}, required: []}
+          "The view follows the capture automatically: the new clip is selected with the note " <>
+          "editor open, even mid-playback. " <>
+          "Follow up with get_clip_notes to inspect what was kept, or set_clip_name to rename it.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "name" => %{
+            type: "string",
+            description:
+              "Optional name for the captured clip(s), shown in Live's Session grid. Omit to " <>
+                "leave them unnamed."
+          }
+        },
+        required: []
+      }
     },
     # --- Undo / Redo ---
     %{
@@ -705,7 +730,9 @@ defmodule Seshat.Tools.Definitions do
           "The reply names the device that actually landed on the track — check it matches what " <>
           "you asked for before telling the user it worked. " <>
           "A wrong or unwanted load is not permanent: delete_device removes it, which is how to " <>
-          "audition candidates in place (load, listen, delete, load the next).",
+          "audition candidates in place (load, listen, delete, load the next). " <>
+          "The view follows the load automatically — the new device is selected with its panel " <>
+          "open.",
       parameters: %{
         type: "object",
         properties: %{

@@ -930,6 +930,50 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "name_captured_clip/2" do
+    test "leaves the clip untouched when capture_midi got no name" do
+      clip = captured_clip()
+
+      assert Handlers.name_captured_clip(clip, nil) == clip
+    end
+
+    # Transport isn't started in test (config/test.exs sets start_osc: false),
+    # so the rename send hits :noproc — this also exercises maybe_name_clip/3's
+    # exit guard (review round 2, finding 2): it must not crash the caller.
+    test "substitutes the name without a round trip, and survives the transport being down" do
+      clip = captured_clip(%{clip: %{name: "", length: 8.0, playing?: false, recording?: false}})
+
+      named = Handlers.name_captured_clip(clip, "Bass")
+
+      assert named.clip.name == "Bass"
+      assert named.track_index == clip.track_index
+      assert named.slot_index == clip.slot_index
+    end
+
+    test "capture_midi's reply prints the model-supplied name" do
+      named = Handlers.name_captured_clip(captured_clip(), "Bass")
+
+      reply = Handlers.captured_reply([named], 0, 120.0, 120.0)
+
+      assert reply =~ ~s{"Bass"}
+    end
+  end
+
+  describe "captured_steer_target/1" do
+    test "nil when nothing was captured" do
+      assert Handlers.captured_steer_target([]) == nil
+    end
+
+    test "picks the first clip, in the track-then-slot order capture_diff/2 produces" do
+      clips = [
+        captured_clip(%{track_index: 0, slot_index: 3}),
+        captured_clip(%{track_index: 1, slot_index: 0})
+      ]
+
+      assert Handlers.captured_steer_target(clips) == %{track: 0, slot: 3}
+    end
+  end
+
   describe "note_range_args/1" do
     # AbletonOSC's handler raises unless it gets exactly 0 or 4 range args.
     test "sends nothing when no range param was given" do

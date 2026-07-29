@@ -45,8 +45,20 @@ exist because a typo'd address looks exactly like success.
   and
   [priv/AbletonOSC/abletonosc/return_track.py](../../priv/AbletonOSC/abletonosc/return_track.py)
   respectively. Upstream's track addresses only reach `song.tracks` (regular
-  tracks) — returns and the master come from the second file. Any new address
-  upstream doesn't provide goes there the same way.
+  tracks) — returns and the master come from the second file, including
+  `/live/return_track/select`, because `/live/view/set/selected_track` indexes
+  `song.tracks` too. Any new address upstream doesn't provide goes there the
+  same way.
+- **Two view addresses of ours live inside upstream's own `view.py`**:
+  `/live/view/show_view` and `/live/view/set/detail_clip`, in
+  [priv/AbletonOSC/abletonosc/view.py](../../priv/AbletonOSC/abletonosc/view.py).
+  Upstream can *select* a track, scene, clip or device but cannot show the pane
+  it lives in — `Application.View.show_view` and `song.view.detail_clip` have no
+  upstream address — which is what `Seshat.Tools.FollowCam` needs. Both are
+  silent: a bad view name or an empty clip slot is logged in Live and nothing
+  goes on the wire. Steering must never fail or delay the tool it follows, so
+  the "a vendored getter always replies" rule below deliberately does not reach
+  them.
 - **Two addresses of ours live under a prefix upstream owns**:
   `/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
   from

@@ -9,11 +9,14 @@ defmodule Seshat.Tools.Handlers do
   `Seshat.Commands.Registry`.
   """
 
+  require Logger
+
   alias Seshat.Commands.{Command, Registry}
   alias Seshat.Library.Catalog
   alias Seshat.Music.Pitch
   alias Seshat.OSC.Transport
   alias Seshat.Session.State
+  alias Seshat.Tools.FollowCam
 
   # Browsing and loading are both far slower than a property read: the first
   # walk of a big browser category takes seconds, and a heavy plugin can take
@@ -85,6 +88,12 @@ defmodule Seshat.Tools.Handlers do
   # Live defers inserting the captured clip past the LOM call's return. Short
   # enough to be invisible next to the round trips either side of it.
   @capture_retry_delay 250
+
+  # A delete steers to whatever now occupies the index it emptied, which needs
+  # the post-delete count. Best-effort by design: this read exists only to aim
+  # the view, so it gets the guard timeout rather than the 5s default and a
+  # miss simply skips the steering — never the tool's own success reply.
+  @follow_cam_count_timeout 2_000
 
   @spec call(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
   def call(name, params) when is_binary(name) and is_map(params) do
@@ -940,8 +949,12 @@ defmodule Seshat.Tools.Handlers do
     command = %Command{command: :create_track, track_type: to_track_type(type), name: name}
 
     case Registry.execute(command) do
-      :ok -> {:ok, "Created #{type} track '#{name}'"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:ok, index} ->
+        FollowCam.steer("create_track", %{track: index})
+        {:ok, "Created #{type} track '#{name}' at index #{index}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
@@ -974,8 +987,14 @@ defmodule Seshat.Tools.Handlers do
 
     with :ok <- ensure_midi_track(track),
          :ok <- Registry.execute(command) do
+      name = Map.get(params, "name")
+      maybe_name_clip(track, slot, name)
+      FollowCam.steer("write_midi_notes", %{track: track, slot: slot})
+
       note_count = length(parsed_notes)
-      {:ok, "Wrote #{note_count} note(s) to track #{track}, clip slot #{slot}"}
+
+      {:ok,
+       "Wrote #{note_count} note(s) to track #{track}, clip slot #{slot}#{clip_name_note(name)}"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
@@ -999,6 +1018,7 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("delete_track", %{"track" => track}) do
     case Transport.send_message("/live/song/delete_track", [track]) do
       :ok ->
+        steer_after_delete("delete_track", %{track: track}, "/live/song/get/num_tracks")
         State.refresh()
         {:ok, "Deleted track #{track}"}
 
@@ -1007,11 +1027,14 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # ⚠️ Live placing the duplicate at source + 1 is the UI's behaviour and is
+  # assumed here; it is a smoke-test item.
   defp do_call("duplicate_track", %{"track" => track}) do
     case Transport.send_message("/live/song/duplicate_track", [track]) do
       :ok ->
+        FollowCam.steer("duplicate_track", %{track: track + 1})
         State.refresh()
-        {:ok, "Duplicated track #{track}"}
+        {:ok, "Duplicated track #{track} — the copy is track #{track + 1}"}
 
       {:error, reason} ->
         {:error, inspect(reason)}
@@ -1072,10 +1095,10 @@ defmodule Seshat.Tools.Handlers do
   # and report the difference. Deliberately behaviour-agnostic — Live's
   # placement rules (which track, which slot, whether a scene gets added) are
   # observed rather than modelled.
-  defp do_call("capture_midi", _params) do
+  defp do_call("capture_midi", params) do
     with {:ok, tempo_before} <- query_tempo(),
          {:ok, before_grid} <- snapshot_grid() do
-      fire_capture(tempo_before, before_grid)
+      fire_capture(tempo_before, before_grid, Map.get(params, "name"))
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
@@ -1130,6 +1153,8 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("create_return_track", %{"name" => name}) do
     case Registry.execute(%Command{command: :create_return_track, name: name}) do
       {:ok, index} ->
+        FollowCam.steer("create_return_track", %{return: index})
+
         {:ok,
          ~s{Created return track "#{name}" (return #{index} — send #{send_letter(index)} on } <>
            "every track). It has no effect on it yet: Seshat cannot load a device onto a " <>
@@ -1154,6 +1179,12 @@ defmodule Seshat.Tools.Handlers do
              @return_extension_hint
            ),
          :ok <- Transport.send_message("/live/song/delete_return_track", [index]) do
+      steer_after_delete(
+        "delete_return_track",
+        %{return: index},
+        "/live/return_track/get/count"
+      )
+
       State.refresh()
 
       {:ok,
@@ -1248,8 +1279,12 @@ defmodule Seshat.Tools.Handlers do
 
   defp do_call("delete_clip", %{"track" => track, "clip_slot" => slot}) do
     case Transport.send_message("/live/clip_slot/delete_clip", [track, slot]) do
-      :ok -> {:ok, "Deleted clip on track #{track}, slot #{slot}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      :ok ->
+        FollowCam.steer("delete_clip", %{track: track, slot: slot})
+        {:ok, "Deleted clip on track #{track}, slot #{slot}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
@@ -1260,8 +1295,12 @@ defmodule Seshat.Tools.Handlers do
          "target_clip_slot" => ts
        }) do
     case Transport.send_message("/live/clip_slot/duplicate_clip_to", [t, s, tt, ts]) do
-      :ok -> {:ok, "Duplicated clip from track #{t}/slot #{s} to track #{tt}/slot #{ts}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      :ok ->
+        FollowCam.steer("duplicate_clip", %{track: tt, slot: ts})
+        {:ok, "Duplicated clip from track #{t}/slot #{s} to track #{tt}/slot #{ts}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
@@ -1281,24 +1320,49 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # `-1` means "append", so the new scene's index is only knowable afterwards —
+  # hence the count read, which also lets the reply name the index the model will
+  # need next. Best-effort like every follow-cam read: a miss falls back to the
+  # unresolved wording rather than failing a create that succeeded.
   defp do_call("create_scene", %{"index" => index}) do
     case Transport.send_message("/live/song/create_scene", [index]) do
-      :ok -> {:ok, "Created scene at index #{index}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      :ok ->
+        case created_scene_index(index) do
+          {:ok, scene} ->
+            FollowCam.steer("create_scene", %{scene: scene})
+            {:ok, "Created scene at index #{scene}"}
+
+          :error ->
+            {:ok,
+             "Created a scene at the end of the session — reading the scene count back to " <>
+               "confirm its index timed out, so check get_clip_slots if you need it."}
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
   defp do_call("delete_scene", %{"scene" => scene}) do
     case Transport.send_message("/live/song/delete_scene", [scene]) do
-      :ok -> {:ok, "Deleted scene #{scene}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      :ok ->
+        steer_after_delete("delete_scene", %{scene: scene}, "/live/song/get/num_scenes")
+        {:ok, "Deleted scene #{scene}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
+  # ⚠️ Live placing the copy at source + 1 is assumed, as in duplicate_track.
   defp do_call("duplicate_scene", %{"scene" => scene}) do
     case Transport.send_message("/live/song/duplicate_scene", [scene]) do
-      :ok -> {:ok, "Duplicated scene #{scene}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      :ok ->
+        FollowCam.steer("duplicate_scene", %{scene: scene + 1})
+        {:ok, "Duplicated scene #{scene} — the copy is scene #{scene + 1}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
@@ -1356,8 +1420,12 @@ defmodule Seshat.Tools.Handlers do
            start_time / 1.0,
            time_span / 1.0
          ]) do
-      :ok -> {:ok, "Removed notes from track #{track}, clip slot #{slot}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      :ok ->
+        FollowCam.steer("remove_notes", %{track: track, slot: slot})
+        {:ok, "Removed notes from track #{track}, clip slot #{slot}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 
@@ -1478,12 +1546,23 @@ defmodule Seshat.Tools.Handlers do
 
   defp do_call("load_device", %{"track" => track, "uri" => uri}) do
     case Transport.query("/live/browser/load_item", [track, uri], @load_timeout) do
-      {:ok, {_address, [_track, _uri, "ok", name]}} ->
+      {:ok, {_address, [_track, _uri, "ok", name, device]}} ->
         Catalog.record_load(uri)
-        {:ok, "Loaded '#{name}' onto track #{track}"}
+        FollowCam.steer("load_device", %{track: track, device: device})
+        {:ok, "Loaded '#{name}' onto track #{track}#{loaded_device_note(device)}"}
 
       {:ok, {_address, [_track, _uri, "error", message]}} ->
         {:error, message}
+
+      # The 4-element ok reply is the *previous* shape of this address, which is
+      # our own — so seeing it means Live is running an older copy of the fork.
+      # Not a compat path: a self-diagnosing refusal, since the device did load
+      # and a silent degrade would hide why the view never followed.
+      {:ok, {_address, [_track, _uri, "ok", name]}} ->
+        {:error,
+         "Loaded '#{name}' onto track #{track}, but Ableton is running an older copy of " <>
+           "Seshat's AbletonOSC extension: its reply carries no device index, so the view " <>
+           "can't follow the load. Run `mix abletonosc.install` and restart Ableton Live."}
 
       {:ok, {_address, args}} ->
         {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
@@ -1578,6 +1657,12 @@ defmodule Seshat.Tools.Handlers do
          {:ok, device} <- ensure_device_index(track, device, names),
          :ok <- Transport.send_message("/live/track/delete_device", [track, device]),
          :ok <- confirm_device_count(track, length(names) - 1) do
+      FollowCam.steer("delete_device", %{
+        track: track,
+        device: device,
+        remaining: length(names) - 1
+      })
+
       {:ok, deleted_device_reply(track, device, names)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
@@ -1728,6 +1813,89 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # --- Follow cam helpers ---
+  #
+  # The decision of *where* to steer is pure and lives in `Seshat.Tools.FollowCam`.
+  # What's left here is gathering the one fact a delete needs — how many of that
+  # kind of object are left — and the optional clip name.
+
+  # Ordering matters: this query runs *before* the clause's own `State.refresh()`
+  # cast, so its reply can't interleave with that explicit refresh's queries to
+  # the same address (Transport correlates replies by address alone, with a
+  # single `pending` slot — a second in-flight query to the same address steals
+  # the first caller's reply). That does *not* cover every source of contention:
+  # the delete itself makes `song_structure.py` push `/live/song/get/tracks`,
+  # which `Session.State` turns into its own synchronous read of this same
+  # address, independent of the cast below and capable of racing this query.
+  # If that race is lost, this call reports `:error` (see `remaining_count/1`)
+  # and steering is simply skipped for that delete — never a crash or a wrong
+  # index. The steering sends themselves are fire-and-forget and race nothing.
+  defp steer_after_delete(tool, facts, count_address) do
+    case remaining_count(count_address) do
+      {:ok, remaining} -> FollowCam.steer(tool, Map.put(facts, :remaining, remaining))
+      :error -> :ok
+    end
+  end
+
+  # Deliberately total: every failure — timeout, missing extension, a reply shape
+  # we don't recognise — means "don't steer", never "fail the tool".
+  defp remaining_count(address) do
+    case Transport.query(address, [], @follow_cam_count_timeout) do
+      {:ok, {_addr, [count]}} when is_integer(count) -> {:ok, count}
+      _other -> :error
+    end
+  catch
+    :exit, _ -> :error
+  end
+
+  # `-1` appends, so the new scene is the last one; any other index is where it
+  # was inserted.
+  defp created_scene_index(-1) do
+    with {:ok, count} when count > 0 <- remaining_count("/live/song/get/num_scenes") do
+      {:ok, count - 1}
+    else
+      _other -> :error
+    end
+  end
+
+  defp created_scene_index(index), do: {:ok, index}
+
+  defp maybe_name_clip(_track, _slot, nil), do: :ok
+
+  # Fire-and-forget, like `set_clip_name`'s own send — but this runs *after* a
+  # mutation (write_midi_notes, capture_midi) that already succeeded, inside a
+  # function whose own `catch :exit` assumes nothing past that point can still
+  # exit. Left uncaught, a dead/restarting Transport here would surface as the
+  # enclosing tool's timeout message, denying a write or capture that actually
+  # landed. Catch and log instead: worst case the clip keeps its default name.
+  defp maybe_name_clip(track, slot, name) do
+    case Transport.send_message("/live/clip/set/name", [track, slot, name]) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.debug(
+          "maybe_name_clip: /live/clip/set/name failed for track #{track}, slot #{slot}: " <>
+            inspect(reason)
+        )
+
+        :ok
+    end
+  catch
+    :exit, _ ->
+      Logger.debug(
+        "maybe_name_clip: transport unavailable, skipped naming clip at track #{track}, slot #{slot}"
+      )
+
+      :ok
+  end
+
+  defp clip_name_note(nil), do: ""
+  defp clip_name_note(name), do: ~s{, named "#{name}"}
+
+  defp loaded_device_note(-1), do: " (still instantiating, so it has no device index yet)"
+  defp loaded_device_note(device), do: " (device #{device})"
+
   # --- capture_midi ---
 
   defp query_tempo do
@@ -1748,11 +1916,11 @@ defmodule Seshat.Tools.Handlers do
   # precedent. AbletonOSC processes datagrams in arrival order and
   # `song.capture_midi()` runs synchronously inside its callback, so the tempo
   # query sent afterwards reads the post-capture value.
-  defp fire_capture(tempo_before, before_grid) do
+  defp fire_capture(tempo_before, before_grid, name) do
     with :ok <- Transport.send_message("/live/song/capture_midi", []),
          {:ok, tempo_after} <- query_tempo(),
          {:ok, after_grid} <- snapshot_grid() do
-      report_capture(before_grid, after_grid, tempo_before, tempo_after)
+      report_capture(before_grid, after_grid, tempo_before, tempo_after, name)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
@@ -1764,20 +1932,20 @@ defmodule Seshat.Tools.Handlers do
          "get_clip_slots."}
   end
 
-  defp report_capture(before_grid, after_grid, tempo_before, tempo_after) do
+  defp report_capture(before_grid, after_grid, tempo_before, tempo_after, name) do
     case capture_diff(before_grid, after_grid) do
       {[], _scenes_added} ->
-        retry_capture_diff(before_grid, tempo_before, tempo_after)
+        retry_capture_diff(before_grid, tempo_before, tempo_after, name)
 
       {clips, scenes_added} ->
-        {:ok, captured_reply(clips, scenes_added, tempo_before, tempo_after)}
+        captured_success(clips, scenes_added, tempo_before, tempo_after, name)
     end
   end
 
   # ⚠️ Unconfirmed whether Live has inserted the clip by the time the LOM call
   # returns — it may defer the insertion to a later UI tick. One bounded re-read
   # covers that case without turning a genuine nothing-captured into a stall.
-  defp retry_capture_diff(before_grid, tempo_before, tempo_after) do
+  defp retry_capture_diff(before_grid, tempo_before, tempo_after, name) do
     Process.sleep(@capture_retry_delay)
 
     with {:ok, after_grid} <- snapshot_grid() do
@@ -1786,8 +1954,57 @@ defmodule Seshat.Tools.Handlers do
           {:error, nothing_captured_reply(tempo_before, tempo_after)}
 
         {clips, scenes_added} ->
-          {:ok, captured_reply(clips, scenes_added, tempo_before, tempo_after)}
+          captured_success(clips, scenes_added, tempo_before, tempo_after, name)
       end
+    end
+  end
+
+  # One capture is one take, so a multi-track capture gets the same name on every
+  # clip it produced. The name is substituted into the clip maps rather than
+  # re-read: the after-snapshot predates the rename, so re-reading would cost a
+  # round trip for a string we just wrote — the same trust `set_clip_name`
+  # extends to its own fire-and-forget send.
+  defp captured_success(clips, scenes_added, tempo_before, tempo_after, name) do
+    clips = Enum.map(clips, &name_captured_clip(&1, name))
+    steer_to_captured(clips)
+
+    {:ok, captured_reply(clips, scenes_added, tempo_before, tempo_after)}
+  end
+
+  @doc """
+  Applies `capture_midi`'s optional model-supplied `name` to one captured clip.
+
+  Fires the rename (`maybe_name_clip/3`, itself exit-safe) and, independently
+  of whether that send lands, substitutes the name into the returned map so
+  `captured_reply/4` prints what was asked for rather than the `""` Live gave
+  the clip by default.
+  """
+  @spec name_captured_clip(map(), String.t() | nil) :: map()
+  def name_captured_clip(clip, nil), do: clip
+
+  def name_captured_clip(%{track_index: track, slot_index: slot} = new_clip, name) do
+    maybe_name_clip(track, slot, name)
+    %{new_clip | clip: %{new_clip.clip | name: name}}
+  end
+
+  @doc """
+  Which of `capture_midi`'s new clips gets the follow cam.
+
+  Several new clips means one take spread across tracks; `clips` is already in
+  track-then-slot order (`capture_diff/2`'s own ordering), so the first entry
+  is the one to show. `nil` when nothing was captured.
+  """
+  @spec captured_steer_target([map()]) ::
+          %{track: non_neg_integer(), slot: non_neg_integer()} | nil
+  def captured_steer_target([%{track_index: track, slot_index: slot} | _rest]),
+    do: %{track: track, slot: slot}
+
+  def captured_steer_target([]), do: nil
+
+  defp steer_to_captured(clips) do
+    case captured_steer_target(clips) do
+      nil -> :ok
+      facts -> FollowCam.steer("capture_midi", facts)
     end
   end
 
@@ -1999,8 +2216,12 @@ defmodule Seshat.Tools.Handlers do
          "was removed — verify with get_track_devices."}
   end
 
+  # Steering happens on the no-op path too: showing the device is the
+  # confirmation either way, and "it was already off" is exactly the answer a
+  # user is most likely to want to see for themselves.
   defp set_device_enabled(track, device, name, enabled, prior) do
     if String.downcase(to_string(prior)) == String.downcase(on_off_label(enabled)) do
+      FollowCam.steer("bypass_device", %{track: track, device: device})
       {:ok, bypass_noop_reply(name, track, device, enabled)}
     else
       with :ok <-
@@ -2009,6 +2230,7 @@ defmodule Seshat.Tools.Handlers do
                [track, device, 0, if(enabled, do: 1.0, else: 0.0)]
              ),
            :ok <- confirm_device_enabled(track, device, enabled) do
+        FollowCam.steer("bypass_device", %{track: track, device: device})
         {:ok, bypass_reply(name, track, device, enabled)}
       else
         {:error, reason} when is_binary(reason) -> {:error, reason}
