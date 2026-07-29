@@ -1,6 +1,20 @@
 # Plan — Session record: deliberate takes into clip slots
 
-Roadmap #1. Two new tools — `record_clip` and `stop_recording` — that close
+> **Archived 2026-07-29 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `record_clip` and
+> `stop_recording` live in `Seshat.Tools.Definitions` / `Handlers`
+> (`record_length_beats/3` plus the session-recording helper block), with
+> `Seshat.Tools.FollowCam` steering to the slot/clip they touch. No fork
+> change was needed — the feature rides `/live/clip_slot/fire`'s existing
+> `record_length` argument. The four ⚠️ open questions below (record-length
+> beat counting in odd meters, re-fire-to-stop behavior, `is_triggered`'s
+> queued-window reading, and exclusive-arm interaction) were never resolved
+> against a live Ableton and are carried forward as smoke-test items — see
+> `feature/session-record`'s PR for the full list. Any remaining roadmap
+> follow-ups (a `/smoke-test` section for these tools, the clip-grid-in-
+> session-state trigger) live in `docs/ROADMAP.md`.
+
+Roadmap #1 (at the time this was written). Two new tools — `record_clip` and `stop_recording` — that close
 the record loop: a deliberate take into a chosen Session slot, fixed-length
 ("record me eight bars on the keys") or open-ended ("record until I stop
 you"), on MIDI *and audio* tracks. **No fork changes and no
