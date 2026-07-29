@@ -20,7 +20,7 @@ address — naming is irregular, and a wrong address fails silently.
 
 **The play-and-keep arc (#1 · #2 · #7 · #8):** today the agent generates and
 the user listens. `capture_midi` (shipped 2026-07-28) was the first step;
-these four remaining issues — session record, per-clip properties, quantize,
+these four remaining issues — per-clip properties, session record, quantize,
 groove — carry the rest: the user plays, Seshat keeps it and cleans it up.
 That is the largest gap between the current state and the mission, and it is
 cheap: mostly upstream addresses, and quantize's now ships with the fork. The
@@ -29,7 +29,47 @@ quick wins interleaved among them come from the 2026-07-28 validation run
 
 ---
 
-## #1 · Session record — deliberate takes into clip slots
+## #1 · Per-clip properties — loop brace, length, launch settings
+
+**Goal:** read/write a clip's own loop points and launch behavior:
+`/live/clip/get|set/loop_start`, `loop_end`, `start_marker`, `end_marker`,
+`launch_mode`, `launch_quantization`; warp mode and clip gain for audio clips.
+
+**Why:** `set_loop` is the *song* loop — a clip's own loop brace is
+unreachable. This blocks the natural sentence right after a capture: "loop
+the good two bars." Captured clips arrive with whatever length and brace Live
+inferred, so `capture_midi` is only half-usable without this — and a recorded
+take (#2) arrives with exactly the same problem, which is why this comes
+first: doing it after would ship a second half-usable way to keep a
+performance. It also fixes a standing audit gap (clip length can't be changed
+after creation). Cheapest issue of its size on the list — every address is
+upstream, so no fork commit, no `mix abletonosc.install`, no Live restart,
+and every write verifies by re-read.
+
+**Plan:** [PLAN_clip_properties.md](PLAN_clip_properties.md) — note it
+overturns the `looping` planner note below: the toggle is registered in the
+fork's `clip.py` (upstream code); only the docs row was missing.
+
+**Planner notes:**
+- Check every address against
+  [abletonosc-api-docs.md](abletonosc-api-docs.md) individually — clip
+  address naming is irregular; do not infer one address from another.
+  Confirmed present 2026-07-29: `loop_start`/`loop_end`,
+  `start_marker`/`end_marker`, `launch_mode`, `launch_quantization`,
+  `warp_mode`, `gain`, `legato`, `velocity_amount`, plus read-only `length`.
+- **`looping` — the clip's loop on/off switch — is not exposed upstream**
+  (checked 2026-07-29: the loop *points* are there, the toggle is not). Either
+  add it to the fork the way the other extensions were added, or cut it and
+  say so in the tool description. It is not free; don't let the goal line
+  above imply otherwise.
+- Audio-clip properties (warp, gain) only apply to audio clips — the tool
+  should error cleanly on MIDI clips rather than silently no-op, matching the
+  `write_midi_notes` guard precedent.
+- Decide granularity: one `set_clip_properties` tool vs. per-property tools.
+  The audit's finding that granular-by-object beats polymorphic merges
+  ([TOOL_AUDIT.md](TOOL_AUDIT.md) §01) is the relevant prior.
+
+## #2 · Session record — deliberate takes into clip slots
 
 **Goal:** tools to start/stop Session-view recording and report record state:
 `/live/song/set/session_record [1|0]`, `/live/song/trigger_session_record`,
@@ -37,12 +77,29 @@ quick wins interleaved among them come from the 2026-07-28 validation run
 
 **Why:** `set_track_arm` and `start_playing` exist, but nothing actually
 records — the record loop is incomplete, so those tools currently lead
-nowhere. This is the deliberate-take counterpart to `capture_midi`'s
-retroactive grab: "record me an eight-bar take on the keys track" becomes a
-real sentence, with
-the agent as engineer (arm, count in, record, stop) while the user performs.
+nowhere. Two things it buys that `capture_midi` cannot: the deliberate take
+into a chosen slot ("record me an eight-bar take on the keys track"), and
+**audio at all** — capture is MIDI-only by construction, so a vocal, a guitar
+or any hardware has no route into the set today. That second one is the real
+capability gap, and it is the reason this outranks everything below it.
 
 **Planner notes:**
+- **Settle who ends the take before anything else.** Session record runs until
+  something stops it, and the user's hands are on an instrument — they cannot
+  type "stop". There is no fixed-bar record, and **no count-in address**
+  (`Song.count_in_duration` is not in the API docs; checked 2026-07-29), so
+  "an eight-bar take" has to be built out of what exists: launch quantization
+  on a fired empty slot, the user stopping by hand, or a second conversational
+  turn. This is the question the issue turns on — the three addresses above
+  are the easy part.
+- `/live/clip_slot/fire` on an empty slot of an armed track is the actual
+  "record into *this* slot" mechanic; `session_record` is the global switch.
+  Decide which one the tool drives, and check both against the API docs.
+- `/live/song/get|set/midi_recording_quantization` shapes what the take comes
+  out as. Decide whether the tool touches it or leaves it to Live's own
+  setting — and note it is a *different* enum from `quantize_clip`'s (#7).
+- `/live/clip/get/is_recording` and `will_record_on_start` give a verifiable
+  echo, the way other tools verify against the mirror rather than assuming.
 - Scope is Session view only: arrangement overdub and punch in/out stay out
   (see Deliberately not planned).
 - Decide the tool shape: one `session_record` tool with a state param vs.
@@ -52,29 +109,6 @@ the agent as engineer (arm, count in, record, stop) while the user performs.
   spell out the preconditions (armed track, slot choice) in the house style —
   see [TOOL_AUDIT.md](TOOL_AUDIT.md) §04 for the exemplary-description
   pattern.
-
-## #2 · Per-clip properties — loop brace, length, launch settings
-
-**Goal:** read/write a clip's own loop points and launch behavior:
-`/live/clip/get|set/loop_start`, `loop_end`, `looping`, launch
-mode/quantization; warp mode and clip gain for audio clips.
-
-**Why:** `set_loop` is the *song* loop — a clip's own loop brace is
-unreachable. This blocks the natural sentence right after a capture: "loop
-the good two bars." Captured clips arrive with whatever length and brace Live
-inferred, so `capture_midi` is only half-usable without this. It also fixes a
-standing audit gap (clip length can't be changed after creation).
-
-**Planner notes:**
-- Check every address against
-  [abletonosc-api-docs.md](abletonosc-api-docs.md) individually — clip
-  address naming is irregular; do not infer one address from another.
-- Audio-clip properties (warp, gain) only apply to audio clips — the tool
-  should error cleanly on MIDI clips rather than silently no-op, matching the
-  `write_midi_notes` guard precedent.
-- Decide granularity: one `set_clip_properties` tool vs. per-property tools.
-  The audit's finding that granular-by-object beats polymorphic merges
-  ([TOOL_AUDIT.md](TOOL_AUDIT.md) §01) is the relevant prior.
 
 ## #3 · `start_new_project` — the setup wizard, and prompt budget back
 
@@ -231,7 +265,7 @@ stays announced and cause-driven instead of manual or unprompted.
 quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
 
 **Why:** "tighten the timing" is the most common cleanup move on played
-MIDI — the direct follow-up to `capture_midi`/session record (#1). Today it
+MIDI — the direct follow-up to `capture_midi`/session record (#2). Today it
 takes a full
 read → remove → rewrite by hand, which loses Live-native swing handling and
 burns tool calls.
@@ -443,7 +477,7 @@ into push-fresh `Session.State`.
 (tracks × scenes × properties). The standing decision
 ([archive/PLAN_clip_slot_state.md](archive/PLAN_clip_slot_state.md)) is to
 wait for evidence the grid is read constantly. Revisit after session record
-(#1) ships — `capture_midi` (shipped) and record will raise grid-read
+(#2) ships — `capture_midi` (shipped) and record will raise grid-read
 frequency. Index-keyed listeners like #18's — these are ordinary fork
 commits on the fixed base class.
 
