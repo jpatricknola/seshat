@@ -27,7 +27,10 @@ defmodule Seshat.Tools.FollowCam do
   Which tools steer is a settled decision, not a per-tool judgment: creates,
   writes and deletes do; parameter tweaks, transport, renames and reads do not.
   A view that jumps on every volume nudge is what would make someone ask for an
-  off switch, and there is deliberately no off switch.
+  off switch, and there is deliberately no off switch. `set_clip_properties`
+  counts as a write despite reading like a parameter tweak: its headline use is
+  reshaping a clip's audible extent right after a capture, and the moved loop
+  brace in the note editor *is* the confirmation.
   """
 
   alias Seshat.OSC.Transport
@@ -60,7 +63,13 @@ defmodule Seshat.Tools.FollowCam do
   # index rather than by "whatever is selected", so the two can't disagree if a
   # stray selection lands in between.
   def calls(tool, %{track: track, slot: slot})
-      when tool in ["write_midi_notes", "remove_notes", "duplicate_clip", "capture_midi"] do
+      when tool in [
+             "write_midi_notes",
+             "remove_notes",
+             "duplicate_clip",
+             "capture_midi",
+             "set_clip_properties"
+           ] do
     [
       {"/live/view/set/selected_clip", [track, slot]},
       {"/live/view/set/detail_clip", [track, slot]},

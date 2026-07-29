@@ -1,6 +1,6 @@
 # Seshat MCP — Tool Audit
 
-_Living doc · MCP design review · 49 tools in the surface · 25 Jul 2026 — update as tools change._
+_Living doc · MCP design review · 51 tools in the surface · 25 Jul 2026 — update as tools change._
 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
@@ -58,7 +58,7 @@ _Living doc · MCP design review · 49 tools in the surface · 25 Jul 2026 — u
 > three new vendored OSC addresses. See
 > [archive/PLAN_follow_cam.md](archive/PLAN_follow_cam.md).
 
-**At a glance:** 49 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
+**At a glance:** 51 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -87,8 +87,8 @@ Operations a producer would expect that no tool currently reaches, ranked by how
 | ~~**Sends / return tracks**~~ · **ADDRESSED 07/2026**                     | ~~High~~ | Was the top gap. `set_track_send` / `get_track_sends` / `create_return_track` / `delete_return_track` now cover the reverb-and-delay workflow. Loading a device *onto* a return is still manual. |
 | ~~**Remove / bypass a device**~~ · **ADDRESSED 07/2026** | ~~Med-High~~ | `delete_device` and `bypass_device` close the audition loop — a wrong load is undoable and a device can be A/B'd in place. Regular tracks only (upstream reaches `song.tracks` alone). |
 | **Reorder the device chain**                                              | Low      | The remaining half of the old one-way-device-workflow gap: a device can be added, bypassed and removed, but not moved. Deliberately not planned until a workflow demands it. |
-| **Record into a slot** (`session_record`) · capture half **ADDRESSED 07/2026** | Medium   | `capture_midi` now keeps the MIDI just played, from Live's retroactive buffer — the "keep that" move needs no arming and no mouse. A *deliberate* take (arm, count in, record into a slot) still has no tool; that's `session_record`, roadmap #2. |
-| **Per-clip properties** (clip loop/start/end, launch mode)                | Medium   | `set_loop` is the _song_ loop, not a clip's loop. No control of a clip's own loop brace, length after creation, or launch quantization.             |
+| **Record into a slot** (`session_record`) · capture half **ADDRESSED 07/2026** | Medium   | `capture_midi` now keeps the MIDI just played, from Live's retroactive buffer — the "keep that" move needs no arming and no mouse. A *deliberate* take (arm, record into a slot) still has no tool, and audio can't be recorded at all — capture is MIDI-only; that's `session_record`, roadmap #2. Note Live's count-in is not reachable over OSC. |
+| ~~**Per-clip properties** (clip loop/start/end, launch mode)~~ · **ADDRESSED 07/2026** | ~~Medium~~ | `get_clip_properties` and `set_clip_properties` reach a clip's own loop brace, play markers, launch mode/quantization, legato and velocity amount, plus gain/warp for audio clips — so a captured clip can now be trimmed to the good bars. Length still has no direct setter (Live has none); it follows from the markers or the loop. Still out: `muted`, `color`, `position`, `pitch_coarse`/`pitch_fine`, `ram_mode` and `duplicate_loop` — grab-bag territory, roadmap #21. |
 | **Quantize notes** (`quantize_clip`)                                      | Medium   | The most common MIDI cleanup move, currently impossible without a full read→remove→rewrite by hand.                                                 |
 | **Set time signature** (`set_time_signature`)                             | Low-Med  | `get_session_state` reports it and `set_tempo` exists, but there's no setter. Cheap, obvious symmetry win.                                          |
 | ~~**Master & return volume**~~ · **ADDRESSED 07/2026**                    | ~~Low-Med~~ | `set_master_volume` and `set_return_track_volume` ride along with the sends work, and `get_session_state` now reports both. Pan/mute/solo on returns and the master are still out. |
@@ -128,12 +128,12 @@ Description quality is a real strength here. Two behaviors, though, were correct
 
 ## 05 · Full Inventory
 
-All 49 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
+All 51 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
 
-Every **Structure**, **MIDI** and device-mutating tool below (sixteen in total —
-the list is in the follow-cam note above) steers Live's view onto what it changed
-as of 28 Jul 2026. Rows aren't annotated individually: it is a property of the
-category, not of any one tool.
+Every **Structure**, **MIDI** and device-mutating tool below (seventeen in total
+— the sixteen in the follow-cam note above, plus `set_clip_properties`) steers
+Live's view onto what it changed. Rows aren't annotated individually: it is a
+property of the category, not of any one tool.
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
@@ -166,7 +166,7 @@ category, not of any one tool.
 | `stop_playing`          | Transport | Keep   | —                                                        |
 | `set_tempo`             | Transport | Keep   | Pairs with a missing `set_time_signature`.               |
 | `set_metronome`         | Transport | Keep   | —                                                        |
-| `set_loop`              | Transport | Keep   | Song loop — distinct from per-clip loop gap.             |
+| `set_loop`              | Transport | Keep   | Song loop — description now points at `set_clip_properties` for a clip's own brace (07/2026). |
 | `capture_midi`          | Transport | Keep   | New 07/2026. Verifies by clip-grid diff (the address never replies); reports Live's tempo inference. Optional `name` (07/2026). |
 | `fire_clip`             | Launch    | Keep   | Fixed 07/2026 — empty slot errors, not a silent stop.    |
 | `fire_scene`            | Launch    | Keep   | —                                                        |
@@ -186,6 +186,8 @@ category, not of any one tool.
 | `set_master_volume`     | Mixer     | Keep   | New 07/2026. Reuses the track fader's dB labels.         |
 | `create_return_track`   | Structure | Keep   | New 07/2026. Errors at Live's 12-return cap.             |
 | `delete_return_track`   | Structure | Keep   | New 07/2026. Warns that send letters shift.              |
+| `get_clip_properties`   | Read      | Keep   | New 07/2026. Fourteen targeted reads of one clip; skips the audio-only set on a MIDI clip rather than timing out. |
+| `set_clip_properties`   | Clips     | Keep   | New 07/2026. One object, several optional properties (the `set_loop` shape). Orders paired writes so `start < end` holds after every message, then verifies each by re-read — clip setters never reply. **Known wart (PR review, 07/2026):** the pair-context read that drives that ordering runs *before* a `looping` toggle in the same call is sent, so on a clip whose stored loop brace differs from its play markers, a simultaneous `looping: true` + brace move can see stale (pre-toggle) values. That affects both halves of the decision: the write *ordering*, and the single-sided validation that rejects `loop_start` alone against the current `loop_end`. The read-back echo would still surface any resulting mismatch — nothing is silently corrupted — but the guarantee doesn't hold in that one case. Fix is cheap (send `looping` first, then read the pair context), though it trades away the "nothing was set" promise on a validation failure; confirm against real Live behavior alongside smoke item 2 before or while fixing. |
 
 ---
 
@@ -199,4 +201,4 @@ category, not of any one tool.
 
 ---
 
-_Seshat MCP tool audit · living document · 49 tools as of 28 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._
+_Seshat MCP tool audit · living document · 51 tools as of 29 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._

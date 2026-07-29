@@ -21,10 +21,14 @@ defmodule Seshat.Tools.FollowCamTest do
              ]
     end
 
-    test "remove_notes, duplicate_clip and capture_midi steer the same way" do
+    # set_clip_properties is in this list on purpose: it reads like a parameter
+    # tweak but its headline use is reshaping a clip's audible extent right
+    # after a capture, and the moved loop brace in the note editor is the
+    # confirmation.
+    test "remove_notes, duplicate_clip, capture_midi and set_clip_properties steer the same way" do
       expected = FollowCam.calls("write_midi_notes", %{track: 0, slot: 3})
 
-      for tool <- ["remove_notes", "duplicate_clip", "capture_midi"] do
+      for tool <- ["remove_notes", "duplicate_clip", "capture_midi", "set_clip_properties"] do
         assert FollowCam.calls(tool, %{track: 0, slot: 3}) == expected
       end
     end
@@ -177,6 +181,7 @@ defmodule Seshat.Tools.FollowCamTest do
       assert FollowCam.calls("fire_clip", %{track: 0, slot: 0}) == []
       assert FollowCam.calls("set_track_name", %{track: 0}) == []
       assert FollowCam.calls("get_session_state", %{}) == []
+      assert FollowCam.calls("get_clip_properties", %{track: 0, slot: 0}) == []
     end
 
     test "a steering tool called without the facts it needs produces no calls" do

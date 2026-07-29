@@ -118,6 +118,18 @@ Two gotchas that don't show in the address tables:
   `num_tracks`. Query first, then create, then set the name.
 - **Adding notes** requires the clip to exist. `Registry.ensure_clip/3` checks
   `/live/clip_slot/get/has_clip` and creates one if needed.
+- **A clip's loop brace / play markers** — writing a new `loop_start`/
+  `loop_end` or `start_marker`/`end_marker` pair one property at a time can
+  pass through an invalid intermediate state (`start >= end`), which Live may
+  reject silently. Read the current values, then order the two writes so
+  every intermediate state stays valid (move whichever point is heading away
+  from the other first), and re-read to confirm what actually landed —
+  `Handlers.clip_property_writes/2` is the precedent. Also: while a clip's
+  `looping` is off, `loop_start`/`loop_end` alias `start_marker`/`end_marker`
+  per the Live Object Model, so write `looping` *before* the loop points when
+  both are set in the same call — get the toggle's real effect before
+  computing the pair ordering above, not just before sending it (a review
+  finding on `set_clip_properties`; see `TOOL_AUDIT.md` §05).
 
 ## Queries that raise instead of replying
 
@@ -136,6 +148,10 @@ after the fact:
 - **`/live/clip/get/notes` range args are all-or-nothing** — the handler raises
   unless it gets exactly 0 or 4 of `start_pitch, pitch_span, start_time,
   time_span`. If any is given, fill all four (`Handlers.note_range_args/1`).
+- **Audio-only clip properties on a MIDI clip** — `gain`, `gain_display_string`,
+  `warp_mode`, `warping` raise on a MIDI clip (`Clip` has no such attribute
+  upstream). Check `/live/clip/get/is_midi_clip` first, as
+  `get_clip_properties`/`set_clip_properties` do.
 
 Guards that exist only to turn a silent failure into an error use a **2s
 timeout** (`@guard_timeout` in `Handlers`, `@slot_query_timeout` in `Registry`),

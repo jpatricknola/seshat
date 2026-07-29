@@ -10,19 +10,25 @@ defmodule SeshatWeb.Router do
     plug :put_secure_browser_headers
   end
 
-  pipeline :api do
-    plug :accepts, ["json"]
-  end
-
   scope "/", SeshatWeb do
     pipe_through :browser
 
     live "/", AssistantLive
   end
 
-  scope "/mcp" do
-    pipe_through :api
+  # Seshat has no OAuth. Clients probe for it anyway before falling back to an
+  # unauthenticated connection, so answer explicitly rather than letting an
+  # expected probe raise NoRouteError. See the plug's moduledoc.
+  scope "/.well-known" do
+    match :*, "/*path", SeshatWeb.Plugs.NoAuthDiscovery, []
+  end
 
+  # No `:accepts` pipeline here on purpose. Streamable HTTP serves two content
+  # types on one path — `POST /mcp` carries JSON-RPC, `GET /mcp` opens the SSE
+  # notification stream with `Accept: text/event-stream` — so `plug :accepts,
+  # ["json"]` (which Anubis's own docstring suggests) 406s every stream open
+  # before the plug runs. The plug negotiates both verbs itself.
+  scope "/mcp" do
     forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: Seshat.MCP.Server
   end
 

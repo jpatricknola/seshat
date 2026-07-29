@@ -96,6 +96,34 @@ import Config
 config :seshat, :anthropic_api_key, "sk-ant-..."
 ```
 
+## Starting a session
+
+Every session, start the three pieces in this order:
+
+1. **Ableton Live**, with AbletonOSC enabled under Preferences →
+   Link/Tempo/MIDI → Control Surface. Open the set you want to work on.
+2. **Seshat** — `mix phx.server` from the project root.
+3. **Your Claude client** — Claude Code or Claude Desktop.
+
+Each step wants the one before it already up.
+
+**Live before Seshat**, because Seshat queries Ableton the moment it boots to
+build its session mirror. With Live down, that's a stack of five-second
+timeouts and an empty mirror. It isn't fatal — AbletonOSC sends `/live/startup`
+when it initialises and Seshat refreshes off that — but the boot is slow and
+noisy for no reason, and until it lands the assistant thinks your set has no
+tracks.
+
+**Seshat before the client**, because both clients connect over HTTP to the
+running server rather than spawning their own. No server, no tools — they won't
+appear in the client at all. This is deliberate: only one process can hold OSC
+reply port 11001, so a second Seshat would be deaf to Ableton (see
+[Only one Seshat at a time](#only-one-seshat-at-a-time)).
+
+The same order applies to restarts. Restarting Seshat drops the client's
+connection, so reconnect it afterwards — in Claude Code, `/mcp` → reconnect.
+Restarting *Live* needs nothing: `/live/startup` re-syncs the mirror on its own.
+
 ## Two ways to run it
 
 ### MCP mode (primary)
@@ -103,8 +131,8 @@ config :seshat, :anthropic_api_key, "sk-ant-..."
 Seshat runs as an MCP server; the reasoning happens in your MCP client, so no
 API key is needed — your Claude subscription covers it.
 
-For **Claude Desktop**, start `mix phx.server` first, then add to
-`claude_desktop_config.json`:
+For **Claude Desktop**, add this to `claude_desktop_config.json` (with the
+server already running, per [Starting a session](#starting-a-session)):
 
 ```json
 {
@@ -138,11 +166,9 @@ so, which is why `Seshat.Instructions` has a hard ceiling — see the comment
 above `@text` in [lib/seshat/instructions.ex](lib/seshat/instructions.ex).
 
 For **Claude Code**, the repo ships a `.mcp.json` — approve the `seshat` server
-when prompted. It connects over HTTP to a running `mix phx.server`, so start
-that first; the tools are unavailable without it. This is deliberate: only one
-process can hold OSC reply port 11001, so spawning a second Seshat over stdio
-alongside the server would leave one of them unable to read from Ableton (see
-[Only one Seshat at a time](#only-one-seshat-at-a-time)).
+when prompted. It points at the running server's HTTP endpoint, so the order in
+[Starting a session](#starting-a-session) applies: no `mix phx.server`, no
+tools.
 
 Then just talk to Ableton from the client. You never open a browser — the
 server only needs to be running, not looked at.

@@ -1208,6 +1208,193 @@ defmodule Seshat.Tools.HandlersTest do
   # mode the rule above exists to prevent, so the tests were removed rather
   # than patched.
 
+  # Every clip setter is fire-and-forget, so Live's own rejection of an invalid
+  # loop range would be silent. The whole ordering decision therefore lives in
+  # this pure function, and this is the only place it can be checked: anything
+  # past the static validation in `set_clip_properties` reaches
+  # `Transport.query/3` and belongs to /smoke-test.
+  describe "clip_property_writes/2" do
+    test "looping is written before any loop point" do
+      assert {:ok, writes} =
+               Handlers.clip_property_writes(
+                 %{"loop_start" => 0.0, "loop_end" => 16.0},
+                 %{"looping" => true, "loop_start" => 4.0, "loop_end" => 8.0}
+               )
+
+      assert [{"looping", 1} | _rest] = writes
+    end
+
+    test "looping is written before a single-sided loop point too" do
+      assert Handlers.clip_property_writes(
+               %{"loop_start" => 0.0, "loop_end" => 16.0},
+               %{"looping" => true, "loop_end" => 8.0}
+             ) == {:ok, [{"looping", 1}, {"loop_end", 8.0}]}
+    end
+
+    # New brace entirely past the old one: writing the start first would leave
+    # Live holding start 16.0 against end 8.0.
+    test "a brace moving past the old end is written end-first" do
+      assert {:ok, writes} =
+               Handlers.clip_property_writes(
+                 %{"loop_start" => 0.0, "loop_end" => 8.0},
+                 %{"loop_start" => 16.0, "loop_end" => 24.0}
+               )
+
+      assert writes == [{"loop_end", 24.0}, {"loop_start", 16.0}]
+    end
+
+    test "a brace tightening inside the old one is written start-first" do
+      assert {:ok, writes} =
+               Handlers.clip_property_writes(
+                 %{"loop_start" => 0.0, "loop_end" => 16.0},
+                 %{"loop_start" => 4.0, "loop_end" => 8.0}
+               )
+
+      assert writes == [{"loop_start", 4.0}, {"loop_end", 8.0}]
+    end
+
+    test "the marker pair is ordered independently of the loop pair" do
+      assert {:ok, writes} =
+               Handlers.clip_property_writes(
+                 %{
+                   "loop_start" => 0.0,
+                   "loop_end" => 16.0,
+                   "start_marker" => 0.0,
+                   "end_marker" => 4.0
+                 },
+                 %{
+                   "loop_start" => 2.0,
+                   "loop_end" => 6.0,
+                   "start_marker" => 8.0,
+                   "end_marker" => 12.0
+                 }
+               )
+
+      assert writes == [
+               {"loop_start", 2.0},
+               {"loop_end", 6.0},
+               {"end_marker", 12.0},
+               {"start_marker", 8.0}
+             ]
+    end
+
+    test "a single-sided write is validated against the current other side" do
+      assert {:error, message} =
+               Handlers.clip_property_writes(
+                 %{"loop_start" => 0.0, "loop_end" => 8.0},
+                 %{"loop_start" => 16.0}
+               )
+
+      assert message =~ "loop_start 16.0"
+      assert message =~ "current loop_end 8.0"
+      assert message =~ "Nothing was set"
+    end
+
+    test "a single-sided end write is validated the same way" do
+      assert {:error, message} =
+               Handlers.clip_property_writes(
+                 %{"start_marker" => 4.0, "end_marker" => 8.0},
+                 %{"end_marker" => 2.0}
+               )
+
+      assert message =~ "end_marker 2.0"
+      assert message =~ "current start_marker 4.0"
+    end
+
+    test "a single-sided write that stays valid needs no partner" do
+      assert Handlers.clip_property_writes(
+               %{"loop_start" => 0.0, "loop_end" => 8.0},
+               %{"loop_start" => 4.0}
+             ) == {:ok, [{"loop_start", 4.0}]}
+    end
+
+    test "an inverted pair is rejected before ordering is even considered" do
+      assert {:error, message} =
+               Handlers.clip_property_writes(%{}, %{"loop_start" => 8.0, "loop_end" => 4.0})
+
+      assert message =~ "loop_start 8.0 is not before loop_end 4.0"
+    end
+
+    test "booleans go on the wire as 1/0 and enums as integers" do
+      assert {:ok, writes} =
+               Handlers.clip_property_writes(%{}, %{
+                 "looping" => false,
+                 "legato" => true,
+                 "warping" => false,
+                 "launch_mode" => 2,
+                 "launch_quantization" => 5,
+                 "warp_mode" => 6
+               })
+
+      assert writes == [
+               {"looping", 0},
+               {"launch_mode", 2},
+               {"launch_quantization", 5},
+               {"legato", 1},
+               {"warp_mode", 6},
+               {"warping", 0}
+             ]
+    end
+
+    # Every non-nil term is truthy in Elixir, so a bare `if` would turn a
+    # boolean spelled as `0` into 1 — the opposite of intent. Reachable in
+    # API-key mode, where nothing validates a tool call against the schema.
+    test "a boolean spelled as 0/1 is not inverted" do
+      assert Handlers.clip_property_writes(%{}, %{"looping" => 0, "legato" => 1}) ==
+               {:ok, [{"looping", 0}, {"legato", 1}]}
+    end
+
+    test "scalars are coerced to floats and appended after the ranges" do
+      assert {:ok, writes} =
+               Handlers.clip_property_writes(
+                 %{"loop_start" => 0.0, "loop_end" => 16.0},
+                 %{"velocity_amount" => 1, "gain" => 0, "loop_end" => 8.0}
+               )
+
+      assert writes == [{"loop_end", 8.0}, {"velocity_amount", 1.0}, {"gain", 0.0}]
+    end
+
+    test "no recognised changes means no writes" do
+      assert Handlers.clip_property_writes(%{}, %{}) == {:ok, []}
+    end
+  end
+
+  # Only the transport-free error paths: everything past them queries Ableton.
+  describe "set_clip_properties validation" do
+    test "rejects a call that changes nothing" do
+      assert {:error, message} =
+               Handlers.call("set_clip_properties", %{"track" => 0, "clip_slot" => 0})
+
+      assert message =~ "Nothing to set"
+      assert message =~ "loop_start"
+    end
+
+    test "rejects an inverted loop brace before touching Ableton" do
+      assert {:error, message} =
+               Handlers.call("set_clip_properties", %{
+                 "track" => 0,
+                 "clip_slot" => 0,
+                 "loop_start" => 8.0,
+                 "loop_end" => 4.0
+               })
+
+      assert message =~ "loop_start 8.0 is not before loop_end 4.0"
+      assert message =~ "nothing was set"
+    end
+
+    test "rejects inverted play markers before touching Ableton" do
+      assert {:error, message} =
+               Handlers.call("set_clip_properties", %{
+                 "track" => 0,
+                 "clip_slot" => 0,
+                 "start_marker" => 4.0,
+                 "end_marker" => 4.0
+               })
+
+      assert message =~ "start_marker 4.0 is not before end_marker 4.0"
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})

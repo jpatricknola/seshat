@@ -74,6 +74,92 @@ defmodule Seshat.Tools.Handlers do
                            "`mix abletonosc.install` and restart Ableton Live, and check Live is " <>
                            "running with AbletonOSC enabled."
 
+  # --- Clip properties (get_clip_properties / set_clip_properties) ---
+  #
+  # Property names are the OSC address suffixes, so one list drives the schema,
+  # the reads, the writes and the echo. The addresses themselves stay as
+  # literals in `clip_get_address/1` / `clip_set_address/1` rather than being
+  # interpolated from these names — the `"/live/` greppability rule.
+
+  # Written to Live as 1/0.
+  @clip_boolean_properties ["looping", "legato", "warping"]
+
+  # Enums — written as integers, decoded to names in the replies.
+  @clip_integer_properties ["launch_mode", "launch_quantization", "warp_mode"]
+
+  # The two ordered pairs. Live requires start < end at all times, so each pair
+  # is written in whichever order keeps that true after every single message
+  # (see `clip_property_writes/2`).
+  @clip_pair_properties [{"loop_start", "loop_end"}, {"start_marker", "end_marker"}]
+
+  # Anything that changes the clip's audible extent — writing one of these makes
+  # `length` worth reading back.
+  @clip_range_properties ["looping", "loop_start", "loop_end", "start_marker", "end_marker"]
+
+  # Unpaired properties, written last in this order. Order is fixed rather than
+  # map-iteration order so the write list is deterministic and testable.
+  @clip_scalar_properties [
+    "launch_mode",
+    "launch_quantization",
+    "legato",
+    "velocity_amount",
+    "gain",
+    "warp_mode",
+    "warping"
+  ]
+
+  # `Clip` only carries these on an audio clip; reading or writing one on a MIDI
+  # clip raises inside AbletonOSC's callback, which sends nothing back — a guard
+  # timeout burned on an answer we already know.
+  @clip_audio_only_properties ["gain", "warp_mode", "warping"]
+
+  @clip_writable_properties @clip_range_properties ++ @clip_scalar_properties
+
+  @clip_common_reads [
+    "name",
+    "length",
+    "looping",
+    "loop_start",
+    "loop_end",
+    "start_marker",
+    "end_marker",
+    "launch_mode",
+    "launch_quantization",
+    "legato",
+    "velocity_amount"
+  ]
+
+  @clip_audio_reads ["gain", "gain_display_string", "warp_mode", "warping"]
+
+  @launch_mode_names %{0 => "Trigger", 1 => "Gate", 2 => "Toggle", 3 => "Repeat"}
+
+  @launch_quantization_names %{
+    0 => "Global",
+    1 => "None",
+    2 => "8 bars",
+    3 => "4 bars",
+    4 => "2 bars",
+    5 => "1 bar",
+    6 => "1/2",
+    7 => "1/2T",
+    8 => "1/4",
+    9 => "1/4T",
+    10 => "1/8",
+    11 => "1/8T",
+    12 => "1/16",
+    13 => "1/16T",
+    14 => "1/32"
+  }
+
+  @warp_mode_names %{
+    0 => "Beats",
+    1 => "Tones",
+    2 => "Texture",
+    3 => "Re-Pitch",
+    4 => "Complex",
+    6 => "Complex Pro"
+  }
+
   # Properties for the /live/song/get/track_data bulk query, in reply order.
   # Each track.* property contributes one value per track; each clip.* /
   # clip_slot.* property contributes num_scenes values — so a track's chunk is
@@ -1326,6 +1412,68 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # --- Clip properties ---
+  #
+  # Fourteen single-value getters rather than one bulk read: the bulk
+  # `/live/song/get/track_data` reply is a bare value list with no index echo,
+  # so it can't be checked against the clip we asked about (same reasoning as
+  # `ensure_midi_track/1`), and these are sub-millisecond loopback round trips.
+  # `ensure_clip/3` first so an empty slot costs one timeout-free error rather
+  # than fourteen guard timeouts.
+  defp do_call("get_clip_properties", %{"track" => track, "clip_slot" => slot}) do
+    with :ok <- ensure_clip(track, slot),
+         {:ok, midi?} <- clip_is_midi(track, slot),
+         {:ok, common} <- read_clip_properties(track, slot, @clip_common_reads),
+         {:ok, audio} <- read_audio_clip_properties(track, slot, midi?) do
+      {:ok, format_clip_properties(track, slot, midi?, Map.merge(common, audio))}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out reading the properties of the clip in slot #{slot} on track #{track}, so " <>
+         "nothing is known about it. Check the indices with get_clip_slots, and that Ableton " <>
+         "is running with AbletonOSC enabled."}
+  end
+
+  # Every clip setter is fire-and-forget — Live's own rejection of an invalid
+  # state would be silent — so the honesty of this tool rests on three things:
+  # transport-free validation up front, an ordered write list that never passes
+  # through an invalid intermediate state (`clip_property_writes/2`), and a
+  # read-back of every property written.
+  defp do_call("set_clip_properties", %{"track" => track, "clip_slot" => slot} = params) do
+    changes = Map.take(params, @clip_writable_properties)
+
+    with :ok <- ensure_clip_changes(changes),
+         :ok <- validate_clip_pairs(changes),
+         :ok <- ensure_clip(track, slot),
+         :ok <- ensure_audio_clip(track, slot, changes),
+         {:ok, current} <- read_clip_pair_context(track, slot, changes),
+         {:ok, writes} <- clip_property_writes(current, changes),
+         :ok <- send_clip_writes(track, slot, writes),
+         {:ok, readback} <- read_clip_writeback(track, slot, writes) do
+      FollowCam.steer("set_clip_properties", %{track: track, slot: slot})
+      {:ok, format_clip_writes(track, slot, current, writes, readback)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    # Everything before the sends reports its own timeout, so an exit reaching
+    # here came from a fire-and-forget write or its read-back: the transport
+    # itself has stopped answering, and some of the properties asked for may
+    # already be applied. The write list isn't in scope in the implicit try —
+    # only the head's params are — so the properties are named off `params`.
+    :exit, _ ->
+      {:error,
+       "Lost contact with the OSC transport while setting " <>
+         "#{clip_property_list(params)} on the clip in slot #{slot} on track #{track}. Some of " <>
+         "those may already have been applied — check with get_clip_properties once Ableton is " <>
+         "running with AbletonOSC enabled again."}
+  end
+
   # --- Scene control ---
 
   defp do_call("fire_scene", %{"scene" => scene}) do
@@ -2288,6 +2436,420 @@ defmodule Seshat.Tools.Handlers do
        "The toggle was sent but reading it back timed out — verify with get_device_parameters."}
   end
 
+  # --- Clip property helpers ---
+
+  @doc """
+  The ordered OSC writes for a `set_clip_properties` call.
+
+  Pure, and the whole of the write-ordering decision — the handler around it
+  only reads, sends and echoes. Takes the clip's current values (needed for the
+  paired properties only) and the requested changes, both keyed by property
+  name, and returns `[{property, wire_value}]` in the order they must go out.
+
+  Ordering exists because clip setters are silent: Live requires `start < end`
+  at all times, and a rejected write would produce no error, just a clip that
+  didn't change. So the invariant has to hold after *every individual message*,
+  not merely at the end:
+
+    * `looping` goes first. While looping is off, Live's object model aliases
+      `loop_start`/`loop_end` onto the play markers, so writing a brace before
+      the toggle would move the wrong thing.
+    * A pair with both sides changing is written end-first when the new start
+      lies at or beyond the old end (`s1 >= e0`), start-first otherwise. Either
+      way both intermediate states are valid.
+    * A pair with one side changing must be valid against the *current* other
+      side, or it is an error naming that current value — there is no ordering
+      that can rescue it.
+    * Unpaired scalars go last, in `@clip_scalar_properties` order.
+
+  Values are coerced to the house wire conventions here too: booleans to 1/0,
+  enums to integers, everything else to floats.
+  """
+  @spec clip_property_writes(map(), map()) ::
+          {:ok, [{String.t(), number()}]} | {:error, String.t()}
+  def clip_property_writes(current, changes) do
+    with :ok <- validate_clip_pairs(changes),
+         {:ok, loop_writes} <- clip_pair_writes(current, changes, "loop_start", "loop_end"),
+         {:ok, marker_writes} <-
+           clip_pair_writes(current, changes, "start_marker", "end_marker") do
+      {:ok,
+       clip_looping_write(changes) ++ loop_writes ++ marker_writes ++ clip_scalar_writes(changes)}
+    end
+  end
+
+  # Runs twice: once in the handler before anything touches the transport (so an
+  # inverted range costs no round trips at all), and once inside
+  # `clip_property_writes/2` so the pure function is correct on its own terms.
+  defp validate_clip_pairs(changes) do
+    Enum.reduce_while(@clip_pair_properties, :ok, fn {start_key, end_key}, :ok ->
+      case {Map.get(changes, start_key), Map.get(changes, end_key)} do
+        {start, finish} when is_number(start) and is_number(finish) and start >= finish ->
+          {:halt,
+           {:error,
+            "#{start_key} #{format_number(start / 1.0)} is not before #{end_key} " <>
+              "#{format_number(finish / 1.0)} — a clip's range must start before it ends, so " <>
+              "nothing was set."}}
+
+        _ ->
+          {:cont, :ok}
+      end
+    end)
+  end
+
+  defp clip_pair_writes(current, changes, start_key, end_key) do
+    case {Map.fetch(changes, start_key), Map.fetch(changes, end_key)} do
+      {:error, :error} ->
+        {:ok, []}
+
+      {{:ok, start}, {:ok, finish}} ->
+        {:ok, ordered_pair_writes(current, start_key, start, end_key, finish)}
+
+      {{:ok, start}, :error} ->
+        case Map.get(current, end_key) do
+          finish when is_number(finish) and is_number(start) and start / 1.0 >= finish / 1.0 ->
+            {:error,
+             "#{start_key} #{format_number(start / 1.0)} is not before the current #{end_key} " <>
+               "#{format_number(finish / 1.0)} — pass #{end_key} too to move the whole range. " <>
+               "Nothing was set."}
+
+          _ ->
+            {:ok, [clip_write(start_key, start)]}
+        end
+
+      {:error, {:ok, finish}} ->
+        case Map.get(current, start_key) do
+          start when is_number(start) and is_number(finish) and finish / 1.0 <= start / 1.0 ->
+            {:error,
+             "#{end_key} #{format_number(finish / 1.0)} is not after the current #{start_key} " <>
+               "#{format_number(start / 1.0)} — pass #{start_key} too to move the whole range. " <>
+               "Nothing was set."}
+
+          _ ->
+            {:ok, [clip_write(end_key, finish)]}
+        end
+    end
+  end
+
+  # End-first when the new range sits at or beyond the old end, so the
+  # intermediate state is (old start, new end) rather than the inverted
+  # (new start, old end). With no current value known, start-first is the
+  # harmless default.
+  defp ordered_pair_writes(current, start_key, start, end_key, finish) do
+    current_end = Map.get(current, end_key)
+
+    if is_number(current_end) and is_number(start) and start / 1.0 >= current_end / 1.0 do
+      [clip_write(end_key, finish), clip_write(start_key, start)]
+    else
+      [clip_write(start_key, start), clip_write(end_key, finish)]
+    end
+  end
+
+  defp clip_looping_write(%{"looping" => value}), do: [clip_write("looping", value)]
+  defp clip_looping_write(_changes), do: []
+
+  defp clip_scalar_writes(changes) do
+    @clip_scalar_properties
+    |> Enum.filter(&Map.has_key?(changes, &1))
+    |> Enum.map(&clip_write(&1, Map.fetch!(changes, &1)))
+  end
+
+  defp clip_write(property, value), do: {property, coerce_clip_value(property, value)}
+
+  # `truthy?/1`, not a bare `if`: every non-nil term is truthy in Elixir, so a
+  # model that spells a boolean as `0` — which `Seshat.Agent` passes through
+  # unvalidated, MCP mode's Peri schema being the only thing that rejects it —
+  # would otherwise turn the property *on*.
+  defp coerce_clip_value(property, value) when property in @clip_boolean_properties,
+    do: if(truthy?(value), do: 1, else: 0)
+
+  defp coerce_clip_value(property, value)
+       when property in @clip_integer_properties and is_number(value),
+       do: trunc(value)
+
+  defp coerce_clip_value(_property, value) when is_number(value), do: value / 1.0
+  defp coerce_clip_value(_property, value), do: value
+
+  defp ensure_clip_changes(changes) when map_size(changes) == 0 do
+    {:error,
+     "Nothing to set — pass at least one property: " <>
+       Enum.join(@clip_writable_properties, ", ") <> "."}
+  end
+
+  defp ensure_clip_changes(_changes), do: :ok
+
+  # Only pays for the type check when an audio-only property is actually being
+  # written. An explicit error, never a silent drop — the `write_midi_notes`
+  # guard precedent.
+  defp ensure_audio_clip(track, slot, changes) do
+    case Enum.filter(@clip_audio_only_properties, &Map.has_key?(changes, &1)) do
+      [] ->
+        :ok
+
+      properties ->
+        case clip_is_midi(track, slot) do
+          {:ok, true} ->
+            {:error,
+             "#{Enum.join(properties, ", ")} apply to audio clips only, and slot #{slot} on " <>
+               "track #{track} holds a MIDI clip — nothing was set. Drop those properties and " <>
+               "try again."}
+
+          {:ok, false} ->
+            :ok
+
+          {:error, message} ->
+            {:error, message}
+        end
+    end
+  end
+
+  defp clip_is_midi(track, slot) do
+    query_flag(
+      "/live/clip/get/is_midi_clip",
+      [track, slot],
+      "whether the clip in slot #{slot} on track #{track} is MIDI"
+    )
+  end
+
+  # Both sides of a pair, whenever either side is changing: the ordering
+  # decision needs the current end, the single-sided validation needs the
+  # current other side, and the echo reports "was".
+  defp read_clip_pair_context(track, slot, changes) do
+    @clip_pair_properties
+    |> Enum.flat_map(fn {start_key, end_key} ->
+      if Map.has_key?(changes, start_key) or Map.has_key?(changes, end_key),
+        do: [start_key, end_key],
+        else: []
+    end)
+    |> then(&read_clip_properties(track, slot, &1))
+  end
+
+  # Everything written, plus the two derived values worth seeing: the dB string
+  # after a gain change (the 0–1 float's curve is undocumented, so the display
+  # string is the only honest report), and the length after anything that moves
+  # the clip's audible extent.
+  #
+  # A failure here is reported in this function's own words rather than passed
+  # up: every `query_echoed/4` error ends in "nothing further was sent", which is
+  # true of a guard that runs *before* the writes and false of a read-back that
+  # runs after them. The writes are already on the wire at this point, and
+  # telling the model otherwise is the one lie this tool can't afford — its whole
+  # contract is that what it reports is what Live holds (`confirm_device_enabled`
+  # draws the same distinction on the same kind of path).
+  defp read_clip_writeback(track, slot, writes) do
+    written = Enum.map(writes, fn {property, _value} -> property end)
+
+    extras =
+      if("gain" in written, do: ["gain_display_string"], else: []) ++
+        if(Enum.any?(written, &(&1 in @clip_range_properties)), do: ["length"], else: [])
+
+    case read_clip_properties(track, slot, written ++ extras) do
+      {:ok, values} ->
+        {:ok, values}
+
+      {:error, _message} ->
+        {:error,
+         "#{Enum.join(written, ", ")} #{if(length(written) == 1, do: "was", else: "were")} sent " <>
+           "to the clip in slot #{slot} on track #{track} and most likely applied, but reading " <>
+           "the values back failed — what Live actually holds is unconfirmed. Check with " <>
+           "get_clip_properties, and that Ableton is still running with AbletonOSC enabled."}
+    end
+  end
+
+  defp read_audio_clip_properties(_track, _slot, true), do: {:ok, %{}}
+
+  defp read_audio_clip_properties(track, slot, false),
+    do: read_clip_properties(track, slot, @clip_audio_reads)
+
+  defp read_clip_properties(track, slot, properties) do
+    Enum.reduce_while(properties, {:ok, %{}}, fn property, {:ok, acc} ->
+      case query_echoed(
+             clip_get_address(property),
+             [track, slot],
+             "the #{property} of the clip in slot #{slot} on track #{track}",
+             @clip_index_hint
+           ) do
+        {:ok, value} -> {:cont, {:ok, Map.put(acc, property, value)}}
+        {:error, message} -> {:halt, {:error, message}}
+      end
+    end)
+  end
+
+  defp send_clip_writes(track, slot, writes) do
+    Enum.reduce_while(writes, :ok, fn {property, value}, :ok ->
+      case Transport.send_message(clip_set_address(property), [track, slot, value]) do
+        :ok ->
+          {:cont, :ok}
+
+        {:error, reason} ->
+          {:halt,
+           {:error,
+            "Failed to set #{property} on the clip in slot #{slot} on track #{track}: " <>
+              "#{inspect(reason)}. Properties earlier in the same call may already have been " <>
+              "applied — check with get_clip_properties."}}
+      end
+    end)
+  end
+
+  # Addresses as literals, one clause per property, rather than interpolating
+  # the property name into the address: `vendored_addresses_test` greps `lib/`
+  # for `"/live/…"` literals, and an interpolated address is invisible to it.
+  defp clip_get_address("name"), do: "/live/clip/get/name"
+  defp clip_get_address("length"), do: "/live/clip/get/length"
+  defp clip_get_address("looping"), do: "/live/clip/get/looping"
+  defp clip_get_address("loop_start"), do: "/live/clip/get/loop_start"
+  defp clip_get_address("loop_end"), do: "/live/clip/get/loop_end"
+  defp clip_get_address("start_marker"), do: "/live/clip/get/start_marker"
+  defp clip_get_address("end_marker"), do: "/live/clip/get/end_marker"
+  defp clip_get_address("launch_mode"), do: "/live/clip/get/launch_mode"
+  defp clip_get_address("launch_quantization"), do: "/live/clip/get/launch_quantization"
+  defp clip_get_address("legato"), do: "/live/clip/get/legato"
+  defp clip_get_address("velocity_amount"), do: "/live/clip/get/velocity_amount"
+  defp clip_get_address("gain"), do: "/live/clip/get/gain"
+  defp clip_get_address("gain_display_string"), do: "/live/clip/get/gain_display_string"
+  defp clip_get_address("warp_mode"), do: "/live/clip/get/warp_mode"
+  defp clip_get_address("warping"), do: "/live/clip/get/warping"
+
+  defp clip_set_address("looping"), do: "/live/clip/set/looping"
+  defp clip_set_address("loop_start"), do: "/live/clip/set/loop_start"
+  defp clip_set_address("loop_end"), do: "/live/clip/set/loop_end"
+  defp clip_set_address("start_marker"), do: "/live/clip/set/start_marker"
+  defp clip_set_address("end_marker"), do: "/live/clip/set/end_marker"
+  defp clip_set_address("launch_mode"), do: "/live/clip/set/launch_mode"
+  defp clip_set_address("launch_quantization"), do: "/live/clip/set/launch_quantization"
+  defp clip_set_address("legato"), do: "/live/clip/set/legato"
+  defp clip_set_address("velocity_amount"), do: "/live/clip/set/velocity_amount"
+  defp clip_set_address("gain"), do: "/live/clip/set/gain"
+  defp clip_set_address("warp_mode"), do: "/live/clip/set/warp_mode"
+  defp clip_set_address("warping"), do: "/live/clip/set/warping"
+
+  # An *unwarped* audio clip counts its length, loop points and markers in
+  # seconds, not beats (Live's object model switches the unit on `warping`), so
+  # the reply names the unit it is actually reporting rather than always saying
+  # "beats" and being wrong on exactly the clips a producer drags in.
+  defp format_clip_properties(track, slot, midi?, properties) do
+    type = if midi?, do: "MIDI", else: "audio"
+    beats? = midi? or truthy?(properties["warping"])
+    unit = if beats?, do: "beats", else: "seconds"
+    position = if beats?, do: "beat", else: "second"
+
+    header =
+      "Clip '#{properties["name"]}' — track #{track}, slot #{slot} — #{type}, " <>
+        "#{format_number(properties["length"])} #{unit}"
+
+    loop =
+      "Loop: #{on_off_word(truthy?(properties["looping"]))}, from #{position} " <>
+        "#{format_number(properties["loop_start"])} to " <>
+        "#{format_number(properties["loop_end"])}" <>
+        beat_span(properties["loop_start"], properties["loop_end"], unit)
+
+    markers =
+      "Play markers: start #{format_number(properties["start_marker"])}, " <>
+        "end #{format_number(properties["end_marker"])}"
+
+    launch =
+      "Launch: #{enum_name(@launch_mode_names, properties["launch_mode"])}, quantization " <>
+        "#{enum_name(@launch_quantization_names, properties["launch_quantization"])}, legato " <>
+        "#{on_off_word(truthy?(properties["legato"]))}, velocity amount " <>
+        "#{format_number(properties["velocity_amount"])}"
+
+    audio =
+      if midi? do
+        []
+      else
+        [
+          "Audio: gain #{properties["gain_display_string"]} " <>
+            "(#{format_number(properties["gain"])}), warp " <>
+            "#{on_off_word(truthy?(properties["warping"]))}, mode " <>
+            "#{enum_name(@warp_mode_names, properties["warp_mode"])}"
+        ]
+      end
+
+    Enum.join([header, loop, markers, launch] ++ audio, "\n")
+  end
+
+  defp format_clip_writes(track, slot, current, writes, readback) do
+    lines =
+      Enum.map(writes, fn {property, sent} ->
+        "  " <>
+          clip_write_line(property, sent, Map.get(readback, property), Map.get(current, property))
+      end)
+
+    extras =
+      [
+        if(Map.has_key?(readback, "gain_display_string"),
+          do: "  gain now reads #{readback["gain_display_string"]} in Live"
+        ),
+        if(Map.has_key?(readback, "length"),
+          do: "  clip length is now #{format_number(readback["length"])} beats"
+        )
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    Enum.join(
+      ["Set clip properties on track #{track}, slot #{slot}:" | lines] ++ extras,
+      "\n"
+    )
+  end
+
+  # The read-back is the only place a silent in-Live rejection can surface, so a
+  # value that came back different from what was sent is reported as such rather
+  # than smoothed over.
+  defp clip_write_line(property, sent, got, was) do
+    previously = if is_nil(was), do: "", else: " (was #{format_clip_value(property, was)})"
+
+    cond do
+      is_nil(got) ->
+        "#{property}: #{format_clip_value(property, sent)} was sent, but reading it back gave " <>
+          "nothing#{previously}"
+
+      clip_value_matches?(property, sent, got) ->
+        "#{property}: #{format_clip_value(property, got)}#{previously}"
+
+      true ->
+        "#{property}: Live reports #{format_clip_value(property, got)}, not the " <>
+          "#{format_clip_value(property, sent)} that was sent#{previously}"
+    end
+  end
+
+  defp clip_value_matches?(property, sent, got) when property in @clip_boolean_properties,
+    do: truthy?(got) == (sent == 1)
+
+  defp clip_value_matches?(_property, sent, got) when is_number(sent) and is_number(got),
+    do: Float.round(sent / 1.0, 4) == Float.round(got / 1.0, 4)
+
+  defp clip_value_matches?(_property, sent, got), do: sent == got
+
+  defp format_clip_value(property, value) when property in @clip_boolean_properties,
+    do: on_off_word(truthy?(value))
+
+  defp format_clip_value("launch_mode", value), do: enum_name(@launch_mode_names, value)
+
+  defp format_clip_value("launch_quantization", value),
+    do: enum_name(@launch_quantization_names, value)
+
+  defp format_clip_value("warp_mode", value), do: enum_name(@warp_mode_names, value)
+  defp format_clip_value(_property, value), do: format_number(value)
+
+  defp clip_property_list(params) do
+    case Enum.filter(@clip_writable_properties, &Map.has_key?(params, &1)) do
+      [] -> "no properties"
+      properties -> Enum.join(properties, ", ")
+    end
+  end
+
+  defp beat_span(start, finish, unit) when is_number(start) and is_number(finish),
+    do: " (#{format_number(finish / 1.0 - start / 1.0)} #{unit})"
+
+  defp beat_span(_start, _finish, _unit), do: ""
+
+  defp enum_name(names, value) do
+    key = if is_number(value), do: trunc(value), else: value
+    Map.get(names, key, "unknown (#{inspect(value)})")
+  end
+
+  defp on_off_word(true), do: "on"
+  defp on_off_word(false), do: "off"
+
   # --- Guards ---
   #
   # Each guard catches its own timeout rather than leaving it to the caller: a
@@ -2482,7 +3044,7 @@ defmodule Seshat.Tools.Handlers do
 
   # AbletonOSC sends booleans for some properties and 0/1 for others.
   defp truthy?(true), do: true
-  defp truthy?(value) when is_integer(value), do: value != 0
+  defp truthy?(value) when is_number(value), do: value != 0
   defp truthy?(_value), do: false
 
   defp maybe_set_loop_start(%{"start" => start}),

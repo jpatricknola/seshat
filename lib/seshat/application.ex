@@ -7,6 +7,8 @@ defmodule Seshat.Application do
 
   @impl true
   def start(_type, _args) do
+    install_log_filter()
+
     # The catalog is deliberately independent of OSC: it answers from disk
     # with Ableton closed, and only needs Live running to reindex.
     children =
@@ -43,6 +45,17 @@ defmodule Seshat.Application do
   @impl true
   def config_change(changed, _new, removed) do
     SeshatWeb.Endpoint.config_change(changed, removed)
+    :ok
+  end
+
+  # A client disconnecting is not a warning. See `Seshat.MCP.LogFilter` for why
+  # this can't be done with `config :anubis_mcp, logging: [...]`.
+  defp install_log_filter do
+    :logger.add_primary_filter(
+      :seshat_mcp_client_disconnect,
+      {&Seshat.MCP.LogFilter.filter/2, []}
+    )
+
     :ok
   end
 

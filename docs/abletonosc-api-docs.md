@@ -386,6 +386,7 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/set/name` | `track_id, clip_id, name` | | Set clip name |
 | `/live/clip/get/gain` | `track_id, clip_id` | `track_id, clip_id, gain` | Clip gain |
 | `/live/clip/set/gain` | `track_id, clip_id, gain` | | Set clip gain |
+| `/live/clip/get/gain_display_string` | `track_id, clip_id` | `track_id, clip_id, gain_display_string` | Human-readable gain as dB string (audio clips only, read-only) |
 | `/live/clip/get/length` | `track_id, clip_id` | `track_id, clip_id, length` | Clip length |
 | `/live/clip/get/sample_length` | `track_id, clip_id` | `track_id, clip_id, sample_length` | Sample length |
 | `/live/clip/get/start_time` | `track_id, clip_id` | `track_id, clip_id, start_time` | Start time |
@@ -403,6 +404,8 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/get/playing_position` | `track_id, clip_id` | `track_id, clip_id, playing_position` | Playing position |
 | `/live/clip/start_listen/playing_position` | `track_id, clip_id` | | Listen for playing position |
 | `/live/clip/stop_listen/playing_position` | `track_id, clip_id` | | Stop listening for position |
+| `/live/clip/get/looping` | `track_id, clip_id` | `track_id, clip_id, looping` | Clip loop on/off (1=on, 0=off) |
+| `/live/clip/set/looping` | `track_id, clip_id, looping` | | Set clip loop on/off (1=on, 0=off) |
 | `/live/clip/get/loop_start` | `track_id, clip_id` | `track_id, clip_id, loop_start` | Loop start |
 | `/live/clip/set/loop_start` | `track_id, clip_id, loop_start` | | Set loop start |
 | `/live/clip/get/loop_end` | `track_id, clip_id` | `track_id, clip_id, loop_end` | Loop end |
