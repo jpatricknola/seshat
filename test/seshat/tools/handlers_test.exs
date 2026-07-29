@@ -1224,6 +1224,13 @@ defmodule Seshat.Tools.HandlersTest do
       assert [{"looping", 1} | _rest] = writes
     end
 
+    test "looping is written before a single-sided loop point too" do
+      assert Handlers.clip_property_writes(
+               %{"loop_start" => 0.0, "loop_end" => 16.0},
+               %{"looping" => true, "loop_end" => 8.0}
+             ) == {:ok, [{"looping", 1}, {"loop_end", 8.0}]}
+    end
+
     # New brace entirely past the old one: writing the start first would leave
     # Live holding start 16.0 against end 8.0.
     test "a brace moving past the old end is written end-first" do
@@ -1327,6 +1334,14 @@ defmodule Seshat.Tools.HandlersTest do
                {"warp_mode", 6},
                {"warping", 0}
              ]
+    end
+
+    # Every non-nil term is truthy in Elixir, so a bare `if` would turn a
+    # boolean spelled as `0` into 1 — the opposite of intent. Reachable in
+    # API-key mode, where nothing validates a tool call against the schema.
+    test "a boolean spelled as 0/1 is not inverted" do
+      assert Handlers.clip_property_writes(%{}, %{"looping" => 0, "legato" => 1}) ==
+               {:ok, [{"looping", 0}, {"legato", 1}]}
     end
 
     test "scalars are coerced to floats and appended after the ranges" do

@@ -2509,7 +2509,7 @@ defmodule Seshat.Tools.Handlers do
           finish when is_number(finish) and is_number(start) and start / 1.0 >= finish / 1.0 ->
             {:error,
              "#{start_key} #{format_number(start / 1.0)} is not before the current #{end_key} " <>
-               "#{format_number(finish)} — pass #{end_key} too to move the whole range. " <>
+               "#{format_number(finish / 1.0)} — pass #{end_key} too to move the whole range. " <>
                "Nothing was set."}
 
           _ ->
@@ -2521,7 +2521,7 @@ defmodule Seshat.Tools.Handlers do
           start when is_number(start) and is_number(finish) and finish / 1.0 <= start / 1.0 ->
             {:error,
              "#{end_key} #{format_number(finish / 1.0)} is not after the current #{start_key} " <>
-               "#{format_number(start)} — pass #{start_key} too to move the whole range. " <>
+               "#{format_number(start / 1.0)} — pass #{start_key} too to move the whole range. " <>
                "Nothing was set."}
 
           _ ->
@@ -2555,8 +2555,12 @@ defmodule Seshat.Tools.Handlers do
 
   defp clip_write(property, value), do: {property, coerce_clip_value(property, value)}
 
+  # `truthy?/1`, not a bare `if`: every non-nil term is truthy in Elixir, so a
+  # model that spells a boolean as `0` — which `Seshat.Agent` passes through
+  # unvalidated, MCP mode's Peri schema being the only thing that rejects it —
+  # would otherwise turn the property *on*.
   defp coerce_clip_value(property, value) when property in @clip_boolean_properties,
-    do: if(value, do: 1, else: 0)
+    do: if(truthy?(value), do: 1, else: 0)
 
   defp coerce_clip_value(property, value)
        when property in @clip_integer_properties and is_number(value),
@@ -2623,6 +2627,14 @@ defmodule Seshat.Tools.Handlers do
   # after a gain change (the 0–1 float's curve is undocumented, so the display
   # string is the only honest report), and the length after anything that moves
   # the clip's audible extent.
+  #
+  # A failure here is reported in this function's own words rather than passed
+  # up: every `query_echoed/4` error ends in "nothing further was sent", which is
+  # true of a guard that runs *before* the writes and false of a read-back that
+  # runs after them. The writes are already on the wire at this point, and
+  # telling the model otherwise is the one lie this tool can't afford — its whole
+  # contract is that what it reports is what Live holds (`confirm_device_enabled`
+  # draws the same distinction on the same kind of path).
   defp read_clip_writeback(track, slot, writes) do
     written = Enum.map(writes, fn {property, _value} -> property end)
 
@@ -2630,7 +2642,17 @@ defmodule Seshat.Tools.Handlers do
       if("gain" in written, do: ["gain_display_string"], else: []) ++
         if(Enum.any?(written, &(&1 in @clip_range_properties)), do: ["length"], else: [])
 
-    read_clip_properties(track, slot, written ++ extras)
+    case read_clip_properties(track, slot, written ++ extras) do
+      {:ok, values} ->
+        {:ok, values}
+
+      {:error, _message} ->
+        {:error,
+         "#{Enum.join(written, ", ")} #{if(length(written) == 1, do: "was", else: "were")} sent " <>
+           "to the clip in slot #{slot} on track #{track} and most likely applied, but reading " <>
+           "the values back failed — what Live actually holds is unconfirmed. Check with " <>
+           "get_clip_properties, and that Ableton is still running with AbletonOSC enabled."}
+    end
   end
 
   defp read_audio_clip_properties(_track, _slot, true), do: {:ok, %{}}
@@ -2700,18 +2722,25 @@ defmodule Seshat.Tools.Handlers do
   defp clip_set_address("warp_mode"), do: "/live/clip/set/warp_mode"
   defp clip_set_address("warping"), do: "/live/clip/set/warping"
 
+  # An *unwarped* audio clip counts its length, loop points and markers in
+  # seconds, not beats (Live's object model switches the unit on `warping`), so
+  # the reply names the unit it is actually reporting rather than always saying
+  # "beats" and being wrong on exactly the clips a producer drags in.
   defp format_clip_properties(track, slot, midi?, properties) do
     type = if midi?, do: "MIDI", else: "audio"
+    beats? = midi? or truthy?(properties["warping"])
+    unit = if beats?, do: "beats", else: "seconds"
+    position = if beats?, do: "beat", else: "second"
 
     header =
       "Clip '#{properties["name"]}' — track #{track}, slot #{slot} — #{type}, " <>
-        "#{format_number(properties["length"])} beats"
+        "#{format_number(properties["length"])} #{unit}"
 
     loop =
-      "Loop: #{on_off_word(truthy?(properties["looping"]))}, from beat " <>
+      "Loop: #{on_off_word(truthy?(properties["looping"]))}, from #{position} " <>
         "#{format_number(properties["loop_start"])} to " <>
         "#{format_number(properties["loop_end"])}" <>
-        beat_span(properties["loop_start"], properties["loop_end"])
+        beat_span(properties["loop_start"], properties["loop_end"], unit)
 
     markers =
       "Play markers: start #{format_number(properties["start_marker"])}, " <>
@@ -2808,10 +2837,10 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp beat_span(start, finish) when is_number(start) and is_number(finish),
-    do: " (#{format_number(finish / 1.0 - start / 1.0)} beats)"
+  defp beat_span(start, finish, unit) when is_number(start) and is_number(finish),
+    do: " (#{format_number(finish / 1.0 - start / 1.0)} #{unit})"
 
-  defp beat_span(_start, _finish), do: ""
+  defp beat_span(_start, _finish, _unit), do: ""
 
   defp enum_name(names, value) do
     key = if is_number(value), do: trunc(value), else: value
@@ -3015,7 +3044,7 @@ defmodule Seshat.Tools.Handlers do
 
   # AbletonOSC sends booleans for some properties and 0/1 for others.
   defp truthy?(true), do: true
-  defp truthy?(value) when is_integer(value), do: value != 0
+  defp truthy?(value) when is_number(value), do: value != 0
   defp truthy?(_value), do: false
 
   defp maybe_set_loop_start(%{"start" => start}),

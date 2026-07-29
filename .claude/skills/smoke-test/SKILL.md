@@ -161,6 +161,41 @@ on more than one kind of device:
    that one" — the set ends holding only the winner. Then an effect A/B via
    `bypass_device`.
 
+## If the change touches the clip property tools (`get_clip_properties` / `set_clip_properties`)
+
+Every clip setter is fire-and-forget and Live's own rejection of an invalid loop
+range is silent, so `mix test` proves the write-ordering logic and nothing about
+whether the writes land. Three assumptions here come from Live's object model
+rather than from any run:
+
+1. **The headline sentence.** Capture or write an 8-beat MIDI clip, then "loop
+   beats 4–8": the brace visibly moves in the note editor, playback loops that
+   section, and the reply echoes 4.0–8.0 plus the new length.
+2. **Looping-off aliasing.** With looping off, `get_clip_properties` should show
+   the loop points tracking the play markers. Then set `looping` *and* the loop
+   points in one call and confirm the intended brace results — this is the
+   **known wart** recorded in [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) §05: the pair-context read happens before the `looping` toggle goes out, so
+   on a clip whose stored brace differs from its markers the ordering and the
+   single-sided validation can both run on stale values. If it misbehaves, the
+   fix is to send `looping` first and read the pair context after.
+3. **Ordering and invalid states.** Move a brace entirely past the old one in
+   one call (the end-first path) and confirm it lands. Then make a single-sided
+   invalid write (`loop_start` beyond the current `loop_end`) and confirm it
+   errors naming the current value with Live untouched. Note for the record
+   whether Live clamps or ignores an inverted loop point.
+4. **Audio clip.** Set `gain` — the echo shows a plausible dB from
+   `gain_display_string`. Change `warp_mode`/`warping` and see it in clip view.
+   Confirm `velocity_amount` and `legato` read and write without timeouts —
+   they are *assumed* present on audio clips; if a read stalls, move them to
+   the MIDI-only branch of `@clip_common_reads`. On an **unwarped** audio clip,
+   confirm the reply says "seconds" rather than "beats".
+5. **MIDI guard.** `gain` on a MIDI clip errors cleanly and nothing is sent.
+6. **Reader.** `get_clip_properties` on a freshly captured clip reports the
+   length and brace Live inferred; on an empty slot it errors via `ensure_clip`
+   rather than burning fourteen timeouts.
+7. **Follow cam.** A brace edit leaves the clip selected with the note editor
+   open.
+
 ## If the change touches session guidance (`Seshat.Instructions` or a tool description)
 
 The only checks in this repo that exercise **what the model says** rather than

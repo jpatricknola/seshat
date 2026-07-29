@@ -409,8 +409,10 @@ defmodule Seshat.Tools.Definitions do
           "loop on/off and loop brace (loop_start/loop_end), play markers " <>
           "(start_marker/end_marker), launch mode and quantization, legato, velocity amount — " <>
           "plus gain (with its dB display value), warp mode, and warping for audio clips. " <>
-          "Track and clip_slot are 0-based; slot N sits in scene N. All beat positions count " <>
-          "from the clip's own start (beat 0). Use get_clip_slots first to find which slots " <>
+          "Track and clip_slot are 0-based; slot N sits in scene N. All positions count from " <>
+          "the clip's own start (position 0), in beats — except on an audio clip with warping " <>
+          "off, where Live counts them in seconds; the reply names the unit it is reporting. " <>
+          "Use get_clip_slots first to find which slots " <>
           "hold clips, and this tool before set_clip_properties to see the current values — " <>
           "e.g. what length and loop brace Live inferred for a captured clip.",
       parameters: %{
@@ -429,7 +431,9 @@ defmodule Seshat.Tools.Definitions do
           "gain/warp. This is the clip's OWN loop — distinct from set_loop, which moves the " <>
           "song's global arrangement loop. Track and clip_slot are 0-based; slot N sits in " <>
           "scene N. All properties are optional — send only what you're changing, at least " <>
-          "one. Positions are in beats from the clip's start. To loop a section: set looping " <>
+          "one. Positions are in beats from the clip's start — except on an audio clip with " <>
+          "warping off, where Live counts them in seconds; call get_clip_properties first, " <>
+          "which names the unit. To loop a section: set looping " <>
           "true with loop_start/loop_end, and usually start_marker to the loop start so launch " <>
           "begins there — note loop_start/loop_end only act as the loop brace while looping is " <>
           "on (while off, Live treats them as the play start/end markers). To trim or extend a " <>
