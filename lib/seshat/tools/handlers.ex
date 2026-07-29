@@ -1241,17 +1241,25 @@ defmodule Seshat.Tools.Handlers do
   # Arming is done for the user rather than asked about: "record me a take on the
   # keys" is consent to arm, and the reply discloses it.
   #
-  # The `catch` covers the pre-fire guards only in practice: every step after the
-  # fire (`record_echo/2`'s reads, the follow cam) catches its own exit, so the
-  # "nothing was sent" wording can't end up on a take that did start.
+  # `record_length/1` is placed before every OSC-issuing guard on purpose: it is
+  # the only step in this chain that can exit *without* one of the query helpers'
+  # own `catch` turning that into an `{:error, _}` first (it reads `State.song()`
+  # directly). Keeping it ahead of `ensure_armed/1` means the outer `catch` below —
+  # whose text says nothing was sent — can never fire after the track has already
+  # been armed.
+  #
+  # Once the fire itself is sent, `report_record_started/5` is responsible for
+  # never repeating that "nothing was sent" framing: `record_echo/2`'s own guard
+  # errors still say it (they're shared with the pre-fire guards), so it rewraps
+  # them instead of returning them verbatim.
   defp do_call("record_clip", %{"track" => track, "clip_slot" => slot} = params) do
     bars = Map.get(params, "bars")
 
     with :ok <- ensure_bars(bars),
+         {:ok, beats} <- record_length(bars),
          :ok <- ensure_slot_empty(track, slot),
          {:ok, armed_now?} <- ensure_armed(track),
-         :ok <- ensure_will_record(track, slot),
-         {:ok, beats} <- record_length(bars),
+         :ok <- ensure_will_record(track, slot, armed_now?),
          :ok <- fire_for_record(track, slot, beats) do
       report_record_started(track, slot, bars, beats, armed_now?)
     else
@@ -2384,8 +2392,11 @@ defmodule Seshat.Tools.Handlers do
   end
 
   # The definitive precondition, and the last one before anything is sent: Live
-  # itself answering "would firing this slot record?".
-  defp ensure_will_record(track, slot) do
+  # itself answering "would firing this slot record?". `armed_now?` is threaded
+  # through so the false branch can disclose an arm this same call just made —
+  # `ensure_armed/1`'s `/live/track/set/arm` already reached Live, so the track
+  # is left armed (and monitoring possibly live) even though the fire never was.
+  defp ensure_will_record(track, slot, armed_now?) do
     case query_flag(
            "/live/clip_slot/get/will_record_on_start",
            [track, slot],
@@ -2397,13 +2408,19 @@ defmodule Seshat.Tools.Handlers do
       {:ok, false} ->
         {:error,
          "Live reports that firing slot #{slot} on track #{track} would not record, so " <>
-           "nothing was sent. The track is armed, so this is usually the track's input: " <>
-           "check its input routing and monitoring in Live."}
+           "nothing was sent.#{armed_disclosure(armed_now?)} The track is armed, so this is " <>
+           "usually the track's input: check its input routing and monitoring in Live."}
 
       {:error, message} ->
         {:error, message}
     end
   end
+
+  defp armed_disclosure(true) do
+    " The track was armed in the process — disarm it with set_track_arm if that isn't wanted."
+  end
+
+  defp armed_disclosure(false), do: ""
 
   defp ensure_recording(track, slot) do
     case query_flag(
@@ -2432,7 +2449,13 @@ defmodule Seshat.Tools.Handlers do
         {:ok, record_reply(track, slot, bars, beats, armed_now?, status)}
 
       {:error, message} ->
-        {:error, message}
+        # `record_echo/2` shares its guard helpers with the pre-fire checks, so
+        # its errors still carry their "nothing was sent" framing — false here,
+        # since the fire already went out. Rewrap rather than return verbatim.
+        {:error,
+         "The take was fired on track #{track}, slot #{slot}, but confirming it failed: " <>
+           "#{message} That doesn't mean nothing is recording — check with get_clip_slots, " <>
+           "and stop_recording track #{track} slot #{slot} if it turns out to be running."}
     end
   end
 

@@ -1,6 +1,6 @@
 # Seshat MCP — Tool Audit
 
-_Living doc · MCP design review · 51 tools in the surface · 25 Jul 2026 — update as tools change._
+_Living doc · MCP design review · 53 tools in the surface · 25 Jul 2026 — update as tools change._
 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
@@ -58,7 +58,7 @@ _Living doc · MCP design review · 51 tools in the surface · 25 Jul 2026 — u
 > three new vendored OSC addresses. See
 > [archive/PLAN_follow_cam.md](archive/PLAN_follow_cam.md).
 
-**At a glance:** 51 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~8 coverage gaps (mostly optional), all on the roadmap.
+**At a glance:** 53 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~6 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -203,4 +203,4 @@ property of the category, not of any one tool.
 
 ---
 
-_Seshat MCP tool audit · living document · 51 tools as of 29 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._
+_Seshat MCP tool audit · living document · 53 tools as of 29 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._

@@ -842,6 +842,35 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "record_clip validation" do
+    # Only the transport-free error path: `ensure_bars/1` is checked before any
+    # Transport.query, so a bad `bars` value never reaches Ableton — same
+    # precedent as "set_clip_properties validation" above. Everything else in
+    # record_clip's guard chain queries Ableton and belongs in the smoke test.
+    test "rejects a zero bars count before touching Ableton" do
+      assert {:error, message} =
+               Handlers.call("record_clip", %{"track" => 0, "clip_slot" => 0, "bars" => 0})
+
+      assert message =~ "bars must be a positive number of bars"
+      assert message =~ "got 0"
+    end
+
+    test "rejects a negative bars count before touching Ableton" do
+      assert {:error, message} =
+               Handlers.call("record_clip", %{"track" => 0, "clip_slot" => 0, "bars" => -4})
+
+      assert message =~ "bars must be a positive number of bars"
+      assert message =~ "got -4"
+    end
+
+    test "rejects a non-numeric bars value before touching Ableton" do
+      assert {:error, message} =
+               Handlers.call("record_clip", %{"track" => 0, "clip_slot" => 0, "bars" => "four"})
+
+      assert message =~ "bars must be a positive number of bars"
+    end
+  end
+
   describe "capture_diff/2" do
     # The capture_midi do_call clause itself isn't tested here: it goes through
     # Transport.query, which needs a live Ableton. This exercises the pure diff
