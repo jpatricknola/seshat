@@ -96,6 +96,8 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
 | [lib/seshat/mcp/tools.ex](lib/seshat/mcp/tools.ex) | Generates one MCP component per tool definition |
 | [lib/seshat/mcp/schema.ex](lib/seshat/mcp/schema.ex) | JSON Schema → Anubis/Peri schema conversion |
+| [lib/seshat/mcp/log_filter.ex](lib/seshat/mcp/log_filter.ex) | Keeps a normal connect quiet — drops the `:warning` Anubis logs when a client hangs up, keeping real transport faults. Not a component |
+| [lib/seshat_web/plugs/no_auth_discovery.ex](lib/seshat_web/plugs/no_auth_discovery.ex) | Answers clients' OAuth discovery probes with a quiet 404 instead of raising `NoRouteError` |
 | [lib/seshat/commands/registry.ex](lib/seshat/commands/registry.ex) | Multi-step sequences: Command struct → ordered OSC messages |
 | [lib/seshat/commands/command.ex](lib/seshat/commands/command.ex) | The Command struct (multi-step operations only) |
 | [lib/seshat/osc/transport.ex](lib/seshat/osc/transport.ex) | UDP GenServer — send, query, PubSub broadcast |
