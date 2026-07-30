@@ -210,13 +210,18 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top item is a defect: `create_track` returns an index
-unverified. Tool-parameter bounds are no longer the inconsistent half of that
-pair — `Seshat.Tools.Validation` now validates every call against its schema
-from `Seshat.Tools.Definitions` before `Handlers.call/2` dispatches, both
-entry modes share it, and `MCP.Schema`'s number branch carries `minimum`/
-`maximum` through to the wire-advertised `oneOf` (shipped 2026-07-30).
-`Transport` now serializes OSC queries through an internal queue with a
+2026-07-30 its top item is `start_new_project` (the setup wizard, and prompt
+budget back). The defect that used to top the queue is fixed: `create_track`
+now counts tracks before and after the create and only reports an index once
+the count rose by exactly one, erroring honestly otherwise instead of naming
+and steering to a track that may not exist (`Seshat.Commands.Registry`,
+shipped 2026-07-30). Tool-parameter bounds are no longer the inconsistent half
+of that pair — `Seshat.Tools.Validation` now validates every call against its
+schema from `Seshat.Tools.Definitions` before `Handlers.call/2` dispatches,
+both entry modes share it, and `MCP.Schema`'s number branch carries
+`minimum`/`maximum` through to the wire-advertised `oneOf` (shipped
+2026-07-30). `Transport` now serializes OSC queries through an internal queue
+with a
 per-request timer — one query in flight at a time, matched by address against
 that request only, and a timed-out caller's request dropped rather than sent —
 closing the single-`pending`-slot correctness gap (shipped 2026-07-30). It does

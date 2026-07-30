@@ -57,7 +57,8 @@ Seshat.Tools.Handlers
 Seshat.Commands.Registry.execute/1
   → pattern matches on command type
   → sequences multi-step operations
-     (create_track = query num_tracks → create → set name)
+     (create_track = query num_tracks → create → query num_tracks again →
+      verify the count rose by exactly one → set name)
      (write_notes  = ensure clip exists → add notes)
         ▼
 Seshat.OSC.Transport (GenServer)

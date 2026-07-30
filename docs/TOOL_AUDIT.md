@@ -75,7 +75,7 @@ _Living doc · MCP design review · one verdict per tool · 25 Jul 2026 — upda
 > implementations, so defects that live below the schema were invisible to it.
 > Consult both docs before "fixing" a tool.
 
-**At a glance:** ~~0 correctness fixes outstanding (3 applied)~~ ~~≥4 outstanding, from the 2026-07-29 external review (index validation, numeric bounds, `create_track` verification, fabricated session-state defaults)~~ **1 outstanding, from the 2026-07-29 external review** (`create_track` verification — index validation and numeric bounds fixed 2026-07-30, fabricated session-state defaults fixed 2026-07-30) · 0 unresolved overlaps · ~6 coverage gaps (mostly optional), all on the roadmap.
+**At a glance:** ~~0 correctness fixes outstanding (3 applied)~~ ~~≥4 outstanding, from the 2026-07-29 external review (index validation, numeric bounds, `create_track` verification, fabricated session-state defaults)~~ ~~1 outstanding, from the 2026-07-29 external review (`create_track` verification — index validation and numeric bounds fixed 2026-07-30, fabricated session-state defaults fixed 2026-07-30)~~ **0 outstanding from the 2026-07-29 external review** (index validation, numeric bounds and fabricated session-state defaults fixed 2026-07-30; `create_track` verification fixed 2026-07-30) · 0 unresolved overlaps · ~6 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -163,7 +163,7 @@ follows from what a tool *does to a clip*, not from any one row.
 | `get_device_parameters` | Read      | Keep   | Great "trust the min/max" guidance.                      |
 | `undo`                  | History   | Keep   | —                                                        |
 | `redo`                  | History   | Keep   | —                                                        |
-| `create_track`          | Structure | Keep   | **Known wart (external review, 07/2026):** returns the pre-create count as the new index without verifying the count rose, then renames that index — so a dropped create yields a bogus index reported as success. `Registry.ensure_created/2` already does this correctly for `create_return_track`; apply it here. Finding #6. |
+| `create_track`          | Structure | Keep   | Verifies the count rose by exactly one before naming the track and reporting the index (finding #6, fixed 07/2026); an unchanged count, or a jump of more than one, errors honestly instead of returning a bogus or ambiguous index. |
 | `create_scene`          | Structure | Keep   | Position param `index` vs `scene` elsewhere.             |
 | `delete_track`          | Structure | Keep   | —                                                        |
 | `delete_scene`          | Structure | Keep   | —                                                        |
