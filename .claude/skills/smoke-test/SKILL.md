@@ -505,3 +505,44 @@ covered.
 6. Report: what you exercised, what you verified by reading state back, what
    failed or timed out, and what can only be judged by ear (sound choice,
    levels, timing feel) — flag those explicitly for the user to check.
+7. **If the branch has an open PR, write the results into its body.** A smoke
+   test is the only evidence that the live half works, and it is exactly the
+   evidence a reviewer cannot reproduce — the PR body is where it belongs.
+
+   ```bash
+   gh pr view --json number,body --jq .number   # empty output = no PR, stop here
+   ```
+
+   Read the existing body, edit it, and write it back from a file:
+
+   ```bash
+   gh pr view --json body --jq .body > /tmp/pr-body.md
+   # edit /tmp/pr-body.md, then:
+   gh pr edit --body-file /tmp/pr-body.md
+   ```
+
+   **Never pass `--body` inline and never retype the body from memory** — both
+   silently discard whatever you did not reproduce, and the plan report and
+   review verdict already in there are not yours to drop.
+
+   Add (or, on a re-run, *replace*) one section headed
+   "Live verification — smoke-tested DATE", taking DATE from the `date`
+   command, placed directly after the summary so it reads before the
+   implementation detail. Put in it:
+
+   - the headline behaviour, stated as what a user would notice, not as a tool
+     call: what was broken before and what happens now;
+   - a table of what you exercised and what came back — normal call, boundary,
+     invalid input, and the read-back that proves the effect actually landed;
+   - **what you did not cover, named specifically.** An untested client, a
+     hardware path you had no input routed for, a check you skipped because
+     Live was in the wrong state. A smoke test that reports only successes reads
+     as full coverage and quietly retires the checks nobody ran.
+
+   Correct anything the body now states falsely — a body written before the run
+   usually carries an open question the run just answered, and leaving it says
+   the work is still outstanding.
+
+   Findings that are real but out of scope for the branch go in the body as
+   findings *and* into [docs/ROADMAP.md](docs/ROADMAP.md) as an issue, cited by
+   title. The body is read once at merge; the roadmap is the queue.
