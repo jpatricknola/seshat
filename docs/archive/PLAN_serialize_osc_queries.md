@@ -1,5 +1,16 @@
 # Plan — Serialize OSC queries and clean up timed-out callers
 
+> **Archived 2026-07-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `Seshat.OSC.Transport` now
+> queues queries behind a single in-flight request (`in_flight`/`queue` state,
+> `lib/seshat/osc/transport.ex`), with a client-computed absolute deadline, a
+> per-request timer that drops a timed-out caller without replying, and a
+> cancel-timer race closed by matching the timer message against the in-flight
+> ref. The two residual collision classes the moduledoc now names explicitly
+> are unchanged from what this plan predicted. `REPOSITORY_REVIEW.md` finding
+> #1 is left as written — a dated record of the defect before the fix, not
+> current documentation. No open follow-ups; the roadmap item is removed.
+
 Roadmap item "Serialize OSC queries and clean up timed-out callers".
 Evidence: finding #1 in
 [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md), whose reviewer response
