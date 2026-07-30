@@ -76,6 +76,7 @@ accident.
 - `Message.decode/1` should return `{:ok, message}` / `{:error, reason}` and
   validate lengths, type tags, padding and trailing data.
 - [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) #3.
+- Plan: [PLAN_harden_osc_listener.md](PLAN_harden_osc_listener.md).
 
 ## #2 · Stop fabricating session state after OSC failures
 
