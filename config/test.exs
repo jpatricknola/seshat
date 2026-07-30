@@ -27,6 +27,14 @@ config :seshat, :start_osc, false
 config :seshat, :start_mcp, false
 config :seshat, :start_catalog, false
 
+# The suite must be safe to run with Live open and unsaved work. AbletonOSC
+# listens on 11000 and replies to a fixed 11001; these are deliberately neither.
+# Any test that starts Seshat.OSC.Transport therefore talks to a test-local
+# socket (Seshat.Test.OSCSink) and cannot reach Ableton — asserted by
+# test/seshat/osc/transport_test.exs.
+config :seshat, :osc_send_port, 31000
+config :seshat, :osc_reply_port, 31001
+
 # Stub Anthropic API calls in tests
 config :seshat, :anthropic_api_key, "test-key"
 config :seshat, :agent_req_options, plug: {Req.Test, Seshat.Agent}

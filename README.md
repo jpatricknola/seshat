@@ -204,11 +204,15 @@ Both modes drive the same tools through the same handlers.
 
 ```bash
 mix precommit    # compile --warnings-as-errors, deps.unlock --unused, format, test
-mix test         # 83 tests; no Ableton required
+mix test         # no Ableton required — and safe to run with Live open
 ```
 
-Tests avoid the live transport — anything reaching `Transport.query/3` needs
-Ableton running and will time out (5 seconds by default).
+`mix test` cannot reach Ableton. In `MIX_ENV=test` the OSC transport sends to a
+throwaway UDP port and binds another ([config/test.exs](config/test.exs)), never
+AbletonOSC's 11000/11001 — [test/seshat/osc/transport_test.exs](test/seshat/osc/transport_test.exs)
+fails if that is ever pointed back at Live. Nothing in the suite reaches
+`Transport.query/3` either: those need a live Ableton and would time out
+(5 seconds by default).
 
 ## Docs
 
@@ -220,10 +224,11 @@ Ableton running and will time out (5 seconds by default).
 | [.claude/docs/ableton-lom.md](.claude/docs/ableton-lom.md) | Ableton's Live Object Model |
 | [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md) | AbletonOSC conventions and gotchas |
 | [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) | Canonical OSC address reference |
-| [docs/PLAN_remaining_osc_tools.md](docs/PLAN_remaining_osc_tools.md) | What's not built yet |
-| [docs/PLAN_sound_catalog.md](docs/PLAN_sound_catalog.md) | How the tag-aware sound catalog works, and its open follow-ups |
-| [docs/architecture-evaluation.md](docs/architecture-evaluation.md) | Why tool use over structured JSON |
-| [docs/tool-use-migration-plan.md](docs/tool-use-migration-plan.md) | How the dual-mode design came about |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | What's not built yet — the living, priority-ordered queue |
+| [docs/archive/PLAN_remaining_osc_tools.md](docs/archive/PLAN_remaining_osc_tools.md) | *Archived* — the tool-coverage plan ROADMAP.md superseded |
+| [docs/archive/PLAN_sound_catalog.md](docs/archive/PLAN_sound_catalog.md) | *Archived* — how the tag-aware sound catalog works, and its open follow-ups |
+| [docs/archive/architecture-evaluation.md](docs/archive/architecture-evaluation.md) | *Archived* — why tool use over structured JSON |
+| [docs/archive/tool-use-migration-plan.md](docs/archive/tool-use-migration-plan.md) | *Archived* — how the dual-mode design came about |
 
 ## Troubleshooting
 
@@ -232,7 +237,8 @@ UDP — a wrong address produces no error. Check the address against
 [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md).
 
 **Queries time out but sets work.** Something else is bound to port 11001, so
-replies never arrive. Look for a "Port 11001 already in use" warning at startup.
+replies never arrive. Look for an "OSC reply port 11001 is already bound by
+another process" error at startup ([above](#only-one-seshat-at-a-time)).
 
 **`get_session_state` says no tracks.** AbletonOSC isn't enabled as a Control
 Surface, or Ableton isn't running.

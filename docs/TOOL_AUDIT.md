@@ -58,7 +58,18 @@ _Living doc · MCP design review · 53 tools in the surface · 25 Jul 2026 — u
 > three new vendored OSC addresses. See
 > [archive/PLAN_follow_cam.md](archive/PLAN_follow_cam.md).
 
-**At a glance:** 53 tools in the surface · 0 correctness fixes outstanding (3 applied) · 0 unresolved overlaps · ~6 coverage gaps (mostly optional), all on the roadmap.
+> **Superseded in part, 2026-07-30 — an external review found correctness
+> defects this audit missed.** See
+> [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md), the active correctness
+> backlog. Three verdicts below were wrong and are corrected inline: the
+> "0 correctness fixes outstanding" line, §03's "Indexing is clean — strong",
+> and the `create_track` inventory row. The audit's scope explains the gap
+> rather than excusing it — it reviewed the tool surface as *designed*
+> (descriptions, schemas, overlaps, coverage) and did not trace handler
+> implementations, so defects that live below the schema were invisible to it.
+> Consult both docs before "fixing" a tool.
+
+**At a glance:** 53 tools in the surface · ~~0 correctness fixes outstanding (3 applied)~~ **≥4 outstanding, from the 2026-07-29 external review** (index validation, numeric bounds, `create_track` verification, fabricated session-state defaults) · 0 unresolved overlaps · ~6 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -108,7 +119,7 @@ Conventions are strong overall. A few small drifts worth aligning as you grow th
 
 **Minor param drift — Low.** `create_scene` names the position `index`, while every other scene tool uses `scene`. Scalar setters use a generic `value` while booleans use property names (`muted`/`soloed`/`armed`). Both defensible; noting for consistency as the surface grows.
 
-**Indexing is clean — strong.** 0-based everywhere, consistently documented, with the "'track 1' = index 0" reminder repeated across tools. The user-facing guidance ("refer to tracks by name or 1-based UI number") only appears in `get_session_state` — consider echoing it in the other read tools so the 1-based-to-user rule is never missed.
+**~~Indexing is clean — strong.~~ CORRECTED 30 Jul — the convention is clean; the *schemas* are not.** This verdict asked whether the 0-based convention was applied consistently and never asked whether the schemas enforce it. They don't: `minimum: 0` is present on the newer tools and missing on the older ones (`set_track_pan`, `set_track_volume`, `delete_track`, `duplicate_track`, `set_track_name`), and Python indexes Live's collections directly — so `track: -1` silently operates on the *last* track while the reply echoes "track -1". See finding #3 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md). The original observation below still holds for the convention itself. 0-based everywhere, consistently documented, with the "'track 1' = index 0" reminder repeated across tools. The user-facing guidance ("refer to tracks by name or 1-based UI number") only appears in `get_session_state` — consider echoing it in the other read tools so the 1-based-to-user rule is never missed.
 
 ---
 
@@ -139,14 +150,14 @@ follows from what a tool *does to a clip*, not from any one row.
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
-| `get_session_state`     | Read      | Keep   | Track-level state. Solid. Stays fresh by push; `refresh: true` is the backstop. |
+| `get_session_state`     | Read      | Keep   | Track-level state. Stays fresh by push; `refresh: true` is the backstop. **Known wart (external review, 07/2026):** on a failed refresh query, `Session.State` substitutes plausible defaults (120 BPM, 4/4, C Major) that the caller cannot distinguish from real values — and the model writes bar lengths against them. Finding #7. |
 | `get_clip_slots`        | Read      | Keep   | Exemplary description.                                   |
 | `get_clip_notes`        | Read      | Keep   | Clean errors. Closes the read-notes gap.                 |
 | `get_track_devices`     | Read      | Keep   | Racks show as one device — noted well.                   |
 | `get_device_parameters` | Read      | Keep   | Great "trust the min/max" guidance.                      |
 | `undo`                  | History   | Keep   | —                                                        |
 | `redo`                  | History   | Keep   | —                                                        |
-| `create_track`          | Structure | Keep   | —                                                        |
+| `create_track`          | Structure | Keep   | **Known wart (external review, 07/2026):** returns the pre-create count as the new index without verifying the count rose, then renames that index — so a dropped create yields a bogus index reported as success. `Registry.ensure_created/2` already does this correctly for `create_return_track`; apply it here. Finding #6. |
 | `create_scene`          | Structure | Keep   | Position param `index` vs `scene` elsewhere.             |
 | `delete_track`          | Structure | Keep   | —                                                        |
 | `delete_scene`          | Structure | Keep   | —                                                        |

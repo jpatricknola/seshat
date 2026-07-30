@@ -163,7 +163,7 @@ merge would be completely invisible: every address still answers.
 ## Verification
 
 - `mix precommit` — compile with warnings-as-errors, unlock unused deps, format, test. Run before declaring work done.
-- `mix test` — full suite, no Ableton required. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
+- `mix test` — full suite, no Ableton required, and safe to run with Live open: in `MIX_ENV=test` the transport's ports come from config and point at throwaway UDP ports, never AbletonOSC's 11000/11001, so tests that start `Transport` reach `Seshat.Test.OSCSink` instead of Live. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed — the `/smoke-test` skill is the checklist for that. See [README.md](README.md).
 - [docs/validation-script.md](docs/validation-script.md) is the human-run version: a guided lo-fi session a person reads to Seshat, building a real sketch while touching the 41 tools it was written against (the six sends/returns tools, `delete_device`/`bypass_device`, `capture_midi`, `get_clip_properties`/`set_clip_properties`, and `record_clip`/`stop_recording` postdate it — see `/smoke-test` for those). Use it when a batch of features needs validating by ear and eye rather than by agent. [docs/validation-script.txt](docs/validation-script.txt) is its copy-paste companion — the same script stripped of prose, with the 2026-07-27 run's findings written inline under the first few prompts (those produced the push-based session state work and the removal of `create_project` — see [docs/archive/create-project-removal.md](docs/archive/create-project-removal.md)).
@@ -196,6 +196,25 @@ cleanup) leads. Keep it current: when something ships, run the `/ship` skill
 (or by hand: remove its issue there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
+
+**ROADMAP.md ranks features, defects and security work in one queue** — as of
+2026-07-30 its top seven are all defects, because the OSC sockets bind beyond
+loopback today and several OSC-layer bugs corrupt data silently. Two sibling
+docs hold the *evidence* behind those items, not a competing queue:
+
+- [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the 2026-07-29 external review.
+  Each confirmed defect with file:line evidence and a **Reviewer response**
+  recording what we accepted, narrowed, or rejected, plus a declined section.
+  **Read the response before planning a roadmap item that links here** — several
+  of the review's recommendations were rejected for conflicting with settled
+  decisions (structured setter acknowledgements, Python bounds checks, protocol
+  request IDs).
+- [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure, split
+  into **Fix now** (ranked as ROADMAP #1–#3, because the OSC sockets already bind
+  beyond loopback today) and **Deployment-gated** (HTTP auth, production binding,
+  rate limiting — deliberately absent from the queue until something binds beyond
+  loopback or a second user is invited). Check it before loosening a bind or
+  adding an entry point.
 
 [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) is a standing design review of the
 whole tool surface — one verdict per tool, plus the coverage gaps that feed

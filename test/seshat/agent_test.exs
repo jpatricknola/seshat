@@ -3,12 +3,12 @@ defmodule Seshat.AgentTest do
 
   alias Seshat.Agent
 
-  setup_all do
-    start_supervised!(Seshat.OSC.Transport)
-    :ok
-  end
-
+  # Three of these tests execute tools, so the transport is started per test —
+  # behind a sink bound to the test send port, which is what keeps the mutations
+  # below off a running Ableton (config/test.exs).
   setup do
+    start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
+    start_supervised!(Seshat.OSC.Transport)
     Req.Test.verify_on_exit!()
   end
 
@@ -53,6 +53,8 @@ defmodule Seshat.AgentTest do
       assert cmd.tool == "set_track_pan"
       assert cmd.input == %{"track" => 0, "value" => -1.0}
       assert cmd.error == false
+
+      assert_receive {:osc_out, "/live/track/set/panning", [0, -1.0]}
     end
   end
 
@@ -121,6 +123,9 @@ defmodule Seshat.AgentTest do
       assert {:ok, result} = Agent.run("mute tracks 1 and 2")
       assert result.response == "Muted tracks 1 and 2."
       assert length(result.commands_executed) == 2
+
+      assert_receive {:osc_out, "/live/track/set/mute", [0, 1]}
+      assert_receive {:osc_out, "/live/track/set/mute", [1, 1]}
     end
   end
 
@@ -179,6 +184,8 @@ defmodule Seshat.AgentTest do
       assert length(result.commands_executed) == 2
       assert Enum.any?(result.commands_executed, &(&1.tool == "get_session_state"))
       assert Enum.any?(result.commands_executed, &(&1.tool == "set_track_pan"))
+
+      assert_receive {:osc_out, "/live/track/set/panning", [0, 0.5]}
     end
   end
 
