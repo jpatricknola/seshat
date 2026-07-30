@@ -633,6 +633,55 @@ that may have drifted) in
 [archive/PLAN_mcp_browser_ui.md](archive/PLAN_mcp_browser_ui.md) — verify the
 CLI flags against current Claude Code before trusting it.
 
+## #30 · Adopt MCP `2026-07-28` when Anubis supports it
+
+**Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
+and stdio while retaining legacy compatibility for as long as clients need it.
+
+**Why:** `2026-07-28` removes the `initialize` / `notifications/initialized`
+handshake and `Mcp-Session-Id`, moves version and client capabilities into
+per-request `_meta`, adds mandatory `server/discover`, requires
+`Mcp-Method` / `Mcp-Name` HTTP headers and `resultType` on results, and makes
+list responses cacheable. Claude support began rolling out on 2026-07-28.
+Seshat is currently pinned to `anubis_mcp` 1.10.0, whose newest supported
+protocol is `2025-11-25`; current dual-era clients can fall back to that legacy
+flow, so this is not an active break.
+
+**Planner notes:**
+- Wait for an Anubis release with native `2026-07-28` support; do not implement
+  the wire protocol inside Seshat. The existing `~> 1.10` constraint may admit
+  a later 1.x release, leaving only a lock update plus any new transport option.
+- Prefer dual-era operation initially. A modern-only client cannot use the
+  current server, while a dual-era client probes `server/discover` and falls
+  back to legacy initialization.
+- Seshat's application state already lives outside MCP transport sessions:
+  tools delegate to `Seshat.Tools.Handlers` and do not use the per-client Anubis
+  frame. No tool or OSC redesign should be needed.
+- Verify that `Seshat.MCP.Server.server_instructions/0` reaches the
+  `server/discover` result. The new protocol retains `instructions`, but today
+  Anubis emits them from the legacy initialize response and this guidance is
+  load-bearing.
+- The SDK should own per-request `_meta`, standard HTTP headers, `resultType`,
+  cache fields, version errors and discovery dispatch. Seshat's static tool
+  list is already deterministic and does not vary by connection.
+- Keep the current GET/SSE path while supporting legacy clients; modern
+  `2026-07-28` replaces the standalone GET stream with
+  `subscriptions/listen`. Revisit the router comments and
+  `Seshat.MCP.LogFilter` after the Anubis upgrade.
+- Authorization changes do not apply while Seshat remains unauthenticated and
+  loopback-only. Tasks, roots, sampling, elicitation and MCP logging are not
+  used here.
+- Add wire-level tests for `server/discover`, a direct stateless `tools/list`
+  and `tools/call`, required response fields, HTTP headers, instructions, and
+  legacy fallback. Existing MCP tests cover component parity and the
+  instructions callback, not transport negotiation.
+- Primary references:
+  [release overview](https://blog.modelcontextprotocol.io/posts/2026-07-28/),
+  [key changes](https://modelcontextprotocol.io/specification/2026-07-28/changelog),
+  [discovery](https://modelcontextprotocol.io/specification/2026-07-28/server/discover),
+  and
+  [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
+
 
 ---
 
