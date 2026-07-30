@@ -1031,9 +1031,10 @@ defmodule Seshat.Tools.Handlers do
   `numerator × 4 / denominator` of them: four in 4/4, three in 3/4, but three
   (not six) in 6/8. Returns a float, which is what the OSC argument wants.
 
-  ⚠️ The beat-unit assumption is unverified in odd meters (the 2026-07-29 raw-OSC
-  check was 4/4, where the two conventions coincide). If Live turns out to count
-  signature beats instead, this function is the one line to change.
+  Verified 2026-07-31 in Live: with the song in 6/8, a song loop of 6.0 beats
+  reads 2.0.0 — two bars — in the transport bar, so a bar of 6/8 is 3.0
+  song-time beats and this formula is right. Neither the LOM Song page nor the
+  Clip page defines the beat unit, so this is measurement, not documentation.
   """
   @spec record_length_beats(number(), number(), number()) :: float()
   def record_length_beats(bars, numerator, denominator) do
@@ -1489,6 +1490,22 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("set_tempo", %{"bpm" => bpm}) do
     case Transport.send_message("/live/song/set/tempo", [bpm / 1.0]) do
       :ok -> {:ok, "Set tempo to #{bpm} BPM"}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("set_time_signature", %{
+         "numerator" => numerator,
+         "denominator" => denominator
+       }) do
+    with :ok <- Transport.send_message("/live/song/set/signature_numerator", [numerator]),
+         :ok <- Transport.send_message("/live/song/set/signature_denominator", [denominator]) do
+      beats = numerator * 4 / denominator
+
+      {:ok,
+       "Set the time signature to #{numerator}/#{denominator}. " <>
+         "Clip lengths and note times still count quarter-note beats: one bar is now #{beats} beats."}
+    else
       {:error, reason} -> {:error, inspect(reason)}
     end
   end

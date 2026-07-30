@@ -76,6 +76,33 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "set_time_signature" do
+    setup :osc_sink
+
+    test "sends both halves as integers and states the quarter-note bar length" do
+      assert {:ok, msg} =
+               Handlers.call("set_time_signature", %{"numerator" => 6, "denominator" => 8})
+
+      assert msg =~ "6/8"
+      assert msg =~ "3.0 beats"
+
+      # Integers, not floats: Live's signature properties are int, and
+      # `_set_property` swallows a type rejection without a word on the wire.
+      assert_receive {:osc_out, "/live/song/set/signature_numerator", [6]}
+      assert_receive {:osc_out, "/live/song/set/signature_denominator", [8]}
+    end
+
+    test "a bar of 3/4 is three quarter-note beats" do
+      assert {:ok, msg} =
+               Handlers.call("set_time_signature", %{"numerator" => 3, "denominator" => 4})
+
+      assert msg =~ "3/4"
+      assert msg =~ "3.0 beats"
+      assert_receive {:osc_out, "/live/song/set/signature_numerator", [3]}
+      assert_receive {:osc_out, "/live/song/set/signature_denominator", [4]}
+    end
+  end
+
   describe "get_session_state" do
     test "returns session info or handles missing Ableton" do
       # Session.State crashes on startup when Ableton isn't running,

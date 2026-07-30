@@ -253,6 +253,36 @@ defmodule Seshat.Tools.Definitions do
       }
     },
     %{
+      name: "set_time_signature",
+      description:
+        "Set the song's global time signature in Ableton Live — the one in the " <>
+          "transport bar that bar lines, the metronome, and bars-based recording " <>
+          "follow. numerator is beats per bar (1-99); denominator is the note " <>
+          "value that gets the beat (1, 2, 4, 8, or 16 — the same choices as " <>
+          "Live's own control). Note for later calls: clip lengths, loop points, " <>
+          "and note times stay measured in quarter-note beats regardless of the " <>
+          "signature — one bar of 3/4 is 3.0 beats, one bar of 6/8 is also 3.0 " <>
+          "beats. Changing the signature moves the bar grid; already-written " <>
+          "notes do not move.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "numerator" => %{
+            type: "integer",
+            minimum: 1,
+            maximum: 99,
+            description: "Beats per bar (the top number), 1-99"
+          },
+          "denominator" => %{
+            type: "integer",
+            enum: [1, 2, 4, 8, 16],
+            description: "Note value that gets the beat (the bottom number): 1, 2, 4, 8, or 16"
+          }
+        },
+        required: ["numerator", "denominator"]
+      }
+    },
+    %{
       name: "start_playing",
       description: "Start playback in Ableton Live.",
       parameters: %{type: "object", properties: %{}, required: []}
