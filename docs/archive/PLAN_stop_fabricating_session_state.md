@@ -1,5 +1,18 @@
 # Plan — Stop fabricating session state after OSC failures
 
+> **Archived 2026-07-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The fix lives in
+> `Seshat.Session.State` (failed queries yield `nil`, never a fabricated
+> default) and `Seshat.Tools.Handlers` (`get_session_state`'s formatters
+> render `nil` as stated unknowns, plus `record_length_from/2` refuses a
+> `bars` request against an unknown time signature). Review approved with
+> nits, none blocking: one real low-severity gap survives —
+> `return_track_label/1` still renders a `nil` return name as `("")` instead
+> of omitting the label, now tracked as a grab-bag follow-up in
+> [../ROADMAP.md](../ROADMAP.md); the other two nits were stale comments
+> describing removed fallback behavior, left as-is since they don't mislead
+> about current code once this banner and the roadmap item exist.
+
 Roadmap item "Stop fabricating session state after OSC failures".
 Evidence: finding #7 in
 [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md), whose reviewer response

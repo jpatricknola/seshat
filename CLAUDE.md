@@ -209,13 +209,15 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top four are all defects: `Session.State` still fabricates
-plausible-looking values (120 BPM, 4/4, C Major) on a failed refresh, `Transport`
-still serializes queries through a single `pending` slot with no timed-out-caller
-cleanup, and tool-parameter bounds are inconsistently enforced. The OSC network
-boundary itself is now fully hardened — AbletonOSC's loopback bind, the
-browser-export path restriction, and the Elixir listener/decoder hardening
-(loopback bind, source validation, a strict non-crashing decoder in
+2026-07-30 its top three are all defects: `Transport` still serializes queries
+through a single `pending` slot with no timed-out-caller cleanup, tool-parameter
+bounds are inconsistently enforced, and `create_track` returns an index
+unverified. `Session.State` no longer fabricates plausible-looking values on a
+failed refresh — a failed query now yields `nil`, and `get_session_state`
+renders that as a stated unknown rather than a guess (shipped 2026-07-30). The
+OSC network boundary itself is now fully hardened — AbletonOSC's loopback
+bind, the browser-export path restriction, and the Elixir listener/decoder
+hardening (loopback bind, source validation, a strict non-crashing decoder in
 `Seshat.OSC.Message`) all shipped 2026-07-30. Two sibling docs hold the
 *evidence* behind the remaining items, not a competing queue:
 
