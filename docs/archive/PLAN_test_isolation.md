@@ -27,7 +27,7 @@
 ROADMAP #1 at the time this was written. Two halves of one problem: `mix test`
 sends real mutation packets to a running Live set, and `README.md` tells
 contributors it doesn't. Findings #2 and #10 in
-[../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+[REPOSITORY_REVIEW.md](../../REPOSITORY_REVIEW.md).
 
 ## Context
 
@@ -118,7 +118,7 @@ no submodule commit, no pin bump, no `mix abletonosc.install`, and no Live
 restart. Everything here is `lib/`, `test/`, `config/` and docs.
 
 What is load-bearing instead is the *port* contract, verified against
-[abletonosc-api-docs.md](abletonosc-api-docs.md) (lines 10–11) and
+[abletonosc-api-docs.md](../abletonosc-api-docs.md) (lines 10–11) and
 `priv/AbletonOSC/abletonosc/constants.py:5-6`:
 
 | Port | Owner | Direction |
@@ -127,8 +127,8 @@ What is load-bearing instead is the *port* contract, verified against
 | 11001 | Seshat `Transport` (`OSC_RESPONSE_PORT`) | Live → Seshat, replies **and** listener pushes |
 
 AbletonOSC replies to 11001 as a fixed destination, not to the sender's port
-(see [ableton-osc-reference.md](../.claude/docs/ableton-osc-reference.md) and
-[osc-port-contention.md](osc-port-contention.md)). Two consequences shape this
+(see [ableton-osc-reference.md](../../.claude/docs/ableton-osc-reference.md) and
+[osc-port-contention.md](../osc-port-contention.md)). Two consequences shape this
 plan:
 
 1. **Changing only the send port would not be enough for safety, but is enough
@@ -374,9 +374,9 @@ port instead of reading a real set).
 3. **Rider — four broken links in the same file's Docs table.**
    `docs/PLAN_remaining_osc_tools.md`, `docs/PLAN_sound_catalog.md`,
    `docs/architecture-evaluation.md` and `docs/tool-use-migration-plan.md` all
-   moved to [archive/](archive/) and the table still points at the old paths.
+   moved to [archive/](./) and the table still points at the old paths.
    Fix the paths, mark them as archived, and point the "what's not built yet"
-   row at [ROADMAP.md](ROADMAP.md), which is the living list. Included because
+   row at [ROADMAP.md](../ROADMAP.md), which is the living list. Included because
    this item's goal is that the README stops making false statements, and these
    are in the same two sections being edited.
 
