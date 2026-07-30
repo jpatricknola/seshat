@@ -16,8 +16,9 @@ defmodule Seshat.OSC.Message do
   Every check it makes is one that real AbletonOSC output passes. Its replies
   and pushes are built by pythonosc's `OscMessageBuilder`
   (`priv/AbletonOSC/pythonosc`), which emits single messages (never bundles),
-  spec-compliant zero padding, no trailing bytes, and — for the Python types
-  Live's handlers return — only the type tags `i`, `f`, `s`, `T`, `F` and `N`.
+  spec-compliant zero padding, no trailing bytes, UTF-8 strings, and — for the
+  Python types Live's handlers return — only the type tags `i`, `f`, `s`, `T`,
+  `F` and `N`.
   So anything rejected here is, in practice, not AbletonOSC talking. Unknown
   type tags are refused rather than skipped: decoding a tag we have never seen
   would hand downstream code a value nothing was written against.
@@ -77,8 +78,22 @@ defmodule Seshat.OSC.Message do
   end
 
   # Also rejects `#bundle` packets, with a reason that names what arrived.
-  defp validate_address("/" <> _), do: :ok
+  defp validate_address("/" <> _ = address), do: validate_utf8(address, :invalid_utf8_address)
   defp validate_address(address), do: {:error, {:invalid_address, address}}
+
+  # A leading `/` is a byte match, so `<<"/", 255>>` is a well-formed OSC string
+  # and an invalid Elixir one. Nothing downstream is written for that: an
+  # address or a track name carrying one bad byte reaches `Session.State`, then
+  # raises `{:invalid_byte, _}` inside Anubis's JSON encoder on every reply that
+  # carries it — a crash displaced from the boundary that admitted it, and a
+  # mirror that keeps re-raising until it refreshes. Real AbletonOSC cannot
+  # produce one: pythonosc's `write_string` is an explicit `val.encode('utf-8')`
+  # and an unencodable `str` raises `BuildError` before reaching the wire. The
+  # type-tag string needs no check of its own — every byte in it is already
+  # matched against `@supported_tags`, which are ASCII.
+  defp validate_utf8(str, reason) do
+    if String.valid?(str), do: :ok, else: {:error, {reason, str}}
+  end
 
   # Byte-wise on purpose: a type tag string is ASCII by definition, and the
   # bytes here are untrusted, so nothing should go through String/2 functions
@@ -107,7 +122,14 @@ defmodule Seshat.OSC.Message do
 
   defp decode_arg("i", <<val::big-signed-integer-32, rest::binary>>), do: {:ok, val, rest}
   defp decode_arg("f", <<val::big-float-32, rest::binary>>), do: {:ok, val, rest}
-  defp decode_arg("s", data), do: read_string(data)
+
+  defp decode_arg("s", data) do
+    with {:ok, str, rest} <- read_string(data),
+         :ok <- validate_utf8(str, :invalid_utf8_argument) do
+      {:ok, str, rest}
+    end
+  end
+
   defp decode_arg("T", data), do: {:ok, true, data}
   defp decode_arg("F", data), do: {:ok, false, data}
   # OSC nil: type tag only, no payload bytes. AbletonOSC sends it for every

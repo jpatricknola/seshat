@@ -90,6 +90,19 @@ defmodule Seshat.OSC.MessageTest do
       assert {:error, {:unsupported_type_tag, "b"}} = Message.decode(binary)
     end
 
+    test "an address that is well-formed OSC but not valid UTF-8" do
+      # The leading-slash check is a byte match, so this passes it. Left
+      # undecoded it would reach Session.State and then raise inside the MCP
+      # JSON encoder, far from here.
+      binary = osc_string(<<"/live/", 0xFF>>) <> osc_string(",")
+      assert {:error, {:invalid_utf8_address, <<"/live/", 0xFF>>}} = Message.decode(binary)
+    end
+
+    test "a string argument that is not valid UTF-8" do
+      binary = osc_string("/live/x") <> osc_string(",s") <> osc_string(<<"Drum", 0xFF>>)
+      assert {:error, {:invalid_utf8_argument, <<"Drum", 0xFF>>}} = Message.decode(binary)
+    end
+
     test "a truncated integer payload" do
       binary = osc_string("/live/x") <> osc_string(",i") <> <<0, 0>>
       assert {:error, {:truncated_payload, "i", 2}} = Message.decode(binary)
