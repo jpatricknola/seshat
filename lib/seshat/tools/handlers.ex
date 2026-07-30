@@ -17,6 +17,7 @@ defmodule Seshat.Tools.Handlers do
   alias Seshat.OSC.Transport
   alias Seshat.Session.State
   alias Seshat.Tools.FollowCam
+  alias Seshat.Tools.Validation
 
   # Browsing and loading are both far slower than a property read: the first
   # walk of a big browser category takes seconds, and a heavy plugin can take
@@ -193,7 +194,16 @@ defmodule Seshat.Tools.Handlers do
 
   @spec call(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
   def call(name, params) when is_binary(name) and is_map(params) do
-    do_call(name, stringify_keys(params))
+    params = stringify_keys(params)
+
+    # The one place both entry modes meet, so the one place the declared
+    # schemas are actually enforced — neither the Anthropic API nor Peri does
+    # it for us (see `Seshat.Tools.Validation`). Nothing reaches Transport
+    # until the parameters are known good.
+    case Validation.validate(name, params) do
+      :ok -> do_call(name, params)
+      {:error, message} -> {:error, message}
+    end
   end
 
   @doc """

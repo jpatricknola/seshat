@@ -97,5 +97,62 @@ defmodule Seshat.MCP.ToolsTest do
       bad_notes = [%{"pitch" => 999, "start_beat" => 0, "duration" => 1.0, "velocity" => 100}]
       assert {:error, _} = validate("write_midi_notes", %{"track" => 0, "notes" => bad_notes})
     end
+
+    # Peri used to convert every `number` to an unconstrained
+    # `{:either, {:float, :integer}}`, so a declared maximum of 1.0 accepted
+    # 2.0 at the wire. The authoritative check is `Seshat.Tools.Validation`;
+    # this is the wire agreeing with it rather than contradicting it.
+    test "enforces declared ranges on numbers" do
+      assert {:error, _} = validate("set_track_pan", %{"track" => 0, "value" => 2.0})
+      assert {:error, _} = validate("set_track_pan", %{"track" => 0, "value" => -1.5})
+      assert {:ok, _} = validate("set_track_pan", %{"track" => 0, "value" => 1.0})
+    end
+
+    test "enforces declared ranges on integers" do
+      assert {:error, _} = validate("set_track_pan", %{"track" => -1, "value" => 0.0})
+    end
+
+    test "a non-numeric value on a bounded number errors rather than crashing" do
+      assert {:error, _} = validate("set_track_pan", %{"track" => 0, "value" => "loud"})
+    end
+  end
+
+  describe "advertised input schema" do
+    # Runtime Peri validation does not prove the encoder kept the bounds —
+    # they are separate code paths in Peri, and the wire advertisement is the
+    # whole deliverable: a client that never sees `minimum`/`maximum` cannot
+    # steer the model away from an out-of-range call in the first place.
+    test "a bounded number carries its range into both oneOf branches" do
+      component =
+        Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_track_pan"))
+
+      value = component.input_schema["properties"]["value"]
+
+      assert %{"oneOf" => branches} = value
+      assert %{"type" => "number", "minimum" => -1.0, "maximum" => 1.0} in branches
+      assert %{"type" => "integer", "minimum" => -1.0, "maximum" => 1.0} in branches
+
+      # The description stays at property level, outside the oneOf.
+      assert value["description"] =~ "Pan position"
+    end
+
+    test "a bounded integer carries its minimum" do
+      component =
+        Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_track_pan"))
+
+      assert %{"type" => "integer", "minimum" => 0} =
+               Map.take(component.input_schema["properties"]["track"], ["type", "minimum"])
+    end
+
+    test "an unbounded number keeps its bare oneOf shape" do
+      component =
+        Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_device_parameter"))
+
+      # set_device_parameter.value is deliberately unbounded — its legal range
+      # is per-parameter, reported by get_device_parameters.
+      assert %{"oneOf" => branches} = component.input_schema["properties"]["value"]
+      assert %{"type" => "number"} in branches
+      assert %{"type" => "integer"} in branches
+    end
   end
 end

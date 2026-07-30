@@ -90,6 +90,7 @@ Packs, so it is never hardcoded in a tool description.
 |---|---|
 | [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All tool definitions (name, description, JSON Schema). Single source of truth. |
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Single-message tools hit Transport directly; multi-step ones go via Registry. |
+| [lib/seshat/tools/validation.ex](lib/seshat/tools/validation.ex) | Schema-driven parameter validation, called from `Handlers.call/2` before dispatch — reads the declared bounds/types straight out of `Definitions`, so every tool is covered by construction |
 | [lib/seshat/tools/follow_cam.ex](lib/seshat/tools/follow_cam.ex) | View steering — after a create/write/delete succeeds, selects what it touched and shows the pane it's in. `calls/2` is the pure decision; `steer/2` sends it best-effort |
 | [lib/seshat/instructions.ex](lib/seshat/instructions.ex) | Session-level guidance shared by both modes — the conventions no single tool description can carry |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |

@@ -41,8 +41,15 @@ defmodule Seshat.MCP.Schema do
 
   # Peri's `:float` rejects integers, and models routinely emit `1` where the
   # schema says number. Accept both rather than failing a well-formed call;
-  # the handlers coerce with `value / 1.0` anyway.
-  defp peri_type(%{type: "number"}), do: {:either, {:float, :integer}}
+  # the handlers coerce with `value / 1.0` anyway. Both branches carry the
+  # declared range, so an in-range integer still satisfies the float branch
+  # (Peri's bound clauses guard on `is_numeric/1`) while an out-of-range value
+  # fails both and is rejected at the wire. The bounds also survive into the
+  # advertised `input_schema`, as `minimum`/`maximum` inside each `oneOf`
+  # branch — that advertisement is the point of carrying them here; the
+  # authoritative check is `Seshat.Tools.Validation`.
+  defp peri_type(%{type: "number"} = spec),
+    do: {:either, {with_range(:float, spec), with_range(:integer, spec)}}
 
   defp peri_type(%{type: "array", items: items}), do: {:list, peri_type(items)}
   defp peri_type(%{type: "object"} = spec), do: to_anubis(spec)

@@ -19,7 +19,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "value" => %{
             type: "number",
             minimum: -1.0,
@@ -45,7 +45,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "value" => %{
             type: "number",
             minimum: 0.0,
@@ -65,7 +65,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "muted" => %{type: "boolean", description: "true = muted, false = unmuted"}
         },
         required: ["track", "muted"]
@@ -79,7 +79,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "soloed" => %{type: "boolean", description: "true = soloed, false = unsoloed"}
         },
         required: ["track", "soloed"]
@@ -133,10 +133,12 @@ defmodule Seshat.Tools.Definitions do
         properties: %{
           "track" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed track number (must be a MIDI track)"
           },
           "clip_slot" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed scene/clip slot. Defaults to 0 if omitted."
           },
           "name" => %{
@@ -149,6 +151,7 @@ defmodule Seshat.Tools.Definitions do
           },
           "clip_length" => %{
             type: "number",
+            minimum: 0.01,
             description:
               "Clip length in beats. E.g. 4.0 = one bar of 4/4, 3.0 = one bar of 3/4. " <>
                 "Only used when creating a new clip. Should be >= the latest note end time."
@@ -198,7 +201,11 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number to delete"}
+          "track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed track number to delete"
+          }
         },
         required: ["track"]
       }
@@ -211,7 +218,11 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number to duplicate"}
+          "track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed track number to duplicate"
+          }
         },
         required: ["track"]
       }
@@ -222,7 +233,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "name" => %{type: "string", description: "New name for the track"}
         },
         required: ["track", "name"]
@@ -270,7 +281,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "armed" => %{type: "boolean", description: "true = armed, false = disarmed"}
         },
         required: ["track", "armed"]
@@ -328,13 +339,15 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "clip_slot" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed scene/clip slot — must be empty"
           },
           "bars" => %{
             type: "number",
+            minimum: 0.01,
             description:
               "How many bars to record, in the set's current time signature. Omit for an " <>
                 "open-ended take finished later with stop_recording."
@@ -356,8 +369,8 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"}
         },
         required: ["track", "clip_slot"]
       }
@@ -385,8 +398,8 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"}
         },
         required: ["track", "clip_slot"]
       }
@@ -400,8 +413,8 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"}
         },
         required: ["track", "clip_slot"]
       }
@@ -415,8 +428,8 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"}
         },
         required: ["track", "clip_slot"]
       }
@@ -431,11 +444,20 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "Source track (0-indexed)"},
-          "clip_slot" => %{type: "integer", description: "Source scene/clip slot (0-indexed)"},
-          "target_track" => %{type: "integer", description: "Target track (0-indexed)"},
+          "track" => %{type: "integer", minimum: 0, description: "Source track (0-indexed)"},
+          "clip_slot" => %{
+            type: "integer",
+            minimum: 0,
+            description: "Source scene/clip slot (0-indexed)"
+          },
+          "target_track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "Target track (0-indexed)"
+          },
           "target_clip_slot" => %{
             type: "integer",
+            minimum: 0,
             description: "Target scene/clip slot (0-indexed)"
           }
         },
@@ -451,8 +473,8 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"},
           "name" => %{type: "string", description: "New name for the clip"}
         },
         required: ["track", "clip_slot", "name"]
@@ -474,8 +496,8 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"}
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"}
         },
         required: ["track", "clip_slot"]
       }
@@ -507,8 +529,8 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"},
           "looping" => %{
             type: "boolean",
             description: "true = the clip loops over its brace, false = it plays through once"
@@ -589,7 +611,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "scene" => %{type: "integer", description: "0-indexed scene number"}
+          "scene" => %{type: "integer", minimum: 0, description: "0-indexed scene number"}
         },
         required: ["scene"]
       }
@@ -600,7 +622,13 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "index" => %{type: "integer", description: "Position to insert scene (-1 = end)"}
+          # -1 is AbletonOSC's own "append at the end" convention for
+          # /live/song/create_scene, so this index floors at -1, not 0.
+          "index" => %{
+            type: "integer",
+            minimum: -1,
+            description: "Position to insert scene (-1 = end)"
+          }
         },
         required: ["index"]
       }
@@ -611,7 +639,11 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "scene" => %{type: "integer", description: "0-indexed scene number to delete"}
+          "scene" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed scene number to delete"
+          }
         },
         required: ["scene"]
       }
@@ -622,7 +654,11 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "scene" => %{type: "integer", description: "0-indexed scene number to duplicate"}
+          "scene" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed scene number to duplicate"
+          }
         },
         required: ["scene"]
       }
@@ -633,7 +669,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "scene" => %{type: "integer", description: "0-indexed scene number"},
+          "scene" => %{type: "integer", minimum: 0, description: "0-indexed scene number"},
           "name" => %{type: "string", description: "New name for the scene"}
         },
         required: ["scene", "name"]
@@ -652,8 +688,16 @@ defmodule Seshat.Tools.Definitions do
         type: "object",
         properties: %{
           "enabled" => %{type: "boolean", description: "true = loop on, false = loop off"},
-          "start" => %{type: "number", description: "Loop start position in beats (optional)"},
-          "length" => %{type: "number", description: "Loop length in beats (optional)"}
+          "start" => %{
+            type: "number",
+            minimum: 0.0,
+            description: "Loop start position in beats (optional)"
+          },
+          "length" => %{
+            type: "number",
+            minimum: 0.01,
+            description: "Loop length in beats (optional)"
+          }
         },
         required: ["enabled"]
       }
@@ -665,7 +709,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"}
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"}
         },
         required: ["track"]
       }
@@ -676,7 +720,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "scene" => %{type: "integer", description: "0-indexed scene number"}
+          "scene" => %{type: "integer", minimum: 0, description: "0-indexed scene number"}
         },
         required: ["scene"]
       }
@@ -692,16 +736,32 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot (default 0)"},
-          "start_pitch" => %{type: "integer", description: "Lowest pitch to remove (default 0)"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed scene/clip slot (default 0)"
+          },
+          "start_pitch" => %{
+            type: "integer",
+            minimum: 0,
+            maximum: 127,
+            description: "Lowest pitch to remove (default 0)"
+          },
           "pitch_span" => %{
             type: "integer",
+            minimum: 1,
+            maximum: 128,
             description: "Number of pitches to span (default 128 = all)"
           },
-          "start_time" => %{type: "number", description: "Start time in beats (default 0.0)"},
+          "start_time" => %{
+            type: "number",
+            minimum: 0.0,
+            description: "Start time in beats (default 0.0)"
+          },
           "time_span" => %{
             type: "number",
+            minimum: 0.0,
             description: "Time span in beats (default: entire clip)"
           }
         },
@@ -728,16 +788,32 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", description: "0-indexed scene/clip slot (default 0)"},
-          "start_pitch" => %{type: "integer", description: "Lowest pitch to include (default 0)"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed scene/clip slot (default 0)"
+          },
+          "start_pitch" => %{
+            type: "integer",
+            minimum: 0,
+            maximum: 127,
+            description: "Lowest pitch to include (default 0)"
+          },
           "pitch_span" => %{
             type: "integer",
+            minimum: 1,
+            maximum: 128,
             description: "Number of pitches to span (default 128 = all)"
           },
-          "start_time" => %{type: "number", description: "Start time in beats (default 0.0)"},
+          "start_time" => %{
+            type: "number",
+            minimum: 0.0,
+            description: "Start time in beats (default 0.0)"
+          },
           "time_span" => %{
             type: "number",
+            minimum: 0.0,
             description: "Time span in beats (default: entire clip)"
           }
         },
@@ -918,6 +994,7 @@ defmodule Seshat.Tools.Definitions do
         properties: %{
           "track" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed track number to load onto"
           },
           "uri" => %{
@@ -944,7 +1021,7 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"}
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"}
         },
         required: ["track"]
       }
@@ -965,9 +1042,10 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "device" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed device on the track, as returned by get_track_devices"
           }
         },
@@ -990,13 +1068,15 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "device" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed device on the track, as returned by get_track_devices"
           },
           "parameter" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed parameter, as returned by get_device_parameters"
           },
           "value" => %{
@@ -1023,9 +1103,10 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "device" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed device on the track, as returned by get_track_devices"
           }
         },
@@ -1048,9 +1129,10 @@ defmodule Seshat.Tools.Definitions do
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", description: "0-indexed track number"},
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
           "device" => %{
             type: "integer",
+            minimum: 0,
             description: "0-indexed device on the track, as returned by get_track_devices"
           },
           "enabled" => %{
