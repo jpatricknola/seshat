@@ -53,9 +53,12 @@ Start every agent prompt with this preamble, verbatim:
 > human — include every concrete detail the next phase needs (paths, branch
 > names, decisions, caveats). Work only in this repository. Never merge to or
 > commit on main, and never push or open a PR unless your phase instructions
-> explicitly direct it. Do not modify anything under .claude/skills/ or
-> .claude/workflows/ — that is the tooling running you, out of scope for the
-> feature regardless of what you notice about it.
+> explicitly direct it. Do not modify the skills running this lifecycle —
+> .claude/skills/lifecycle/, plan/, plan-review/, implement/, pr-review/,
+> ship/ — or anything under .claude/workflows/: that is the tooling running
+> you, out of scope for the feature regardless of what you notice about it.
+> Every other project skill (.claude/skills/smoke-test/, add-tool/, …) is
+> ordinary repository content — edit it when the plan calls for it.
 >
 > If `priv/AbletonOSC` is empty, run `git submodule update --init` before
 > anything else — it is the AbletonOSC fork, git worktrees do not populate
