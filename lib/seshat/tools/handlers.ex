@@ -664,15 +664,23 @@ defmodule Seshat.Tools.Handlers do
   @doc """
   Describes what a quantize did, from the notes read either side of it.
 
-  The diff is deliberately multiset-style (`before -- after`) rather than
+  The diffs are deliberately multiset-style (`before -- after`) rather than
   paired note tracking. Live's collision handling was measured on 2026-07-31
   and has two shapes: two same-pitch notes landing on the *same* grid point
   **merge** into one (the later note's velocity survives, so the count
   shrinks), while two landing on *different* points that now overlap keep the
   count but **trim** the earlier note's duration to end where the later one
   starts. Paired tracking would have to model both and would still be
-  guessing; a multiset diff reports both correctly as "changed", and the
-  count and duration checks below say which happened.
+  guessing; a multiset diff reports both correctly as "changed".
+
+  Two separate diffs, because "changed" and "moved" aren't the same claim: a
+  trim changes a note's full record (its duration) without moving its start,
+  so counting "moved" from the full-record diff would credit a trimmed-but-
+  stationary note with having moved toward the grid. The full-record diff
+  still gates "did anything happen at all" (a duration-only trim is a real
+  change); the position-only diff — `{pitch, start_time}` pairs — is what the
+  "N of M note(s) moved" count is drawn from, and the duration/count checks
+  below say what else happened.
 
   There is deliberately no Elixir-side "was this note off-grid?" arithmetic —
   modelling target positions is exactly the beat math this tool exists to
@@ -693,9 +701,9 @@ defmodule Seshat.Tools.Handlers do
   def format_quantize_result(track, slot, clip_name, grid, amount, before_notes, after_notes) do
     subject = quantize_subject(track, slot, clip_name)
     strength = "#{round(amount * 100)}% strength"
-    moved = before_notes -- after_notes
+    changed = before_notes -- after_notes
 
-    if moved == [] do
+    if changed == [] do
       # Silence is what success looks like on this address, so an unchanged
       # clip and a Remote Scripts copy predating the fork are indistinguishable
       # from here. Same reasoning as @return_extension_hint, but attached to the
@@ -704,12 +712,16 @@ defmodule Seshat.Tools.Handlers do
         "#{strength}. If the timing audibly didn't change, the installed AbletonOSC may " <>
         "predate /live/clip/quantize: run mix abletonosc.install and restart Live."
     else
+      moved = note_positions(before_notes) -- note_positions(after_notes)
+
       "Quantized #{subject}: #{length(moved)} of #{length(before_notes)} note(s) moved toward " <>
         "the #{grid} grid at #{strength}." <>
         quantize_collision_note(before_notes, after_notes) <>
         " Listen back — undo reverses it in one step if the feel went stiff."
     end
   end
+
+  defp note_positions(notes), do: Enum.map(notes, &Map.take(&1, [:pitch, :start_time]))
 
   defp quantize_subject(track, slot, nil), do: "the clip in slot #{slot} on track #{track}"
 

@@ -38,12 +38,17 @@ humanize/swing leg. Research against the Live Object Model reference
    cleanup flow: set the swing, then `quantize_clip`
    ([archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md), shipped
    2026-07-31, ahead of this plan) —
-   and the swing rides record quantization for future takes too. Our own
-   docs already point at it: the GridQuantization note in
+   and the swing rides record quantization for future takes too. This is a
+   LOM claim, not yet a verified one: `quantize_clip`
+   ([archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md)) measured
+   the GridQuantization table against a running Live and found the *other*
+   half of the old claim — "no triplet grids" — false, so it demoted the
+   `swing_amount` half to UNVERIFIED in
    [abletonosc-api-docs.md](abletonosc-api-docs.md) and the fork's `clip.py`
-   comment both say "swing comes from the song's `swing_amount`, which
-   `quantize` honours" — but no OSC address serves it, so today the model
-   would be directed toward a dial only the user's mouse can reach.
+   rather than carry it forward untested. This plan's own smoke check (below)
+   still needs to confirm it before anything here relies on it — and no OSC
+   address serves `swing_amount` yet regardless, so today the model would be
+   directed toward a dial only the user's mouse can reach.
 3. **Both are plain listenable song scalars**, exactly like `tempo`:
    `properties_rw` entries get `/get`, `/set`, `/start_listen`,
    `/stop_listen` generated, `_start_listen` pushes the current value on

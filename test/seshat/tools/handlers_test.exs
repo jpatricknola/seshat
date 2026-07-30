@@ -1985,6 +1985,25 @@ defmodule Seshat.Tools.HandlersTest do
       assert result =~ "trimmed the earlier one"
     end
 
+    test "does not count a note whose start held as moved, when only its duration was trimmed" do
+      before_notes = [
+        note(%{pitch: 64, start_time: 2.0, duration: 0.5}),
+        note(%{pitch: 64, start_time: 2.40, duration: 0.5})
+      ]
+
+      after_notes = [
+        note(%{pitch: 64, start_time: 2.0, duration: 0.25}),
+        note(%{pitch: 64, start_time: 2.25, duration: 0.5})
+      ]
+
+      result =
+        Handlers.format_quantize_result(0, 0, "Bass", "1/16", 1.0, before_notes, after_notes)
+
+      assert result =~ "1 of 2 note(s) moved"
+      assert result =~ "Some note lengths changed too"
+      assert result =~ "trimmed the earlier one"
+    end
+
     test "says so rather than inventing a reason when the count grew" do
       result =
         Handlers.format_quantize_result(
