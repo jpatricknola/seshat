@@ -82,6 +82,7 @@ failure, fixed by deleting the defaults.
   stated unknown is strictly better than a plausible wrong number, but it has to
   read as one.
 - Finding #7 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- Plan: [PLAN_stop_fabricating_session_state.md](PLAN_stop_fabricating_session_state.md).
 
 ## #2 · Serialize OSC queries and clean up timed-out callers
 
@@ -105,6 +106,7 @@ than whatever tool call is in flight.
   divergence on every address, carried against upstream forever, to solve what a
   queue already solves.
 - Finding #1 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- Plan: [PLAN_serialize_osc_queries.md](PLAN_serialize_osc_queries.md).
 
 ## #3 · Enforce tool ranges and non-negative indices centrally
 
@@ -133,6 +135,7 @@ declared maximum of `1.0`.
 - The realistic caller is a model hallucinating Python's `-1 == last`, not an
   attacker.
 - Findings #3 and #4 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- Plan: [PLAN_enforce_tool_ranges.md](PLAN_enforce_tool_ranges.md).
 
 ## #4 · Verify `create_track` actually succeeds
 
@@ -151,6 +154,7 @@ loads or note writes then target the wrong track.
 - Update the `create_track` row in [TOOL_AUDIT.md](TOOL_AUDIT.md) when it ships —
   the wart is recorded there now.
 - Finding #6 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- Plan: [PLAN_verify_create_track.md](PLAN_verify_create_track.md).
 
 ## #5 · `start_new_project` — the setup wizard, and prompt budget back
 
