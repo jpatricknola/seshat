@@ -412,7 +412,7 @@ Confidence: **High**
 > that window is not a failure anyone can observe.
 >
 > **Sequencing note:** this touches the same writer as
-> [docs/ROADMAP.md](docs/ROADMAP.md) #4 (catalog staleness check), whose planner
+> [docs/ROADMAP.md](docs/ROADMAP.md)'s catalog staleness check, whose planner
 > note already calls for a built-at timestamp in `catalog.json`. Do them in one
 > pass.
 
@@ -646,22 +646,29 @@ impact-per-effort queue covering features, defects and security work together.
 This table maps findings to their rank there; the roadmap entry carries the
 accepted scope, including the parts of a recommendation that were rejected.
 
-| Finding | Roadmap rank |
+This table names the roadmap item each finding became. It deliberately carries no
+rank column: ranks renumber on every ship, and a stale rank silently points at an
+unrelated item. Find the item by title — the roadmap is ordered, so its position
+is the current rank.
+
+| Finding | Roadmap item |
 |---|---|
 | #2 tests mutate a live set, #10 README | **Shipped 2026-07-30** — see [docs/archive/PLAN_test_isolation.md](docs/archive/PLAN_test_isolation.md) |
-| #7 fabricated session state | **#4** Stop fabricating session state after OSC failures |
-| #1 single pending query slot | **#5** Serialize OSC queries and clean up timed-out callers |
-| #3 negative indices, #4 numeric bounds | **#6** Enforce tool ranges and non-negative indices centrally |
-| #6 `create_track` unverified index | **#7** Verify `create_track` actually succeeds |
-| #9 agent iteration limit | **#12** Preserve partial agent results at the tool-iteration limit |
-| #8 catalog persistence | **#13** Make catalog persistence atomic and report write failures |
-| #5 mutations report success on send | **#15** Verify destructive mutations before reporting success |
-| MCP supervisor `:temporary` | **#19** Restart the MCP supervisor after abnormal failure |
-| LiveView conversation growth | **#27** Cap large tool-result payloads in API-key mode |
+| #7 fabricated session state | Stop fabricating session state after OSC failures |
+| #1 single pending query slot | Serialize OSC queries and clean up timed-out callers |
+| #3 negative indices, #4 numeric bounds | Enforce tool ranges and non-negative indices centrally |
+| #6 `create_track` unverified index | Verify `create_track` actually succeeds |
+| #9 agent iteration limit | Preserve partial agent results at the tool-iteration limit |
+| #8 catalog persistence | Make catalog persistence atomic and report write failures |
+| #5 mutations report success on send | Verify destructive mutations before reporting success |
+| MCP supervisor `:temporary` | Restart the MCP supervisor after abnormal failure |
+| LiveView conversation growth | Cap large tool-result payloads in API-key mode |
 | The three declined findings | Not scheduled — see [Declined](#declined--not-planned) |
 
-The security findings removed from this review are ranked as roadmap #1–#3;
-their evidence is in [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md).
+The security findings removed from this review are all shipped as of 2026-07-30
+(test isolation, AbletonOSC's loopback bind, the browser-export path restriction,
+and the Elixir listener/decoder hardening); their evidence is in
+[docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md).
 
 ### Original: three highest-priority fixes
 

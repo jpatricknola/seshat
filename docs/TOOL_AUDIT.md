@@ -1,6 +1,12 @@
 # Seshat MCP — Tool Audit
 
-_Living doc · MCP design review · 53 tools in the surface · 25 Jul 2026 — update as tools change._
+_Living doc · MCP design review · one verdict per tool · 25 Jul 2026 — update as tools change._
+
+> **The tool count lives in one place:** the assertion in
+> [test/seshat/tools/definitions_test.exs](../test/seshat/tools/definitions_test.exs),
+> which fails until it is bumped deliberately. Don't restate it in prose here or
+> anywhere else — the inventory table below is the list, and a number copied into
+> a sentence goes stale silently.
 
 > **Fixes applied 26 Jul 2026.** All three correctness items are done
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
@@ -69,7 +75,7 @@ _Living doc · MCP design review · 53 tools in the surface · 25 Jul 2026 — u
 > implementations, so defects that live below the schema were invisible to it.
 > Consult both docs before "fixing" a tool.
 
-**At a glance:** 53 tools in the surface · ~~0 correctness fixes outstanding (3 applied)~~ **≥4 outstanding, from the 2026-07-29 external review** (index validation, numeric bounds, `create_track` verification, fabricated session-state defaults) · 0 unresolved overlaps · ~6 coverage gaps (mostly optional), all on the roadmap.
+**At a glance:** ~~0 correctness fixes outstanding (3 applied)~~ **≥4 outstanding, from the 2026-07-29 external review** (index validation, numeric bounds, `create_track` verification, fabricated session-state defaults) · 0 unresolved overlaps · ~6 coverage gaps (mostly optional), all on the roadmap.
 
 **Overall: healthy.** The surface is well-factored — granular-by-object, consistently 0-based, and several descriptions are genuinely exemplary. There is little dead weight and almost nothing to merge. The highest-value work is not consolidation; it's a couple of correctness fixes (silent failures, a misleading scale) and filling the sends/record gaps. Treat the merge ideas as optional polish.
 
@@ -99,7 +105,7 @@ Operations a producer would expect that no tool currently reaches, ranked by how
 | ~~**Remove / bypass a device**~~ · **ADDRESSED 07/2026** | ~~Med-High~~ | `delete_device` and `bypass_device` close the audition loop — a wrong load is undoable and a device can be A/B'd in place. Regular tracks only (upstream reaches `song.tracks` alone). |
 | **Reorder the device chain**                                              | Low      | The remaining half of the old one-way-device-workflow gap: a device can be added, bypassed and removed, but not moved. Deliberately not planned until a workflow demands it. |
 | ~~**Record into a slot**~~ · **ADDRESSED 07/2026** | ~~Medium~~ | `capture_midi` keeps the MIDI just played from Live's retroactive buffer; `record_clip` and `stop_recording` now cover the *deliberate* take — arm (automatic), record into a chosen slot, fixed-length or open-ended, on MIDI **and audio** tracks. Both ride `/live/clip_slot/fire`'s optional `record_length`, so no fork change was needed. Still out deliberately: global multi-track session record (`/live/song/set/session_record` — different user story, no slot choice) and count-in (`count_in_duration`/`is_counting_in` are in Live 12's LOM but unregistered upstream; a one-line fork commit plus an install if takes prove to start before the user is ready). |
-| ~~**Per-clip properties** (clip loop/start/end, launch mode)~~ · **ADDRESSED 07/2026** | ~~Medium~~ | `get_clip_properties` and `set_clip_properties` reach a clip's own loop brace, play markers, launch mode/quantization, legato and velocity amount, plus gain/warp for audio clips — so a captured clip can now be trimmed to the good bars. Length still has no direct setter (Live has none); it follows from the markers or the loop. Still out: `muted`, `color`, `position`, `pitch_coarse`/`pitch_fine`, `ram_mode` and `duplicate_loop` — grab-bag territory, roadmap #20. |
+| ~~**Per-clip properties** (clip loop/start/end, launch mode)~~ · **ADDRESSED 07/2026** | ~~Medium~~ | `get_clip_properties` and `set_clip_properties` reach a clip's own loop brace, play markers, launch mode/quantization, legato and velocity amount, plus gain/warp for audio clips — so a captured clip can now be trimmed to the good bars. Length still has no direct setter (Live has none); it follows from the markers or the loop. Still out: `muted`, `color`, `position`, `pitch_coarse`/`pitch_fine`, `ram_mode` and `duplicate_loop` — grab-bag territory, roadmap "Small OSC breadth". |
 | **Quantize notes** (`quantize_clip`)                                      | Medium   | The most common MIDI cleanup move, currently impossible without a full read→remove→rewrite by hand.                                                 |
 | **Set time signature** (`set_time_signature`)                             | Low-Med  | `get_session_state` reports it and `set_tempo` exists, but there's no setter. Cheap, obvious symmetry win.                                          |
 | ~~**Master & return volume**~~ · **ADDRESSED 07/2026**                    | ~~Low-Med~~ | `set_master_volume` and `set_return_track_volume` ride along with the sends work, and `get_session_state` now reports both. Pan/mute/solo on returns and the master are still out. |
@@ -139,7 +145,7 @@ Description quality is a real strength here. Two behaviors, though, were correct
 
 ## 05 · Full Inventory
 
-All 53 tools with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
+Every tool with a per-tool verdict. Status: **Keep** = good as-is · **Fix** = behavior/description change · **Review** = resolve overlap · **Merge?** = optional consolidation.
 
 Nineteen tools below steer Live's view onto what they changed: every
 **Structure**, **MIDI** and device-mutating one (the sixteen in the follow-cam
@@ -216,4 +222,4 @@ follows from what a tool *does to a clip*, not from any one row.
 
 ---
 
-_Seshat MCP tool audit · living document · 53 tools as of 29 Jul 2026. Update the inventory status column and the summary counts as tools are added, fixed, or merged._
+_Seshat MCP tool audit · living document · last swept 29 Jul 2026. Update the inventory status column as tools are added, fixed, or merged._

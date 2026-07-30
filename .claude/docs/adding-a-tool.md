@@ -66,6 +66,12 @@ sequences live (create-then-name a track, ensure-clip-then-add-notes).
 
 The `assert length(tools) == N` there is a deliberate tripwire. Bump it.
 
+**That assertion is the only place the tool count is written down**, and it stays
+that way — no prose anywhere restates it (the README, `CLAUDE.md` and
+`TOOL_AUDIT.md` all deliberately describe the surface without a number, because a
+count copied into a sentence goes stale silently and nothing fails). Add the tool
+to `TOOL_AUDIT.md`'s inventory table with a verdict; don't add a count beside it.
+
 ### 4. Verify
 
 ```
