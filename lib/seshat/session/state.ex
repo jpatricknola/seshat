@@ -19,6 +19,18 @@ defmodule Seshat.Session.State do
   The one thing this can't see is two identically named tracks swapping places.
   `refresh_sync/0` is the backstop for that and for a lost datagram; it is what
   `get_session_state`'s `refresh` parameter calls.
+
+  ## Unknown is `nil`, never a guess
+
+  One rule holds for every mirrored value here: **a read that Ableton didn't
+  answer yields `nil` — unknown, never a plausible default.** A fabricated
+  120 BPM or 0.85 fader reads as fact to the model, which then writes bar
+  lengths against a made-up time signature and makes relative mixer moves
+  against a fictional level. `nil` costs a "we don't know" in the reply and
+  nothing else, and it self-heals: every refresh re-subscribes all listeners,
+  and the fork's `AbletonOSCHandler._start_listen` pushes the current value on
+  subscription, so a field nil'd by one lost reply is repopulated milliseconds
+  later whenever Ableton is actually alive.
   """
 
   use GenServer
@@ -54,7 +66,23 @@ defmodule Seshat.Session.State do
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
+  @doc """
+  The mirrored track list — `%{index, name, volume, pan, mute, solo}` per track,
+  in Live's order.
+
+  `nil` when the last read couldn't establish how many tracks the set has:
+  unknown, never "no tracks". `[]` is the verified-empty set. An individual
+  field is `nil` on the same rule — unknown, never a guess.
+  """
   def tracks, do: GenServer.call(__MODULE__, :tracks)
+
+  @doc """
+  The mirrored song scalars — `%{tempo, time_sig_numerator, time_sig_denominator,
+  is_playing, root_note, scale_name}`.
+
+  Every field is `nil` when the last read couldn't get it — unknown, never a
+  guess. Callers must handle `nil` rather than assume 120 BPM or 4/4.
+  """
   def song, do: GenServer.call(__MODULE__, :song)
 
   @doc """
@@ -92,7 +120,13 @@ defmodule Seshat.Session.State do
   means, so it has to count as stale even though the same names are present. The
   one change it cannot see is two *identically named* tracks swapping places —
   accepted, since nothing downstream can tell those apart either.
+
+  A `nil` mirror — the list couldn't be read at all — is stale against *any*
+  pushed list, including the empty one. That is what heals a failed refresh: the
+  next `song_structure.py` push disagrees by definition and triggers the
+  authoritative re-read.
   """
+  def stale?(nil, _live_names), do: true
   def stale?(mirrored, live_names), do: Enum.map(mirrored, & &1.name) != live_names
 
   # --- Server Callbacks ---
@@ -101,18 +135,24 @@ defmodule Seshat.Session.State do
   def init(_opts) do
     Phoenix.PubSub.subscribe(@pubsub, @topic)
 
+    # All-`nil`: nothing has been read yet, so nothing is known. No caller can
+    # observe this map (`handle_continue(:setup, ...)` refreshes before the first
+    # `handle_call` runs), but a plausible constant sitting here is an invitation
+    # to reuse it as a fallback somewhere that *is* observable. `tracks` below is
+    # `nil` for the same reason: `[]` asserts a session with no tracks in it,
+    # which nothing has checked yet.
     initial_song = %{
-      tempo: 120.0,
-      time_sig_numerator: 4,
-      time_sig_denominator: 4,
-      is_playing: false,
-      root_note: 0,
-      scale_name: "Major"
+      tempo: nil,
+      time_sig_numerator: nil,
+      time_sig_denominator: nil,
+      is_playing: nil,
+      root_note: nil,
+      scale_name: nil
     }
 
     state = %{
       song: initial_song,
-      tracks: [],
+      tracks: nil,
       return_tracks: [],
       master: nil,
       returns_readable?: false,
@@ -277,8 +317,9 @@ defmodule Seshat.Session.State do
   # It ends there even when it *doesn't* reconcile, which is the point of the
   # bookkeeping. A refresh can come back still disagreeing — replies running one
   # index behind after an abandoned timeout make `read_tracks/2`'s echo check
-  # reject every name and fall back to "Track N" for all of them — and without a
-  # brake that is an unbounded spin: refresh, re-subscribe, push, disagree,
+  # reject every name and yield `nil` for all of them, and a `nil` never equals a
+  # pushed name — and without a brake that is an unbounded spin: refresh,
+  # re-subscribe, push, disagree,
   # refresh. Recording the exact list that failed stops the second attempt at it
   # while leaving any *different* list a fresh try, so a real change is never
   # ignored. `/live/startup` and `refresh_sync/0` lift the brake, because
@@ -316,7 +357,7 @@ defmodule Seshat.Session.State do
           Logger.warning(
             "#{change_message}, but re-reading Ableton did not reproduce it: Live reports " <>
               "#{inspect(names)} and the mirror holds " <>
-              "#{inspect(Enum.map(Map.fetch!(refreshed, key), & &1.name))}. Leaving it as it " <>
+              "#{mirrored_names(Map.fetch!(refreshed, key))}. Leaving it as it " <>
               "is rather than refreshing on every push; pass refresh: true to force a retry."
           )
 
@@ -327,6 +368,9 @@ defmodule Seshat.Session.State do
     end
   end
 
+  defp mirrored_names(nil), do: "unknown"
+  defp mirrored_names(entries), do: inspect(Enum.map(entries, & &1.name))
+
   defp reconciled(state, key) do
     %{state | unreconciled: Map.delete(state.unreconciled, key)}
   end
@@ -335,17 +379,19 @@ defmodule Seshat.Session.State do
     alias Seshat.OSC.Transport
 
     song = %{
-      tempo: query_song_float(Transport, "/live/song/get/tempo", 120.0),
-      time_sig_numerator: query_song_int(Transport, "/live/song/get/signature_numerator", 4),
-      time_sig_denominator: query_song_int(Transport, "/live/song/get/signature_denominator", 4),
-      is_playing: query_song_int(Transport, "/live/song/get/is_playing", 0) |> to_bool(),
-      root_note: query_song_int(Transport, "/live/song/get/root_note", 0),
-      scale_name: query_song_string(Transport, "/live/song/get/scale_name", "Major")
+      tempo: query_song_float(Transport, "/live/song/get/tempo"),
+      time_sig_numerator: query_song_int(Transport, "/live/song/get/signature_numerator"),
+      time_sig_denominator: query_song_int(Transport, "/live/song/get/signature_denominator"),
+      is_playing: query_song_int(Transport, "/live/song/get/is_playing") |> to_bool(),
+      root_note: query_song_int(Transport, "/live/song/get/root_note"),
+      scale_name: query_song_string(Transport, "/live/song/get/scale_name")
     }
 
     Logger.info(
-      "Song: #{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, " <>
-        "key #{Seshat.Music.Pitch.pitch_class_name(song.root_note)} #{song.scale_name}"
+      "Song: #{unknown_if_nil(song.tempo)} BPM, " <>
+        "#{unknown_if_nil(song.time_sig_numerator)}/" <>
+        "#{unknown_if_nil(song.time_sig_denominator)}, " <>
+        "key #{root_note_label(song.root_note)} #{unknown_if_nil(song.scale_name)}"
     )
 
     state =
@@ -356,7 +402,8 @@ defmodule Seshat.Session.State do
           subscribe_listeners(tracks)
 
           Logger.info(
-            "Loaded #{length(tracks)} tracks: #{Enum.map_join(tracks, ", ", & &1.name)}"
+            "Loaded #{length(tracks)} tracks: " <>
+              "#{Enum.map_join(tracks, ", ", &unknown_if_nil(&1.name))}"
           )
 
           %{state | song: song, tracks: tracks}
@@ -364,9 +411,14 @@ defmodule Seshat.Session.State do
         # Anything else — a timeout, a deaf transport, a reply in a shape we
         # don't recognise — leaves the session unmirrored rather than crashing
         # a GenServer whose supervisor would only restart it into the same wall.
+        #
+        # `tracks: nil` rather than the previous list: a refresh runs precisely
+        # when the mirror is suspect (`/live/startup` means a *different song*,
+        # `refresh: true` means it looked wrong), so keeping the old list serves
+        # the previous set's tracks as this set's. Unknown, not stale-but-plausible.
         other ->
           Logger.warning("Could not load tracks from Ableton: #{inspect(other)}")
-          %{state | song: song}
+          %{state | song: song, tracks: nil}
       end
 
     returns = refresh_returns(Transport)
@@ -393,11 +445,11 @@ defmodule Seshat.Session.State do
     Enum.map(0..(count - 1), fn i ->
       %{
         index: i,
-        name: query_string(transport, "/live/track/get/name", i, "Track #{i + 1}"),
-        volume: query_float(transport, "/live/track/get/volume", i, 0.85),
-        pan: query_float(transport, "/live/track/get/panning", i, 0.0),
-        mute: query_int(transport, "/live/track/get/mute", i, 0) |> to_bool(),
-        solo: query_int(transport, "/live/track/get/solo", i, 0) |> to_bool()
+        name: query_string(transport, "/live/track/get/name", i),
+        volume: query_float(transport, "/live/track/get/volume", i),
+        pan: query_float(transport, "/live/track/get/panning", i),
+        mute: query_int(transport, "/live/track/get/mute", i) |> to_bool(),
+        solo: query_int(transport, "/live/track/get/solo", i) |> to_bool()
       }
     end)
   end
@@ -409,7 +461,7 @@ defmodule Seshat.Session.State do
 
         Logger.info(
           "Loaded #{length(return_tracks)} return track(s): " <>
-            "#{Enum.map_join(return_tracks, ", ", & &1.name)}"
+            "#{Enum.map_join(return_tracks, ", ", &unknown_if_nil(&1.name))}"
         )
 
         %{
@@ -434,22 +486,8 @@ defmodule Seshat.Session.State do
     Enum.map(0..(count - 1), fn i ->
       %{
         index: i,
-        name:
-          query_string(
-            transport,
-            "/live/return_track/get/name",
-            i,
-            "Return #{i}",
-            @return_probe_timeout
-          ),
-        volume:
-          query_float(
-            transport,
-            "/live/return_track/get/volume",
-            i,
-            nil,
-            @return_probe_timeout
-          )
+        name: query_string(transport, "/live/return_track/get/name", i, @return_probe_timeout),
+        volume: query_float(transport, "/live/return_track/get/volume", i, @return_probe_timeout)
       }
     end)
   end
@@ -513,6 +551,15 @@ defmodule Seshat.Session.State do
     %{state | song: Map.put(state.song, key, value)}
   end
 
+  # A scalar push for a track list we don't hold is dropped, the same way a push
+  # for an index absent from the list already is: there is nothing to hang it on,
+  # and inventing a one-track mirror out of a volume push would be a new guess.
+  # The next structure push finds `stale?(nil, _)` true and re-reads everything.
+  defp update_track(%{tracks: nil} = state, idx, key, value) do
+    Logger.debug("Track #{idx} #{key} → #{inspect(value)} dropped: track list unknown")
+    state
+  end
+
   defp update_track(state, idx, key, value) do
     Logger.debug("Track #{idx} #{key} → #{inspect(value)}")
 
@@ -548,9 +595,14 @@ defmodule Seshat.Session.State do
   # Each of these accepts the reply both with and without an echoed index, so the
   # same helper serves the bare song getters' shape and the per-index ones. The
   # three-element clause is the return/master extension's ok/error envelope: an
-  # `"error"` payload doesn't match it and falls through to the default, which is
+  # `"error"` payload doesn't match it and falls through to `nil`, which is
   # right — the only way to ask this extension for an index it doesn't have is to
   # race a return being deleted mid-refresh.
+  #
+  # None of them takes a fallback value: anything they can't read is `nil`, full
+  # stop. That is deliberately not a `nil` passed at each call site — a parameter
+  # is a seam a future caller reopens with a new plausible constant, and the
+  # constants are the defect this module is fixing.
   #
   # Every echoed index is checked against the one asked for, the same reason
   # `Handlers.query_echoed/5` does it: Transport correlates replies by address
@@ -559,25 +611,25 @@ defmodule Seshat.Session.State do
   # hangs return 0's name on return 1 — a wrong answer that looks like a right
   # one. Compared with `==` rather than pinned, matching Handlers: these callers
   # always send integers, but a float index would still come back as an integer.
-  defp query_string(transport, address, index, default, timeout \\ @query_timeout) do
+  defp query_string(transport, address, index, timeout \\ @query_timeout) do
     case probe(transport, address, [index], timeout) do
       {:ok, [s]} when is_binary(s) -> s
       {:ok, [idx, s]} when idx == index and is_binary(s) -> s
       {:ok, [idx, "ok", s]} when idx == index and is_binary(s) -> s
-      _ -> default
+      _ -> nil
     end
   end
 
-  defp query_float(transport, address, index, default, timeout \\ @query_timeout) do
+  defp query_float(transport, address, index, timeout \\ @query_timeout) do
     case probe(transport, address, [index], timeout) do
       {:ok, [v]} when is_float(v) -> v
       {:ok, [idx, v]} when idx == index and is_float(v) -> v
       {:ok, [idx, "ok", v]} when idx == index and is_float(v) -> v
-      _ -> default
+      _ -> nil
     end
   end
 
-  defp query_int(transport, address, index, default, timeout \\ @query_timeout) do
+  defp query_int(transport, address, index, timeout \\ @query_timeout) do
     case probe(transport, address, [index], timeout) do
       {:ok, [v]} when is_integer(v) -> v
       {:ok, [idx, v]} when idx == index and is_integer(v) -> v
@@ -585,13 +637,13 @@ defmodule Seshat.Session.State do
       {:ok, [false]} -> 0
       {:ok, [idx, true]} when idx == index -> 1
       {:ok, [idx, false]} when idx == index -> 0
-      _ -> default
+      _ -> nil
     end
   end
 
   # `Transport.query/3` exits the caller on timeout, and a missing extension (or a
   # dropped datagram) is exactly that. Catching it here means one unanswered
-  # property falls back to its default instead of taking the whole GenServer down
+  # property becomes `nil` instead of taking the whole GenServer down
   # mid-refresh.
   defp probe(transport, address, args, timeout) do
     case transport.query(address, args, timeout) do
@@ -603,34 +655,48 @@ defmodule Seshat.Session.State do
   end
 
   # Like the per-index helpers, these go through `probe/4` — an Ableton that
-  # isn't running, or isn't reachable, must leave the defaults standing rather
-  # than take this GenServer down before it has finished starting.
-  defp query_song_float(transport, address, default) do
+  # isn't running, or isn't reachable, must leave the field unknown rather than
+  # take this GenServer down before it has finished starting.
+  defp query_song_float(transport, address) do
     case probe(transport, address, [], @query_timeout) do
       {:ok, [v]} when is_float(v) -> v
-      _ -> default
+      _ -> nil
     end
   end
 
-  defp query_song_string(transport, address, default) do
+  defp query_song_string(transport, address) do
     case probe(transport, address, [], @query_timeout) do
       {:ok, [s]} when is_binary(s) -> s
-      _ -> default
+      _ -> nil
     end
   end
 
-  defp query_song_int(transport, address, default) do
+  defp query_song_int(transport, address) do
     case probe(transport, address, [], @query_timeout) do
       {:ok, [v]} when is_integer(v) -> v
       {:ok, [true]} -> 1
       {:ok, [false]} -> 0
-      _ -> default
+      _ -> nil
     end
   end
 
+  # `nil` in means the query went unanswered, and unknown has to survive the
+  # conversion — a `to_bool(nil)` that returned `false` would put the guess back
+  # one layer down. Wire pushes never carry `nil`, so no live shape gains a nil
+  # path from this clause.
+  defp to_bool(nil), do: nil
   defp to_bool(true), do: true
   defp to_bool(false), do: false
   defp to_bool(1), do: true
   defp to_bool(0), do: false
   defp to_bool(v) when is_integer(v), do: v != 0
+
+  # Log-only renderers. These are not the reply the model reads —
+  # `Seshat.Tools.Handlers` owns that — they just keep a refresh log line
+  # readable when half the session came back unknown.
+  defp unknown_if_nil(nil), do: "unknown"
+  defp unknown_if_nil(value), do: to_string(value)
+
+  defp root_note_label(nil), do: "unknown"
+  defp root_note_label(note), do: Seshat.Music.Pitch.pitch_class_name(note)
 end

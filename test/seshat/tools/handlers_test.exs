@@ -868,6 +868,67 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "record_length_from/2" do
+    defp song(overrides \\ %{}) do
+      Map.merge(
+        %{
+          tempo: 120.0,
+          time_sig_numerator: 4,
+          time_sig_denominator: 4,
+          is_playing: false,
+          root_note: 0,
+          scale_name: "Major"
+        },
+        overrides
+      )
+    end
+
+    test "a known signature converts bars to beats" do
+      assert Handlers.record_length_from(8, song()) == {:ok, 32.0}
+
+      assert Handlers.record_length_from(
+               2,
+               song(%{time_sig_numerator: 6, time_sig_denominator: 8})
+             ) ==
+               {:ok, 6.0}
+    end
+
+    # An open-ended take needs no signature at all, so it must keep working
+    # against a mirror that couldn't read one.
+    test "no bars is open-ended regardless of the signature" do
+      assert Handlers.record_length_from(nil, song()) == {:ok, nil}
+      assert Handlers.record_length_from(nil, song(%{time_sig_numerator: nil})) == {:ok, nil}
+
+      assert Handlers.record_length_from(
+               nil,
+               song(%{time_sig_numerator: nil, time_sig_denominator: nil})
+             ) == {:ok, nil}
+    end
+
+    # Without the guard this is an ArithmeticError inside the tool call — a
+    # crash where a refusal belongs, and the refusal has to say how to recover.
+    test "an unknown numerator refuses rather than crashing" do
+      assert {:error, message} = Handlers.record_length_from(4, song(%{time_sig_numerator: nil}))
+
+      assert message =~ "time signature isn't known"
+      assert message =~ "refresh: true"
+      assert message =~ "nothing was recorded"
+    end
+
+    test "an unknown denominator refuses too" do
+      assert {:error, message} =
+               Handlers.record_length_from(4, song(%{time_sig_denominator: nil}))
+
+      assert message =~ "time signature isn't known"
+    end
+
+    test "the refusal names the bars actually asked for" do
+      assert {:error, message} = Handlers.record_length_from(16, song(%{time_sig_numerator: nil}))
+
+      assert message =~ "16-bar"
+    end
+  end
+
   describe "record_clip validation" do
     # Only the transport-free error path: `ensure_bars/1` is checked before any
     # Transport.query, so a bad `bars` value never reaches Ableton — same
@@ -1259,6 +1320,237 @@ defmodule Seshat.Tools.HandlersTest do
       assert result =~ ~s{Return 0 "A-Reverb" (send A): volume=0.85}
       assert result =~ ~s{Return 1 "B-Delay" (send B): volume unknown}
       refute result =~ ~s{"B-Delay" (send B): volume=}
+    end
+
+    # A fabricated "Return 1" is worse than a guessed number: the user may try
+    # to address the return by that name.
+    test "a return whose name query went unanswered says so instead of guessing" do
+      returns = [%{index: 1, name: nil, volume: 0.7}]
+
+      result = Handlers.format_return_tracks(returns, %{volume: 0.85})
+
+      assert result =~ "Return 1 (name unknown) (send B): volume=0.7"
+    end
+  end
+
+  # The unknown-rendering half of `get_session_state`. The mirror only ever
+  # holds `nil` after a refresh that reached Ableton and got silence, which
+  # `mix test` cannot reach (testing.md: nothing goes through Transport.query),
+  # so these formatters are the whole pure surface of that behaviour.
+  describe "format_song_line/1" do
+    test "a fully known song renders every field and flags nothing" do
+      assert {line, false} = Handlers.format_song_line(song())
+      assert line == "120.0 BPM, 4/4, stopped, key: C Major"
+    end
+
+    test "a playing song says so" do
+      assert {line, false} = Handlers.format_song_line(song(%{is_playing: true}))
+      assert line =~ "playing"
+    end
+
+    test "an all-unknown song names each unknown and flags it" do
+      unknown =
+        song(%{
+          tempo: nil,
+          time_sig_numerator: nil,
+          time_sig_denominator: nil,
+          is_playing: nil,
+          root_note: nil,
+          scale_name: nil
+        })
+
+      assert {line, true} = Handlers.format_song_line(unknown)
+      assert line == "tempo unknown, time signature unknown, playing state unknown, key unknown"
+    end
+
+    # Per field, not per line: one lost tempo reply must not cost the signature.
+    test "a known tempo survives an unknown signature" do
+      assert {line, true} = Handlers.format_song_line(song(%{time_sig_denominator: nil}))
+      assert line =~ "120.0 BPM"
+      assert line =~ "time signature unknown"
+      refute line =~ "4/"
+    end
+
+    test "an unknown tempo leaves the rest intact" do
+      assert {line, true} = Handlers.format_song_line(song(%{tempo: nil}))
+      assert line =~ "tempo unknown"
+      assert line =~ "4/4"
+      assert line =~ "key: C Major"
+    end
+
+    # Pitch.pitch_class_name(nil) quietly returns "", which would print
+    # "key:  Major" and read as a key we just forgot to name.
+    test "a nil root note never reaches the pitch namer" do
+      assert {line, true} = Handlers.format_song_line(song(%{root_note: nil}))
+      assert line =~ "key unknown"
+      refute line =~ "key: "
+    end
+
+    test "a nil scale name is an unknown key too" do
+      assert {line, true} = Handlers.format_song_line(song(%{scale_name: nil}))
+      assert line =~ "key unknown"
+    end
+
+    # root_note 0 is C, and 0 is not nil — the obvious truthiness bug.
+    test "root note zero is C, not unknown" do
+      assert {line, false} = Handlers.format_song_line(song(%{root_note: 0}))
+      assert line =~ "key: C Major"
+    end
+  end
+
+  describe "format_track_summary/1" do
+    defp mirrored_track(overrides \\ %{}) do
+      Map.merge(
+        %{index: 0, name: "Drums", volume: 0.85, pan: 0.0, mute: false, solo: false},
+        overrides
+      )
+    end
+
+    test "known tracks render as before and flag nothing" do
+      tracks = [mirrored_track(), mirrored_track(%{index: 1, name: "Bass", mute: true})]
+
+      assert {text, false} = Handlers.format_track_summary(tracks)
+      assert text =~ ~s{Track 0 "Drums": pan=0.0, volume=0.85}
+      assert text =~ ~s{Track 1 "Bass": pan=0.0, volume=0.85 [muted]}
+    end
+
+    # An unreachable Ableton presented as a set with no tracks is the exact
+    # fabrication this change exists to stop, so the two texts must differ.
+    test "an unknown track list is not an empty one" do
+      assert {unknown_text, true} = Handlers.format_track_summary(nil)
+      assert {empty_text, false} = Handlers.format_track_summary([])
+
+      assert unknown_text =~ "unknown, not empty"
+      assert unknown_text =~ "refresh: true"
+      assert empty_text =~ "No tracks in current session"
+      assert unknown_text != empty_text
+    end
+
+    test "a track with only its volume unknown keeps every other field" do
+      assert {text, true} = Handlers.format_track_summary([mirrored_track(%{volume: nil})])
+      assert text == ~s{Track 0 "Drums": pan=0.0, volume unknown}
+    end
+
+    test "an unnamed track is addressed by index rather than a made-up name" do
+      assert {text, true} = Handlers.format_track_summary([mirrored_track(%{name: nil})])
+      assert text =~ "Track 0 (name unknown): pan=0.0, volume=0.85"
+      refute text =~ ~s{"Track 1"}
+    end
+
+    test "an unknown pan says so" do
+      assert {text, true} = Handlers.format_track_summary([mirrored_track(%{pan: nil})])
+      assert text =~ "pan unknown"
+    end
+
+    # Two unanswered flag queries are one lost refresh, so they get one marker.
+    test "unknown mute and solo collapse into a single marker" do
+      assert {text, true} =
+               Handlers.format_track_summary([mirrored_track(%{mute: nil, solo: nil})])
+
+      assert text =~ " [mute/solo unknown]"
+      refute text =~ "[muted]"
+      assert length(String.split(text, "[mute/solo unknown]")) == 2
+    end
+
+    test "a known solo still renders alongside an unknown mute" do
+      assert {text, true} =
+               Handlers.format_track_summary([mirrored_track(%{mute: nil, solo: true})])
+
+      assert text =~ " [solo]"
+      assert text =~ " [mute/solo unknown]"
+    end
+
+    test "a fully known track list flags nothing even when one track is muted and soloed" do
+      assert {_text, false} =
+               Handlers.format_track_summary([mirrored_track(%{mute: true, solo: true})])
+    end
+  end
+
+  # The trailing explanation is asserted here and nowhere else: it is a property
+  # of the whole reply, and appending it per formatter would print it twice on a
+  # session that is degraded in more than one place.
+  describe "format_session_state/4" do
+    @explanation "Unknown values mean Ableton did not answer"
+
+    defp known_returns, do: [%{index: 0, name: "A-Reverb", volume: 0.7}]
+
+    defp compose(overrides \\ %{}) do
+      args =
+        Map.merge(
+          %{
+            song: song(),
+            tracks: [mirrored_track()],
+            return_tracks: known_returns(),
+            master: %{volume: 0.85}
+          },
+          overrides
+        )
+
+      Handlers.format_session_state(args.song, args.tracks, args.return_tracks, args.master)
+    end
+
+    test "a fully known session gets no trailing explanation" do
+      reply = compose()
+
+      assert reply =~ "120.0 BPM, 4/4, stopped, key: C Major"
+      assert reply =~ ~s{Track 0 "Drums"}
+      assert reply =~ ~s{Return 0 "A-Reverb"}
+      assert reply =~ "Master: volume=0.85"
+      refute reply =~ @explanation
+    end
+
+    test "a verified-empty session is still fully known" do
+      refute compose(%{tracks: []}) =~ @explanation
+    end
+
+    test "an unknown song field triggers the explanation" do
+      assert compose(%{song: song(%{tempo: nil})}) =~ @explanation
+    end
+
+    test "an unknown track field triggers the explanation" do
+      assert compose(%{tracks: [mirrored_track(%{pan: nil})]}) =~ @explanation
+    end
+
+    test "an unknown track list triggers the explanation" do
+      assert compose(%{tracks: nil}) =~ @explanation
+    end
+
+    test "an unknown return name triggers the explanation" do
+      assert compose(%{return_tracks: [%{index: 0, name: nil, volume: 0.7}]}) =~ @explanation
+    end
+
+    test "an unknown return volume triggers the explanation" do
+      assert compose(%{return_tracks: [%{index: 0, name: "A-Reverb", volume: nil}]}) =~
+               @explanation
+    end
+
+    # A reply that says "return/master state unavailable" and explains nothing
+    # is the same half-told story as a nil tempo with no explanation.
+    test "an unavailable master triggers the explanation" do
+      reply = compose(%{master: nil})
+
+      assert reply =~ "unavailable"
+      assert reply =~ @explanation
+    end
+
+    # The assertion the double-append bug fails.
+    test "unknowns in song, tracks and returns produce exactly one explanation" do
+      reply =
+        compose(%{
+          song: song(%{tempo: nil, scale_name: nil}),
+          tracks: [mirrored_track(%{volume: nil, mute: nil})],
+          return_tracks: [%{index: 0, name: nil, volume: nil}],
+          master: nil
+        })
+
+      assert length(String.split(reply, @explanation)) == 2
+    end
+
+    test "the explanation tells the model how to recover" do
+      reply = compose(%{tracks: nil})
+
+      assert reply =~ "refresh: true"
+      assert reply =~ "AbletonOSC"
     end
   end
 

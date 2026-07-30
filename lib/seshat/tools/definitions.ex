@@ -1078,6 +1078,8 @@ defmodule Seshat.Tools.Definitions do
           "reordered by hand — stream in automatically, so this is normally current " <>
           "without asking; pass refresh: true only if the state it reports ever " <>
           "looks wrong. " <>
+          "Values reported as unknown could not be read from Ableton — pass refresh: true " <>
+          "to re-read before relying on them. " <>
           "Indices are 0-based but Ableton's UI numbers tracks from 1 — when talking " <>
           "to the user, refer to tracks by name or 1-based UI number, never raw index.",
       parameters: %{
