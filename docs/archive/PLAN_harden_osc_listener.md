@@ -1,5 +1,18 @@
 # Implementation Plan: Harden the Elixir OSC listener and decoder
 
+> **Archived 2026-07-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The loopback bind and
+> source check live in `@socket_opts`/`handle_info/2` in
+> `lib/seshat/osc/transport.ex`; the strict decode contract lives in
+> `Message.decode/1` in `lib/seshat/osc/message.ex`, returning
+> `{:ok, {address, args}} | {:error, reason}` instead of raising.
+> `SECURITY_BACKLOG.md` #3 is marked resolved. The plan's two open questions
+> (live traffic never tripping the strict decoder; NaN/±Infinity float drops)
+> couldn't be closed from source alone — both carry forward as a smoke-test
+> item under "If the change touches the OSC network boundary or browser
+> exports" in `.claude/skills/smoke-test/SKILL.md`, added in this same
+> close-out.
+
 Roadmap #1 / [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) #3 — the last item of
 the security backlog's "Fix now" section, and the only one entirely in `lib/`:
 no fork commit, no `mix abletonosc.install`, no Live restart, and every piece

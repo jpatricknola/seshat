@@ -41,6 +41,16 @@ immediately rather than timing out. Session state stays at its defaults. If
 reads are failing but sets seem fine, check the startup log for that error
 first.
 
+**Seshat's own reply socket is loopback-bound and source-checked too**
+(shipped 2026-07-30) — `@socket_opts` in `Seshat.OSC.Transport` binds 11001 to
+`127.0.0.1`, and `handle_info/2` accepts a datagram only from
+`127.0.0.1:<send_port>`, the one endpoint the fork's single `OSCServer` socket
+can send from; anything else is logged and dropped rather than satisfying a
+pending query or reaching `Session.State`. `Seshat.OSC.Message.decode/1` is
+correspondingly strict — malformed bytes return `{:error, reason}` and get
+logged and dropped instead of crashing the transport. Symmetric with the
+Python-side bind above, but on the Elixir side of the same datagram.
+
 ## Address naming is not fully regular
 
 Do not derive an address by analogy. Some real examples that break the pattern:

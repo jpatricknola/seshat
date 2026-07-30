@@ -209,11 +209,15 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top five are all defects: AbletonOSC's loopback bind and the
-browser-export path restriction shipped today (formerly #1 and #2), but the
-Elixir OSC listener and decoder still trust any local source and several
-OSC-layer bugs still corrupt data silently. Two sibling docs hold the
-*evidence* behind those items, not a competing queue:
+2026-07-30 its top four are all defects: `Session.State` still fabricates
+plausible-looking values (120 BPM, 4/4, C Major) on a failed refresh, `Transport`
+still serializes queries through a single `pending` slot with no timed-out-caller
+cleanup, and tool-parameter bounds are inconsistently enforced. The OSC network
+boundary itself is now fully hardened — AbletonOSC's loopback bind, the
+browser-export path restriction, and the Elixir listener/decoder hardening
+(loopback bind, source validation, a strict non-crashing decoder in
+`Seshat.OSC.Message`) all shipped 2026-07-30. Two sibling docs hold the
+*evidence* behind the remaining items, not a competing queue:
 
 - [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the 2026-07-29 external review.
   Each confirmed defect with file:line evidence and a **Reviewer response**
@@ -223,11 +227,10 @@ OSC-layer bugs still corrupt data silently. Two sibling docs hold the
   decisions (structured setter acknowledgements, Python bounds checks, protocol
   request IDs).
 - [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure, split
-  into **Fix now** (its first two items resolved 2026-07-30; the remaining one
-  is ranked as ROADMAP #1) and **Deployment-gated** (HTTP auth, production
-  binding, rate limiting — deliberately absent from the queue until something
-  binds beyond loopback or a second user is invited). Check it before loosening
-  a bind or adding an entry point.
+  into **Fix now** (all three items resolved 2026-07-30) and **Deployment-gated**
+  (HTTP auth, production binding, rate limiting — deliberately absent from the
+  queue until something binds beyond loopback or a second user is invited).
+  Check it before loosening a bind or adding an entry point.
 
 [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) is a standing design review of the
 whole tool surface — one verdict per tool, plus the coverage gaps that feed
