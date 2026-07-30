@@ -16,12 +16,31 @@ defmodule Seshat.Test.OSCSink do
       assert_receive {:osc_out, "/live/track/set/panning", [0, -1.0]}
 
   Start the sink *before* Transport, so it is bound before the first datagram.
+
+  It also plays AbletonOSC in the other direction, via `send_datagram/3`. Since
+  the sink holds the configured send port, its socket is the only source whose
+  *port* satisfies the source check in `Seshat.OSC.Transport.handle_info/2` — so
+  a test can stand in for a real reply, or for a malformed one, from an accepted
+  endpoint.
   """
 
   use GenServer
 
+  @host {127, 0, 0, 1}
+
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts)
+  end
+
+  @doc """
+  Send `binary` from the sink's socket to `to_port` on loopback.
+
+  Raw binary on purpose: tests need byte sequences `Seshat.OSC.Message.encode/2`
+  cannot produce.
+  """
+  @spec send_datagram(pid(), :inet.port_number(), binary()) :: :ok | {:error, term()}
+  def send_datagram(pid, to_port, binary) do
+    GenServer.call(pid, {:send_datagram, to_port, binary})
   end
 
   @impl true
@@ -35,6 +54,11 @@ defmodule Seshat.Test.OSCSink do
     end
   end
 
+  @impl true
+  def handle_call({:send_datagram, to_port, binary}, _from, state) do
+    {:reply, :gen_udp.send(state.socket, @host, to_port, binary), state}
+  end
+
   # Without a `:forward_to`, the sink exists only to absorb the datagram — don't
   # decode it, which would buy nothing and crash the sink on a malformed packet.
   @impl true
@@ -43,7 +67,10 @@ defmodule Seshat.Test.OSCSink do
   end
 
   def handle_info({:udp, _socket, _ip, _port, data}, state) do
-    {address, args} = Seshat.OSC.Message.decode(data)
+    # Matching `{:ok, _}` on purpose: this side only ever receives our own
+    # encoder's output, so malformed bytes here mean a broken encoder and the
+    # sink should fail loudly rather than swallow them.
+    {:ok, {address, args}} = Seshat.OSC.Message.decode(data)
     send(state.forward_to, {:osc_out, address, args})
     {:noreply, state}
   end

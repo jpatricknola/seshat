@@ -6,8 +6,22 @@ defmodule Seshat.OSC.Transport do
   go) and `:osc_reply_port` (what we bind) — defaulting to AbletonOSC's 11000 and
   11001. Binding the reply port is what tells AbletonOSC where to send responses
   and push notifications, since it replies to a fixed port rather than to the
-  sender. Incoming messages are broadcast via Phoenix.PubSub so any process can
-  react — notably Session.State for listener updates.
+  sender. The socket binds `127.0.0.1` explicitly, not the wildcard address:
+  every OSC address controls Live and nothing on the wire authenticates
+  anything, so a datagram from off the machine must not be receivable in the
+  first place.
+
+  On top of that bind, an accepted datagram must come from the one endpoint
+  AbletonOSC can send from. The fork binds a single socket to
+  `127.0.0.1:<send_port>` and pushes every reply, listener update and
+  `/live/startup` through it, so the legitimate source is exactly
+  `@host:send_port`. Anything else — and anything that fails
+  `Seshat.OSC.Message.decode/1` — is logged at `warning` and dropped: it never
+  satisfies a pending query and never reaches PubSub, where `Session.State`
+  would write it into the mirror the model plans against.
+
+  Incoming messages that survive both checks are broadcast via Phoenix.PubSub so
+  any process can react — notably Session.State for listener updates.
 
   `MIX_ENV=test` points both keys at throwaway ports (`config/test.exs`), so the
   suite cannot reach a running Ableton.
@@ -28,7 +42,11 @@ defmodule Seshat.OSC.Transport do
   # 64KB buffers: a /live/browser/get/items reply carrying 100 name/path/uri
   # triples can exceed the ~8KB default, and a datagram bigger than the buffer
   # is silently truncated — which surfaces as a mystery query timeout.
-  @socket_opts [:binary, active: true, recbuf: 65_536, buffer: 65_536]
+  #
+  # `ip: @host` binds loopback rather than the wildcard address, so nothing off
+  # this machine can reach the listener at all. Both open paths share these
+  # options, so `open_deaf/2`'s ephemeral socket is loopback-only too.
+  @socket_opts [:binary, active: true, ip: @host, recbuf: 65_536, buffer: 65_536]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -145,13 +163,43 @@ defmodule Seshat.OSC.Transport do
     end
   end
 
+  # AbletonOSC sends from exactly one socket, bound to `@host:send_port`, so any
+  # other source is either another OSC-speaking program on the machine that
+  # picked the wrong port or something deliberately feeding us state. Either way
+  # it is dropped before it can answer a query or reach the mirror. The log line
+  # carries the source and the size, never the payload.
   @impl true
-  def handle_info({:udp, _socket, _ip, _port, data}, state) do
-    {address, args} = Seshat.OSC.Message.decode(data)
-    Logger.debug("OSC in: #{address} #{inspect(args)}")
-    state = dispatch(address, args, state)
+  def handle_info({:udp, _socket, ip, port, data}, state)
+      when ip != @host or port != :erlang.map_get(:send_port, state) do
+    Logger.warning(
+      "Dropped OSC datagram from unexpected source #{source(ip, port)} " <>
+        "(#{byte_size(data)} bytes) — only #{source(@host, state.send_port)} is accepted"
+    )
+
     {:noreply, state}
   end
+
+  def handle_info({:udp, _socket, _ip, _port, data}, state) do
+    case Seshat.OSC.Message.decode(data) do
+      {:ok, {address, args}} ->
+        Logger.debug("OSC in: #{address} #{inspect(args)}")
+        {:noreply, dispatch(address, args, state)}
+
+      # Dropping is the whole recovery: state is untouched, and a pending query
+      # whose reply this claimed to be waits out its timeout instead of the
+      # transport crashing under it. The reason and byte preview are logged so a
+      # check that ever fires on legitimate traffic can be loosened precisely.
+      {:error, reason} ->
+        Logger.warning(
+          "Dropped malformed OSC datagram (#{byte_size(data)} bytes): #{inspect(reason)} — " <>
+            "first bytes #{inspect(binary_part(data, 0, min(byte_size(data), 64)))}"
+        )
+
+        {:noreply, state}
+    end
+  end
+
+  defp source(ip, port), do: "#{:inet.ntoa(ip)}:#{port}"
 
   # Reply to a pending query if the response address matches, otherwise broadcast.
   defp dispatch(address, args, %{pending: {from, expected}} = state)
