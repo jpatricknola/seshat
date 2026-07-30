@@ -3,53 +3,76 @@ defmodule Seshat.Tools.HandlersTest do
 
   alias Seshat.Tools.Handlers
 
-  setup_all do
+  # Only the describes that reach the wire own a socket. The sink binds the
+  # test send port first, so it is listening before the first datagram — and
+  # every mutation below is then asserted where it landed, which is provably
+  # not Ableton (config/test.exs).
+  defp osc_sink(_context) do
+    start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
     start_supervised!(Seshat.OSC.Transport)
     :ok
   end
 
   describe "set_track_pan" do
+    setup :osc_sink
+
     test "returns ok with valid params" do
       assert {:ok, msg} = Handlers.call("set_track_pan", %{"track" => 0, "value" => -1.0})
       assert msg =~ "pan"
       assert msg =~ "track 0"
+      assert_receive {:osc_out, "/live/track/set/panning", [0, -1.0]}
     end
 
     test "pans to center" do
       assert {:ok, _msg} = Handlers.call("set_track_pan", %{"track" => 1, "value" => 0.0})
+      # `+0.0` not `0.0`: OTP 27+ warns that a bare 0.0 pattern matches only
+      # positive zero anyway, and centre pan encodes as +0.0.
+      assert_receive {:osc_out, "/live/track/set/panning", [1, +0.0]}
     end
   end
 
   describe "set_track_volume" do
+    setup :osc_sink
+
     test "returns ok with valid params" do
       assert {:ok, msg} = Handlers.call("set_track_volume", %{"track" => 0, "value" => 0.5})
       assert msg =~ "volume"
+      assert_receive {:osc_out, "/live/track/set/volume", [0, 0.5]}
     end
 
     test "sets volume to max" do
       assert {:ok, _msg} = Handlers.call("set_track_volume", %{"track" => 2, "value" => 1.0})
+      assert_receive {:osc_out, "/live/track/set/volume", [2, 1.0]}
     end
   end
 
   describe "set_track_mute" do
+    setup :osc_sink
+
     test "mutes a track" do
       assert {:ok, msg} = Handlers.call("set_track_mute", %{"track" => 0, "muted" => true})
       assert msg =~ "Muted track 0"
+      assert_receive {:osc_out, "/live/track/set/mute", [0, 1]}
     end
 
     test "unmutes a track" do
       assert {:ok, _msg} = Handlers.call("set_track_mute", %{"track" => 0, "muted" => false})
+      assert_receive {:osc_out, "/live/track/set/mute", [0, 0]}
     end
   end
 
   describe "set_track_solo" do
+    setup :osc_sink
+
     test "solos a track" do
       assert {:ok, msg} = Handlers.call("set_track_solo", %{"track" => 0, "soloed" => true})
       assert msg =~ "Soloed track 0"
+      assert_receive {:osc_out, "/live/track/set/solo", [0, 1]}
     end
 
     test "unsolos a track" do
       assert {:ok, _msg} = Handlers.call("set_track_solo", %{"track" => 0, "soloed" => false})
+      assert_receive {:osc_out, "/live/track/set/solo", [0, 0]}
     end
   end
 
@@ -69,11 +92,14 @@ defmodule Seshat.Tools.HandlersTest do
   end
 
   describe "param key normalisation" do
+    setup :osc_sink
+
     # MCP delivers Peri-validated params with atom keys; the Anthropic API
     # delivers string keys. Both must reach the same clause.
     test "accepts atom-keyed params" do
       assert {:ok, msg} = Handlers.call("set_track_pan", %{track: 0, value: -1.0})
       assert msg =~ "pan"
+      assert_receive {:osc_out, "/live/track/set/panning", [0, -1.0]}
     end
 
     test "normalises atom keys nested inside lists" do
@@ -1025,16 +1051,9 @@ defmodule Seshat.Tools.HandlersTest do
   end
 
   describe "name_captured_clip/2" do
-    test "leaves the clip untouched when capture_midi got no name" do
-      clip = captured_clip()
+    setup :osc_sink
 
-      assert Handlers.name_captured_clip(clip, nil) == clip
-    end
-
-    # Transport isn't started in test (config/test.exs sets start_osc: false),
-    # so the rename send hits :noproc — this also exercises maybe_name_clip/3's
-    # exit guard (review round 2, finding 2): it must not crash the caller.
-    test "substitutes the name without a round trip, and survives the transport being down" do
+    test "substitutes the name without a round trip, and fires the rename" do
       clip = captured_clip(%{clip: %{name: "", length: 8.0, playing?: false, recording?: false}})
 
       named = Handlers.name_captured_clip(clip, "Bass")
@@ -1042,6 +1061,7 @@ defmodule Seshat.Tools.HandlersTest do
       assert named.clip.name == "Bass"
       assert named.track_index == clip.track_index
       assert named.slot_index == clip.slot_index
+      assert_receive {:osc_out, "/live/clip/set/name", [0, 1, "Bass"]}
     end
 
     test "capture_midi's reply prints the model-supplied name" do
@@ -1050,6 +1070,29 @@ defmodule Seshat.Tools.HandlersTest do
       reply = Handlers.captured_reply([named], 0, 120.0, 120.0)
 
       assert reply =~ ~s{"Bass"}
+    end
+  end
+
+  # No `setup :osc_sink` here, deliberately: with no Transport running, the
+  # rename send exits :noproc and maybe_name_clip/3's `catch :exit` has to
+  # swallow it (review round 2, finding 2). The old version of this test
+  # claimed to cover that while a module-wide `setup_all` kept Transport alive,
+  # so the guard was never reached — and the sends went to the real Ableton.
+  describe "name_captured_clip/2 with no transport running" do
+    test "leaves the clip untouched when capture_midi got no name" do
+      clip = captured_clip()
+
+      assert Handlers.name_captured_clip(clip, nil) == clip
+    end
+
+    test "still returns the named map when the rename cannot be sent" do
+      clip = captured_clip(%{clip: %{name: "", length: 8.0, playing?: false, recording?: false}})
+
+      named = Handlers.name_captured_clip(clip, "Bass")
+
+      assert named.clip.name == "Bass"
+      assert named.track_index == clip.track_index
+      assert named.slot_index == clip.slot_index
     end
   end
 
