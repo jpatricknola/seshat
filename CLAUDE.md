@@ -212,9 +212,14 @@ as current documentation.
 2026-07-30 its top two are both defects: tool-parameter bounds are
 inconsistently enforced, and `create_track` returns an index unverified.
 `Transport` now serializes OSC queries through an internal queue with a
-per-request timer — a timed-out caller's request is dropped rather than
-silently answered by a later reply, and late replies are discarded — closing
-the single-`pending`-slot correctness gap (shipped 2026-07-30). `Session.State`
+per-request timer — one query in flight at a time, matched by address against
+that request only, and a timed-out caller's request dropped rather than sent —
+closing the single-`pending`-slot correctness gap (shipped 2026-07-30). It does
+**not** make correlation sound: with no request id on the wire, a straggler on
+the in-flight address still answers the next query for it, and a listener push
+still satisfies a query for the same property. The caller-side echo checks are
+what remain against both — read `Seshat.OSC.Transport`'s "Query serialization"
+section before deciding one is redundant. `Session.State`
 no longer fabricates plausible-looking values on a failed refresh — a failed
 query now yields `nil`, and `get_session_state` renders that as a stated
 unknown rather than a guess (shipped 2026-07-30). The OSC network boundary

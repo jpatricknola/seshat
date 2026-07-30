@@ -148,7 +148,7 @@ defmodule Seshat.OSC.TransportTest do
   #
   # Every synchronisation point is a message — `{:osc_out, ...}` from the sink
   # for "this datagram went out", the caller's `:DOWN` for "this query timed
-  # out", `queue_depth/0` for "accepted but not yet sent". No sleeps.
+  # out", `await_queue_depth/2` for "accepted but not yet sent". No sleeps.
   describe "query serialization" do
     setup do
       sink = start_supervised!({OSCSink, forward_to: self()})
@@ -170,6 +170,64 @@ defmodule Seshat.OSC.TransportTest do
       assert_receive {:osc_out, "/live/song/get/num_tracks", []}
       reply(sink, "/live/song/get/num_tracks", [4])
       assert {:ok, {"/live/song/get/num_tracks", [4]}} = Task.await(b)
+    end
+
+    # Depth 1 has no order to get wrong — with one entry queued, LIFO and FIFO
+    # are indistinguishable. Two entries is the smallest queue that pins the
+    # direction.
+    test "queued requests are sent in the order they were accepted", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/song/get/tempo", [], 2000) end)
+      assert_receive {:osc_out, "/live/song/get/tempo", []}
+
+      b = Task.async(fn -> Transport.query("/live/track/get/name", [1], 2000) end)
+      await_queue_depth(1)
+
+      c = Task.async(fn -> Transport.query("/live/track/get/name", [2], 2000) end)
+      await_queue_depth(2)
+
+      reply(sink, "/live/song/get/tempo", [120.0])
+      assert {:ok, _} = Task.await(a)
+
+      # The sink forwards in receive order, so C ahead of B would have put
+      # `[2]` in the mailbox first and this refute would catch it.
+      assert_receive {:osc_out, "/live/track/get/name", [1]}
+      refute_received {:osc_out, "/live/track/get/name", [2]}
+
+      reply(sink, "/live/track/get/name", [1, "Bass"])
+      assert {:ok, {_, [1, "Bass"]}} = Task.await(b)
+
+      assert_receive {:osc_out, "/live/track/get/name", [2]}
+      reply(sink, "/live/track/get/name", [2, "Keys"])
+      assert {:ok, {_, [2, "Keys"]}} = Task.await(c)
+    end
+
+    # `advance/1`'s "drop the expired head, then send the one behind it"
+    # recursion, which only runs while the expired entry's `{:query_timeout, _}`
+    # is still unprocessed — so the reply datagram has to reach the server's
+    # mailbox *ahead* of that timer message, which is what suspending across
+    # both arrivals stages. A machine slow enough to expire B before the suspend
+    # still passes; it just takes the ordinary filter path instead.
+    test "an expired queued request is skipped and the one behind it is sent", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/song/get/tempo", [], 3000) end)
+      assert_receive {:osc_out, "/live/song/get/tempo", []}
+
+      {pid, ref} = spawn_query("/live/track/get/name", [3], 300)
+      await_queue_depth(1)
+
+      c = Task.async(fn -> Transport.query("/live/song/get/num_tracks", [], 3000) end)
+      await_queue_depth(2)
+
+      :sys.suspend(Transport)
+      reply(sink, "/live/song/get/tempo", [120.0])
+      assert_receive {:DOWN, ^ref, :process, ^pid, {:timeout, {GenServer, :call, _}}}, 1000
+      :sys.resume(Transport)
+
+      assert {:ok, _} = Task.await(a)
+      assert_receive {:osc_out, "/live/song/get/num_tracks", []}
+      refute_received {:osc_out, "/live/track/get/name", [3]}
+
+      reply(sink, "/live/song/get/num_tracks", [4])
+      assert {:ok, {_, [4]}} = Task.await(c)
     end
 
     # The headline defect, as a regression test. With a single `pending` slot the
@@ -313,13 +371,27 @@ defmodule Seshat.OSC.TransportTest do
   # `GenServer.call` landing and anything the test does. Polling the server's
   # own queue is the direct statement of what the test means, and a query that
   # was wrongly sent instead of queued fails here rather than hanging.
-  defp await_queue_depth(expected, attempts \\ 500) do
+  # Bounded by wall clock, not by attempt count: the loop is racing another
+  # process's `GenServer.call` landing, so a loaded machine needs *more*
+  # attempts, not fewer — a fixed count gives up soonest exactly when the thing
+  # it waits for is slowest. Still no sleep; each iteration is a `:sys.get_state`
+  # round-trip, so the server paces the loop.
+  defp await_queue_depth(expected, timeout \\ 1000) do
+    await_until_depth(expected, System.monotonic_time(:millisecond) + timeout, timeout)
+  end
+
+  defp await_until_depth(expected, deadline, timeout) do
     depth = :queue.len(:sys.get_state(Transport).queue)
 
     cond do
-      depth == expected -> :ok
-      attempts == 0 -> flunk("queue depth stayed at #{depth}, expected #{expected}")
-      true -> await_queue_depth(expected, attempts - 1)
+      depth == expected ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        flunk("queue depth stayed at #{depth}, expected #{expected} within #{timeout}ms")
+
+      true ->
+        await_until_depth(expected, deadline, timeout)
     end
   end
 end

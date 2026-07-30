@@ -17,7 +17,7 @@ defmodule Seshat.OSC.Transport do
   `/live/startup` through it, so the legitimate source is exactly
   `@host:send_port`. Anything else — and anything that fails
   `Seshat.OSC.Message.decode/1` — is logged at `warning` and dropped: it never
-  satisfies a pending query and never reaches PubSub, where `Session.State`
+  satisfies the in-flight query and never reaches PubSub, where `Session.State`
   would write it into the mirror the model plans against.
 
   Incoming messages that survive both checks are broadcast via Phoenix.PubSub so
@@ -125,6 +125,16 @@ defmodule Seshat.OSC.Transport do
   @spec query(String.t(), list(), non_neg_integer()) ::
           {:ok, {String.t(), list()}} | {:error, term()}
   def query(address, args, timeout \\ 5000) do
+    # The deadline is computed before `GenServer.call/3` starts its own timer,
+    # and `monotonic_time(:millisecond)` truncates, so the server's instant
+    # always lands a hair *before* the caller's — both sources of skew push the
+    # same way. That direction is the deliberate one: the server gives up
+    # first, so the caller always reaches its own timeout and exits, as the
+    # contract above promises. The cost is a sub-millisecond window in which a
+    # reply is broadcast rather than returned and the caller times out a hair
+    # early — indistinguishable from having timed out. Skewing the other way
+    # (a server deadline provably later than the caller's) buys nothing: it
+    # only holds the queue head past a caller that has already exited.
     deadline = System.monotonic_time(:millisecond) + timeout
     GenServer.call(__MODULE__, {:query, address, args, deadline}, timeout)
   end

@@ -39,6 +39,16 @@ are often no-ops, but check rather than assume.
 
    Use today's real date.
 
+   **Then fix the links the move just broke, in both directions.** The doc is
+   now one directory deeper, so every relative link inside it is wrong: `](../`
+   becomes `](../../`, and a bare `](something.md)` naming a sibling in
+   `docs/` becomes `](../something.md)` — links to docs that were *already*
+   archived are the only ones that still resolve. Then `grep` the repo for the
+   plan's filename and repoint every inbound reference at
+   `archive/<name>.md`. Neither half is optional: a dead link in an archived
+   plan is how the reasoning behind a shipped decision stops being findable,
+   which is the entire reason the plan is kept.
+
 4. **Sync [CLAUDE.md](CLAUDE.md).** New module → add it to the module map.
    Changed flow or conventions → fix the relevant section. No changes needed
    is a fine answer, but look.
