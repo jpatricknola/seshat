@@ -5,18 +5,17 @@ This doc holds two different things, and the distinction is the whole point:
 - **[Fix now](#fix-now)** — the OSC surface was *already* exposed beyond
   loopback. AbletonOSC bound `0.0.0.0` every time Live ran with the Remote
   Script installed, and Seshat's own reply socket bound the wildcard address
-  too. **#1 and #2 below are resolved as of 2026-07-30** — see the resolved
-  notes on each; **#3** (the Elixir listener and decoder) remains open and is
-  reachable from any local process today.
+  too. **All three items below are resolved as of 2026-07-30** — see the
+  resolved notes on each. This section is now history, not queue.
 - **[Deployment-gated](#deployment-gated)** — the HTTP surface genuinely is
   dormant. It requires an act of deployment to become reachable, and until then
   fixing it buys nothing.
 
 **Scheduling lives in [ROADMAP.md](ROADMAP.md), not here.** #1 and #2 shipped
 together as one submodule commit and one `mix abletonosc.install`
-(2026-07-30); the remaining Fix-now item, #3 (Elixir listener and decoder), is
-ranked there as **#1**. The gated items are deliberately absent from that
-queue. This doc is the evidence and the reasoning.
+(2026-07-30); #3 (Elixir listener and decoder) shipped the same day, entirely
+in `lib/`. The gated items are deliberately absent from that queue. This doc is
+the evidence and the reasoning.
 
 > **Corrected 2026-07-30.** The first version of this doc gated *everything*
 > behind "anything binds beyond loopback", while simultaneously recording that
@@ -69,8 +68,8 @@ item #3 below.
 
 # Fix now
 
-Reachable on any networked machine at the time these were filed. #1 and #2
-are resolved (2026-07-30); #3 is still open, is `lib/`-only, and needs no fork
+Reachable on any networked machine at the time these were filed. All three are
+resolved (2026-07-30): #1 and #2 in the fork, #3 in `lib/` with no fork
 round-trip.
 
 ## #1 · AbletonOSC listens on `0.0.0.0` and retargets replies to the last sender
@@ -159,6 +158,21 @@ install.
 `mix abletonosc.install`.
 
 ## #3 · The Elixir OSC listener trusts any source and crashes on malformed input
+
+> **Resolved 2026-07-30.** `@socket_opts` in
+> [transport.ex](../lib/seshat/osc/transport.ex) now carries `ip: {127,0,0,1}`,
+> so both the reply-port bind and the deaf-mode ephemeral bind are loopback-only;
+> `handle_info/2` accepts a datagram only from `@host:send_port` — the one
+> endpoint the fork's single `OSCServer` socket can send from — and logs and
+> drops everything else before it can satisfy a pending query or reach the
+> `"osc:in"` topic. [`Message.decode/1`](../lib/seshat/osc/message.ex) returns
+> `{:ok, {address, args}} | {:error, reason}` and validates string terminators,
+> padding length and pad-byte zeroing, the leading `/` on the address (which
+> also rejects bundles), the `,` on the type-tag string, every type tag against
+> the supported six, payload exhaustion, and trailing bytes — so a malformed
+> datagram is a logged drop rather than a transport crash. Plan:
+> [PLAN_harden_osc_listener.md](PLAN_harden_osc_listener.md). The finding below
+> is left as written at the time it was filed.
 
 Originally finding #7 of the review, kept whole — its two halves are one fix in
 one module.

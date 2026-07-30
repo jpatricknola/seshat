@@ -326,6 +326,23 @@ first.
 6. **Log.txt, specifically for this section.** No bind error at startup, no
    traceback from either export path, no unknown-address error on `/live/test`
    or `get_session_state`'s underlying calls.
+7. **The Elixir listener/decoder (shipped 2026-07-30, `Seshat.OSC.Transport` /
+   `Seshat.OSC.Message`).** `@socket_opts` binds the reply port loopback-only
+   and `handle_info/2` accepts a datagram only from `127.0.0.1:<send_port>`;
+   `Message.decode/1` is a strict decoder that logs and drops anything it
+   can't parse instead of crashing the transport — both are pure-tested
+   (`message_test.exs`, `transport_test.exs`) but never against real
+   AbletonOSC traffic. Run a normal session pass — `get_session_state(refresh:
+   true)`, a `search_library` call with a large reply, `get_clip_slots` on a
+   track with several clips (exercises the `N`-tag path), a track rename by
+   hand in Live (listener push), and a Live restart (`/live/startup`) — then
+   check Seshat's own Elixir console/log output (not Ableton's `Log.txt` —
+   this is `lib/seshat/osc/transport.ex`, running in the BEAM). Expect
+   **zero** occurrences of `Dropped OSC datagram from unexpected source` and
+   `Dropped malformed OSC datagram`. Either one firing during ordinary use
+   means the strict decoder or the source check is rejecting a legitimate
+   AbletonOSC reply shape — the log line carries the reason and a byte
+   preview, which is what would need loosening.
 
 ## If the change touches session guidance (`Seshat.Instructions` or a tool description)
 
