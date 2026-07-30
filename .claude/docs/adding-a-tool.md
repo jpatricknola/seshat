@@ -20,8 +20,8 @@ Append a map to `@tools`:
   parameters: %{
     type: "object",
     properties: %{
-      "track" => %{type: "integer", description: "0-indexed track number"},
-      "send" => %{type: "integer", description: "0-indexed send. Send A = 0."},
+      "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+      "send" => %{type: "integer", minimum: 0, description: "0-indexed send. Send A = 0."},
       "value" => %{type: "number", minimum: 0.0, maximum: 1.0, description: "Send level"}
     },
     required: ["track", "send", "value"]

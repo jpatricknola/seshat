@@ -155,7 +155,7 @@ defmodule Seshat.Tools.Validation do
   # The parameter's own description is already the model-facing teaching text,
   # so a violation reuses it rather than inventing a second set of hints.
   defp violation(path, text, spec) do
-    case spec && Map.get(spec, :description) do
+    case Map.get(spec, :description) do
       nil -> "- #{path}: #{text}"
       description -> "- #{path}: #{text} — #{description}"
     end

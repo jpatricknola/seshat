@@ -3050,9 +3050,11 @@ defmodule Seshat.Tools.Handlers do
   defp clip_write(property, value), do: {property, coerce_clip_value(property, value)}
 
   # `truthy?/1`, not a bare `if`: every non-nil term is truthy in Elixir, so a
-  # model that spells a boolean as `0` — which `Seshat.Agent` passes through
-  # unvalidated, MCP mode's Peri schema being the only thing that rejects it —
-  # would otherwise turn the property *on*.
+  # boolean spelled as `0` would otherwise turn the property *on*. Since
+  # `Seshat.Tools.Validation` runs in `call/2`, a `0` no longer arrives by that
+  # route in either mode — it is rejected as "must be a boolean". This stays
+  # because `clip_property_writes/2` is public and called directly, so `call/2`
+  # is not the only way in.
   defp coerce_clip_value(property, value) when property in @clip_boolean_properties,
     do: if(truthy?(value), do: 1, else: 0)
 

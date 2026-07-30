@@ -47,6 +47,9 @@ Model: `claude-haiku-4-5-20251001`, max_tokens 1024.
 
 ```
 Seshat.Tools.Handlers
+  → call/2 validates params against the tool's schema
+    (Seshat.Tools.Validation — declared types, bounds, enums, required;
+     rejects before anything is sent, in BOTH modes)
   → do_call/2 clause per tool name
   → simple tools call Transport directly
   → multi-step tools build a %Command{} and hand it to Registry
@@ -89,3 +92,10 @@ the mode-specific layers. See [adding-a-tool.md](adding-a-tool.md).
   appear fine.
 - **Atom vs string keys** — handled in `Handlers.call/2`. Before that fix, every
   MCP tool call fell through to `{:error, "Unknown tool: ..."}`.
+- **Two layers reject bad params, and they say different things.** In MCP mode
+  Peri refuses first, at the wire, as a JSON-RPC error — clients may surface
+  that as a bare "Invalid params", and its nested-array message is empty.
+  `Validation` is the authoritative check (it also catches what Peri's bounded
+  clauses miss, such as `1.5` for an integer) and produces the model-facing
+  text, but in MCP mode it is only reached for what Peri lets through. Roadmap:
+  "Model-readable rejections for invalid tool parameters in MCP mode".

@@ -980,8 +980,10 @@ defmodule Seshat.Tools.HandlersTest do
     #
     # Since `bars` gained `minimum: 0.01`, the central schema validator in
     # `Handlers.call/2` catches these before `ensure_bars/1` does, so the
-    # message is the schema one. `ensure_bars/1` stays as the belt behind the
-    # braces and is exercised directly below.
+    # message is the schema one. `ensure_bars/1` stays as a belt, but its error
+    # branch is now unreachable through `call/2` — `bars` is either absent or
+    # already known to be a number ≥ 0.01 — so nothing below exercises it, and
+    # no test here can.
     test "rejects a zero bars count before touching Ableton" do
       assert {:error, message} =
                Handlers.call("record_clip", %{"track" => 0, "clip_slot" => 0, "bars" => 0})
@@ -1778,8 +1780,10 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     # Every non-nil term is truthy in Elixir, so a bare `if` would turn a
-    # boolean spelled as `0` into 1 — the opposite of intent. Reachable in
-    # API-key mode, where nothing validates a tool call against the schema.
+    # boolean spelled as `0` into 1 — the opposite of intent. `Validation` now
+    # rejects that shape in `call/2` for both modes, so this pins the direct
+    # caller of the public `clip_property_writes/2`, which does not go through
+    # it.
     test "a boolean spelled as 0/1 is not inverted" do
       assert Handlers.clip_property_writes(%{}, %{"looping" => 0, "legato" => 1}) ==
                {:ok, [{"looping", 0}, {"legato", 1}]}
