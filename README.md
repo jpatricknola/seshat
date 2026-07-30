@@ -14,7 +14,12 @@ sends OSC to a running copy of Ableton Live.
 Nothing else to download: the AbletonOSC bridge ships with Seshat as a
 submodule, and `mix abletonosc.install` below puts it in place. You enable it
 under Preferences → Link/MIDI → Control Surface once it's installed. It listens
-on UDP 11000 and replies on 11001.
+on `127.0.0.1:11000` and replies to `127.0.0.1:11001`. Both halves of the bridge
+are local-only: the command socket accepts loopback traffic only, and its replies
+and listener pushes always go to loopback, never to whichever host last sent
+something. Stock AbletonOSC listens on every network interface and follows the
+last sender; Seshat's fork deliberately does neither, because every OSC address
+can control Live and none of them authenticate.
 
 No database required.
 
@@ -59,10 +64,12 @@ Ableton's sound designers wrote for every factory and Pack preset, so
 `search_library` can answer "a warm analog bass" rather than handing back 267
 undifferentiated names.
 
-It takes up to a minute and Live's UI will hitch while it runs. The result is
-saved to `~/.seshat/catalog.json` and reused forever after — searching works
-even with Ableton closed. Re-run it after installing new Packs or plugins, or
-after saving your own presets.
+It takes up to a minute and Live's UI will hitch while it runs. Along the way,
+AbletonOSC writes a temporary export of the browser to
+`~/.seshat/browser-exports/` and Seshat deletes it once the merge finishes; the
+result that persists is saved to `~/.seshat/catalog.json` and reused forever
+after — searching works even with Ableton closed. Re-run it after installing
+new Packs or plugins, or after saving your own presets.
 
 <details>
 <summary>Manual install</summary>

@@ -108,7 +108,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
-| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (two view addresses in `view.py`). `SESHAT.md` at its root lists every divergence |
+| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (two view addresses in `view.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
 | [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies the fork wholesale into Live's Remote Scripts |
 
 ## Adding a tool
@@ -131,7 +131,7 @@ irregular naming, listener pattern, ordering hazards).
 
 Some of those addresses are ours, not upstream's — they exist only in the fork
 at `priv/AbletonOSC`, in three handler modules of our own plus two additions to
-an upstream file:
+an upstream file (and one upstream file whose *behaviour* we change, below):
 
 - `/live/browser/*` — `abletonosc/browser.py`. Upstream has no browser API at all.
 - `/live/return_track/*` and `/live/master/*` — `abletonosc/return_track.py`.
@@ -156,9 +156,20 @@ The fork also **fixes** upstream code, most importantly
 `AbletonOSCHandler._stop_listen`, which unbound a listener from the wrong object
 once an index had been reused — delete a track, rename another, and the mirror
 gets one track's name under another's index. Seshat used to patch that from
-outside with a `track_listeners.py` override; that file is gone.
-`vendored_addresses_test` greps for the fix, because losing it in an upstream
-merge would be completely invisible: every address still answers.
+outside with a `track_listeners.py` override; that file is gone. And it
+deliberately **changes** upstream behaviour in one file, `abletonosc/osc_server.py`:
+the command socket binds `127.0.0.1:11000` instead of the wildcard address, and
+`process()` no longer retargets the default reply destination to the last
+datagram's sender, so listener pushes and status sends always go to
+`127.0.0.1:11001`. Upstream's defaults are reasonable for driving Live from a
+phone on the LAN and wrong here — every OSC address controls Live and nothing on
+the wire authenticates. That is a third kind of divergence, neither an extension
+nor a bug fix, and it is why `osc_server.py` belongs in the list above when a
+future upstream merge asks which files we have touched.
+`vendored_addresses_test` greps for all three — the `_stop_listen` fix, the
+loopback bind, and the absent retargeting — because losing any of them in an
+upstream merge would be completely invisible: every address still answers, and
+on this machine everything still works.
 
 ## Verification
 
@@ -198,9 +209,11 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top seven are all defects, because the OSC sockets bind beyond
-loopback today and several OSC-layer bugs corrupt data silently. Two sibling
-docs hold the *evidence* behind those items, not a competing queue:
+2026-07-30 its top five are all defects: AbletonOSC's loopback bind and the
+browser-export path restriction shipped today (formerly #1 and #2), but the
+Elixir OSC listener and decoder still trust any local source and several
+OSC-layer bugs still corrupt data silently. Two sibling docs hold the
+*evidence* behind those items, not a competing queue:
 
 - [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the 2026-07-29 external review.
   Each confirmed defect with file:line evidence and a **Reviewer response**
@@ -210,11 +223,11 @@ docs hold the *evidence* behind those items, not a competing queue:
   decisions (structured setter acknowledgements, Python bounds checks, protocol
   request IDs).
 - [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure, split
-  into **Fix now** (ranked as ROADMAP #1–#3, because the OSC sockets already bind
-  beyond loopback today) and **Deployment-gated** (HTTP auth, production binding,
-  rate limiting — deliberately absent from the queue until something binds beyond
-  loopback or a second user is invited). Check it before loosening a bind or
-  adding an entry point.
+  into **Fix now** (its first two items resolved 2026-07-30; the remaining one
+  is ranked as ROADMAP #1) and **Deployment-gated** (HTTP auth, production
+  binding, rate limiting — deliberately absent from the queue until something
+  binds beyond loopback or a second user is invited). Check it before loosening
+  a bind or adding an entry point.
 
 [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) is a standing design review of the
 whole tool surface — one verdict per tool, plus the coverage gaps that feed

@@ -251,6 +251,82 @@ are the ones that must pass before anyone trusts the pair.
    Session with the detail pane left alone; `stop_recording` opens the finished
    take in the note editor (or waveform, for audio).
 
+## If the change touches the OSC network boundary or browser exports
+
+Shipped 2026-07-30: `osc_server.py`'s command socket moved from binding
+`0.0.0.0:11000` to `127.0.0.1:11000` only, and stopped rewriting its default
+reply destination to the last sender; `browser.py`'s `/live/browser/export`
+moved from opening a caller-supplied path with Live's privileges to choosing
+its own file under `~/.seshat/browser-exports/`. Both live in the one fork
+commit, so — per the bridge checklist above — nothing here means anything
+without `mix abletonosc.install` and a Live restart (or AbletonOSC toggle)
+first.
+
+1. **The bind itself.** `lsof -nP -iUDP:11000`. The only AbletonOSC line must
+   read `127.0.0.1:11000`; `*:11000` or `0.0.0.0:11000` is exactly the
+   regression this change exists to close.
+2. **The fixed default reply route.** `manager.py`'s `test_callback` replies
+   with a bare `self.osc_server.send(...)`, not a tuple returned through
+   `process_message`, so `/live/test` is the one call that exercises the
+   removed last-sender rewrite directly — everything else here only proves the
+   per-message reply path still works. No tool sends it, and the reply goes to
+   the fixed 11001 that a running Seshat already owns, so **stop Seshat for
+   the length of this check** (`[Errno 48] Address already in use` on the bind
+   means you didn't):
+   ```bash
+   python3 -c '
+   import socket, sys; sys.path.insert(0, "priv/AbletonOSC")
+   from pythonosc.udp_client import SimpleUDPClient
+   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+   s.bind(("127.0.0.1", 11001)); s.settimeout(5)
+   SimpleUDPClient("127.0.0.1", 11000).send_message("/live/test", [])
+   print(s.recvfrom(1024))
+   '
+   ```
+   Expect a datagram carrying `/live/test` and `ok` (Live also flashes
+   "Received OSC OK" in its status bar — that only proves the callback *ran*,
+   so it is not a substitute for receiving the reply). A timeout is the
+   failure this check exists to catch, and nothing else here would catch it.
+   If stopping Seshat isn't practical, item 3's listener push travels the same
+   `osc_server.send` default route — record that you substituted it rather
+   than reporting this item as run.
+3. **Callback replies and listener pushes both still land on 11001.**
+   `get_session_state(refresh: true)`, then change tempo or a track's volume
+   by hand in Live, then call `get_session_state` again and confirm it sees
+   the change. The first call is a direct reply; the second depends on a
+   listener push reaching the fixed `127.0.0.1:11001` with no incoming
+   datagram to retarget it — both are exactly what moved.
+4. **Stale-export cleanup, with real fixtures.** Before running
+   `reindex_library`, plant two files in `~/.seshat/browser-exports/` matching
+   `seshat-browser-export-*.json`: one with a modification time more than ten
+   minutes old (backdate it — `touch -A`/`os.utime`), one fresh. Reindex must
+   succeed, remove the stale fixture, leave the fresh one alone, and clean up
+   only the export it just created (`Catalog.consume_export/3`'s `after` block
+   deletes nothing but the path Python replied with, and only once it has
+   validated it). Remove the fresh fixture by hand
+   once you've confirmed it survived — nothing in this system will ever do
+   that for you.
+5. **The obsolete path-taking form, from outside Seshat.** Send it with a
+   send-only OSC client so nothing binds port 11001 and Seshat's own reader
+   stays alive:
+   ```bash
+   python3 -c '
+   import sys; sys.path.insert(0, "priv/AbletonOSC")
+   from pythonosc.udp_client import SimpleUDPClient
+   c = SimpleUDPClient("127.0.0.1", 11000)
+   c.send_message("/live/browser/export", ["/tmp/seshat-should-not-exist.json"])
+   '
+   ```
+   Confirm `/tmp/seshat-should-not-exist.json` was never created, and that
+   Live's `Log.txt` shows `browser.py`'s clean "export takes no arguments"
+   validation line rather than a traceback. Its reply goes to the fixed
+   response port, never back to this client's socket, so the log line is the
+   only observable outcome here — by design, since nothing else confirms the
+   obsolete form was rejected rather than ignored.
+6. **Log.txt, specifically for this section.** No bind error at startup, no
+   traceback from either export path, no unknown-address error on `/live/test`
+   or `get_session_state`'s underlying calls.
+
 ## If the change touches session guidance (`Seshat.Instructions` or a tool description)
 
 The only checks in this repo that exercise **what the model says** rather than

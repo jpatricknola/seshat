@@ -2,20 +2,21 @@
 
 This doc holds two different things, and the distinction is the whole point:
 
-- **[Fix now](#fix-now)** — the OSC surface is *already* exposed beyond
-  loopback. AbletonOSC binds `0.0.0.0` every time Live runs with the Remote
-  Script installed, and Seshat's own reply socket binds the wildcard address
-  too. Nothing about these waits on a deployment; they are live on any
-  networked machine today. All three are cheap.
+- **[Fix now](#fix-now)** — the OSC surface was *already* exposed beyond
+  loopback. AbletonOSC bound `0.0.0.0` every time Live ran with the Remote
+  Script installed, and Seshat's own reply socket bound the wildcard address
+  too. **#1 and #2 below are resolved as of 2026-07-30** — see the resolved
+  notes on each; **#3** (the Elixir listener and decoder) remains open and is
+  reachable from any local process today.
 - **[Deployment-gated](#deployment-gated)** — the HTTP surface genuinely is
   dormant. It requires an act of deployment to become reachable, and until then
   fixing it buys nothing.
 
-**Scheduling lives in [ROADMAP.md](ROADMAP.md), not here.** The three Fix-now
-items are ranked there as **#1** (AbletonOSC loopback bind), **#2** (browser
-export path) and **#3** (Elixir listener and decoder) — #1 and #2 ship as one
-submodule commit and one `mix abletonosc.install`. The gated items are
-deliberately absent from that queue. This doc is the evidence and the reasoning.
+**Scheduling lives in [ROADMAP.md](ROADMAP.md), not here.** #1 and #2 shipped
+together as one submodule commit and one `mix abletonosc.install`
+(2026-07-30); the remaining Fix-now item, #3 (Elixir listener and decoder), is
+ranked there as **#1**. The gated items are deliberately absent from that
+queue. This doc is the evidence and the reasoning.
 
 > **Corrected 2026-07-30.** The first version of this doc gated *everything*
 > behind "anything binds beyond loopback", while simultaneously recording that
@@ -68,10 +69,18 @@ item #3 below.
 
 # Fix now
 
-Reachable today on any networked machine. Total effort across all three is
-roughly an afternoon, most of it the fork round-trip.
+Reachable on any networked machine at the time these were filed. #1 and #2
+are resolved (2026-07-30); #3 is still open, is `lib/`-only, and needs no fork
+round-trip.
 
 ## #1 · AbletonOSC listens on `0.0.0.0` and retargets replies to the last sender
+
+> **Resolved 2026-07-30.** Shipped alongside #2 in the fork commit that binds
+> `OSCServer`'s default `local_addr` to `127.0.0.1` and stops `process()` from
+> reassigning `self._remote_addr` from the last datagram's source
+> ([priv/AbletonOSC/abletonosc/osc_server.py](../priv/AbletonOSC/abletonosc/osc_server.py)).
+> Plan: [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md)
+> (archived). The finding below is left as written at the time it was filed.
 
 **What's wrong:** [osc_server.py:15](../priv/AbletonOSC/abletonosc/osc_server.py#L15)
 binds the wildcard address, and [osc_server.py:189](../priv/AbletonOSC/abletonosc/osc_server.py#L189)
@@ -101,13 +110,23 @@ and a Live restart — see [.claude/rules/osc.md](../.claude/rules/osc.md).
 **If a networked OSC controller is ever wanted**, make the bind address a
 constant in the fork rather than reverting to the wildcard.
 
-**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](PLAN_abletonosc_loopback_and_safe_exports.md)
-— shared with the browser-export restriction so both fork changes land in one
-install.
+**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md)
+(archived) — shared with the browser-export restriction so both fork changes
+landed in one install.
 
 **Effort:** Low to write, ongoing to carry.
 
 ## #2 · `/live/browser/export` writes to any caller-supplied path
+
+> **Resolved 2026-07-30.** Shipped alongside #1. `/live/browser/export` now
+> takes no arguments; Python creates a uniquely named file under
+> `~/.seshat/browser-exports/` (`tempfile.mkstemp`, owner-only directory) and
+> returns the resolved absolute path, and
+> [`Catalog.validated_export_path/2`](../lib/seshat/library/catalog.ex) checks
+> that path is a regular file directly under that root before Elixir reads or
+> deletes it. Plan:
+> [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md)
+> (archived). The finding below is left as written at the time it was filed.
 
 **What's wrong:** [browser.py:228-279](../priv/AbletonOSC/abletonosc/browser.py#L228-L279)
 takes `dest_path` straight off the wire, runs `os.makedirs` on its directory,
@@ -132,8 +151,9 @@ move to the new contract. The path validation is load-bearing until the Elixir
 listener/source-hardening item ships: a forged reply must never turn into an
 arbitrary Elixir read or delete.
 
-**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](PLAN_abletonosc_loopback_and_safe_exports.md)
-— shared with the loopback bind so both fork changes land in one install.
+**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md)
+(archived) — shared with the loopback bind so both fork changes landed in one
+install.
 
 **Effort:** Low, but touches two languages and needs the fork round-trip plus
 `mix abletonosc.install`.

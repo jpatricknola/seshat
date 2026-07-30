@@ -274,6 +274,142 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     end
   end
 
+  # Two deliberate departures from upstream's *behaviour*, neither of which any
+  # address-level check can see: upstream's OSC socket binds every interface and
+  # retargets its default reply address to whoever spoke last, which handed full,
+  # unauthenticated control of Live to anything the machine's network boundary
+  # let through. Losing either in an upstream merge is invisible from this
+  # machine — loopback traffic behaves identically — so the regression would be
+  # silent remote exposure. The behaviour itself only exists inside Live, so a
+  # grep is the only guard available here, exactly as for the listener fix above.
+  describe "the loopback-only network boundary" do
+    @osc_server "priv/AbletonOSC/abletonosc/osc_server.py"
+    @seshat_md "priv/AbletonOSC/SESHAT.md"
+
+    test "the OSC socket binds loopback, not the wildcard address" do
+      source = File.read!(@osc_server)
+
+      assert source =~ "local_addr: Tuple[str, int] = ('127.0.0.1', OSC_LISTEN_PORT)",
+             """
+             #{@osc_server}'s OSCServer no longer defaults to binding 127.0.0.1.
+
+             Manager constructs OSCServer() with no arguments, so this default is the
+             whole network boundary: upstream's ('0.0.0.0', OSC_LISTEN_PORT) exposes
+             every Live-controlling OSC address, unauthenticated, on every interface.
+             Restore the loopback default — see SESHAT.md in the fork. A networked
+             controller needs an explicit opt-in bind and a security design, never a
+             restored wildcard.
+             """
+
+      refute source =~ "0.0.0.0",
+             "#{@osc_server} mentions the wildcard address again — see SESHAT.md."
+    end
+
+    test "the default reply address is never retargeted to the last sender" do
+      source = File.read!(@osc_server)
+
+      refute source =~ ~r/self\._remote_addr\s*=\s*\(/,
+             """
+             #{@osc_server}'s process() assigns a tuple to self._remote_addr again.
+
+             That is upstream's per-datagram retargeting: listener pushes,
+             /live/startup, /live/error and /live/test would follow whichever client
+             spoke last instead of the fixed 127.0.0.1 response port. The only
+             assignment that belongs is __init__'s `self._remote_addr = remote_addr`.
+             """
+
+      assert source =~ "self._remote_addr = remote_addr",
+             "#{@osc_server} no longer takes its default remote address from __init__."
+    end
+
+    test "SESHAT.md records both deviations" do
+      source = File.read!(@seshat_md)
+
+      assert source =~ "### Deliberate changes to upstream's behaviour",
+             """
+             #{@seshat_md} lost the section recording the loopback bind and the removed
+             reply retargeting. That file is the only record of what this fork changed
+             and why, and it is what the next upstream merge is read against.
+             """
+
+      assert source =~ "osc_server.py",
+             "#{@seshat_md} no longer mentions osc_server.py."
+    end
+  end
+
+  # The browser export writes a file with Live's privileges. It used to write
+  # wherever the request said; now the request carries no path at all and Python
+  # picks a fresh file inside a fixed root. Like the boundary above this is
+  # behaviour that only runs inside Live, so these greps are what protects the
+  # contract across an upstream merge — the Live smoke test is the behavioural
+  # proof, since importing the handler needs Live's embedded Python.
+  describe "the browser export's fixed destination" do
+    test "no destination is derived from the request parameters" do
+      source = File.read!(@browser_file)
+
+      refute source =~ ~r/dest_path\s*=\s*str\(params/,
+             """
+             #{@browser_file} derives an export destination from the request again.
+
+             A caller-supplied path is opened with Live's privileges. The export takes
+             no arguments: it chooses a file inside EXPORT_ROOT and returns the path.
+             """
+
+      assert source =~ "export takes no arguments",
+             "#{@browser_file} no longer rejects a request that carries arguments."
+    end
+
+    test "exports are created with mkstemp inside the fixed export root" do
+      source = File.read!(@browser_file)
+
+      assert source =~
+               ~s|EXPORT_ROOT = os.path.abspath(os.path.expanduser("~/.seshat/browser-exports"))|,
+             """
+             #{@browser_file}'s EXPORT_ROOT changed spelling.
+
+             Seshat.Library.Catalog validates the returned path against
+             Path.expand("~/.seshat/browser-exports"), which resolves no symlinks —
+             so this must stay expanduser + abspath, never realpath, or every reindex
+             fails its root check on a machine with a symlinked ~/.seshat.
+             """
+
+      assert source =~ "tempfile.mkstemp(" and source =~ "dir=EXPORT_ROOT",
+             """
+             #{@browser_file} no longer allocates its export with
+             tempfile.mkstemp(dir=EXPORT_ROOT).
+
+             mkstemp is what makes the create exclusive, the name unguessable and the
+             mode owner-only — an open() on a name this code composed itself brings
+             back the collision and pre-existing-file cases it removed.
+             """
+    end
+
+    test "the stale sweep keeps its age gate and its regular-file guard" do
+      source = File.read!(@browser_file)
+
+      assert source =~ "EXPORT_STALE_SECONDS = 10 * 60",
+             """
+             #{@browser_file}'s stale-export age gate changed.
+
+             It is load-bearing, not hygiene: Transport does not serialize queries, so
+             an unconditional sweep can delete a finished export before an overlapping
+             caller has read it. Ten minutes is well past the 120s query timeout.
+             """
+
+      assert source =~ "info.st_mtime > cutoff",
+             "#{@browser_file}'s stale sweep no longer compares mtime against a cutoff."
+
+      assert source =~ "os.lstat(" and source =~ "stat.S_ISREG(",
+             """
+             #{@browser_file}'s stale sweep no longer gates removal on os.lstat
+             reporting a regular file.
+
+             Without it the sweep follows symlinks and can delete something outside
+             the export root that merely happens to be named like an export.
+             """
+    end
+  end
+
   # `add_handler("/live/...", ...)` — the one way a handler registers an address.
   # Either quote style: our own files use double quotes throughout, but upstream's
   # view.py (which now carries two of ours) mixes in single-quoted registrations,

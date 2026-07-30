@@ -47,6 +47,24 @@ defmodule Seshat.Library.Catalog do
   # tens of seconds on a large library.
   @export_timeout 120_000
 
+  # The browser export is written by Python, which picks the filename: the OSC
+  # request carries no path, so nothing a caller sends can steer what Live opens
+  # with its own privileges. These three constants are the other half of that
+  # contract — the reply is untrusted until it proves to name a regular file
+  # directly inside this directory with this name shape. `Path.expand/1` matches
+  # Python's `expanduser` + `abspath` (neither resolves symlinks); see
+  # `abletonosc/browser.py`'s `EXPORT_ROOT`.
+  @export_root "~/.seshat/browser-exports"
+  @export_prefix "seshat-browser-export-"
+  @export_suffix ".json"
+
+  # An install predating the no-argument export contract answers a no-argument
+  # request with its own "requires [dest_path]" error. That is a version skew,
+  # not a browser failure, and the fix is never "try again".
+  @stale_install_hint "Live is running an AbletonOSC older than this Seshat: " <>
+                        "its browser export still expects a destination path. " <>
+                        "Run `mix abletonosc.install` and restart Live."
+
   # Loads are frequent and the file is only a usage counter — batch the writes.
   @persist_debounce 5_000
 
@@ -238,19 +256,36 @@ defmodule Seshat.Library.Catalog do
            }}
           | {:error, term()}
   def reindex(server \\ __MODULE__) do
-    export_path =
-      Path.join(
-        System.tmp_dir!(),
-        "seshat-browser-export-#{System.unique_integer([:positive])}.json"
-      )
+    # The export path is only known once Python has replied with it, and only
+    # deleted once it has been validated — so the cleanup can't be hoisted above
+    # the query the way a path we chose ourselves could be. Python sweeps up
+    # anything this never gets to see (a timeout, a lost reply, a refused path).
+    with {:ok, path} <- export_browser() do
+      consume_export(path, Path.expand(@export_root), server)
+    end
+  end
 
-    try do
-      with {:ok, export} <- export_browser(export_path),
-           {:ok, entries} <- build_entries(export) do
-        GenServer.call(server, {:replace, entries}, 30_000)
+  @doc false
+  # Validation and deletion live in one function on purpose: every way of
+  # splitting them leaves a path where Elixir has validated a file and then
+  # abandons it. Reading and decoding are inside the cleanup block for exactly
+  # that reason — a truncated or corrupt export is the case where we know the
+  # name, so leaving it for Python's stale sweep would be a choice, not a
+  # necessity. A path that fails validation is never deleted: it is not ours.
+  # `expected_root` is a parameter so tests can drive the whole consume-and-
+  # clean-up lifecycle against a tmp dir instead of the developer's home.
+  @spec consume_export(String.t(), String.t(), atom()) :: {:ok, map()} | {:error, term()}
+  def consume_export(path, expected_root, server \\ __MODULE__) do
+    with {:ok, validated} <- validated_export_path(path, expected_root) do
+      try do
+        with {:ok, body} <- read_export_file(validated),
+             {:ok, export} <- decode_export(body),
+             {:ok, entries} <- build_entries(export) do
+          GenServer.call(server, {:replace, entries}, 30_000)
+        end
+      after
+        File.rm(validated)
       end
-    after
-      File.rm(export_path)
     end
   end
 
@@ -876,28 +911,96 @@ defmodule Seshat.Library.Catalog do
 
   # --- Private ---
 
-  defp export_browser(export_path) do
-    case Transport.query("/live/browser/export", [export_path], @export_timeout) do
-      {:ok, {_address, [_path, "ok", _total]}} ->
-        read_export(export_path)
+  defp export_browser do
+    case Transport.query("/live/browser/export", [], @export_timeout) do
+      {:ok, {_address, [path, "ok", _total]}} when is_binary(path) ->
+        {:ok, path}
+
+      # Matched before the generic error below: this exact message is the old
+      # handler's, and it means the install is stale rather than the walk failed.
+      {:ok, {_address, [_path, "error", "export requires [dest_path]" <> _]}} ->
+        {:error, @stale_install_hint}
 
       {:ok, {_address, [_path, "error", message]}} ->
         {:error, message}
 
       {:ok, {_address, args}} ->
-        {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
+        {:error,
+         "Unexpected reply from Live's browser: #{inspect(args)}. " <>
+           "If Live's AbletonOSC predates this Seshat, run " <>
+           "`mix abletonosc.install` and restart Live."}
 
+      # A timeout is not an {:error, :timeout} here — Transport.query/3 is a
+      # GenServer.call, so exceeding @export_timeout exits the caller. The
+      # `reindex_library` handler catches that exit and already answers with the
+      # "is Ableton running, has mix abletonosc.install been run" advice, which is
+      # the same instruction the stale-install hint above gives.
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp read_export(export_path) do
-    with {:ok, body} <- File.read(export_path),
-         {:ok, export} <- Jason.decode(body) do
-      {:ok, export}
-    else
-      {:error, reason} -> {:error, "Could not read the browser export: #{inspect(reason)}"}
+  @doc false
+  # The reply path is data from another process, so it is checked before any
+  # filesystem call touches it — and the lstat lives here rather than in the
+  # caller, because a path check that stops at string arithmetic is the half that
+  # never gets tested. `expected_root` is a parameter for exactly that reason:
+  # tests point it at a tmp dir instead of the developer's home.
+  @spec validated_export_path(String.t(), String.t()) ::
+          {:ok, String.t()} | {:error, String.t()}
+  def validated_export_path(path, expected_root)
+      when is_binary(path) and is_binary(expected_root) do
+    expanded = Path.expand(path)
+    basename = Path.basename(expanded)
+    root = Path.expand(expected_root)
+
+    cond do
+      Path.dirname(expanded) != root ->
+        {:error,
+         "Live's browser export replied with #{inspect(path)}, which is not directly " <>
+           "inside #{root}. Nothing was read or deleted."}
+
+      not (String.starts_with?(basename, @export_prefix) and
+               String.ends_with?(basename, @export_suffix)) ->
+        {:error,
+         "Live's browser export replied with #{inspect(path)}, which is not named " <>
+           "#{@export_prefix}*#{@export_suffix}. Nothing was read or deleted."}
+
+      true ->
+        case File.lstat(expanded) do
+          {:ok, %File.Stat{type: :regular}} ->
+            {:ok, expanded}
+
+          {:ok, %File.Stat{type: type}} ->
+            {:error,
+             "Live's browser export replied with #{inspect(path)}, which is a #{type}, " <>
+               "not a regular file. Nothing was read or deleted."}
+
+          {:error, reason} ->
+            {:error,
+             "Live's browser export replied with #{inspect(path)}, which could not be " <>
+               "read: #{inspect(reason)}"}
+        end
+    end
+  end
+
+  defp read_export_file(path) do
+    case File.read(path) do
+      {:ok, body} -> {:ok, body}
+      {:error, reason} -> {:error, "Could not read #{path}: #{inspect(reason)}"}
+    end
+  end
+
+  defp decode_export(body) do
+    case Jason.decode(body) do
+      {:ok, export} when is_map(export) ->
+        {:ok, export}
+
+      {:ok, other} ->
+        {:error, "The browser export was not a JSON object: #{inspect(other)}"}
+
+      {:error, error} ->
+        {:error, "Could not decode the browser export: #{Exception.message(error)}"}
     end
   end
 
