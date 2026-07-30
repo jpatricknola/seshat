@@ -1242,6 +1242,9 @@ defmodule Seshat.Tools.Handlers do
         FollowCam.steer("create_track", %{track: index})
         {:ok, "Created #{type} track '#{name}' at index #{index}"}
 
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason}
+
       {:error, reason} ->
         {:error, inspect(reason)}
     end

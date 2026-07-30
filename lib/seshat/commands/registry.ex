@@ -9,6 +9,7 @@ defmodule Seshat.Commands.Registry do
   OSC addresses per AbletonOSC:
     /live/song/create_midi_track  [index]               (-1 = append)
     /live/song/create_audio_track [index]               (-1 = append)
+    /live/song/get/num_tracks     []                  → [count]
     /live/track/set/name          [track_index, name]
     /live/clip_slot/create_clip   [track_index, slot, length]
     /live/clip/add/notes          [track_index, slot, pitch, start, dur, vel, mute, ...]
@@ -55,7 +56,7 @@ defmodule Seshat.Commands.Registry do
     with {:ok, before_count} <- return_track_count(:pre_create),
          :ok <- Transport.send_message("/live/song/create_return_track", []),
          {:ok, after_count} <- return_track_count(:post_create),
-         :ok <- ensure_created(before_count, after_count),
+         :ok <- ensure_return_created(before_count, after_count),
          # The new return's index is the *old* count: Live appends returns, and
          # upstream's create takes no index argument.
          :ok <- Transport.send_message("/live/return_track/set/name", [before_count, name]) do
@@ -180,27 +181,113 @@ defmodule Seshat.Commands.Registry do
   truth either way — and the reason for a non-create matters, because "you're at
   Live's limit" and "the message didn't land" ask the user for different things.
 
+  Exactly one more, not merely "went up": `before_count` is a claim about *which
+  index is ours*, and only an increase of one supports it. A user adding a return
+  by hand in Live while the tool runs is ordinary here, and renaming
+  `before_count` after a jump of two would rename theirs.
+
   Public because it is the pure half of a sequence that otherwise needs a live
   Ableton to reach.
   """
-  @spec ensure_created(non_neg_integer(), non_neg_integer()) :: :ok | {:error, String.t()}
-  def ensure_created(before_count, after_count) when after_count > before_count, do: :ok
+  @spec ensure_return_created(non_neg_integer(), non_neg_integer()) :: :ok | {:error, String.t()}
+  def ensure_return_created(before_count, after_count) when after_count == before_count + 1,
+    do: :ok
 
-  def ensure_created(before_count, _after_count) when before_count >= 12 do
+  def ensure_return_created(before_count, after_count) when after_count > before_count + 1 do
+    {:error,
+     "The return track count went from #{before_count} to #{after_count} — more than one " <>
+       "return track appeared, so Seshat can't tell which one it created. Nothing was " <>
+       "renamed. Check get_session_state and rename the new return track by hand, or delete " <>
+       "the extras and try again."}
+  end
+
+  def ensure_return_created(before_count, _after_count) when before_count >= 12 do
     {:error,
      "Ableton did not create a return track — the set is already at Live's limit of 12 " <>
        "return tracks. Nothing was created or renamed. Delete a return you no longer need " <>
        "with delete_return_track first."}
   end
 
-  def ensure_created(before_count, after_count) do
+  def ensure_return_created(before_count, after_count) do
     {:error,
      "Ableton did not create a return track — the count went from #{before_count} to " <>
        "#{after_count}, which is below Live's 12-return limit, so the create message may not " <>
        "have landed. Nothing was renamed. Check get_session_state and try again."}
   end
 
-  # --- Private helpers ---
+  # --- Private helpers: regular tracks ---
+
+  # The return sibling's 2s @return_probe_timeout is an "is return_track.py
+  # installed?" probe and must not be copied here: /live/song/get/num_tracks is
+  # upstream's, so silence means Live isn't answering at all — the same condition
+  # every other upstream query faces. Transport's 5s default it is.
+  #
+  # `context` picks the timeout message for the same reason it does for returns:
+  # a timeout before the create means nothing was created, a timeout after it
+  # means a track may well exist.
+  defp track_count(context) do
+    case Transport.query("/live/song/get/num_tracks", []) do
+      {:ok, {_addr, [count]}} when is_integer(count) ->
+        {:ok, count}
+
+      {:ok, {_addr, args}} ->
+        {:error, "Unexpected reply from /live/song/get/num_tracks: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  catch
+    :exit, _ ->
+      {:error, track_count_timeout_message(context)}
+  end
+
+  defp track_count_timeout_message(:pre_create) do
+    "Timed out reading the track count, so nothing was created. Check that Ableton Live is " <>
+      "running with AbletonOSC enabled."
+  end
+
+  defp track_count_timeout_message(:post_create) do
+    "Sent the create, but timed out confirming the new track count afterwards — a track may " <>
+      "have been created but could not be confirmed or named. Check get_session_state for an " <>
+      "unnamed extra track before creating another."
+  end
+
+  @doc """
+  Decides whether `/live/song/create_midi_track` (or `_audio_`) actually created
+  one, from the track count either side of it.
+
+  The create is a fire-and-forget method call and AbletonOSC's `_call_method`
+  swallows Live API exceptions into its log, so the count is the only signal that
+  reaches us at all. Unlike returns there is no cap to name: regular tracks are
+  uncapped in Standard/Suite and capped only in Intro/Lite, and nothing on the
+  wire reveals the edition — so an unchanged count gets one message naming both
+  possible causes rather than asserting either.
+
+  Exactly one more, not merely "went up", for the same reason as
+  `ensure_return_created/2`: `before_count` is the index we are about to rename
+  and hand back, and only an increase of one supports that claim.
+
+  Public because it is the pure half of a sequence that otherwise needs a live
+  Ableton to reach.
+  """
+  @spec ensure_track_created(non_neg_integer(), non_neg_integer()) :: :ok | {:error, String.t()}
+  def ensure_track_created(before_count, after_count) when after_count == before_count + 1,
+    do: :ok
+
+  def ensure_track_created(before_count, after_count) when after_count > before_count + 1 do
+    {:error,
+     "The track count went from #{before_count} to #{after_count} — more than one track " <>
+       "appeared, so Seshat can't tell which one it created. Nothing was renamed. Check " <>
+       "get_session_state and rename the new track by hand, or delete the extras and try again."}
+  end
+
+  def ensure_track_created(before_count, after_count) do
+    {:error,
+     "Ableton did not create a track — the count went from #{before_count} to #{after_count}. " <>
+       "Nothing was renamed. Some Live editions (Intro/Lite) cap the number of tracks; " <>
+       "otherwise the create message may not have landed. Check get_session_state and try " <>
+       "again."}
+  end
 
   defp create_and_name_track(type, name) do
     osc_address =
@@ -210,11 +297,14 @@ defmodule Seshat.Commands.Registry do
       end
 
     # The pre-create count *is* the new track's index: both creates are sent with
-    # -1, which appends.
-    with {:ok, {_addr, [count]}} <- Transport.query("/live/song/get/num_tracks", []),
+    # -1, which appends. Only true once the count has been seen to rise by
+    # exactly one, which is what ensure_track_created/2 checks before the rename.
+    with {:ok, before_count} <- track_count(:pre_create),
          :ok <- Transport.send_message(osc_address, [-1]),
-         :ok <- Transport.send_message("/live/track/set/name", [count, name]) do
-      {:ok, count}
+         {:ok, after_count} <- track_count(:post_create),
+         :ok <- ensure_track_created(before_count, after_count),
+         :ok <- Transport.send_message("/live/track/set/name", [before_count, name]) do
+      {:ok, before_count}
     end
   end
 end
