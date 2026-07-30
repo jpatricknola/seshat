@@ -83,8 +83,8 @@ Correlation caveat (documented, accepted): `num_tracks` replies carry no
 echo, so a straggler reply from an earlier abandoned query (e.g. a
 `Session.State` refresh probe) could in principle satisfy the pre- or
 post-count with a stale number. That is residual collision class 1 of
-[PLAN_serialize_osc_queries.md](PLAN_serialize_osc_queries.md) ("Serialize
-OSC queries", planned this run), which narrows it to a timeout-plus-adjacency
+[PLAN_serialize_osc_queries.md](archive/PLAN_serialize_osc_queries.md)
+("Serialize OSC queries", shipped 2026-07-30), which narrows it to a timeout-plus-adjacency
 window but cannot remove it without a wire request id (declined permanently).
 With the `+1` guard below, a stale count yields at worst a false "did not
 create" or "count changed by more than one" — both of which honestly tell the
@@ -298,7 +298,7 @@ violation.)
   mutations before reporting success" item, a broad slog deliberately
   ranked apart from this near-free fix. Do not grow into it.
 - **Transport correlation changes** — the "Serialize OSC queries" plan
-  ([PLAN_serialize_osc_queries.md](PLAN_serialize_osc_queries.md)); the
+  ([PLAN_serialize_osc_queries.md](archive/PLAN_serialize_osc_queries.md)); the
   stale-count residual is accepted above, not solved here.
 - **`Session.State` refresh semantics** — the "Stop fabricating session
   state" plan

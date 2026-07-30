@@ -2220,9 +2220,9 @@ defmodule Seshat.Tools.Handlers do
 
   # Ordering matters: this query runs *before* the clause's own `State.refresh()`
   # cast, so its reply can't interleave with that explicit refresh's queries to
-  # the same address (Transport correlates replies by address alone, with a
-  # single `pending` slot — a second in-flight query to the same address steals
-  # the first caller's reply). That does *not* cover every source of contention:
+  # the same address (Transport serializes queries but still correlates replies
+  # by address alone, so a straggler from an abandoned query can answer the next
+  # one on that address). That does *not* cover every source of contention:
   # the delete itself makes `song_structure.py` push `/live/song/get/tracks`,
   # which `Session.State` turns into its own synchronous read of this same
   # address, independent of the cast below and capable of racing this query.
@@ -2795,9 +2795,10 @@ defmodule Seshat.Tools.Handlers do
   # one query. It can't ride `query_echoed/4` — that helper's `unwrap_payload/1`
   # only reads single-value payloads and this reply is a whole list — so the echo
   # check and its reissue-once stale defence are spelled out here for exactly the
-  # same reason: Transport correlates replies by address alone, so a reply
-  # abandoned by an earlier timeout can answer this query with another track's
-  # chain.
+  # same reason, and with the same caveat: Transport correlates replies by
+  # address alone, so a reply abandoned by an earlier timeout can still answer
+  # this query with another track's chain, and the reissue is mitigation rather
+  # than a guarantee.
   defp read_device_names(track, reissued? \\ false) do
     case Transport.query("/live/track/get/devices/name", [track], @guard_timeout) do
       {:ok, {_addr, [echoed | names]}} when echoed == track ->
@@ -3438,16 +3439,19 @@ defmodule Seshat.Tools.Handlers do
   end
 
   # Reads one value, and returns it only if the reply echoed back the indices we
-  # asked about. Transport correlates replies by address alone and keeps only one
-  # query in flight, so a reply abandoned by an earlier timeout can land while a
-  # later query for the same address is pending — answering a guard for track 3
-  # with track 0's data is exactly the silent wrong answer these guards exist to
+  # asked about. Transport serializes queries, but it correlates replies by
+  # address alone, so a reply abandoned by an earlier timeout can still answer
+  # the next query on that same address — answering a guard for track 3 with
+  # track 0's data is exactly the silent wrong answer these guards exist to
   # prevent.
   #
-  # A mismatch reissues the query once rather than failing outright: consuming the
-  # stale reply also clears Transport's `pending`, so our own answer is usually
-  # already on the wire behind it and the second ask lands cleanly. Only a second
-  # mismatch is reported.
+  # A mismatch reissues the query once rather than failing outright: the reissue
+  # asks the same indices, so the straggler's genuine successor usually answers
+  # it. That is mitigation, not a guarantee — the genuine reply can land in the
+  # gap after the mismatch is rejected and before the reissue is in flight, in
+  # which case it is broadcast and the reissue times out. This check earns its
+  # keep by refusing wrong data, not by reliably obtaining right data. Only a
+  # second mismatch is reported.
   #
   # Indices are compared with `==` rather than pinned: a float index still reaches
   # Ableton fine (it casts to int) and comes back as an integer, so pinning would

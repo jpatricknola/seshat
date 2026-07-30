@@ -1,8 +1,19 @@
 # Plan — Serialize OSC queries and clean up timed-out callers
 
+> **Archived 2026-07-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `Seshat.OSC.Transport` now
+> queues queries behind a single in-flight request (`in_flight`/`queue` state,
+> `lib/seshat/osc/transport.ex`), with a client-computed absolute deadline, a
+> per-request timer that drops a timed-out caller without replying, and a
+> cancel-timer race closed by matching the timer message against the in-flight
+> ref. The two residual collision classes the moduledoc now names explicitly
+> are unchanged from what this plan predicted. `REPOSITORY_REVIEW.md` finding
+> #1 is left as written — a dated record of the defect before the fix, not
+> current documentation. No open follow-ups; the roadmap item is removed.
+
 Roadmap item "Serialize OSC queries and clean up timed-out callers".
 Evidence: finding #1 in
-[../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md), whose reviewer response
+[../REPOSITORY_REVIEW.md](../../REPOSITORY_REVIEW.md), whose reviewer response
 narrows the fix to an **Elixir-side queue only** — request identifiers on the
 AbletonOSC wire are declined, permanently, as a protocol divergence carried
 against upstream forever to solve what a queue already solves.
@@ -10,10 +21,10 @@ against upstream forever to solve what a queue already solves.
 ## Context
 
 `Seshat.OSC.Transport` holds a single `pending` slot
-([transport.ex:154-164](../lib/seshat/osc/transport.ex#L154)): a query stores
+([transport.ex:154-164](../../lib/seshat/osc/transport.ex#L154)): a query stores
 `{from, address}` and returns `{:noreply, ...}`, so the GenServer accepts the
 next query immediately, and the next query *overwrites* the slot. Replies
-correlate by OSC address alone ([transport.ex:205-215](../lib/seshat/osc/transport.ex#L205)).
+correlate by OSC address alone ([transport.ex:205-215](../../lib/seshat/osc/transport.ex#L205)).
 Two overlapping queries therefore interact three bad ways:
 
 - The overwritten caller waits out its full timeout for a reply that will be
@@ -29,7 +40,7 @@ Two overlapping queries therefore interact three bad ways:
   defect wearing its most confusing coat.
 - A timed-out caller's abandoned `{from, address}` lingers until the next
   query overwrites it. The `query/3` doc
-  ([transport.ex:68-71](../lib/seshat/osc/transport.ex#L68)) explicitly
+  ([transport.ex:68-71](../../lib/seshat/osc/transport.ex#L68)) explicitly
   reasons that "nothing needs cleaning up" — sound for sequential callers,
   unsound the moment two overlap. The roadmap asks for that reasoning to be
   rewritten with the fix.
@@ -64,7 +75,7 @@ id on the wire and none is coming. Two residual collision classes remain:
    timeout exits the caller and kills the `with` chain that would have
    issued the adjacent query.
 2. **Listener pushes share the getter's address**
-   ([ableton-osc-reference.md:197-201](../.claude/docs/ableton-osc-reference.md#L197)):
+   ([ableton-osc-reference.md:197-201](../../.claude/docs/ableton-osc-reference.md#L197)):
    a push on `/live/track/get/volume` can satisfy an in-flight query for the
    same property. Same as today; no queue can remove it.
 
@@ -93,8 +104,8 @@ for it.
 **No new addresses, no Python half, no wire change.** This plan changes how
 Elixir *correlates* replies with callers, not one byte of what goes on the
 wire. Facts the design leans on, verified against
-[abletonosc-api-docs.md](abletonosc-api-docs.md) and
-[.claude/docs/ableton-osc-reference.md](../.claude/docs/ableton-osc-reference.md):
+[abletonosc-api-docs.md](../abletonosc-api-docs.md) and
+[.claude/docs/ableton-osc-reference.md](../../.claude/docs/ableton-osc-reference.md):
 
 | Fact | Consequence for this plan |
 |---|---|
@@ -105,7 +116,7 @@ wire. Facts the design leans on, verified against
 
 ## Part 1 — `Transport`: one query in flight, FIFO behind it
 
-All in [lib/seshat/osc/transport.ex](../lib/seshat/osc/transport.ex).
+All in [lib/seshat/osc/transport.ex](../../lib/seshat/osc/transport.ex).
 
 1. **Client side**: `query/3` computes an **absolute deadline** —
    `System.monotonic_time(:millisecond) + timeout` — and becomes
@@ -223,7 +234,7 @@ All in [lib/seshat/osc/transport.ex](../lib/seshat/osc/transport.ex).
 
 ## Part 2 — Tests
 
-In [test/seshat/osc/transport_test.exs](../test/seshat/osc/transport_test.exs),
+In [test/seshat/osc/transport_test.exs](../../test/seshat/osc/transport_test.exs),
 a new `describe "query serialization"` using the existing harness: sink
 started before Transport, `forward_to: self()` so every datagram Transport
 sends arrives as `{:osc_out, address, args}` (the synchronisation points —
@@ -312,7 +323,7 @@ No behaviour changes in this part — these sites' *checks all stay* (they
 defend the residual collision classes); only prose describing the
 overwrite-a-slot mechanics goes stale:
 
-1. [handlers.ex](../lib/seshat/tools/handlers.ex) — `query_echoed/5`'s
+1. [handlers.ex](../../lib/seshat/tools/handlers.ex) — `query_echoed/5`'s
    comment (def at ~3307) and `confirm_device_count/2`'s (def at ~2688): drop "consuming
    the stale reply also clears Transport's `pending`" phrasing. Say instead
    that the reissue is still worth making under the queue — it asks the same
@@ -322,9 +333,9 @@ overwrite-a-slot mechanics goes stale:
    reissue is in flight, in which case it is broadcast and the reissue times
    out. The check earns its keep by refusing wrong data, not by reliably
    obtaining right data.
-2. [registry.ex](../lib/seshat/commands/registry.ex) — `ensure_clip/4`'s
+2. [registry.ex](../../lib/seshat/commands/registry.ex) — `ensure_clip/4`'s
    comment (~83-89): same adjustment.
-3. [state.ex](../lib/seshat/session/state.ex) — the query-helper comment
+3. [state.ex](../../lib/seshat/session/state.ex) — the query-helper comment
    (~553-561: "holds one query at a time" described the *old* transport) and
    `reconcile/4`'s one-index-behind narrative (~277-285): note the cascade
    now requires the same-address adjacency residual rather than any overlap,
@@ -332,7 +343,7 @@ overwrite-a-slot mechanics goes stale:
    edits** — the "Stop fabricating session state after OSC failures" plan
    rewrites these helpers' bodies; whichever lands second reconciles the
    prose, and neither plan's code conflicts with the other's.
-4. [.claude/docs/ableton-osc-reference.md](../.claude/docs/ableton-osc-reference.md)
+4. [.claude/docs/ableton-osc-reference.md](../../.claude/docs/ableton-osc-reference.md)
    § "Replies are correlated by address alone" (lines 182-201): rewrite the
    first bullet — the abandoned-`from` overwrite story is gone; the section
    now says one-in-flight + absolute per-request deadline, and that a reply
@@ -341,7 +352,7 @@ overwrite-a-slot mechanics goes stale:
    answers the wrong query*. Keeps (verbatim) the echo-check guidance and the
    listener-push bullet, both still true and load-bearing — the section's
    title stays accurate, which is the point.
-5. [.claude/rules/testing.md](../.claude/rules/testing.md) — the "never
+5. [.claude/rules/testing.md](../../.claude/rules/testing.md) — the "never
    write tests that reach `Transport.query/3`" rule gains its scoped
    exception: *Transport's own tests* may call `query/3` when `OSCSink`
    plays AbletonOSC and supplies the reply (or the test asserts the timeout
@@ -396,7 +407,7 @@ is a plan violation.)
   track/clip ids and not its range args, `/live/browser/export` has no
   request args to echo, while per-index getters echo their leading indices
   and the browser query addresses (`get/items`, `load_item`) echo their full
-  request args ([abletonosc-api-docs.md](abletonosc-api-docs.md) browser
+  request args ([abletonosc-api-docs.md](../abletonosc-api-docs.md) browser
   table) — so it needs either a per-address reply-shape table (an
   abstraction layer over address strings, contra the settled design decision
   in CLAUDE.md) or a per-call-site option threaded through ~30 call sites.
@@ -442,10 +453,10 @@ because they are the *reason* the design is safe, not merely reassurance.
    long handler anyway.** AbletonOSC has no threads: `manager.py`'s `tick/1`
    is rescheduled every 100ms on Live's UI thread and calls
    `osc_server.process/0`, which drains the socket synchronously
-   ([manager.py:118-127](../priv/AbletonOSC/manager.py#L118),
-   [osc_server.py:156-165](../priv/AbletonOSC/osc_server.py#L156)), and the
+   ([manager.py:118-127](../../priv/AbletonOSC/manager.py#L118),
+   [osc_server.py:156-165](../../priv/AbletonOSC/osc_server.py#L156)), and the
    browser walk explicitly runs on that same UI thread
-   ([browser.py:82](../priv/AbletonOSC/abletonosc/browser.py#L82)). While a
+   ([browser.py:82](../../priv/AbletonOSC/abletonosc/browser.py#L82)). While a
    ~30s `/live/browser/export` is walking, no datagram is *read*, let alone
    answered. So a concurrent 5s query cannot be satisfied inside its deadline
    whether or not the queue held it back — the queue does not lose a single
@@ -475,15 +486,15 @@ because they are the *reason* the design is safe, not merely reassurance.
      value-equivalent, not corruption.
    - **Index-carrying getters**: checked on both sides —
      `Session.State`'s `query_string`/`query_float`/`query_int`
-     ([state.ex:562-590](../lib/seshat/session/state.ex#L562)) and
-     `Handlers.query_echoed/5` ([handlers.ex:3307](../lib/seshat/tools/handlers.ex#L3307))
+     ([state.ex:562-590](../../lib/seshat/session/state.ex#L562)) and
+     `Handlers.query_echoed/5` ([handlers.ex:3307](../../lib/seshat/tools/handlers.ex#L3307))
      both compare the echoed index against the one asked for.
    - **Echo-less callers on index-carrying addresses**, the real exposure:
      `get_clip_notes` binds the echoed track/slot as `_t, _s` without
-     checking them ([handlers.ex:1692-1697](../lib/seshat/tools/handlers.ex#L1692)),
+     checking them ([handlers.ex:1692-1697](../../lib/seshat/tools/handlers.ex#L1692)),
      alongside the two the plan already named — `/live/song/get/track_data`
      (a bare value list, no echo possible, which
-     [handlers.ex:1505-1508](../lib/seshat/tools/handlers.ex#L1505) already
+     [handlers.ex:1505-1508](../../lib/seshat/tools/handlers.ex#L1505) already
      cites as the reason clip properties are read one getter at a time) and
      the browser addresses.
 
