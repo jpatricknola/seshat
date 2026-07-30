@@ -138,7 +138,9 @@ defmodule Seshat.Session.State do
     # All-`nil`: nothing has been read yet, so nothing is known. No caller can
     # observe this map (`handle_continue(:setup, ...)` refreshes before the first
     # `handle_call` runs), but a plausible constant sitting here is an invitation
-    # to reuse it as a fallback somewhere that *is* observable.
+    # to reuse it as a fallback somewhere that *is* observable. `tracks` below is
+    # `nil` for the same reason: `[]` asserts a session with no tracks in it,
+    # which nothing has checked yet.
     initial_song = %{
       tempo: nil,
       time_sig_numerator: nil,
@@ -150,7 +152,7 @@ defmodule Seshat.Session.State do
 
     state = %{
       song: initial_song,
-      tracks: [],
+      tracks: nil,
       return_tracks: [],
       master: nil,
       returns_readable?: false,
@@ -315,8 +317,9 @@ defmodule Seshat.Session.State do
   # It ends there even when it *doesn't* reconcile, which is the point of the
   # bookkeeping. A refresh can come back still disagreeing — replies running one
   # index behind after an abandoned timeout make `read_tracks/2`'s echo check
-  # reject every name and fall back to "Track N" for all of them — and without a
-  # brake that is an unbounded spin: refresh, re-subscribe, push, disagree,
+  # reject every name and yield `nil` for all of them, and a `nil` never equals a
+  # pushed name — and without a brake that is an unbounded spin: refresh,
+  # re-subscribe, push, disagree,
   # refresh. Recording the exact list that failed stops the second attempt at it
   # while leaving any *different* list a fresh try, so a real change is never
   # ignored. `/live/startup` and `refresh_sync/0` lift the brake, because

@@ -156,7 +156,7 @@ follows from what a tool *does to a clip*, not from any one row.
 
 | Tool                    | Category  | Status | Note                                                     |
 | ----------------------- | --------- | ------ | -------------------------------------------------------- |
-| `get_session_state`     | Read      | Keep   | Track-level state. Stays fresh by push; `refresh: true` is the backstop. **Fixed 07/2026 (Finding #7):** a failed refresh query now yields `nil`, never a plausible-looking default, and the reply states each unknown explicitly rather than reporting a fabricated number the model would otherwise write bar lengths against. One related gap survives, tracked in [ROADMAP.md](ROADMAP.md)'s small-breadth grab bag: `return_track_label/1` still renders a `nil` return name as `("")` in `set_track_send`/`set_return_track_volume` echoes, instead of omitting the label. |
+| `get_session_state`     | Read      | Keep   | Track-level state. Stays fresh by push; `refresh: true` is the backstop. **Fixed 07/2026 (Finding #7):** a failed refresh query now yields `nil`, never a plausible-looking default, and the reply states each unknown explicitly rather than reporting a fabricated number the model would otherwise write bar lengths against. |
 | `get_clip_slots`        | Read      | Keep   | Exemplary description.                                   |
 | `get_clip_notes`        | Read      | Keep   | Clean errors. Closes the read-notes gap.                 |
 | `get_track_devices`     | Read      | Keep   | Racks show as one device — noted well.                   |

@@ -2144,11 +2144,12 @@ defmodule Seshat.Tools.Handlers do
 
   defp do_call(name, _params), do: {:error, "Unknown tool: #{name}"}
 
-  # An explicit refresh that never completes must not fall through to
-  # `serve_session_state/0`'s soft "no tracks" answer: the caller passed
-  # refresh: true because the mirror looked wrong, and answering with an empty
-  # session would present the give-up as fact. Caught here, so only this path
-  # turns into a real error.
+  # An explicit refresh that never completes is caught here rather than left to
+  # `serve_session_state/0`'s own catch, which reports a mirror that didn't
+  # answer. Both are honest errors now, but they are different errors: this one
+  # knows the caller asked Ableton for fresh values and never got them, so it
+  # names Ableton and AbletonOSC. The caller passed refresh: true because the
+  # mirror looked wrong; that is the fault worth reporting.
   defp maybe_refresh(params) do
     if Map.get(params, "refresh", false), do: State.refresh_sync(), else: :ok
   catch
@@ -2775,9 +2776,12 @@ defmodule Seshat.Tools.Handlers do
 
   # Best-effort label from the mirrored state, for a reply that reads better with
   # the return's name in it. Purely cosmetic, so a stale or unavailable mirror
-  # costs nothing.
+  # costs nothing — and an *unknown* name (`nil`, its read unanswered) drops the
+  # label entirely rather than rendering `("")`, which would present the return
+  # as being named the empty string.
   defp return_track_label(index) do
     case Enum.find(State.return_tracks(), &(&1.index == index)) do
+      %{name: nil} -> ""
       %{name: name} -> ~s{ ("#{name}")}
       _ -> ""
     end

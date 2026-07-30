@@ -616,15 +616,6 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   routing & monitoring, automation envelopes.
 - **Sends on return tracks** (return→return routing, feedback sends) —
   niche, needs Live's "sends only" awareness, no named workflow yet.
-- **`return_track_label/1` renders a `nil` return name as `("")`**
-  ([handlers.ex:2779-2783](../lib/seshat/tools/handlers.ex#L2779-L2783)) — a
-  gap the "Stop fabricating session state" fix (shipped 2026-07-30) left
-  uncovered: `set_track_send`/`set_return_track_volume` echo a return whose
-  name failed to sync as literally `("")` instead of omitting the label.
-  Cosmetic only (an empty name can't drive a wrong relative move, unlike the
-  fabricated numbers that issue fixed) — one-line match-clause fix
-  (`%{name: nil} -> ""` ahead of the existing clause) whenever someone's
-  nearby.
 
 ## #29 · MCP mode in the browser UI
 

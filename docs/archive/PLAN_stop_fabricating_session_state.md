@@ -6,12 +6,10 @@
 > default) and `Seshat.Tools.Handlers` (`get_session_state`'s formatters
 > render `nil` as stated unknowns, plus `record_length_from/2` refuses a
 > `bars` request against an unknown time signature). Review approved with
-> nits, none blocking: one real low-severity gap survives —
-> `return_track_label/1` still renders a `nil` return name as `("")` instead
-> of omitting the label, now tracked as a grab-bag follow-up in
-> [../ROADMAP.md](../ROADMAP.md); the other two nits were stale comments
-> describing removed fallback behavior, left as-is since they don't mislead
-> about current code once this banner and the roadmap item exist.
+> nits; all of them were then fixed on the same branch — `return_track_label/1`
+> now omits the label for a `nil` return name rather than rendering `("")`,
+> two comments describing the removed fallback behavior were rewritten, and
+> `init/1`'s `tracks` starts `nil` for the same reason `initial_song` does.
 
 Roadmap item "Stop fabricating session state after OSC failures".
 Evidence: finding #7 in
