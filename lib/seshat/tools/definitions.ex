@@ -1366,9 +1366,11 @@ defmodule Seshat.Tools.Definitions do
           "clip_slot are 0-based; slot N sits in scene N. grid is the note value " <>
           "to snap to — \"1/16\" is the usual choice for played parts, and the " <>
           "T values are triplet grids for shuffled or triplet-feel playing that " <>
-          "a straight grid would flatten. Only note starts move: a note keeps " <>
-          "its length unless the move lands it on another note of the same " <>
-          "pitch, which merges the pair. " <>
+          "a straight grid would flatten. Only note starts move: length " <>
+          "changes only when a moved note now overlaps another of the same " <>
+          "pitch — landing on the exact same point merges the two into one " <>
+          "note, landing close but not exact instead trims the earlier note " <>
+          "short. " <>
           "amount is how far each note moves toward the grid: 1.0 " <>
           "lands exactly on it, which sounds mechanical on a played take; " <>
           "0.5–0.8 tightens the timing while keeping the human feel — start " <>

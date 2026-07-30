@@ -289,9 +289,9 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   describe "the quantize method on the clip handler" do
     @clip_file "priv/AbletonOSC/abletonosc/clip.py"
 
-    # The double-quoted literal, not the bare word: `quantize` appears three
-    # times in clip.py — twice in the prose comment above the methods list, once
-    # as the list entry — so a grep for the bare word stays green after the entry
+    # The double-quoted literal, not the bare word: `quantize` appears twice
+    # in clip.py — once in the prose comment above the methods list, once as
+    # the list entry — so a grep for the bare word stays green after the entry
     # is deleted, which is precisely the regression this test exists to catch.
     test "clip.py still registers quantize in its generic methods list" do
       assert File.read!(@clip_file) =~ ~s("quantize"),
