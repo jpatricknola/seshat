@@ -64,10 +64,12 @@ Ableton's sound designers wrote for every factory and Pack preset, so
 `search_library` can answer "a warm analog bass" rather than handing back 267
 undifferentiated names.
 
-It takes up to a minute and Live's UI will hitch while it runs. The result is
-saved to `~/.seshat/catalog.json` and reused forever after — searching works
-even with Ableton closed. Re-run it after installing new Packs or plugins, or
-after saving your own presets.
+It takes up to a minute and Live's UI will hitch while it runs. Along the way,
+AbletonOSC writes a temporary export of the browser to
+`~/.seshat/browser-exports/` and Seshat deletes it once the merge finishes; the
+result that persists is saved to `~/.seshat/catalog.json` and reused forever
+after — searching works even with Ableton closed. Re-run it after installing
+new Packs or plugins, or after saving your own presets.
 
 <details>
 <summary>Manual install</summary>

@@ -1,5 +1,20 @@
 # Implementation Plan: Loopback-only AbletonOSC and safe browser exports
 
+> **Archived 2026-07-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The loopback bind and
+> retargeting removal live in `priv/AbletonOSC/abletonosc/osc_server.py`; the
+> caller-path-free export contract lives in
+> `priv/AbletonOSC/abletonosc/browser.py` (stale-export sweep included) and
+> `Seshat.Library.Catalog.validated_export_path/2` /
+> `export_browser/0` on the Elixir side. Both divergences are recorded in the
+> fork's `SESHAT.md`. [docs/SECURITY_BACKLOG.md](../SECURITY_BACKLOG.md) #1 and
+> #2 are marked resolved with this date; #3 (the Elixir OSC listener and
+> decoder) was out of scope for this plan and remains open, ranked
+> [ROADMAP.md](../ROADMAP.md) #1. Behavioural verification against a running
+> Ableton Live (loopback bind, stale-export sweep, rejection of a legacy
+> `dest_path` argument) was still outstanding at ship time — see the PR for
+> the checklist.
+
 Roadmap items #1 and #2 — one AbletonOSC fork commit, one submodule pin bump,
 one install, and one Live restart.
 
