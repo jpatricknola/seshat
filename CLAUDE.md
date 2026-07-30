@@ -198,9 +198,9 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top eight are all defects, because `mix test` currently mutates a
-live set and several OSC-layer bugs corrupt data silently. Two sibling docs hold
-the *evidence* behind those items, not a competing queue:
+2026-07-30 its top seven are all defects, because the OSC sockets bind beyond
+loopback today and several OSC-layer bugs corrupt data silently. Two sibling
+docs hold the *evidence* behind those items, not a competing queue:
 
 - [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the 2026-07-29 external review.
   Each confirmed defect with file:line evidence and a **Reviewer response**
@@ -210,7 +210,7 @@ the *evidence* behind those items, not a competing queue:
   decisions (structured setter acknowledgements, Python bounds checks, protocol
   request IDs).
 - [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure, split
-  into **Fix now** (ranked as ROADMAP #2–#4, because the OSC sockets already bind
+  into **Fix now** (ranked as ROADMAP #1–#3, because the OSC sockets already bind
   beyond loopback today) and **Deployment-gated** (HTTP auth, production binding,
   rate limiting — deliberately absent from the queue until something binds beyond
   loopback or a second user is invited). Check it before loosening a bind or

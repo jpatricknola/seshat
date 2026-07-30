@@ -1,6 +1,6 @@
 # Implementation Plan: Loopback-only AbletonOSC and safe browser exports
 
-Roadmap items #2 and #3 — one AbletonOSC fork commit, one submodule pin bump,
+Roadmap items #1 and #2 — one AbletonOSC fork commit, one submodule pin bump,
 one install, and one Live restart.
 
 ## Context
@@ -23,7 +23,7 @@ other component in this repository uses networked OSC control. The boundary
 can therefore be made local-only without adding configuration or changing any
 tool.
 
-Roadmap #3 rides with this change because it touches the same fork and otherwise
+Roadmap #2 rides with this change because it touches the same fork and otherwise
 costs a second submodule commit, install, and Live restart.
 `/live/browser/export` currently accepts an arbitrary destination path and opens
 it with Live's privileges. The roadmap proposed reducing that input to a
@@ -293,7 +293,7 @@ Changes:
    `_stop_listen` one in the same paragraph.
 
 `REPOSITORY_REVIEW.md` and `SECURITY_BACKLOG.md` remain evidence documents.
-At ship time, `/ship` removes roadmap items #2 and #3, marks their security
+At ship time, `/ship` removes roadmap items #1 and #2, marks their security
 evidence resolved, and archives this plan; implementation must not rewrite the
 historical review finding.
 
@@ -326,9 +326,11 @@ Run with Ableton closed:
    package.
 5. `mix precommit`
 
-The current unsafe-test roadmap item #1 is a sequencing constraint: if it has
-not shipped first, run the focused pure tests only with Live closed and do not
-claim the full suite is safe.
+The sequencing constraint this plan was written under is **discharged**: test
+isolation shipped 2026-07-30 (see
+[archive/PLAN_test_isolation.md](archive/PLAN_test_isolation.md)), so
+`MIX_ENV=test` points the transport at throwaway ports and the whole suite is
+safe to run with Live open. No need to close Live for any step above.
 
 ### ⚠️ Live smoke test
 
@@ -364,7 +366,7 @@ interface is listening.
 ## Out of scope
 
 - Binding or source-validating Seshat's UDP 11001 listener, and making
-  `Message.decode/1` total — roadmap #4.
+  `Message.decode/1` total — roadmap #3.
 - Serializing `Transport` queries and cleaning up timed-out callers — its own
   correctness roadmap item.
 - HTTP authentication, public Phoenix binding, rate limiting, or multi-user

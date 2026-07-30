@@ -35,9 +35,10 @@ defmodule Seshat.Test.OSCSink do
     end
   end
 
+  # Without a `:forward_to`, the sink exists only to absorb the datagram — don't
+  # decode it, which would buy nothing and crash the sink on a malformed packet.
   @impl true
-  def handle_info({:udp, _socket, _ip, _port, data}, %{forward_to: nil} = state) do
-    _ = Seshat.OSC.Message.decode(data)
+  def handle_info({:udp, _socket, _ip, _port, _data}, %{forward_to: nil} = state) do
     {:noreply, state}
   end
 

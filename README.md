@@ -237,7 +237,8 @@ UDP — a wrong address produces no error. Check the address against
 [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md).
 
 **Queries time out but sets work.** Something else is bound to port 11001, so
-replies never arrive. Look for a "Port 11001 already in use" warning at startup.
+replies never arrive. Look for an "OSC reply port 11001 is already bound by
+another process" error at startup ([above](#only-one-seshat-at-a-time)).
 
 **`get_session_state` says no tracks.** AbletonOSC isn't enabled as a Control
 Surface, or Ableton isn't running.

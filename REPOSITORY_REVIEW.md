@@ -10,7 +10,7 @@ formatting, static-analysis, and test commands available in the repository.
 > **This document is the evidence, not the queue.** As of 2026-07-30 every
 > accepted finding below is ranked in [docs/ROADMAP.md](docs/ROADMAP.md), which
 > now holds features, defects and security work in one impact-per-effort list —
-> the review's defects occupy its top eight. Come here for the file:line
+> the review's defects occupy its top seven. Come here for the file:line
 > evidence and for the *Reviewer response* on each finding, which records what
 > was accepted, narrowed, or rejected. Work is scheduled there; it is justified
 > here. Security findings live in

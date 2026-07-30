@@ -15,14 +15,14 @@
 > implementation: `docs/osc-port-contention.md`'s description of
 > `transport_test.exs`'s setup was still naming the literal port 11001 after
 > the port became configurable — corrected in the same commit that archived
-> this plan. Two low-severity nits from review were knowingly left open — see
-> the PR for `test-fixin` for both: the tripwire test in `transport_test.exs`
-> inherits a socket-binding `setup` it doesn't need (fails loudly rather than
-> clearly if `config/test.exs`'s ports ever regress), and `README.md:240`
-> tells users to look for a `"Port 11001 already in use"` warning while
-> `transport.ex:104` actually logs `"OSC reply port 11001 is already bound by
-> another process"` — a pre-existing wording mismatch in the same file this
-> plan touched, unrelated to test isolation itself.
+> this plan. A second review pass then swept what the close-out had missed —
+> the roadmap renumbering in `CLAUDE.md`, `REPOSITORY_REVIEW.md`'s preamble and
+> `PLAN_abletonosc_loopback_and_safe_exports.md` (whose `/ship` instruction
+> named ranks the renumbering had moved), plus `README.md`'s `"Port 11001
+> already in use"` wording, which contradicted the error the code actually
+> logs. One low-severity nit is knowingly left open: the tripwire test in
+> `transport_test.exs` inherits a socket-binding `setup` it doesn't need, so a
+> regression in `config/test.exs`'s ports fails loudly rather than clearly.
 
 ROADMAP #1 at the time this was written. Two halves of one problem: `mix test`
 sends real mutation packets to a running Live set, and `README.md` tells
