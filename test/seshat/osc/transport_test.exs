@@ -257,7 +257,7 @@ defmodule Seshat.OSC.TransportTest do
 
       # The reason is load-bearing: `:normal` would mean the transport had
       # replied `{:error, :timeout}` and the caller returned instead of exiting,
-      # which is the contract break the internal timer must never cause.
+      # which is the contract break the request wrapper must never cause.
       assert_receive {:DOWN, ^ref, :process, ^pid, {:timeout, {GenServer, :call, _}}}, 1000
 
       assert_receive {:osc_out, "/live/song/get/num_tracks", []}
@@ -367,12 +367,12 @@ defmodule Seshat.OSC.TransportTest do
   end
 
   # "Accepted but not yet sent" is a state assertion, not a message: the query
-  # is issued from another process, so there is no ordering between its
-  # `GenServer.call` landing and anything the test does. Polling the server's
+  # is issued from another process, so there is no ordering between its request
+  # landing and anything the test does. Polling the server's
   # own queue is the direct statement of what the test means, and a query that
   # was wrongly sent instead of queued fails here rather than hanging.
   # Bounded by wall clock, not by attempt count: the loop is racing another
-  # process's `GenServer.call` landing, so a loaded machine needs *more*
+  # process's request landing, so a loaded machine needs *more*
   # attempts, not fewer — a fixed count gives up soonest exactly when the thing
   # it waits for is slowest. Still no sleep; each iteration is a `:sys.get_state`
   # round-trip, so the server paces the loop.

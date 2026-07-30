@@ -97,22 +97,22 @@ defmodule Seshat.OSC.Transport do
   Queries are **serialized**: one is in flight at a time and the rest wait in a
   FIFO queue, so a reply can only ever be handed to the request it is in flight
   for. `timeout` bounds the caller's *total* wait — queue time plus flight time
-  — and is carried to the server as an absolute monotonic deadline, because the
-  caller's `GenServer.call/3` timer starts on the client and any server-side
-  timer can only start once the message is received. Two independent relative
-  timers cannot be ordered; one shared deadline can.
+  — and is carried to the server as an absolute monotonic deadline. The caller
+  sends with `:gen_server.send_request/2`, then waits only for the time remaining
+  until that same deadline; Transport arms its timer at the absolute deadline
+  directly. Scheduler delay before either side starts waiting therefore spends
+  the same budget instead of creating two relative timers that cannot be
+  ordered.
 
   An expired request is **never sent**. It is dropped at enqueue if its deadline
   has already passed by the time the server handles the call, removed from the
   queue by its own timer, or dropped at dequeue — whichever comes first.
 
-  On timeout the caller exits, standard `GenServer.call/3` behaviour, and that
-  is the *only* way it learns of a timeout: the transport never returns
-  `{:error, :timeout}`. Its internal timer exists solely to reclaim the entry
-  and free the pipeline, never to reply — the ~20 `catch :exit` sites across
-  `Handlers`, `Registry`, `Catalog` and `Session.State` are written against
-  exits, and with both timers on the same instant a server-side reply could win
-  the race and hand back a return value where an exit was promised.
+  On timeout the caller exits with the same reason shape as
+  `GenServer.call/3`; the transport never returns `{:error, :timeout}`. Its
+  internal timer exists solely to reclaim the entry and free the pipeline,
+  never to reply — the ~20 `catch :exit` sites across `Handlers`, `Registry`,
+  `Catalog` and `Session.State` are written against exits.
 
   `:infinity` is deliberately not in the contract: an entry with no deadline
   whose caller has died would block the head of the queue forever.
@@ -125,18 +125,21 @@ defmodule Seshat.OSC.Transport do
   @spec query(String.t(), list(), non_neg_integer()) ::
           {:ok, {String.t(), list()}} | {:error, term()}
   def query(address, args, timeout \\ 5000) do
-    # The deadline is computed before `GenServer.call/3` starts its own timer,
-    # and `monotonic_time(:millisecond)` truncates, so the server's instant
-    # always lands a hair *before* the caller's — both sources of skew push the
-    # same way. That direction is the deliberate one: the server gives up
-    # first, so the caller always reaches its own timeout and exits, as the
-    # contract above promises. The cost is a sub-millisecond window in which a
-    # reply is broadcast rather than returned and the caller times out a hair
-    # early — indistinguishable from having timed out. Skewing the other way
-    # (a server deadline provably later than the caller's) buys nothing: it
-    # only holds the queue head past a caller that has already exited.
     deadline = System.monotonic_time(:millisecond) + timeout
-    GenServer.call(__MODULE__, {:query, address, args, deadline}, timeout)
+    request = {:query, address, args, deadline}
+    request_id = :gen_server.send_request(__MODULE__, request)
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    case :gen_server.receive_response(request_id, remaining) do
+      {:reply, reply} ->
+        reply
+
+      {:error, {reason, server_ref}} ->
+        exit({reason, {GenServer, :call, [server_ref, request, timeout]}})
+
+      :timeout ->
+        exit({:timeout, {GenServer, :call, [__MODULE__, request, timeout]}})
+    end
   end
 
   # Both ports are resolved once, here, and carried in state: a config change
@@ -233,10 +236,10 @@ defmodule Seshat.OSC.Transport do
     now = System.monotonic_time(:millisecond)
 
     # A call can be handled after its own deadline whenever the server's mailbox
-    # is backed up. Drop it here — unsent, unqueued, untimed, unanswered — or the
-    # branch below would put the datagram on the wire before the zero-duration
-    # timer message could be processed. The caller has already exited on its own
-    # timer, which is the sole authority on that; nothing is owed a reply.
+    # is backed up. Drop it here — unsent, unqueued and untimed — or the branch
+    # below would put the datagram on the wire after the caller's budget was
+    # spent. The caller waits against this same absolute deadline and exits
+    # independently; nothing is owed a reply.
     if deadline <= now do
       {:noreply, state}
     else
@@ -251,7 +254,7 @@ defmodule Seshat.OSC.Transport do
       # Armed for the *remaining* time, so the server's timer tracks the
       # caller's deadline instead of restarting the clock: a request queued
       # behind a 30s browser export with a 5s timeout expires at 5s, unsent.
-      timer = Process.send_after(self(), {:query_timeout, request.ref}, max(deadline - now, 0))
+      timer = Process.send_after(self(), {:query_timeout, request.ref}, deadline, abs: true)
       request = Map.put(request, :timer, timer)
 
       case state.in_flight do
@@ -271,11 +274,9 @@ defmodule Seshat.OSC.Transport do
     end
   end
 
-  # The internal deadline. It never `GenServer.reply/2`s: the caller's own
-  # `GenServer.call/3` timer targets the same instant, so a reply from here
-  # could win the race and return `{:error, :timeout}` where the contract
-  # promises an exit — bypassing every `catch :exit` branch written against it.
-  # All this does is reclaim the entry and free the pipeline.
+  # The internal deadline never `GenServer.reply/2`s. The caller waits against
+  # the same absolute deadline and produces the promised exit itself; all this
+  # does is reclaim the entry and free the pipeline.
   @impl true
   def handle_info({:query_timeout, ref}, %{in_flight: %{ref: ref}} = state) do
     {:noreply, advance(%{state | in_flight: nil})}
@@ -332,16 +333,11 @@ defmodule Seshat.OSC.Transport do
   # traffic, and the fate of every late reply that doesn't collide with the
   # in-flight address.
   #
-  # No deadline check here, deliberately: a reply for the request genuinely in
-  # flight is always delivered and always broadcast. Replying past the deadline
-  # costs nothing (`GenServer.reply/2` to a departed caller is a no-op), while
-  # gating on the deadline would open a window where a caller whose own timer
-  # has not fired yet is denied an answer that arrived for it.
-  #
-  # Unlike the internal timer, replying from here is safe to race: winning
-  # delivers `{:ok, _}`, a normal successful return every caller already
-  # handles, where the timer winning would deliver an error tuple where an exit
-  # was promised.
+  # No deadline check here, deliberately: the UDP datagram and deadline timer
+  # are serialized through this process's mailbox. If the datagram is handled
+  # first it is the request's answer; if the timer is handled first there is no
+  # in-flight match left. A second wall-clock comparison here would override
+  # that arrival ordering without making correlation any stronger.
   defp dispatch(address, args, %{in_flight: %{address: expected} = request} = state)
        when address == expected do
     # `false` means the `{:query_timeout, ref}` message is already in the
