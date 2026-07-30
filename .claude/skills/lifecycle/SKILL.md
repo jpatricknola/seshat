@@ -258,8 +258,9 @@ Agent prompt: preamble, `<implementer-report>` and
 > assumptions carried through the run. Both reports are given above — quote
 > from them rather than reconstructing them from the diff, and if the
 > review left nits, list them verbatim so the PR reader sees what was
-> knowingly accepted. End the body with:
-> 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+> knowingly accepted. Add no attribution footer, badge, or `Co-Authored-By`
+> trailer — this repository's commits and PRs carry the author's identity
+> alone.
 > Return the PR URL as PR_URL. If push or PR creation fails (no remote, no
 > gh auth), still return STATUS: complete with the close-out done — report
 > the failure in your report instead of blocking.
