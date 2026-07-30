@@ -1,7 +1,18 @@
 # Plan — Verify `create_track` actually succeeds
 
+> **Archived 2026-07-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `Seshat.Commands.Registry`
+> now counts tracks before and after the create (`track_count/1`,
+> `ensure_track_created/2`) and only renames when the count rose by exactly
+> one, mirroring the return-track flow; the sibling function was renamed
+> `ensure_created/2` → `ensure_return_created/2` and given the same `+1`
+> guard. `REPOSITORY_REVIEW.md` finding #6 is fixed. The two open questions
+> below (Intro/Lite cap behaviour, post-create count timing) were carried
+> as assumptions rather than resolved — neither is testable on the dev
+> machine's Suite install.
+
 Roadmap item: "Verify `create_track` actually succeeds".
-Evidence: finding #6 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md),
+Evidence: finding #6 in [../../REPOSITORY_REVIEW.md](../../REPOSITORY_REVIEW.md),
 whose reviewer response agrees with the recommendation as written: apply the
 pre-count/post-count verification that `Registry.ensure_created/2` already
 performs for return tracks, sitting *directly above* the defective code in
@@ -10,12 +21,12 @@ the same file. This is applying an existing local pattern, not designing one.
 ## Context
 
 `create_and_name_track/2`
-([registry.ex:203-217](../lib/seshat/commands/registry.ex#L203)) reads the
+([registry.ex:203-217](../../lib/seshat/commands/registry.ex#L203)) reads the
 pre-create track count, fires `/live/song/create_midi_track` (or
 `_audio_`) with `-1` (append), fires the rename at that count, and returns
 `{:ok, count}` — all without ever checking the count rose. The create is a
 fire-and-forget method call, and Python's `_call_method`
-([priv/AbletonOSC/abletonosc/handler.py:27-35](../priv/AbletonOSC/abletonosc/handler.py#L27))
+([priv/AbletonOSC/abletonosc/handler.py:27-35](../../priv/AbletonOSC/abletonosc/handler.py#L27))
 deliberately catches Live API exceptions and only logs them, so a refused or
 dropped create is invisible on the wire. When that happens today:
 
@@ -64,7 +75,7 @@ an explicit error otherwise, exactly as `return_track_count/1` does.
 **No new addresses, no Python half, no pin bump, no
 `mix abletonosc.install`.** Every address below is already in use in this
 file and verified against
-[abletonosc-api-docs.md](abletonosc-api-docs.md):
+[abletonosc-api-docs.md](../abletonosc-api-docs.md):
 
 | Address | Request args | Reply | Notes |
 |---|---|---|---|
@@ -83,7 +94,7 @@ Correlation caveat (documented, accepted): `num_tracks` replies carry no
 echo, so a straggler reply from an earlier abandoned query (e.g. a
 `Session.State` refresh probe) could in principle satisfy the pre- or
 post-count with a stale number. That is residual collision class 1 of
-[PLAN_serialize_osc_queries.md](archive/PLAN_serialize_osc_queries.md)
+[PLAN_serialize_osc_queries.md](PLAN_serialize_osc_queries.md)
 ("Serialize OSC queries", shipped 2026-07-30), which narrows it to a timeout-plus-adjacency
 window but cannot remove it without a wire request id (declined permanently).
 With the `+1` guard below, a stale count yields at worst a false "did not
@@ -94,7 +105,7 @@ plan nor blocks it.
 
 ## Part 1 — `Registry`: count both sides of the create
 
-All in [lib/seshat/commands/registry.ex](../lib/seshat/commands/registry.ex).
+All in [lib/seshat/commands/registry.ex](../../lib/seshat/commands/registry.ex).
 
 1. **New private `track_count/1`**, mirroring `return_track_count/1`'s
    shape: queries `/live/song/get/num_tracks` with Transport's default
@@ -163,7 +174,7 @@ All in [lib/seshat/commands/registry.ex](../lib/seshat/commands/registry.ex).
    these side by side, the generic name stops meaning anything. Grep confirms
    exactly two reference sites: its call in `execute/1`'s
    `:create_return_track` clause and the four assertions in
-   [test/seshat/commands/registry_test.exs](../test/seshat/commands/registry_test.exs).
+   [test/seshat/commands/registry_test.exs](../../test/seshat/commands/registry_test.exs).
    Backwards compatibility is a non-goal (CLAUDE.md), and the rename keeps
    the pair self-describing.
 
@@ -183,7 +194,7 @@ All in [lib/seshat/commands/registry.ex](../lib/seshat/commands/registry.ex).
 
 ## Part 2 — `Handlers`: stop `inspect`-wrapping the new string errors
 
-In [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex), the
+In [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex), the
 `create_track` clause (~1065) funnels every error through
 `{:error, inspect(reason)}` — fine while Registry could only return
 Transport's atom/tuple errors, wrong once it returns crafted user-facing
@@ -200,9 +211,9 @@ description already promises nothing about verification, so it stands.
 
 ## Part 3 — Tests
 
-In [test/seshat/commands/registry_test.exs](../test/seshat/commands/registry_test.exs)
+In [test/seshat/commands/registry_test.exs](../../test/seshat/commands/registry_test.exs)
 (pure layer only — `execute/1` reaches `Transport.query/3` and stays
-untested, per [.claude/rules/testing.md](../.claude/rules/testing.md); the
+untested, per [.claude/rules/testing.md](../../.claude/rules/testing.md); the
 file's moduledoc already says exactly this):
 
 1. Update the existing `describe "ensure_created/2"` block to the new
@@ -230,7 +241,7 @@ No new test files; no test touches Transport.
 
 ## Part 4 — Docs that record the wart
 
-1. [docs/TOOL_AUDIT.md](TOOL_AUDIT.md), `create_track` inventory row
+1. [docs/TOOL_AUDIT.md](../TOOL_AUDIT.md), `create_track` inventory row
    (line ~166): replace the **Known wart** note with a fixed record in the
    style of the `create_return_track` row, e.g. `Verifies the count rose
    before naming and reporting the index (finding #6, fixed 07/2026); an
@@ -238,7 +249,7 @@ No new test files; no test touches Transport.
 2. Same file, the "At a glance" line (~78): drop `create_track
    verification` from the outstanding list and adjust the count — the other
    three items stay (their plans handle their own rows when they ship).
-3. [REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md) is a dated record —
+3. [REPOSITORY_REVIEW.md](../../REPOSITORY_REVIEW.md) is a dated record —
    leave finding #6 as written; the roadmap entry's deletion at `/ship`
    time is the closure signal, per the roadmap's own header.
 
@@ -255,7 +266,7 @@ No new test files; no test touches Transport.
   Suite install (no reachable track cap, and a dropped loopback datagram
   can't be arranged) — the error path's realism rests on the unit tests
   plus the return-track precedent. `create_track` is already exercised by
-  [validation-script.md](validation-script.md) and the smoke checklist;
+  [validation-script.md](../validation-script.md) and the smoke checklist;
   nothing new to add there.
 
 ## Out of scope
@@ -298,7 +309,7 @@ violation.)
   mutations before reporting success" item, a broad slog deliberately
   ranked apart from this near-free fix. Do not grow into it.
 - **Transport correlation changes** — the "Serialize OSC queries" plan
-  ([PLAN_serialize_osc_queries.md](archive/PLAN_serialize_osc_queries.md)); the
+  ([PLAN_serialize_osc_queries.md](PLAN_serialize_osc_queries.md)); the
   stale-count residual is accepted above, not solved here.
 - **`Session.State` refresh semantics** — the "Stop fabricating session
   state" plan
@@ -311,7 +322,7 @@ violation.)
   wrong about how the mirror works: the mirror is kept fresh by *push*, not
   by that call. `song_structure.py`'s tracks listener fires on any add or
   delete and pushes `/live/song/get/tracks`, which `Session.State` treats as
-  a change signal ([state.ex:160](../lib/seshat/session/state.ex#L160)), so
+  a change signal ([state.ex:160](../../lib/seshat/session/state.ex#L160)), so
   a track that was created but couldn't be confirmed is already in the
   mirror with no refresh at all. `execute/1`'s existing call is a backstop
   for the lost-datagram case, not the mechanism. For the same reason the
