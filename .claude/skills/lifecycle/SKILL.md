@@ -30,6 +30,7 @@ already made:
 | implement | opus |
 | review | opus |
 | fix | sonnet |
+| nits | sonnet |
 | ship | sonnet |
 
 The whole plan-review phase runs on fable deliberately. Its reviewer decides a
@@ -85,8 +86,8 @@ And end every prompt with:
 When a later phase needs an earlier phase's report, paste the **full report
 verbatim** inside a tagged block (`<plan-report>`, `<plan-review-findings>`,
 `<judge-decision>`, `<implementer-report>`, `<fix-report round="N">`,
-`<review-findings>`) — never a summary; details you drop are decisions the
-next agent will re-make differently.
+`<review-findings>`, `<nit-triage-report>`) — never a summary; details you drop
+are decisions the next agent will re-make differently.
 
 If any `Agent` call dies or returns nothing usable, treat it as blocked —
 with two exceptions at opposite ends. The code review phase **fails closed**:
@@ -217,9 +218,9 @@ new evidence"), then —
 > change no code. State your verdict as exactly one of: approve,
 > approve_with_nits, or needs_changes, on a line "VERDICT: <verdict>".
 
-On `approve` or `approve_with_nits`, go to Ship. On `needs_changes` after
-round 3, stop and report the outstanding findings. Otherwise run a **fix**
-agent — preamble, `<review-findings>` block, then —
+On `approve`, go to Ship. On `approve_with_nits`, run Phase 4b, then Ship. On
+`needs_changes` after round 3, stop and report the outstanding findings.
+Otherwise run a **fix** agent — preamble, `<review-findings>` block, then —
 
 > You are addressing review findings on branch "<BRANCH>" (check it out if
 > needed). The plan doc is <PLAN_PATH>. Fix every finding below that you
@@ -232,10 +233,63 @@ If the fix agent is blocked, stop (include the last review's findings in
 your report to the user). Otherwise append its report and loop back to
 review.
 
+## Phase 4b — Nit triage (only on `approve_with_nits`)
+
+A nit is *non-blocking*, not *worthless*. Left alone it ships as debt nobody
+ever returns to, because the PR body records it as knowingly accepted and the
+roadmap never hears about it. So nits get a decision — one cheap pass that
+applies the ones worth applying and says why the rest were declined. What this
+phase must never do is quietly promote nits into blockers: a reviewer who says
+"non-blocking" has made a judgment, and an agent that fixes all four regardless
+takes that judgment away.
+
+One **nit** agent — preamble, `<review-findings>` block ("the nits are the
+non-blocking items; the blocking findings, if any, were already fixed"), then —
+
+> You are triaging the non-blocking nits from a code review of branch
+> "<BRANCH>" (check it out if needed). The plan doc is <PLAN_PATH>. These were
+> explicitly judged non-blocking — your job is to decide each one, not to
+> clear the list.
+>
+> Take each nit in turn and classify it:
+> - **Apply** when the fix is small, local, and makes the code or its tests
+>   state the truth more precisely — a loose assertion, a stale name, a
+>   comment or doc line that no longer matches behaviour.
+> - **Decline** when applying it would grow scope beyond the plan, reopen a
+>   question the plan settled, change behaviour rather than describe it, or
+>   overturn a wording call the reviewer already judged defensible. Declining
+>   is a real outcome; a pass that applies everything has misunderstood this
+>   phase.
+> - **Already resolved** when a later phase fixed it as a side effect — check
+>   before you edit, and never "fix" a line that no longer exists.
+>
+> Judgment calls that are genuinely the author's to make — subjective wording,
+> anything trading one defensible phrasing for another — go in your report as
+> a recommendation for the human PR reader, not a commit.
+>
+> Apply the ones you classified Apply, run 'mix precommit' until clean, and
+> commit them on the same branch with a message naming them as review nits.
+> If you applied none, commit nothing and say so. Do not re-run the review and
+> do not touch anything the nits did not name.
+>
+> Any nit you decline that is nonetheless a real problem worth doing later goes
+> into docs/ROADMAP.md as an issue, cited by title, slotted by priority — the
+> PR body is read once at merge, the roadmap is the queue.
+>
+> Report every nit with its classification and one line of reasoning, so the
+> ship phase can write applied-vs-declined into the PR body.
+
+Nit fixes are **not** re-reviewed: they are by definition non-blocking, and
+another opus review round to confirm a tightened test assertion costs more than
+it protects. `mix precommit` is the gate. If the nit agent dies or is blocked,
+do not stop the run — carry on to Ship with the nits unapplied and say so in
+the final report, exactly as if the verdict had been plain `approve`.
+
 ## Phase 5 — Ship
 
-Agent prompt: preamble, `<implementer-report>` and
-`<review-verdict verdict="...">` blocks, then —
+Agent prompt: preamble, `<implementer-report>`,
+`<review-verdict verdict="...">` and — if Phase 4b ran —
+`<nit-triage-report>` blocks, then —
 
 > Read .claude/skills/ship/SKILL.md and carry out its instructions for the
 > feature just implemented on branch "<BRANCH>" (plan doc: <PLAN_PATH>) —
@@ -254,13 +308,16 @@ Agent prompt: preamble, `<implementer-report>` and
 >
 > PR title: the feature name. PR body, in order: a two-sentence summary of
 > what the feature does; a link to the archived plan doc; the implementer's
-> per-plan-item report; the review verdict and any remaining nits;
-> assumptions carried through the run. Both reports are given above — quote
-> from them rather than reconstructing them from the diff, and if the
-> review left nits, list them verbatim so the PR reader sees what was
-> knowingly accepted. Add no attribution footer, badge, or `Co-Authored-By`
-> trailer — this repository's commits and PRs carry the author's identity
-> alone.
+> per-plan-item report; the review verdict and the nits; assumptions carried
+> through the run. The reports are given above — quote from them rather than
+> reconstructing them from the diff, and list the nits verbatim so the PR
+> reader sees what each one said. Where a nit triage report is given, mark
+> every nit **applied**, **declined** (with its one-line reason), **already
+> resolved**, or **left for the author to judge** — a reader who cannot tell
+> which nits were acted on has to re-derive it from the diff, which is the
+> whole problem the triage exists to solve. Add no attribution footer, badge,
+> or `Co-Authored-By` trailer — this repository's commits and PRs carry the
+> author's identity alone.
 > Return the PR URL as PR_URL. If push or PR creation fails (no remote, no
 > gh auth), still return STATUS: complete with the close-out done — report
 > the failure in your report instead of blocking.
@@ -268,7 +325,9 @@ Agent prompt: preamble, `<implementer-report>` and
 ## Final report to the user
 
 Branch, plan path, the plan-review verdict — and if a tournament ran, which
-plan won and what decided it — the code review verdict (with any accepted
-nits), whether the close-out shipped, and the PR URL. If a PR was opened:
-merging stays with the user. If not: say why and point at the branch to
-inspect manually.
+plan won and what decided it — the code review verdict, whether the close-out
+shipped, and the PR URL. If nits were triaged, say how many were applied and
+name the ones declined or left for the author to judge; those are the only
+review findings still open at merge time, and the author is the one who has to
+decide about them. If a PR was opened: merging stays with the user. If not: say
+why and point at the branch to inspect manually.
