@@ -23,6 +23,35 @@ defmodule Seshat.OSC.Transport do
   Incoming messages that survive both checks are broadcast via Phoenix.PubSub so
   any process can react — notably Session.State for listener updates.
 
+  ## Query serialization
+
+  Exactly one query is in flight at a time; the rest wait in a FIFO queue, and
+  a reply is matched against the in-flight request's address only. That removes
+  the collision where two overlapping queries overwrote a single slot and one
+  caller got the other's data. It does not remove every collision, because
+  correlation is still by address alone — there is no request id on the wire
+  and none is coming (see `REPOSITORY_REVIEW.md` finding #1). Two residual
+  classes remain:
+
+  1. **A straggler on the in-flight address answers the wrong query.** Query A
+     on address X times out; its reply is still in transit when the queue
+     advances to query B on the same X with different arguments. B's caller
+     receives it, because by construction it is indistinguishable from B's own
+     fresh reply. Narrower than the old overwrite — it needs a timeout *and*
+     address adjacency *and* a straggler landing in the window — but real.
+  2. **Listener pushes share the getter's address.** A push on
+     `/live/track/get/volume` can satisfy an in-flight query for the same
+     property. No queue can remove that.
+
+  The remaining defense against both is caller-side: the echo checks in
+  `Seshat.Tools.Handlers.query_echoed/5`, `Seshat.Commands.Registry.ensure_clip/4`
+  and `Seshat.Session.State`'s query helpers compare the indices a reply echoes
+  against the ones asked for, and refuse a mismatch. Keep them.
+
+  A reply whose address does *not* match the in-flight request is broadcast and
+  answers nobody — not suppressed, because the mirror turns those into free
+  freshness.
+
   `MIX_ENV=test` points both keys at throwaway ports (`config/test.exs`), so the
   suite cannot reach a running Ableton.
 
@@ -65,14 +94,39 @@ defmodule Seshat.OSC.Transport do
   track property is instant, while walking Live's device browser for the first
   time can take many seconds. Defaults to 5s.
 
-  On timeout the caller exits (standard `GenServer.call/3` behaviour) and its
-  `from` is left behind in `pending`. Nothing needs cleaning up: the next query
-  overwrites `pending`, and a late `GenServer.reply/2` to a caller that already
-  gave up is a no-op.
+  Queries are **serialized**: one is in flight at a time and the rest wait in a
+  FIFO queue, so a reply can only ever be handed to the request it is in flight
+  for. `timeout` bounds the caller's *total* wait — queue time plus flight time
+  — and is carried to the server as an absolute monotonic deadline, because the
+  caller's `GenServer.call/3` timer starts on the client and any server-side
+  timer can only start once the message is received. Two independent relative
+  timers cannot be ordered; one shared deadline can.
+
+  An expired request is **never sent**. It is dropped at enqueue if its deadline
+  has already passed by the time the server handles the call, removed from the
+  queue by its own timer, or dropped at dequeue — whichever comes first.
+
+  On timeout the caller exits, standard `GenServer.call/3` behaviour, and that
+  is the *only* way it learns of a timeout: the transport never returns
+  `{:error, :timeout}`. Its internal timer exists solely to reclaim the entry
+  and free the pipeline, never to reply — the ~20 `catch :exit` sites across
+  `Handlers`, `Registry`, `Catalog` and `Session.State` are written against
+  exits, and with both timers on the same instant a server-side reply could win
+  the race and hand back a return value where an exit was promised.
+
+  `:infinity` is deliberately not in the contract: an entry with no deadline
+  whose caller has died would block the head of the queue forever.
+
+  A reply whose address does not match the in-flight request is broadcast
+  without answering anyone. That is not the same as "late replies never reach a
+  caller" — see the module's "Query serialization" section for the two residual
+  collision classes that survive.
   """
-  @spec query(String.t(), list(), timeout()) :: {:ok, {String.t(), list()}} | {:error, term()}
+  @spec query(String.t(), list(), non_neg_integer()) ::
+          {:ok, {String.t(), list()}} | {:error, term()}
   def query(address, args, timeout \\ 5000) do
-    GenServer.call(__MODULE__, {:query, address, args}, timeout)
+    deadline = System.monotonic_time(:millisecond) + timeout
+    GenServer.call(__MODULE__, {:query, address, args, deadline}, timeout)
   end
 
   # Both ports are resolved once, here, and carried in state: a config change
@@ -90,7 +144,8 @@ defmodule Seshat.OSC.Transport do
         {:ok,
          %{
            socket: socket,
-           pending: nil,
+           in_flight: nil,
+           queue: :queue.new(),
            deaf: false,
            send_port: send_port,
            reply_port: reply_port
@@ -130,13 +185,25 @@ defmodule Seshat.OSC.Transport do
         """)
 
         {:ok,
-         %{socket: socket, pending: nil, deaf: true, send_port: send_port, reply_port: reply_port}}
+         %{
+           socket: socket,
+           in_flight: nil,
+           queue: :queue.new(),
+           deaf: true,
+           send_port: send_port,
+           reply_port: reply_port
+         }}
 
       {:error, reason} ->
         {:stop, reason}
     end
   end
 
+  # Deliberately outside the query queue: fire-and-forget setters must not wait
+  # behind a 30s device load. Ordering *within* a caller is preserved anyway
+  # because callers are sequential — a guard's `query/3` has returned before its
+  # `send_message/2` is issued — and cross-caller UDP interleaving is no
+  # different from today's.
   @impl true
   def handle_call({:send, address, args}, _from, %{socket: socket} = state) do
     message = Seshat.OSC.Message.encode(address, args)
@@ -146,21 +213,70 @@ defmodule Seshat.OSC.Transport do
 
   # No reply can reach a deaf transport, so answer now rather than after the
   # caller's full timeout. Every caller already handles `{:error, reason}`.
+  # Ahead of the queue clause on purpose: a deaf query is never enqueued.
   @impl true
-  def handle_call({:query, _address, _args}, _from, %{deaf: true} = state) do
+  def handle_call({:query, _address, _args, _deadline}, _from, %{deaf: true} = state) do
     {:reply, {:error, :reply_port_unavailable}, state}
   end
 
-  def handle_call({:query, address, args}, from, %{socket: socket} = state) do
-    message = Seshat.OSC.Message.encode(address, args)
+  def handle_call({:query, address, args, deadline}, from, state) do
+    now = System.monotonic_time(:millisecond)
 
-    case :gen_udp.send(socket, @host, state.send_port, message) do
-      :ok ->
-        {:noreply, %{state | pending: {from, address}}}
+    # A call can be handled after its own deadline whenever the server's mailbox
+    # is backed up. Drop it here — unsent, unqueued, untimed, unanswered — or the
+    # branch below would put the datagram on the wire before the zero-duration
+    # timer message could be processed. The caller has already exited on its own
+    # timer, which is the sole authority on that; nothing is owed a reply.
+    if deadline <= now do
+      {:noreply, state}
+    else
+      request = %{
+        ref: make_ref(),
+        from: from,
+        address: address,
+        args: args,
+        deadline: deadline
+      }
 
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
+      # Armed for the *remaining* time, so the server's timer tracks the
+      # caller's deadline instead of restarting the clock: a request queued
+      # behind a 30s browser export with a 5s timeout expires at 5s, unsent.
+      timer = Process.send_after(self(), {:query_timeout, request.ref}, max(deadline - now, 0))
+      request = Map.put(request, :timer, timer)
+
+      case state.in_flight do
+        nil ->
+          case send_request(request, state) do
+            :ok ->
+              {:noreply, %{state | in_flight: request}}
+
+            {:error, reason} ->
+              Process.cancel_timer(timer)
+              {:reply, {:error, reason}, state}
+          end
+
+        _in_flight ->
+          {:noreply, %{state | queue: :queue.in(request, state.queue)}}
+      end
     end
+  end
+
+  # The internal deadline. It never `GenServer.reply/2`s: the caller's own
+  # `GenServer.call/3` timer targets the same instant, so a reply from here
+  # could win the race and return `{:error, :timeout}` where the contract
+  # promises an exit — bypassing every `catch :exit` branch written against it.
+  # All this does is reclaim the entry and free the pipeline.
+  @impl true
+  def handle_info({:query_timeout, ref}, %{in_flight: %{ref: ref}} = state) do
+    {:noreply, advance(%{state | in_flight: nil})}
+  end
+
+  def handle_info({:query_timeout, ref}, state) do
+    # Either a queued entry expiring before it was ever sent — removed here, its
+    # datagram never goes out — or the benign race where a reply cancelled the
+    # timer after its message was already in the mailbox, in which case the
+    # filter matches nothing and this is a no-op.
+    {:noreply, %{state | queue: :queue.filter(&(&1.ref != ref), state.queue)}}
   end
 
   # AbletonOSC sends from exactly one socket, bound to `@host:send_port`, so any
@@ -168,7 +284,6 @@ defmodule Seshat.OSC.Transport do
   # picked the wrong port or something deliberately feeding us state. Either way
   # it is dropped before it can answer a query or reach the mirror. The log line
   # carries the source and the size, never the payload.
-  @impl true
   def handle_info({:udp, _socket, ip, port, data}, state)
       when ip != @host or port != :erlang.map_get(:send_port, state) do
     Logger.warning(
@@ -185,10 +300,11 @@ defmodule Seshat.OSC.Transport do
         Logger.debug("OSC in: #{address} #{inspect(args)}")
         {:noreply, dispatch(address, args, state)}
 
-      # Dropping is the whole recovery: state is untouched, and a pending query
-      # whose reply this claimed to be waits out its timeout instead of the
-      # transport crashing under it. The reason and byte preview are logged so a
-      # check that ever fires on legitimate traffic can be loosened precisely.
+      # Dropping is the whole recovery: state is untouched, and the in-flight
+      # query whose reply this claimed to be waits out its deadline instead of
+      # the transport crashing under it. The reason and byte preview are logged
+      # so a check that ever fires on legitimate traffic can be loosened
+      # precisely.
       {:error, reason} ->
         Logger.warning(
           "Dropped malformed OSC datagram (#{byte_size(data)} bytes): #{inspect(reason)} — " <>
@@ -201,17 +317,71 @@ defmodule Seshat.OSC.Transport do
 
   defp source(ip, port), do: "#{:inet.ntoa(ip)}:#{port}"
 
-  # Reply to a pending query if the response address matches, otherwise broadcast.
-  defp dispatch(address, args, %{pending: {from, expected}} = state)
+  # Answer the in-flight query if the response address matches, otherwise
+  # broadcast only — today's handling of listener pushes and unsolicited
+  # traffic, and the fate of every late reply that doesn't collide with the
+  # in-flight address.
+  #
+  # No deadline check here, deliberately: a reply for the request genuinely in
+  # flight is always delivered and always broadcast. Replying past the deadline
+  # costs nothing (`GenServer.reply/2` to a departed caller is a no-op), while
+  # gating on the deadline would open a window where a caller whose own timer
+  # has not fired yet is denied an answer that arrived for it.
+  #
+  # Unlike the internal timer, replying from here is safe to race: winning
+  # delivers `{:ok, _}`, a normal successful return every caller already
+  # handles, where the timer winning would deliver an error tuple where an exit
+  # was promised.
+  defp dispatch(address, args, %{in_flight: %{address: expected} = request} = state)
        when address == expected do
-    GenServer.reply(from, {:ok, {address, args}})
+    # `false` means the `{:query_timeout, ref}` message is already in the
+    # mailbox; the unmatched-ref clause of `handle_info/2` absorbs it.
+    Process.cancel_timer(request.timer)
+    GenServer.reply(request.from, {:ok, {address, args}})
     broadcast(address, args)
-    %{state | pending: nil}
+    advance(%{state | in_flight: nil})
   end
 
   defp dispatch(address, args, state) do
     broadcast(address, args)
     state
+  end
+
+  # Pop the next request and put it on the wire. Invariant afterwards:
+  # `in_flight == nil` implies the queue is empty.
+  defp advance(state) do
+    case :queue.out(state.queue) do
+      {:empty, queue} ->
+        %{state | in_flight: nil, queue: queue}
+
+      {{:value, request}, queue} ->
+        state = %{state | queue: queue}
+
+        # This check, not the timer arithmetic at enqueue, is what makes "an
+        # expired request is never sent" true: `{:query_timeout, ref}` can sit in
+        # the mailbox behind the very datagram that completed the in-flight
+        # query, so a popped entry can be expired with its timer message
+        # unprocessed. One comparison keeps the documented contract honest.
+        if request.deadline <= System.monotonic_time(:millisecond) do
+          Process.cancel_timer(request.timer)
+          advance(state)
+        else
+          case send_request(request, state) do
+            :ok ->
+              %{state | in_flight: request}
+
+            {:error, reason} ->
+              Process.cancel_timer(request.timer)
+              GenServer.reply(request.from, {:error, reason})
+              advance(state)
+          end
+        end
+    end
+  end
+
+  defp send_request(request, state) do
+    message = Seshat.OSC.Message.encode(request.address, request.args)
+    :gen_udp.send(state.socket, @host, state.send_port, message)
   end
 
   defp broadcast(address, args) do

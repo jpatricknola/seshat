@@ -181,16 +181,21 @@ guard's error message.
 
 ## Replies are correlated by address alone
 
-`Transport` keeps **one** pending query and matches an incoming message to it by
-address only — there is no request id on the wire. Two consequences:
+`Transport` runs **one query in flight at a time** — the rest wait in a FIFO
+queue, each carrying an absolute deadline that bounds its total wait, queue time
+included — and matches an incoming message against the in-flight request's
+address only. There is no request id on the wire, and none is coming. Three
+consequences:
 
-- **A timed-out query's reply can answer the next one.** The abandoned `from`
-  stays in `pending` until the next query overwrites it, so a late reply to query
-  A can be handed to query B on the same address. Anything that reads a property
-  per index must check the indices echoed in the reply against the ones it asked
-  about (`Handlers.query_flag/3`, `Registry.ensure_clip/3`), and reissue rather
-  than trust a mismatch. Compare with `==`, not a pin: a float index reaches
-  Ableton fine and comes back as an integer.
+- **A timed-out query's reply can still answer the next one on that address.**
+  Serialization removes the old overwrite case, where mere overlap was enough:
+  a reply that doesn't match the in-flight request's address is broadcast and
+  answers nobody. But a straggler that *does* match it is indistinguishable
+  from that request's own fresh reply, so it is delivered. Anything that reads
+  a property per index must check the indices echoed in the reply against the
+  ones it asked about (`Handlers.query_flag/3`, `Registry.ensure_clip/3`), and
+  reissue rather than trust a mismatch. Compare with `==`, not a pin: a float
+  index reaches Ableton fine and comes back as an integer.
 - **Bulk replies can't be checked this way.** `/live/song/get/track_data` answers
   with a bare value list and no index echo, so it can't be validated against the
   request. Prefer per-index getters where the answer gates a mutation.

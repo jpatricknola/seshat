@@ -81,12 +81,14 @@ defmodule Seshat.Commands.Registry do
   # --- Private helpers: MIDI notes ---
 
   # The echoed indices are checked against the ones we asked about: Transport
-  # correlates replies by address alone, so a reply abandoned by an earlier
-  # timeout can arrive while a later query for the same address is pending, and
-  # acting on another slot's answer would create a clip over the wrong material.
-  # A mismatch reissues the query once — consuming the stale reply also clears
-  # Transport's `pending`, so our own answer is usually already on the wire behind
-  # it — and only a second mismatch is reported.
+  # serializes queries but correlates replies by address alone, so a reply
+  # abandoned by an earlier timeout can still answer the next query on that same
+  # address, and acting on another slot's answer would create a clip over the
+  # wrong material. A mismatch reissues the query once — the reissue asks the
+  # same indices, so the straggler's genuine successor usually answers it, though
+  # that is mitigation rather than a guarantee: the genuine reply can land in the
+  # gap between the rejection and the reissue, in which case it is broadcast and
+  # the reissue times out. Only a second mismatch is reported.
   #
   # The timeout is caught here rather than by the calling handler clause, which
   # can't tell a slot lookup that never answered from a transport that stopped

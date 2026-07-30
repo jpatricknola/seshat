@@ -21,6 +21,13 @@ paths:
   Ableton and will time out (5s default, 15s browsing, 30s device loading).
   Test the pure layer instead: OSC encoding, definitions, handler dispatch
   shape, catalog merge/search.
+  - **One scoped exception: `Transport`'s own tests**
+    ([test/seshat/osc/transport_test.exs](../../test/seshat/osc/transport_test.exs)).
+    There `OSCSink` plays AbletonOSC and supplies the reply, or the test is
+    deliberately asserting the timeout path with a sub-second timeout — the
+    rule's rationale, "needs a live Ableton", doesn't apply, and the query
+    queue can't be tested at all without calling `query/3`. Everything above
+    the transport keeps the rule as written.
 - `Seshat.Agent` is tested with `Req.Test` — no real Anthropic calls.
 - MCP components are tested for **parity with `Seshat.Tools.Definitions`**
   (`Seshat.MCP.ToolsTest`); adding a tool means bumping the tool count in

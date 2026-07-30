@@ -318,7 +318,9 @@ defmodule Seshat.Session.State do
   # bookkeeping. A refresh can come back still disagreeing — replies running one
   # index behind after an abandoned timeout make `read_tracks/2`'s echo check
   # reject every name and yield `nil` for all of them, and a `nil` never equals a
-  # pushed name — and without a brake that is an unbounded spin: refresh,
+  # pushed name. Transport's queue narrows that cascade (it needs a straggler on
+  # the address the *next* query happens to use, not mere overlap) without
+  # removing it, so the brake stays. Without one it is an unbounded spin: refresh,
   # re-subscribe, push, disagree,
   # refresh. Recording the exact list that failed stops the second attempt at it
   # while leaving any *different* list a fresh try, so a real change is never
@@ -605,12 +607,13 @@ defmodule Seshat.Session.State do
   # constants are the defect this module is fixing.
   #
   # Every echoed index is checked against the one asked for, the same reason
-  # `Handlers.query_echoed/5` does it: Transport correlates replies by address
-  # alone and holds one query at a time, so a reply abandoned by an earlier
-  # timeout can land while the next index's query is pending. Unchecked, that
-  # hangs return 0's name on return 1 — a wrong answer that looks like a right
-  # one. Compared with `==` rather than pinned, matching Handlers: these callers
-  # always send integers, but a float index would still come back as an integer.
+  # `Handlers.query_echoed/5` does it: Transport serializes queries — one in
+  # flight, the rest queued — but correlates replies by address alone, so a reply
+  # abandoned by an earlier timeout can still answer the next query on that same
+  # address. Unchecked, that hangs return 0's name on return 1 — a wrong answer
+  # that looks like a right one. Compared with `==` rather than pinned, matching
+  # Handlers: these callers always send integers, but a float index would still
+  # come back as an integer.
   defp query_string(transport, address, index, timeout \\ @query_timeout) do
     case probe(transport, address, [index], timeout) do
       {:ok, [s]} when is_binary(s) -> s
