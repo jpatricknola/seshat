@@ -11,6 +11,12 @@ This doc holds two different things, and the distinction is the whole point:
   dormant. It requires an act of deployment to become reachable, and until then
   fixing it buys nothing.
 
+**Scheduling lives in [ROADMAP.md](ROADMAP.md), not here.** The three Fix-now
+items are ranked there as **#2** (AbletonOSC loopback bind), **#3** (browser
+export path) and **#4** (Elixir listener and decoder) — #2 and #3 ship as one
+submodule commit and one `mix abletonosc.install`. The gated items are
+deliberately absent from that queue. This doc is the evidence and the reasoning.
+
 > **Corrected 2026-07-30.** The first version of this doc gated *everything*
 > behind "anything binds beyond loopback", while simultaneously recording that
 > AbletonOSC already binds `0.0.0.0` — a self-refuting gate that deferred three
@@ -95,6 +101,10 @@ and a Live restart — see [.claude/rules/osc.md](../.claude/rules/osc.md).
 **If a networked OSC controller is ever wanted**, make the bind address a
 constant in the fork rather than reverting to the wildcard.
 
+**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](PLAN_abletonosc_loopback_and_safe_exports.md)
+— shared with the browser-export restriction so both fork changes land in one
+install.
+
 **Effort:** Low to write, ongoing to carry.
 
 ## #2 · `/live/browser/export` writes to any caller-supplied path
@@ -108,18 +118,22 @@ but it remains reachable from any local process, and this is **our** code, not
 upstream's — the fix carries no merge cost. Defence in depth on the one item
 here we fully own.
 
-**Fix:** stop accepting a path. Take a filename, join it under a fixed
-`~/.seshat/` directory, and reject anything containing a separator or `..`.
+**Fix:** stop accepting a caller-selected location at all. Python creates a
+unique file under `~/.seshat/browser-exports/` and echoes its resolved absolute
+path; Elixir validates that the returned path is a regular file directly under
+that root before reading or deleting it.
 
 **The scope is two-sided — Elixir changes too.**
 [`Catalog.reindex/1`](../lib/seshat/library/catalog.ex#L240-L255) builds a full
 path under `System.tmp_dir!()`, passes it to
 [`export_browser/1`](../lib/seshat/library/catalog.ex#L879-L893), reads that
 exact path back, and `File.rm`s it in an `after` block. All four steps have to
-move to the new location. **Cheapest contract:** the reply's first element is
-already the path Python used, so have Python echo the *resolved* absolute path
-and let Elixir read and delete that — no path-derivation logic duplicated on
-both sides, and no risk of the two disagreeing about where `~` expands.
+move to the new contract. The path validation is load-bearing until the Elixir
+listener/source-hardening item ships: a forged reply must never turn into an
+arbitrary Elixir read or delete.
+
+**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](PLAN_abletonosc_loopback_and_safe_exports.md)
+— shared with the loopback bind so both fork changes land in one install.
 
 **Effort:** Low, but touches two languages and needs the fork round-trip plus
 `mix abletonosc.install`.

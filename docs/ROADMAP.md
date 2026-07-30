@@ -1,49 +1,265 @@
 # Roadmap
 
-The single living list of what's **not built yet**, written as a priority-ordered
-issue queue: **#1 is the biggest win, work top to bottom.** Ranking is
-**impact-per-effort**: mission impact weighed against cost, so a medium-impact
-quick win outranks a high-impact slog. Issue numbers are
-ranks, not stable identifiers — when something ships, delete its issue and let
-the rest renumber (the `/ship` skill handles this). If a shipped issue had a
-detailed plan doc, move that doc to [archive/](archive/) with a status banner.
-[archive/](archive/) holds point-in-time plans and decision records — never
-treat those as current.
+The single living list of what to do next — **features, defects and security
+work in one ranked queue.** **#1 is the biggest win, work top to bottom.**
+Ranking is **impact-per-effort**: mission impact weighed against cost, so a
+medium-impact quick win outranks a high-impact slog. Issue numbers are ranks,
+not stable identifiers — when something ships, delete its issue and let the rest
+renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan
+doc, move that doc to [archive/](archive/) with a status banner.
+[archive/](archive/) holds point-in-time plans and decision records — never treat
+those as current.
 
-Each issue gives the goal, why it's worth building, and the context a plan
-author needs — it is **not** an implementation plan. Plans get written per
-issue (the `/plan` skill) when the work is picked up.
+Each issue gives the goal, why it's worth building, and the context a plan author
+needs — it is **not** an implementation plan. Plans get written per issue (the
+`/plan` skill) when the work is picked up.
+
+**Two sibling docs hold the evidence, not the queue.** Ranked items that came
+from the 2026-07-29 external review link into them; read the linked section
+before planning one, because several of the review's recommendations were
+verified and then deliberately narrowed or rejected:
+
+- [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md) — the review itself: each
+  confirmed defect with file:line evidence, a response recording what we accepted
+  and what we declined, and a declined section for findings we are not acting on.
+- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) — security work. Its **Fix now**
+  items are ranked here as #2–#4. Its **Deployment-gated** items are *not* in
+  this queue: HTTP authentication, production binding, rate limiting and the
+  multi-user design activate only when something binds beyond loopback or a
+  second person is invited.
 
 The canonical OSC address reference is
 [abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
 address — naming is irregular, and a wrong address fails silently.
 
-**Neither security work nor bug fixes are on this queue** — it is the feature
-list. Two sibling docs hold the rest:
+**#1–#8 are all defects, and that is the point.** The feature queue got
+displaced because #1 is damaging live sets on every `mix test` run today, and
+#2–#8 are either near-free or silently corrupting data. #2 and #3 ship as one
+submodule commit and one `mix abletonosc.install`; #14 and #15 are one catalog
+pass.
 
-- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) — network exposure. Split in two:
-  the OSC sockets are already bound beyond loopback today, so three items are
-  **active work**; the HTTP items are gated behind deployment or a second user.
-- [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md) — the active correctness
-  backlog, from the 2026-07-29 external review: confirmed defects, each with a
-  verified response, plus a declined section.
-
-**The play-and-keep arc (#5 · #6):** today the agent generates and
-the user listens. `capture_midi` (shipped 2026-07-28), per-clip properties
-(shipped 2026-07-29 — a clip's own loop brace, play markers, and launch
-settings are now readable and writable), and session record (shipped
-2026-07-29 — `record_clip`/`stop_recording` land a deliberate take, fixed-
-length or open-ended, into a chosen Session slot) were the first three steps;
-these two remaining issues — quantize, groove — carry the rest: the
-user plays, Seshat keeps it and cleans it up. That is the largest gap between
-the current state and the mission, and it is cheap: mostly upstream
-addresses, and quantize's now ships with the fork. The quick wins interleaved
-among them come from the 2026-07-28 validation run
-([validation-script-thoughts-and-findings.md](validation-script-thoughts-and-findings.md)).
+**The play-and-keep arc (#10 · #12):** today the agent generates and the user
+listens. `capture_midi` (shipped 2026-07-28), per-clip properties (shipped
+2026-07-29 — a clip's own loop brace, play markers, and launch settings are now
+readable and writable), and session record (shipped 2026-07-29 —
+`record_clip`/`stop_recording` land a deliberate take, fixed-length or
+open-ended, into a chosen Session slot) were the first three steps; these two
+remaining issues — quantize, groove — carry the rest: the user plays, Seshat
+keeps it and cleans it up. That is the largest gap between the current state and
+the mission, and it is cheap: mostly upstream addresses, and quantize's now ships
+with the fork.
 
 ---
 
-## #1 · `start_new_project` — the setup wizard, and prompt budget back
+## #1 · Isolate tests from live Ableton, and correct the safety documentation
+
+**Goal:** `mix test` must be incapable of touching a running Live set, and the
+README must stop promising that it already is.
+
+**Why:** the highest-priority item in the queue because it is causing damage
+now. [test/seshat/tools/handlers_test.exs](../test/seshat/tools/handlers_test.exs)
+and [test/seshat/agent_test.exs](../test/seshat/agent_test.exs) each call
+`start_supervised!(Seshat.OSC.Transport)`, which binds the real reply port and
+sends to `127.0.0.1:11000`. With Live open, a test run pans, sets volume, mutes
+and solos real tracks — and `agent_test.exs:102` mutes track 1 with no paired
+unmute. ExUnit randomises order, so the resulting state is unpredictable run to
+run. `README.md:203-211` meanwhile claims 83 tests (there are 337) and that
+tests avoid the live transport, which is what makes a contributor comfortable
+running the suite with unsaved work open.
+
+**Plan:** [PLAN_test_isolation.md](PLAN_test_isolation.md) — configurable
+transport ports, a test-env pair that is not AbletonOSC's, a UDP sink that
+asserts mutations at the wire, the widened testing rule, and the README
+correction.
+
+**Planner notes:**
+- `config/test.exs` already sets `start_osc: false` — the *application* is
+  clean. The two test files opt back in by hand. This is not an application
+  config problem.
+- **Narrower fix than the review proposed:** give `Transport` a configurable
+  target port and point tests at a throwaway one. A transport behaviour plus an
+  injected fake is more machinery than four tests justify.
+- Widen [.claude/rules/testing.md](../.claude/rules/testing.md) as part of this.
+  It forbids reaching `Transport.query/3` and never thought to forbid sending
+  mutations — that gap is how this drifted in.
+- Ship the README correction with the code, and only then restore a real
+  guarantee.
+- Findings #2 and #10 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #2 · Bind AbletonOSC to loopback and prevent reply hijacking
+
+**Goal:** AbletonOSC listens on `127.0.0.1` only, and stops retargeting its
+default reply address to whichever host last sent a packet.
+
+**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](PLAN_abletonosc_loopback_and_safe_exports.md)
+— covers #2 and its required #3 co-ship.
+
+**Why:** it binds `0.0.0.0` today
+([osc_server.py:15](../priv/AbletonOSC/abletonosc/osc_server.py#L15)), so on any
+networked machine anything that can reach UDP 11000 can drive the Live API with
+no authentication — and [osc_server.py:189](../priv/AbletonOSC/abletonosc/osc_server.py#L189)
+lets a sender redirect the listener push stream to itself. This is live
+exposure, not a deployment concern. Do not count on the macOS application
+firewall.
+
+**Planner notes:**
+- **Ship with #3 — same submodule commit, one `mix abletonosc.install`, one Live
+  restart.** Two fork round-trips for two one-function changes is waste.
+- This *changes* upstream behaviour rather than extending it (upstream binds
+  wildcard deliberately, for TouchOSC-style remote control), so unlike our other
+  divergences it will conflict on merges. Record it in the fork's `SESHAT.md`.
+- Confirmed 2026-07-30 that nothing else here speaks OSC to Live. A Maschine MK3,
+  planned as a controller, is USB MIDI end to end and unaffected.
+- If a networked OSC controller is ever wanted, make the bind address a constant
+  in the fork rather than reverting to the wildcard.
+- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) #1.
+
+## #3 · Restrict browser exports to an application-owned path
+
+**Goal:** `/live/browser/export` accepts no caller-selected location; Python
+creates a unique file inside a fixed application directory and returns its
+resolved path.
+
+**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](PLAN_abletonosc_loopback_and_safe_exports.md)
+— shared with #2 so both fork changes land in one install.
+
+**Why:** it currently takes `dest_path` off the wire, runs `os.makedirs` on its
+directory and opens it `"w"`
+([browser.py:228-279](../priv/AbletonOSC/abletonosc/browser.py#L228-L279)) —
+arbitrary file overwrite with Live's privileges. #2 removes the remote reach;
+this closes it against local processes, and it is the one item here that is
+entirely our own code.
+
+**Planner notes:**
+- **The scope is two-sided.** [`Catalog.reindex/1`](../lib/seshat/library/catalog.ex#L240-L255)
+  builds a full path under `System.tmp_dir!()`, passes it to
+  [`export_browser/1`](../lib/seshat/library/catalog.ex#L879-L893), reads that
+  exact path back, and `File.rm`s it in an `after` block. All four steps move.
+- **Research narrowed the contract further than the original filename idea:**
+  there is one client and it never needs to choose the name. Python creates a
+  unique file under `~/.seshat/browser-exports/`, echoes the resolved absolute
+  path, and Elixir validates that path before reading or deleting it. No
+  caller-controlled location, separator rules, or duplicated `~` expansion.
+- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) #2.
+
+## #4 · Harden the Elixir OSC listener and decoder
+
+**Goal:** `Transport` binds loopback, accepts replies only from the expected
+source, and survives a datagram it cannot parse.
+
+**Why:** two halves of one fix in one module.
+[transport.ex:56](../lib/seshat/osc/transport.ex#L56) opens 11001 with no `ip:`
+option and nothing validates the sender before
+[dispatch/3](../lib/seshat/osc/transport.ex#L133-L143) uses a packet to satisfy a
+pending query or push into `Session.State`. Separately,
+[message.ex](../lib/seshat/osc/message.ex) has no safe error return —
+`find_null/2` recurses until `:binary.at` raises and `decode_arg/2` has no
+catch-all clause — so **any** unparseable datagram crashes `Transport` and
+orphans the pending caller. **The crash needs no attacker**: a music machine is
+full of OSC-speaking software and a stray broadcast to 11001 is an ordinary
+accident.
+
+**Planner notes:**
+- All in `lib/` — no fork round-trip, no Live restart, and the decoder half is
+  unit-testable without Ableton, unlike #2 and #3.
+- The loopback bind does most of the security work; source validation is
+  belt-and-braces against local processes.
+- `Message.decode/1` should return `{:ok, message}` / `{:error, reason}` and
+  validate lengths, type tags, padding and trailing data.
+- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) #3.
+
+## #5 · Stop fabricating session state after OSC failures
+
+**Goal:** when a refresh query fails, `Session.State` reports the value as
+unknown instead of substituting a plausible one.
+
+**Why:** [state.ex:337-344](../lib/seshat/session/state.ex#L337-L344) falls back
+to 120 BPM, 4/4 and C Major on any failed song query, and a failed track-count
+query keeps the *previous* set's track list. The model cannot tell fresh state
+from fabricated state — and it does not merely report those numbers, it writes
+bar lengths and note positions against them. Wrong musical output from a silent
+failure, fixed by deleting the defaults.
+
+**Planner notes:**
+- **Do the defaults only.** The review also proposed a monitored refresh worker
+  with an overall deadline and freshness/connection/last-error metadata; that is
+  deferred as a risk to revisit if the blocking window is ever actually
+  observed. #6 changes the contention picture anyway.
+- Decide how "unknown" reaches the model in `get_session_state`'s reply — a
+  stated unknown is strictly better than a plausible wrong number, but it has to
+  read as one.
+- Finding #7 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #6 · Serialize OSC queries and clean up timed-out callers
+
+**Goal:** one query in flight at a time, with an internal timer, late replies
+discarded, and the next request dequeued only on completion.
+
+**Why:** `Transport` holds a single `pending` slot and returns `{:noreply, ...}`,
+so it accepts the next query immediately; replies correlate by OSC address
+alone. Two overlapping queries to the *same* address with different arguments
+means the second caller silently receives the first's data. The realistic
+trigger is not multi-client MCP — it is `Session.State` re-reading every track
+name when the structure listener fires, asynchronously, from a different process
+than whatever tool call is in flight.
+
+**Planner notes:**
+- The moduledoc at `transport.ex:43-47` explicitly reasons that a timed-out
+  caller needs no cleanup. That is sound for sequential callers and unsound the
+  moment two overlap — rewrite it with the fix.
+- **Elixir-side queue only.** The review's "stronger long-term fix" of adding
+  request identifiers to the AbletonOSC protocol is declined: a wire-format
+  divergence on every address, carried against upstream forever, to solve what a
+  queue already solves.
+- Finding #1 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #7 · Enforce tool ranges and non-negative indices centrally
+
+**Goal:** out-of-range numbers and negative indices are rejected before they
+reach Ableton, in one place that covers both entry modes.
+
+**Why:** two defects with one seam. `minimum: 0` is present on the newer tools
+and missing on the older ones (`set_track_pan`, `set_track_volume`,
+`delete_track`, `duplicate_track`, `set_track_name`), and Python indexes Live's
+collections directly — so `track: -1` operates on the *last* track while the
+reply echoes "track -1". Separately, [schema.ex:45](../lib/seshat/mcp/schema.ex#L45)
+turns every JSON Schema `number` into an unconstrained
+`{:either, {:float, :integer}}`, so `set_track_pan` accepts `2.0` against a
+declared maximum of `1.0`.
+
+**Planner notes:**
+- **Validate in `Handlers`.** The review framed the bounds loss as an MCP
+  conversion problem, which implies API-key mode is fine — it isn't: that path
+  has no validation layer at all and the Anthropic API does not enforce tool
+  schemas either. `Handlers.call/2` is the single dispatch point both modes
+  share.
+- Correct `MCP.Schema` too, so the advertised schema matches what is enforced.
+- **No Python bounds checks.** The review's third bullet would diverge
+  `track.py`, `clip.py` and `scene.py` permanently for redundant defence once
+  Elixir validates and the socket is loopback-bound.
+- The realistic caller is a model hallucinating Python's `-1 == last`, not an
+  attacker.
+- Findings #3 and #4 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #8 · Verify `create_track` actually succeeds
+
+**Goal:** confirm the track count rose before returning an index and naming it.
+
+**Why:** [registry.ex:203-216](../lib/seshat/commands/registry.ex#L203-L216)
+reads the pre-create count, fires create and rename, and returns that count
+unverified. A dropped create means the rename targets an invalid index while
+Seshat reports success and the follow cam steers there — and subsequent device
+loads or note writes then target the wrong track.
+
+**Planner notes:**
+- `Registry.ensure_created/2` sits *directly above* `create_and_name_track/2` in
+  the same file doing exactly this for return tracks. This is applying a local
+  pattern, not designing one.
+- Update the `create_track` row in [TOOL_AUDIT.md](TOOL_AUDIT.md) when it ships —
+  the wart is recorded there now.
+- Finding #6 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #9 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -88,7 +304,168 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #2 · Producer personas — switchable musical taste
+## #10 · `quantize_clip` — the most common MIDI cleanup
+
+**Goal:** quantize a clip's notes to a grid with an amount (0–1 for partial
+quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
+
+**Why:** "tighten the timing" is the most common cleanup move on played
+MIDI — the direct follow-up to `capture_midi`/session record (both shipped).
+Today it takes a full
+read → remove → rewrite by hand, which loses Live-native swing handling and
+burns tool calls.
+
+**Planner notes:**
+- **The address already exists:** the fork ships `/live/clip/quantize
+  [track_id, clip_id, grid, amount]` via the clip methods list (per upstream
+  PR #198). What remains here is the Elixir tool. The grid is the
+  `GridQuantization` enum (0=none, 4=bar, 6=1/4, 7=1/8, 8=1/16, 9=1/32 —
+  full table in
+  [abletonosc-api-docs.md](abletonosc-api-docs.md)), **not**
+  `RecordingQuantization` — the tool description must carry it.
+- The rejected alternative (Elixir-side read → snap → rewrite with existing
+  note tools) is recorded here deliberately: zero install surface but worse
+  results (no Live-native swing). Don't resurrect it without new evidence.
+- Partial quantize (amount < 1.0) is the musically useful form — full
+  quantize kills feel. The description should teach that.
+
+## #11 · `set_time_signature`
+
+**Goal:** `/live/song/set/signature_numerator` +
+`/live/song/set/signature_denominator`.
+
+**Why:** cheap symmetry win — `get_session_state` reports the time signature
+and `set_tempo` exists, but there's no setter. Anything in 3/4 or 6/8 starts
+with a manual step today.
+
+**Planner notes:** two addresses, one tool. Session state already listens to
+both properties, so the echo can verify against the mirror.
+
+## #12 · Groove amount — "make it swing"
+
+**Goal:** read/set the global groove amount:
+`/live/song/get|set/groove_amount`.
+
+**Why:** the third leg of played-MIDI cleanup after quantize: humanize/swing.
+Small, upstream, and it completes the play-and-keep arc's editing vocabulary.
+
+**Planner notes:** single scalar property, transport-tool shaped. Check the
+value range in the API docs rather than assuming 0–1.
+
+## #13 · Preserve partial agent results at the tool-iteration limit
+
+**Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
+already executed and the conversation so far, and surface a warning in the UI.
+
+**Why:** [agent.ex:83-86](../lib/seshat/agent.ex#L83-L86) discards both
+`executed` and `messages` and returns a generic error. Nine or ten rounds of
+real mutations land, the UI reports an error with no record of them, the
+conversation isn't kept, and the obvious user response — retry — repeats
+everything. Partial side effects go invisible exactly when recovery information
+matters most.
+
+**Planner notes:**
+- Scoped to API-key mode, which is the dev/fallback path — that is why it ranks
+  here and not higher. The fix is small and the failure is silent, which is the
+  combination worth clearing.
+- The LiveView error branch leaves history unchanged; both halves need doing or
+  neither helps.
+- Finding #9 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #14 · Make catalog persistence atomic and report write failures
+
+**Goal:** a reindex that cannot be persisted says so, and a crash mid-write
+cannot leave a truncated `catalog.json`.
+
+**Why:** [catalog.ex:831-838](../lib/seshat/library/catalog.ex#L831-L838) logs a
+write failure and then returns `{:ok, summary}` — the UI reports success while
+the next start restores an old or empty catalog. `File.write/2` is not atomic.
+
+**Planner notes:**
+- Write to a temporary file, sync, rename — then report durable success.
+- **Skip the ETS generation swap.** The review also flagged that
+  `:ets.delete_all_objects/1` before `insert_all` lets a concurrent search see an
+  empty table. Real, but reindex is a rare user-initiated operation that freezes
+  Live's UI for up to a minute and that the user is waiting on; a few
+  milliseconds of empty results inside that window is not observable.
+- **Do this in one pass with #15** — same writer, and #15 needs a built-at
+  timestamp written there anyway.
+- Finding #8 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #15 · Catalog staleness check — reindex without being asked
+
+**Goal:** a free freshness check — does `catalog.json` exist, and is its
+build timestamp newer than the mtime of Ableton's browser database? Run it
+at server startup and/or on `search_library` calls; when the catalog is
+missing or stale, tell the user a reindex is needed and will take up to a
+minute (Live's UI freezes), then run it.
+
+**Why:** 2026-07-28 validation run: the script literally has the *user*
+asking whether an index exists yet — backwards. The user shouldn't need to
+know indexing exists. The check costs two file stats; the expensive rebuild
+stays announced and cause-driven instead of manual or unprompted.
+
+**Planner notes:**
+- `catalog.json` needs a built-at timestamp if the merge writer doesn't
+  already record one — which is why this pairs with #14.
+- The Ableton DB path comes from `Seshat.Library.AbletonDB` (per-machine;
+  the Windows caveat stays with "Deliberately not planned", not this issue).
+- Decide the surfacing point: a line in `search_library` replies, a startup
+  check, or both.
+
+## #16 · Verify destructive mutations before reporting success
+
+**Goal:** destructive and structural operations check their target before
+mutating and confirm the result afterward, instead of returning success as soon
+as `:gen_udp.send/4` returns.
+
+**Why:** Python catches Live API exceptions and only logs them, so a rejected
+delete or a dropped packet is indistinguishable from a successful one — and the
+follow cam then steers to a destination that may not exist. The reachable
+trigger is a stale model-held index.
+
+**Planner notes:**
+- **Keep ordinary parameter setters fire-and-forget.** The review's headline
+  recommendation — structured acknowledgements from every mutation endpoint —
+  is rejected: it reverses the settled rule in
+  [.claude/rules/osc.md](../.claude/rules/osc.md) ("Setters stay silent — each
+  is guarded by its getter first, and nothing waits on one"), adds a round-trip
+  to every mutation, and multiplies #6's exposure.
+- The pattern already exists: `delete_device` bounds-checks then verifies by
+  re-count, `set_clip_properties` verifies each write by re-read. Extend that to
+  the remaining destructive operations and stop.
+- Ranked here rather than higher because the surface is broad — this is the
+  slog of the correctness items.
+- Finding #5 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #17 · Catalog vocabulary — read tag axes, teach the menu proactively
+
+**Goal:** read the tag *axes* (Character, Genres, Type, …) and the
+preset→device relation out of Ableton's database, and surface the real
+vocabulary proactively in tool replies — so the model sees the menu before
+ordering, instead of guessing tags and learning only from failures.
+
+**Why:** this is levers №1+№2 of
+[sound-search-options.md](sound-search-options.md) — read that doc before
+planning; it grounds every claim in measurements. The top of the search
+funnel leaks first-attempt vocabulary misses ("warm" isn't a tag here, `Soft`
+is), and the axes fix real traps the flat tag list creates (`Distortion` the
+device tag vs. `Distorted` the character tag). Highest certain win left in
+the catalog area, at Low/Low-Med effort. №2 also enables future levers, which
+is why they ship together.
+
+**Planner notes:**
+- The axis lives in `files.parent_id`, which
+  `Seshat.Library.AbletonDB.read_tags/1` currently discards; the
+  preset→device map is the `file_devices` table (4,535 rows on the dev
+  machine).
+- Vocabulary is per-machine (depends on installed Packs) — it must flow
+  through replies/catalog data, never be hardcoded in a tool description.
+  That rule already governs `search_library`'s design.
+- Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
+  migration shims (see CLAUDE.md).
+
+## #18 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* — musical taste, and only taste — onto the base
 session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
@@ -144,103 +521,7 @@ changes what Seshat reaches for, never how it works.
   and the base text's voice section already reads as execute-the-user's-taste,
   which is what a persona slots underneath.
 
-## #3 · Catalog vocabulary — read tag axes, teach the menu proactively
-
-**Goal:** read the tag *axes* (Character, Genres, Type, …) and the
-preset→device relation out of Ableton's database, and surface the real
-vocabulary proactively in tool replies — so the model sees the menu before
-ordering, instead of guessing tags and learning only from failures.
-
-**Why:** this is levers №1+№2 of
-[sound-search-options.md](sound-search-options.md) — read that doc before
-planning; it grounds every claim in measurements. The top of the search
-funnel leaks first-attempt vocabulary misses ("warm" isn't a tag here, `Soft`
-is), and the axes fix real traps the flat tag list creates (`Distortion` the
-device tag vs. `Distorted` the character tag). Highest certain win left in
-the catalog area, at Low/Low-Med effort. №2 also enables future levers, which
-is why they ship together.
-
-**Planner notes:**
-- The axis lives in `files.parent_id`, which
-  `Seshat.Library.AbletonDB.read_tags/1` currently discards; the
-  preset→device map is the `file_devices` table (4,535 rows on the dev
-  machine).
-- Vocabulary is per-machine (depends on installed Packs) — it must flow
-  through replies/catalog data, never be hardcoded in a tool description.
-  That rule already governs `search_library`'s design.
-- Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
-  migration shims (see CLAUDE.md).
-
-## #4 · Catalog staleness check — reindex without being asked
-
-**Goal:** a free freshness check — does `catalog.json` exist, and is its
-build timestamp newer than the mtime of Ableton's browser database? Run it
-at server startup and/or on `search_library` calls; when the catalog is
-missing or stale, tell the user a reindex is needed and will take up to a
-minute (Live's UI freezes), then run it.
-
-**Why:** 2026-07-28 validation run: the script literally has the *user*
-asking whether an index exists yet — backwards. The user shouldn't need to
-know indexing exists. The check costs two file stats; the expensive rebuild
-stays announced and cause-driven instead of manual or unprompted.
-
-**Planner notes:**
-- `catalog.json` needs a built-at timestamp if the merge writer doesn't
-  already record one.
-- The Ableton DB path comes from `Seshat.Library.AbletonDB` (per-machine;
-  the Windows caveat stays with "Deliberately not planned", not this issue).
-- Decide the surfacing point: a line in `search_library` replies, a startup
-  check, or both.
-
-## #5 · `quantize_clip` — the most common MIDI cleanup
-
-**Goal:** quantize a clip's notes to a grid with an amount (0–1 for partial
-quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
-
-**Why:** "tighten the timing" is the most common cleanup move on played
-MIDI — the direct follow-up to `capture_midi`/session record (both shipped).
-Today it takes a full
-read → remove → rewrite by hand, which loses Live-native swing handling and
-burns tool calls.
-
-**Planner notes:**
-- **The address already exists:** the fork ships `/live/clip/quantize
-  [track_id, clip_id, grid, amount]` via the clip methods list (per upstream
-  PR #198). What remains here is the Elixir tool. The grid is the
-  `GridQuantization` enum (0=none, 4=bar, 6=1/4, 7=1/8, 8=1/16, 9=1/32 —
-  full table in
-  [abletonosc-api-docs.md](abletonosc-api-docs.md)), **not**
-  `RecordingQuantization` — the tool description must carry it.
-- The rejected alternative (Elixir-side read → snap → rewrite with existing
-  note tools) is recorded here deliberately: zero install surface but worse
-  results (no Live-native swing). Don't resurrect it without new evidence.
-- Partial quantize (amount < 1.0) is the musically useful form — full
-  quantize kills feel. The description should teach that.
-
-## #6 · Groove amount — "make it swing"
-
-**Goal:** read/set the global groove amount:
-`/live/song/get|set/groove_amount`.
-
-**Why:** the third leg of played-MIDI cleanup after quantize: humanize/swing.
-Small, upstream, and it completes the play-and-keep arc's editing vocabulary.
-
-**Planner notes:** single scalar property, transport-tool shaped. Check the
-value range in the API docs rather than assuming 0–1.
-
-## #7 · `set_time_signature`
-
-**Goal:** `/live/song/set/signature_numerator` +
-`/live/song/set/signature_denominator`.
-
-**Why:** cheap symmetry win — `get_session_state` reports the time signature
-and `set_tempo` exists, but there's no setter. Anything in 3/4 or 6/8 starts
-with a manual step today.
-
-**Planner notes:** two addresses, one tool. Session state already listens to
-both properties, so the echo can verify against the mirror.
-
-## #8 · `screenshot_live` — let Seshat see the screen
+## #19 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -261,16 +542,34 @@ the follow cam (shipped 2026-07-29) covers that.
 - API-key mode would need image blocks threaded through `Seshat.Agent`'s
   loop — decide whether to support it there or keep this MCP-only.
 
-## #9 · Search eval harness — numbers before opinions
+## #20 · Restart the MCP supervisor after abnormal failure
+
+**Goal:** change the nested MCP supervisor's child spec from
+`restart: :temporary` to `:transient`.
+
+**Why:** [application.ex:80](../lib/seshat/application.ex#L80) means an abnormal
+exit permanently removes MCP service while the Phoenix endpoint keeps looking
+healthy — the tools simply stop existing, with nothing saying why.
+
+**Planner notes:**
+- **`:transient`, not `:permanent`.** The review offered `:permanent` first;
+  that would take the whole application down when Anubis genuinely cannot
+  start, which is very likely why `:temporary` was chosen. `:transient`
+  restarts on abnormal exit only, which is exactly the case described.
+- One line. Do it in passing while touching `application.ex` rather than
+  scheduling it.
+- Speculative risk in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #21 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
 lever gets measured instead of argued.
 
 **Why:** lever №9 of [sound-search-options.md](sound-search-options.md),
-estimated at a morning's work. It exists to **gate #10–#15**: after #3 lands,
+estimated at a morning's work. It exists to **gate #22–#27**: after #17 lands,
 the eval decides whether any of the remaining catalog levers are still worth
-buying. Sequenced after #3 because #3 is a certain win with or without
+buying. Sequenced after #17 because #17 is a certain win with or without
 numbers.
 
 **Planner notes:** the result-quality work already used a six-query/77-slot
@@ -281,12 +580,12 @@ catalog — no Ableton needed.
 
 ---
 
-**Gate: issues #10–#15 are catalog levers that wait on #9's eval.** Buy each
-only if the eval still shows the miss it targets after #3 lands. They're
+**Gate: issues #22–#27 are catalog levers that wait on #21's eval.** Buy each
+only if the eval still shows the miss it targets after #17 lands. They're
 ranked by [sound-search-options.md](sound-search-options.md)'s
 impact-per-effort ordering.
 
-## #10 · Widen the search slate at tied score bands
+## #22 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -296,7 +595,7 @@ pretending rank means something inside it.
 provably can't close (a graded per-term variant measured +1 slot across six
 queries and was rejected). Hours of work, honest fix.
 
-## #11 · Accepted-search memory
+## #23 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -309,7 +608,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #12 · Browser preview audition
+## #24 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -325,7 +624,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #13 · Opt-in `samples` index
+## #25 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -338,21 +637,21 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #14 · LLM enrichment at reindex
+## #26 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an API key or an MCP-client-driven tagging turn.
 
 **Why:** lever №5 — highest ceiling (it attacks the thin-signal problem
 directly: ~200 of 5,795 entries say anything real about their sound) and
-highest cost. Last resort: buy only if the #9 eval still shows first-slate
+highest cost. Last resort: buy only if the #21 eval still shows first-slate
 misses on thin-tagged entries after everything above. Concrete evidence from
 the 2026-07-28 validation run: for "warm, slightly out-of-tune electric
 piano," the character lived only in preset *names* — E-Piano Rusty, Old
 School, MKII Old, Cheap were invisible to tag scoring because no warm/aged/
 detuned vocabulary exists to carry them.
 
-## #15 · User XMP tags
+## #27 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -363,7 +662,23 @@ actually tags things — hence the low rank.
 
 ---
 
-## #16 · Device list per track in session state
+## #28 · Cap large tool-result payloads in API-key mode
+
+**Goal:** bound what accumulates in `Seshat.Agent`'s `messages` and the
+LiveView's log for the life of a conversation.
+
+**Why:** full tool inputs and outputs accumulate unbounded, and catalog and
+device results are exactly the payloads large enough to matter — a single local
+user can exhaust the Anthropic context window on `search_library` output alone,
+and LiveView process memory grows with it.
+
+**Planner notes:** capping large tool-result payloads before they enter
+`messages` is the cheap majority of the fix; skip summarising old turns until
+needed. MCP mode is primary and keeps no history in this process, which is why
+this ranks here. Speculative risk in
+[../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #29 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -375,13 +690,13 @@ gain is latency and tokens, not user-visible experience, hence the rank.
 
 **Planner notes:** needs device add/remove listeners per track — check what
 upstream offers before assuming a new handler is required. The clip-grid
-precedent applies (see #19 note): query-on-demand shipped first, promotion to
+precedent applies (see #32 note): query-on-demand shipped first, promotion to
 push state only once usage justified the subscription surface. Usage now
 plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #17 · Return/master mixer completeness
+## #30 · Return/master mixer completeness
 
 **Goal:** return-track pan/mute/solo, master pan, cue volume.
 
@@ -393,7 +708,7 @@ LOM details: return mute/solo are plain listenable props, master pan is
 `mixer_device.panning`, cue volume is `mixer_device.cue_volume`, and the
 master has no mute/solo/arm.)
 
-## #18 · Modify a note in place
+## #31 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -401,7 +716,7 @@ read → remove range → rewrite.
 **Why:** the current path works but is three calls and a footgun
 (`remove_notes` ranges). Cleaner, not urgent.
 
-## #19 · Clip grid in session state — only if usage demands it
+## #32 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -412,10 +727,10 @@ into push-fresh `Session.State`.
 wait for evidence the grid is read constantly. Session record has now shipped
 alongside `capture_midi`, so the trigger this item was waiting on has
 happened — worth checking whether grid-read frequency actually justifies the
-subscription surface before building it. Index-keyed listeners like #16's —
+subscription surface before building it. Index-keyed listeners like #29's —
 these are ordinary fork commits on the fixed base class.
 
-## #20 · Small OSC breadth — grab bag
+## #33 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -428,7 +743,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
 - **Sends on return tracks** (return→return routing, feedback sends) —
   niche, needs Live's "sends only" awareness, no named workflow yet.
 
-## #21 · MCP mode in the browser UI
+## #34 · MCP mode in the browser UI
 
 **Goal:** give `AssistantLive` a second backend — headless Claude Code
 (`claude -p`) as a subprocess consuming Seshat's own `/mcp` endpoint — so the
@@ -449,6 +764,18 @@ CLI flags against current Claude Code before trusting it.
 
 ## Deliberately not planned
 
+- **Deployment-gated security work** — HTTP authentication on `/mcp` and the
+  LiveView, production binding, rate limiting, and the multi-user design
+  question. Not in this queue by design; see
+  [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) for the two triggers that activate
+  them. Note that authentication alone does not make Seshat multi-user — one
+  transport, one mirror, one Ableton.
+- **Three findings from the 2026-07-29 review were declined** — the vendored
+  Python test harness's import-time reload, the `pythonosc` invalid escape
+  sequence, and `:rest_for_one` for PubSub recovery. Reasons and
+  reconsider-if conditions are in
+  [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md)'s declined section; don't
+  re-derive them.
 - **Arrangement view** — everything Seshat does is Session view. Upstream has
   arrangement addresses (`/live/track/get/arrangement_clips/*`, arrangement
   overdub, song position) — revisit if a real workflow needs the timeline.

@@ -197,21 +197,24 @@ cleanup) leads. Keep it current: when something ships, run the `/ship` skill
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
-ROADMAP.md is the *feature* queue only. Two sibling docs carry the rest, and
-both are live:
+**ROADMAP.md ranks features, defects and security work in one queue** — as of
+2026-07-30 its top eight are all defects, because `mix test` currently mutates a
+live set and several OSC-layer bugs corrupt data silently. Two sibling docs hold
+the *evidence* behind those items, not a competing queue:
 
+- [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the 2026-07-29 external review.
+  Each confirmed defect with file:line evidence and a **Reviewer response**
+  recording what we accepted, narrowed, or rejected, plus a declined section.
+  **Read the response before planning a roadmap item that links here** — several
+  of the review's recommendations were rejected for conflicting with settled
+  decisions (structured setter acknowledgements, Python bounds checks, protocol
+  request IDs).
 - [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure, split
-  into **Fix now** and **Deployment-gated**. The OSC sockets already bind beyond
-  loopback (AbletonOSC binds `0.0.0.0`; our reply socket binds the wildcard), so
-  those three items are active work, not deferred. Only the HTTP items wait on a
-  gate. Check it before loosening a bind or adding an entry point.
-- [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the active correctness backlog
-  from the 2026-07-29 external review: confirmed defects plus speculative risks,
-  each carrying a verified response that narrows or rejects the recommended fix,
-  and a declined section. Its **Accepted actions** list is the canonical order;
-  the original review's own priority list is kept below it as history. Read the
-  response before acting on a finding — several recommendations were rejected
-  for conflicting with settled decisions in this repo.
+  into **Fix now** (ranked as ROADMAP #2–#4, because the OSC sockets already bind
+  beyond loopback today) and **Deployment-gated** (HTTP auth, production binding,
+  rate limiting — deliberately absent from the queue until something binds beyond
+  loopback or a second user is invited). Check it before loosening a bind or
+  adding an entry point.
 
 [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) is a standing design review of the
 whole tool surface — one verdict per tool, plus the coverage gaps that feed

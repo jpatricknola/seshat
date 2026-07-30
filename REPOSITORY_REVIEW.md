@@ -7,11 +7,14 @@ AbletonOSC submodule. The review traced the major HTTP, LiveView, MCP, OSC,
 catalog, and Ableton runtime flows and included the safe setup, compilation,
 formatting, static-analysis, and test commands available in the repository.
 
-> **This document is the active correctness backlog.** Confirmed defects below
-> are tracked here, not in [docs/ROADMAP.md](docs/ROADMAP.md) — that file is the
-> feature queue ("what's not built yet") and mixing defect triage into it would
-> dilute a list that reads cleanly top to bottom. Security work lives in
-> [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md).
+> **This document is the evidence, not the queue.** As of 2026-07-30 every
+> accepted finding below is ranked in [docs/ROADMAP.md](docs/ROADMAP.md), which
+> now holds features, defects and security work in one impact-per-effort list —
+> the review's defects occupy its top eight. Come here for the file:line
+> evidence and for the *Reviewer response* on each finding, which records what
+> was accepted, narrowed, or rejected. Work is scheduled there; it is justified
+> here. Security findings live in
+> [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) on the same basis.
 
 > **Edited 2026-07-30**, in two passes. Nothing in the original review's text has
 > been reworded; every addition is marked.
@@ -636,47 +639,29 @@ dependencies/tasks.
 > `Transport.query/3` needs a live Ableton, so several of these are only
 > testable against the pure layer or a fake.
 
-## Accepted actions — canonical order
+## Where each finding is scheduled
 
-**This list supersedes the original priority list below**, which is kept as
-history. Where the two differ, this one is current: it reflects the responses
-recorded against each finding, several of which narrow or reject the
-recommendation as written. Work top to bottom.
+**[docs/ROADMAP.md](docs/ROADMAP.md) is the canonical order** — one
+impact-per-effort queue covering features, defects and security work together.
+This table maps findings to their rank there; the roadmap entry carries the
+accepted scope, including the parts of a recommendation that were rejected.
 
-1. **Isolate tests from Ableton's ports, and fix the README with it** (findings
-   #2, #10). The only item actively causing damage today, every time `mix test`
-   runs with Live open, and the smallest of the group. Give `Transport` a
-   configurable target port rather than building a transport behaviour and fake.
-   The README's false guarantee is what makes this dangerous, so the two ship
-   together. Widen [.claude/rules/testing.md](.claude/rules/testing.md), which
-   forbids reaching `Transport.query/3` but never thought to forbid mutations.
-2. **Serialize OSC queries** (finding #1). Silent cross-talk between concurrent
-   queries is harder to notice than an out-of-range value, which Live usually
-   clamps. Elixir-side queue only — **no request identifiers in the wire
-   protocol**.
-3. **Enforce ranges and non-negative indices in `Handlers`** (findings #3, #4).
-   One seam covering both entry modes. Correct `MCP.Schema` too so the
-   advertised schema matches enforcement. **No Python bounds checks** — that
-   would diverge three upstream files for redundant defence.
-4. **Stop fabricating session-state defaults** (finding #7). Cheap, and the
-   model writes bar lengths against those numbers. Leave the blocking-refresh
-   architecture alone until observed.
-5. **Verify `create_track`'s new index** (finding #6), applying
-   `Registry.ensure_created/2`, which already sits directly above it.
-6. **Catalog durability** (finding #8) — temp-file-plus-rename, return write
-   failures. Skip the ETS generation swap. Sequence with
-   [docs/ROADMAP.md](docs/ROADMAP.md) #4, which touches the same writer.
-7. **Return partial results at the agent iteration limit** (finding #9).
-8. **`restart: :transient` on the MCP supervisor** (speculative risk), not
-   `:permanent`.
-9. **Extend verify-by-re-read to remaining destructive operations** (finding
-   #5). Parameter setters stay fire-and-forget.
-10. **Cap large tool-result payloads** (speculative risk). Lowest value —
-    API-key mode only.
+| Finding | Roadmap rank |
+|---|---|
+| #2 tests mutate a live set, #10 README | **#1** Isolate tests from live Ableton, correct the safety documentation |
+| #7 fabricated session state | **#5** Stop fabricating session state after OSC failures |
+| #1 single pending query slot | **#6** Serialize OSC queries and clean up timed-out callers |
+| #3 negative indices, #4 numeric bounds | **#7** Enforce tool ranges and non-negative indices centrally |
+| #6 `create_track` unverified index | **#8** Verify `create_track` actually succeeds |
+| #9 agent iteration limit | **#13** Preserve partial agent results at the tool-iteration limit |
+| #8 catalog persistence | **#14** Make catalog persistence atomic and report write failures |
+| #5 mutations report success on send | **#16** Verify destructive mutations before reporting success |
+| MCP supervisor `:temporary` | **#20** Restart the MCP supervisor after abnormal failure |
+| LiveView conversation growth | **#28** Cap large tool-result payloads in API-key mode |
+| The three declined findings | Not scheduled — see [Declined](#declined--not-planned) |
 
-Security work is tracked separately in
-[docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md); three of its items are
-active and interleave with this list at roughly the priority of #2 here.
+The security findings removed from this review are ranked as roadmap #2–#4;
+their evidence is in [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md).
 
 ### Original: three highest-priority fixes
 
