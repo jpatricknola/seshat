@@ -619,6 +619,98 @@ defmodule Seshat.Library.CatalogTest do
     end
   end
 
+  # The browser export is now created by Python, which names it and hands the
+  # path back over OSC — so the path is data from another process, and reindex/1
+  # both reads and *deletes* whatever it names. This is the check standing
+  # between that reply and a File.rm/1 on something else entirely, and it is
+  # tested against a tmp root rather than the real ~/.seshat so it never depends
+  # on (or touches) the developer's home directory.
+  describe "validated_export_path/2" do
+    setup do
+      root =
+        Path.join(System.tmp_dir!(), "seshat-export-test-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(root)
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      {:ok, root: root}
+    end
+
+    test "accepts a regular export file directly inside the root", %{root: root} do
+      path = Path.join(root, "seshat-browser-export-abc123.json")
+      File.write!(path, "{}")
+
+      assert {:ok, ^path} = Catalog.validated_export_path(path, root)
+    end
+
+    test "rejects a file outside the root", %{root: root} do
+      elsewhere = Path.join(System.tmp_dir!(), "seshat-browser-export-elsewhere.json")
+      File.write!(elsewhere, "{}")
+      on_exit(fn -> File.rm(elsewhere) end)
+
+      assert {:error, message} = Catalog.validated_export_path(elsewhere, root)
+      assert message =~ "not directly inside"
+    end
+
+    test "rejects a file nested below the root", %{root: root} do
+      nested = Path.join([root, "deeper", "seshat-browser-export-abc123.json"])
+      File.mkdir_p!(Path.dirname(nested))
+      File.write!(nested, "{}")
+
+      assert {:error, message} = Catalog.validated_export_path(nested, root)
+      assert message =~ "not directly inside"
+    end
+
+    # `..` is the reason the check normalizes first: a reply that merely *starts*
+    # with the root can still name a file anywhere on the filesystem.
+    test "cannot be walked out of the root with ..", %{root: root} do
+      escape = Path.join(root, "../seshat-browser-export-escaped.json")
+      File.write!(Path.expand(escape), "{}")
+      on_exit(fn -> File.rm(Path.expand(escape)) end)
+
+      assert {:error, message} = Catalog.validated_export_path(escape, root)
+      assert message =~ "not directly inside"
+    end
+
+    test "rejects a wrong prefix or a wrong suffix", %{root: root} do
+      for name <- ["catalog.json", "seshat-browser-export-abc123.txt", "browser-export.json"] do
+        path = Path.join(root, name)
+        File.write!(path, "{}")
+
+        assert {:error, message} = Catalog.validated_export_path(path, root)
+        assert message =~ "not named", "#{name} was accepted"
+      end
+    end
+
+    test "rejects a path with no file behind it", %{root: root} do
+      path = Path.join(root, "seshat-browser-export-missing.json")
+
+      assert {:error, message} = Catalog.validated_export_path(path, root)
+      assert message =~ "could not be read"
+    end
+
+    test "rejects a directory wearing an export's name", %{root: root} do
+      path = Path.join(root, "seshat-browser-export-dir.json")
+      File.mkdir_p!(path)
+
+      assert {:error, message} = Catalog.validated_export_path(path, root)
+      assert message =~ "is a directory"
+    end
+
+    # lstat, not stat: a symlink pointing at a perfectly valid JSON file would
+    # pass a follow-the-link check and then be the thing reindex/1 deletes.
+    test "rejects a symlink, even one pointing at a valid export", %{root: root} do
+      target = Path.join(root, "real.json")
+      File.write!(target, "{}")
+
+      link = Path.join(root, "seshat-browser-export-link.json")
+      :ok = File.ln_s!(target, link)
+
+      assert {:error, message} = Catalog.validated_export_path(link, root)
+      assert message =~ "is a symlink"
+    end
+  end
+
   describe "persistence" do
     setup :start_catalog
 

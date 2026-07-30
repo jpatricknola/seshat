@@ -56,7 +56,13 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
       assert File.regular?(Path.join([dir, "abletonosc", "handler.py"]))
 
       # Seshat's own three handlers are the reason this task exists.
-      for file <- ~w(browser.py return_track.py song_structure.py) do
+      #
+      # osc_server.py joins them because the fork changes upstream's *behaviour*
+      # there, not just its addresses: the socket binds loopback only and the
+      # default reply address is never retargeted to the last sender. An install
+      # that shipped an older copy of that file would silently put Live's OSC API
+      # back on every network interface, and every address would still answer.
+      for file <- ~w(browser.py osc_server.py return_track.py song_structure.py) do
         assert File.read!(Path.join([dir, "abletonosc", file])) ==
                  File.read!(Path.join([@source, "abletonosc", file])),
                "#{file} was not copied verbatim"

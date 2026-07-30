@@ -20,9 +20,17 @@ via `"/live/`. A bridge swap would keep the tool contract in
 
 ## Ports
 
-- Seshat sends to UDP **11000**.
+- Seshat sends to **`127.0.0.1:11000`**.
 - AbletonOSC replies to UDP **11001**, and pushes listener updates there too.
-- Replies go to the IP the message came from.
+- **The bridge is loopback-only.** The fork binds its command socket to
+  `127.0.0.1`, so no address is reachable off this machine, and its default reply
+  destination is fixed at `127.0.0.1:11001` — a received datagram never retargets
+  it. Callback replies still answer the originating host, which after the bind can
+  only be loopback. Upstream does neither (wildcard bind, reply follows the last
+  sender); both are recorded as deliberate divergences in the fork's `SESHAT.md`
+  and grepped by `vendored_addresses_test`. Widening either is security work
+  gated in [docs/SECURITY_BACKLOG.md](../../docs/SECURITY_BACKLOG.md), not a
+  convenience.
 
 Only one process can hold 11001, so **only one Seshat can read from Ableton at a
 time** — an MCP server and `mix phx.server` running together means the second

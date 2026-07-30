@@ -7,9 +7,15 @@
 > at the fork root lists every divergence, including its fixes to upstream's
 > own code.
 > Protocol: OSC over UDP
-> Send port: 11000
+> Send commands to: **`127.0.0.1:11000`**
 > Reply port: 11001
-> Replies are sent to the same IP as the originating message.
+> The fork binds its command socket to loopback only, so nothing off this
+> machine can reach any address below. Callback replies go to the originating
+> host — which can therefore only be loopback — on port 11001, and listener
+> pushes, `/live/startup` and `/live/error` go to a fixed `127.0.0.1:11001` that
+> incoming traffic never retargets. Upstream binds `0.0.0.0` and follows the
+> last sender; see `SESHAT.md` in the fork, and don't widen either without
+> `docs/SECURITY_BACKLOG.md`'s deployment-gated work.
 > Wildcard patterns supported (e.g., `/live/clip/get/* 0 0` queries all properties of track 0, clip 0).
 
 ---
@@ -575,8 +581,8 @@ path — so a query resolves instead of hanging.
 | `/live/browser/get/items` | | `category, filter, 'error', message` | Unknown category, or indexing failed |
 | `/live/browser/load_item` | `track_id, uri` | `track_id, uri, 'ok', device_name, device_index` | Load a browser item onto a track |
 | `/live/browser/load_item` | | `track_id, uri, 'error', message` | Bad track index, unknown uri, or load failed |
-| `/live/browser/export` | `dest_path` | `dest_path, 'ok', total_items` | Walk every category and write the whole index to a JSON file |
-| `/live/browser/export` | | `dest_path, 'error', message` | Missing path, no category indexable, or the write failed |
+| `/live/browser/export` | | `export_path, 'ok', total_items` | Walk every category and write the whole index to a JSON file the handler names |
+| `/live/browser/export` | | `'', 'error', message` | Arguments supplied, no category indexable, or the write failed |
 | `/live/browser/preview_item` | `uri` | `uri, 'ok', name` | Audition a browser item without loading it — nothing in the set changes |
 | `/live/browser/preview_item` | | `uri, 'error', message` | Missing or unknown uri, or the preview call failed |
 | `/live/browser/stop_preview` | | `'ok'` | Stop the running preview |
@@ -600,6 +606,9 @@ path — so a query resolves instead of hanging.
   matched before truncation.
 - `path` is the `/`-joined chain of browser folder names above the item
   (`"Bass/808 & Sub"`), `""` for a top-level item.
+- `export` takes **no arguments**. It chooses its own destination inside
+  `~/.seshat/browser-exports` and returns the absolute path it wrote; an error
+  reply carries `''` in that slot, so it never names a partial file.
 - `uri` values come from `get/items` or `export` and are stable within a Live
   session — never construct one.
 - The first walk of a large category takes seconds (it runs on Live's UI
@@ -626,8 +635,24 @@ path — so a query resolves instead of hanging.
 Backs `Seshat.Library.Catalog.reindex/1`. It walks every category except
 `samples` and writes one JSON file, rather than replying over OSC — a full
 index is far past what a UDP datagram (or `get/items`' 100-item cap) can carry,
-and Python and Elixir share a filesystem. Elixir passes a path in its own temp
-directory and deletes the file afterwards.
+and Python and Elixir share a filesystem.
+
+**The request carries no path.** The handler creates a uniquely named file with
+`tempfile.mkstemp` inside `~/.seshat/browser-exports` (created owner-only on
+demand) and returns the absolute path in the reply's first slot; Elixir reads it,
+then deletes it. The old `[dest_path]` form — which opened a caller-supplied path
+with Live's privileges — is rejected with an error reply and an error-level log
+line, and writes nothing. A request in the old form against a current install, or
+a no-argument request against an install predating 2026-07-30, means
+`mix abletonosc.install` and a Live restart are overdue; `reindex_library` says
+so rather than reporting a browser failure.
+
+Because only the handler knows an export's name, only the handler can clean up an
+export whose reply never arrived (a query timeout, a lost datagram, a path Elixir
+refused). It sweeps at startup and before each export, removing matching
+**regular** direct children of the export root that are at least ten minutes old
+— old enough that no in-flight caller, bounded by the 120s query timeout, can
+still be reading one.
 
 ```json
 {

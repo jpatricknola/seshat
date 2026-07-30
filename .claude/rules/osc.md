@@ -39,6 +39,23 @@ exist because a typo'd address looks exactly like success.
   A fresh git worktree (`/lifecycle`, worktree-isolated agents) has an empty
   `priv/AbletonOSC` until step 0, `git submodule update --init`; the
   Python-grepping tests fail with that hint until it runs.
+- **Never widen the UDP boundary.** The fork binds AbletonOSC's command socket to
+  `127.0.0.1:11000` and pins its default reply destination to
+  `127.0.0.1:11001`, permanently — a received datagram must never retarget it.
+  Every OSC address can control Live and none of them authenticate anything, so
+  restoring upstream's `0.0.0.0` bind or its follow-the-last-sender reply hands
+  full control of the user's session to anything the machine's network boundary
+  allows through. The same applies to Seshat's own 11001 listener. A networked
+  controller (TouchOSC and friends) is not a config tweak: it needs an explicit
+  opt-in bind *and* the deployment-gated security work in
+  [docs/SECURITY_BACKLOG.md](../../docs/SECURITY_BACKLOG.md) activated and
+  finished first. A regression here is silent — loopback keeps working
+  identically — so `vendored_addresses_test` greps the Python for both.
+- **A vendored handler never opens a path a caller sent it.** It runs with Live's
+  privileges. `/live/browser/export` is the pattern: the request carries no path,
+  Python creates the file with `tempfile.mkstemp` inside a fixed root, returns the
+  absolute path, and Elixir validates that reply (root, name shape, `File.lstat/1`
+  regular file) before reading — and especially before deleting — anything.
 - **`/live/browser/*`, `/live/return_track/*`, and `/live/master/*` are ours,
   not upstream's** — those handlers live in
   [priv/AbletonOSC/abletonosc/browser.py](../../priv/AbletonOSC/abletonosc/browser.py)

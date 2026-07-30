@@ -14,7 +14,12 @@ sends OSC to a running copy of Ableton Live.
 Nothing else to download: the AbletonOSC bridge ships with Seshat as a
 submodule, and `mix abletonosc.install` below puts it in place. You enable it
 under Preferences → Link/MIDI → Control Surface once it's installed. It listens
-on UDP 11000 and replies on 11001.
+on `127.0.0.1:11000` and replies to `127.0.0.1:11001`. Both halves of the bridge
+are local-only: the command socket accepts loopback traffic only, and its replies
+and listener pushes always go to loopback, never to whichever host last sent
+something. Stock AbletonOSC listens on every network interface and follows the
+last sender; Seshat's fork deliberately does neither, because every OSC address
+can control Live and none of them authenticate.
 
 No database required.
 
