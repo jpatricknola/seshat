@@ -90,6 +90,7 @@ Packs, so it is never hardcoded in a tool description.
 |---|---|
 | [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex) | All tool definitions (name, description, JSON Schema). Single source of truth. |
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Single-message tools hit Transport directly; multi-step ones go via Registry. |
+| [lib/seshat/tools/validation.ex](lib/seshat/tools/validation.ex) | Schema-driven parameter validation, called from `Handlers.call/2` before dispatch — reads the declared bounds/types straight out of `Definitions`, so every tool is covered by construction |
 | [lib/seshat/tools/follow_cam.ex](lib/seshat/tools/follow_cam.ex) | View steering — after a create/write/delete succeeds, selects what it touched and shows the pane it's in. `calls/2` is the pure decision; `steer/2` sends it best-effort |
 | [lib/seshat/instructions.ex](lib/seshat/instructions.ex) | Session-level guidance shared by both modes — the conventions no single tool description can carry |
 | [lib/seshat/agent.ex](lib/seshat/agent.ex) | Anthropic tool-use loop (API-key mode) |
@@ -209,8 +210,12 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top two are both defects: tool-parameter bounds are
-inconsistently enforced, and `create_track` returns an index unverified.
+2026-07-30 its top item is a defect: `create_track` returns an index
+unverified. Tool-parameter bounds are no longer the inconsistent half of that
+pair — `Seshat.Tools.Validation` now validates every call against its schema
+from `Seshat.Tools.Definitions` before `Handlers.call/2` dispatches, both
+entry modes share it, and `MCP.Schema`'s number branch carries `minimum`/
+`maximum` through to the wire-advertised `oneOf` (shipped 2026-07-30).
 `Transport` now serializes OSC queries through an internal queue with a
 per-request timer — one query in flight at a time, matched by address against
 that request only, and a timed-out caller's request dropped rather than sent —

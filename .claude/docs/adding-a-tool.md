@@ -20,8 +20,8 @@ Append a map to `@tools`:
   parameters: %{
     type: "object",
     properties: %{
-      "track" => %{type: "integer", description: "0-indexed track number"},
-      "send" => %{type: "integer", description: "0-indexed send. Send A = 0."},
+      "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+      "send" => %{type: "integer", minimum: 0, description: "0-indexed send. Send A = 0."},
       "value" => %{type: "number", minimum: 0.0, maximum: 1.0, description: "Send level"}
     },
     required: ["track", "send", "value"]
@@ -37,6 +37,15 @@ Supported JSON Schema in `parameters`: `type` (`string`/`integer`/`number`/
 `boolean`/`array`/`object`), `description`, `enum`, `minimum`/`maximum`,
 `items`, nested `properties` + `required`. Anything else is passed to Anthropic
 but ignored by the MCP schema converter.
+
+Every index parameter must declare `minimum: 0` — a negative index reaching
+AbletonOSC's Python selects from the *end* of Live's collection, so `track: -1`
+would delete the last track and echo "track -1" as if that were the target
+(`definitions_test.exs` enforces this, and that every integer property declares
+an `enum` or a `minimum`). Declared bounds are enforced centrally by
+`Seshat.Tools.Validation` before `call/2` dispatches, so a handler clause never
+needs its own numeric range or type check — write the bound into the schema
+instead, where the model can also see it.
 
 ### 2. Handle it — `lib/seshat/tools/handlers.ex`
 

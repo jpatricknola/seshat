@@ -17,6 +17,7 @@ defmodule Seshat.Tools.Handlers do
   alias Seshat.OSC.Transport
   alias Seshat.Session.State
   alias Seshat.Tools.FollowCam
+  alias Seshat.Tools.Validation
 
   # Browsing and loading are both far slower than a property read: the first
   # walk of a big browser category takes seconds, and a heavy plugin can take
@@ -193,7 +194,16 @@ defmodule Seshat.Tools.Handlers do
 
   @spec call(String.t(), map()) :: {:ok, String.t()} | {:error, String.t()}
   def call(name, params) when is_binary(name) and is_map(params) do
-    do_call(name, stringify_keys(params))
+    params = stringify_keys(params)
+
+    # The one place both entry modes meet, so the one place the declared
+    # schemas are actually enforced — neither the Anthropic API nor Peri does
+    # it for us (see `Seshat.Tools.Validation`). Nothing reaches Transport
+    # until the parameters are known good.
+    case Validation.validate(name, params) do
+      :ok -> do_call(name, params)
+      {:error, message} -> {:error, message}
+    end
   end
 
   @doc """
@@ -3040,9 +3050,11 @@ defmodule Seshat.Tools.Handlers do
   defp clip_write(property, value), do: {property, coerce_clip_value(property, value)}
 
   # `truthy?/1`, not a bare `if`: every non-nil term is truthy in Elixir, so a
-  # model that spells a boolean as `0` — which `Seshat.Agent` passes through
-  # unvalidated, MCP mode's Peri schema being the only thing that rejects it —
-  # would otherwise turn the property *on*.
+  # boolean spelled as `0` would otherwise turn the property *on*. Since
+  # `Seshat.Tools.Validation` runs in `call/2`, a `0` no longer arrives by that
+  # route in either mode — it is rejected as "must be a boolean". This stays
+  # because `clip_property_writes/2` is public and called directly, so `call/2`
+  # is not the only way in.
   defp coerce_clip_value(property, value) when property in @clip_boolean_properties,
     do: if(truthy?(value), do: 1, else: 0)
 

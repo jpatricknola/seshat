@@ -1,8 +1,21 @@
 # Plan — Enforce tool ranges and non-negative indices centrally
 
+> **Archived 2026-07-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The fix lives in
+> `Seshat.Tools.Validation` (new, schema-driven, called from
+> `Handlers.call/2` before dispatch), the missing `minimum`/`maximum` bounds
+> added across `Seshat.Tools.Definitions`, and the `MCP.Schema` number branch
+> now carrying ranges through `oneOf`. Reviewed with three non-blocking nits
+> (a stale test comment claiming coverage `ensure_bars/1` no longer needs, a
+> dead nil-guard in `Validation`, and a `required`-vs-`properties` name-typo
+> gap with no live instance) — none fixed on this branch; see the PR for the
+> exact text. Open question 2 (how MCP clients render the bounded `oneOf`,
+> specifically Claude Desktop) is carried forward, not closable from the test
+> suite — the first `/smoke-test` connect after this ships is the check.
+
 Roadmap item "Enforce tool ranges and non-negative indices centrally".
 Evidence: findings #3 and #4 in
-[../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md), whose reviewer responses
+[../REPOSITORY_REVIEW.md](../../REPOSITORY_REVIEW.md), whose reviewer responses
 set the shape of this plan — validate in `Handlers` (the seam both modes
 share), correct `MCP.Schema` so the advertised schema matches what is
 enforced, and **no Python bounds checks** (declined: it would diverge
@@ -23,7 +36,7 @@ operation. The realistic caller is a model hallucinating Python's `-1 == last`
 convention, not an attacker.
 
 **Advertised bounds are not enforced anywhere (finding #4).** In MCP mode,
-[schema.ex:45](../lib/seshat/mcp/schema.ex#L45) converts every JSON Schema
+[schema.ex:45](../../lib/seshat/mcp/schema.ex#L45) converts every JSON Schema
 `number` to an unconstrained `{:either, {:float, :integer}}` — a runtime probe
 confirmed `set_track_pan` accepts `2.0` against a declared maximum of `1.0`.
 In API-key mode there is **no validation layer at all**: the Anthropic API
@@ -33,7 +46,7 @@ leave half the surface unguarded while appearing to close the issue.
 
 Research also surfaced a third leak the review missed: Peri's constraint
 clauses check *bounds* without re-checking the *base type*
-([peri.ex:919-956](../deps/peri/lib/peri.ex#L919) — the `{:integer, {:gte, 0}}`
+([peri.ex:919-956](../../deps/peri/lib/peri.ex#L919) — the `{:integer, {:gte, 0}}`
 clause guards on `is_numeric(val)`, not `is_integer(val)`), so even in MCP
 mode a bounded integer param accepts `1.5`. One more reason the authoritative
 check lives in our own code, with Peri as the wire-level first pass.
@@ -54,12 +67,12 @@ bound from either side without hand-writing cases.
 rejects bad values *before* `Transport` is reached; every OSC message that is
 still sent is one that is sent today. The Python side is deliberately
 untouched (finding #3's third bullet, declined — see
-[../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md)): upstream's
+[../REPOSITORY_REVIEW.md](../../REPOSITORY_REVIEW.md)): upstream's
 `track.py`/`clip.py`/`scene.py` keep indexing Live's collections directly,
 and the Elixir validator plus the loopback bind are the whole defence.
 
 For the record, the behavior being closed off (verified in
-[priv/AbletonOSC/abletonosc/track.py](../priv/AbletonOSC/abletonosc/track.py),
+[priv/AbletonOSC/abletonosc/track.py](../../priv/AbletonOSC/abletonosc/track.py),
 `clip.py`, `scene.py`): a negative index reaching Python selects from the end
 of `song.tracks` / `song.scenes` / the clip-slot list, Python-style, and the
 reply echoes the negative index as if it were a real target.
@@ -73,7 +86,7 @@ schema gets `minimum: -1`, not `0`.
 
 ## Part 1 — `Definitions`: declare the missing bounds
 
-In [lib/seshat/tools/definitions.ex](../lib/seshat/tools/definitions.ex).
+In [lib/seshat/tools/definitions.ex](../../lib/seshat/tools/definitions.ex).
 Schema edits only — no descriptions change (they already state "0-based"
 everywhere), no tool is added, so no count bump in `definitions_test.exs`.
 
@@ -170,11 +183,11 @@ first). Behavior:
 
 ## Part 3 — Wire it into `Handlers.call/2`
 
-In [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex). Two edits:
+In [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex). Two edits:
 add `alias Seshat.Tools.Validation` to the alias block
-([handlers.ex:14-19](../lib/seshat/tools/handlers.ex#L14), which today aliases
+([handlers.ex:14-19](../../lib/seshat/tools/handlers.ex#L14), which today aliases
 `FollowCam` from the same namespace), and rewrite `call/2`
-([handlers.ex:194-197](../lib/seshat/tools/handlers.ex#L194)):
+([handlers.ex:194-197](../../lib/seshat/tools/handlers.ex#L194)):
 
 ```elixir
 def call(name, params) when is_binary(name) and is_map(params) do
@@ -197,8 +210,8 @@ not worth colliding with the other in-flight plans.
 
 ## Part 4 — `MCP.Schema`: numbers keep their bounds
 
-In [lib/seshat/mcp/schema.ex](../lib/seshat/mcp/schema.ex), the number branch
-([schema.ex:45](../lib/seshat/mcp/schema.ex#L45)) becomes:
+In [lib/seshat/mcp/schema.ex](../../lib/seshat/mcp/schema.ex), the number branch
+([schema.ex:45](../../lib/seshat/mcp/schema.ex#L45)) becomes:
 
 ```elixir
 defp peri_type(%{type: "number"} = spec),
@@ -214,7 +227,7 @@ branch), but out-of-range values now fail both branches and the call is
 rejected at the wire.
 
 Wire-schema consequence, checked against Peri's encoder
-([encoder.ex:172-233](../deps/peri/lib/peri/json_schema/encoder.ex#L172)):
+([encoder.ex:172-233](../../deps/peri/lib/peri/json_schema/encoder.ex#L172)):
 a bounded number is advertised as `oneOf: [{"type": "number", "minimum": …,
 "maximum": …}, {"type": "integer", …}]`. Today's advertisement is already
 `oneOf` (that is what `{:either, …}` encodes to) — this only adds the
@@ -222,8 +235,8 @@ a bounded number is advertised as `oneOf: [{"type": "number", "minimum": …,
 is minimal.
 
 Peri's compile-time `validate_type/2` accepts `{:either, {schema, schema}}`
-with constrained branches ([peri.ex:1932](../deps/peri/lib/peri.ex#L1932),
-[peri.ex:1752](../deps/peri/lib/peri.ex#L1752)) — **verified by execution**,
+with constrained branches ([peri.ex:1932](../../deps/peri/lib/peri.ex#L1932),
+[peri.ex:1752](../../deps/peri/lib/peri.ex#L1752)) — **verified by execution**,
 not just by reading: this change was applied temporarily, compiled, probed
 through the real generated component, and reverted. Open question 1 has the
 measured compile-time, runtime and `input_schema` results; the Part 5 tests
@@ -269,7 +282,7 @@ lock them in.
    `%{"track" => -1, "value" => 0.0}` errors; a non-numeric value on a bounded
    number (`%{"track" => 0, "value" => "loud"}`) returns `{:error, _}` rather
    than crashing (Peri's final `validate_field` catch-all,
-   [peri.ex:1317](../deps/peri/lib/peri.ex#L1317), turns any unmatched
+   [peri.ex:1317](../../deps/peri/lib/peri.ex#L1317), turns any unmatched
    value/type pair into a clean error — verified at plan review); the existing
    "accepts integers where the schema says number" test must keep passing
    (integer `1` within pan's bounds).
@@ -283,20 +296,20 @@ lock them in.
    branches carry `minimum: -1.0` and `maximum: 1.0` (the `number` branch and
    the `integer` branch). Verified reachable at plan review — Peri's encoder
    maps `{:either, {a, b}}` to `oneOf` of both converted branches
-   ([encoder.ex:228](../deps/peri/lib/peri/json_schema/encoder.ex#L228)) and
+   ([encoder.ex:228](../../deps/peri/lib/peri/json_schema/encoder.ex#L228)) and
    puts `minimum`/`maximum` on a `{type, {:range, …}}`
-   ([encoder.ex:181](../deps/peri/lib/peri/json_schema/encoder.ex#L181)).
+   ([encoder.ex:181](../../deps/peri/lib/peri/json_schema/encoder.ex#L181)).
 
 ## Part 6 — Keep the next tool honest
 
-1. In [.claude/docs/adding-a-tool.md](../.claude/docs/adding-a-tool.md), step 1:
+1. In [.claude/docs/adding-a-tool.md](../../.claude/docs/adding-a-tool.md), step 1:
    add two sentences after the "Supported JSON Schema" paragraph — every index
    param must declare `minimum: 0` (`definitions_test` enforces it), and declared
    bounds are enforced centrally by `Seshat.Tools.Validation` before dispatch, so
    a handler clause never needs its own numeric range check. This plan's edit is
    the doc text only; the mechanical enforcement is Part 5.2.
 2. Add a module-map row for `lib/seshat/tools/validation.ex` in
-   [CLAUDE.md](../CLAUDE.md), after the `handlers.ex` row: schema-driven
+   [CLAUDE.md](../../CLAUDE.md), after the `handlers.ex` row: schema-driven
    parameter validation, called from `Handlers.call/2` before dispatch.
 
 ## Testing
@@ -334,11 +347,11 @@ lock them in.
   left in place; near-zero cost, and their neighborhoods are being edited by
   [PLAN_stop_fabricating_session_state.md](PLAN_stop_fabricating_session_state.md).
 - **`create_scene`'s `index`-vs-`scene` param naming drift** — recorded in
-  [TOOL_AUDIT.md](TOOL_AUDIT.md) §03 as a Low, not this item.
+  [TOOL_AUDIT.md](../TOOL_AUDIT.md) §03 as a Low, not this item.
 - **TOOL_AUDIT.md sweep** — §03's correction note and the "≥4 outstanding"
   tally get updated at `/ship` time, per that doc's own convention.
 - **Rate limiting / auth on the entry points** — deployment-gated, see
-  [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md).
+  [SECURITY_BACKLOG.md](../SECURITY_BACKLOG.md).
 
 ## Open questions
 
@@ -376,11 +389,11 @@ lock them in.
    offered one; it is withdrawn, because it would silently destroy the wire
    schema Part 4 exists to fix. Peri's encoder routes `{:custom, _}` to
    `unsupported/3`
-   ([encoder.ex:272](../deps/peri/lib/peri/json_schema/encoder.ex#L272)),
+   ([encoder.ex:272](../../deps/peri/lib/peri/json_schema/encoder.ex#L272)),
    which returns a bare `%{}` unless called with `on_unsupported: :raise`
-   ([encoder.ex:287](../deps/peri/lib/peri/json_schema/encoder.ex#L287)) —
+   ([encoder.ex:287](../../deps/peri/lib/peri/json_schema/encoder.ex#L287)) —
    and Anubis calls it without that option
-   ([anubis/server/component/schema.ex:24](../deps/anubis_mcp/lib/anubis/server/component/schema.ex#L24)).
+   ([anubis/server/component/schema.ex:24](../../deps/anubis_mcp/lib/anubis/server/component/schema.ex#L24)).
    So the parameter would advertise not just no bounds but **no type at all**,
    with no compile error and no warning: the tools still list, the schema is
    just empty. If the constrained `{:either, …}` shape misbehaves, the answer
@@ -416,4 +429,4 @@ lock them in.
    well-formed integer today. That ambiguity is **pre-existing** — it is what
    `{:either, {:float, :integer}}` has always encoded to — and this plan
    neither causes nor worsens it, so fixing it is a separate item
-   ([TOOL_AUDIT.md](TOOL_AUDIT.md) material, not this one).
+   ([TOOL_AUDIT.md](../TOOL_AUDIT.md) material, not this one).

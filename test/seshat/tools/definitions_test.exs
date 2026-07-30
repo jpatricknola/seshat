@@ -48,6 +48,97 @@ defmodule Seshat.Tools.DefinitionsTest do
     end
   end
 
+  describe "declared bounds" do
+    # `Seshat.Tools.Validation` enforces whatever the schemas declare, so a new
+    # tool that forgets to declare anything is enforced into nothing. These three
+    # are the tripwires for that — an index that reaches AbletonOSC's Python
+    # negative selects from the *end* of Live's collection, Python-style.
+    @index_properties ~w(
+      track clip_slot target_track target_clip_slot
+      scene device parameter send return_track
+    )
+
+    test "every index-shaped property declares minimum: 0" do
+      for {tool, path, name, spec} <- all_properties(),
+          name in @index_properties do
+        assert Map.get(spec, :minimum) == 0,
+               "#{tool}.#{path} must declare minimum: 0 — a negative index selects from the " <>
+                 "end of the collection in AbletonOSC's Python"
+      end
+    end
+
+    test "every integer property declares an enum or a minimum" do
+      for {tool, path, _name, spec} <- all_properties(),
+          spec[:type] == "integer" do
+        assert Map.has_key?(spec, :enum) or Map.has_key?(spec, :minimum),
+               "#{tool}.#{path} is an unbounded integer — declare an enum or a minimum " <>
+                 "(create_scene's index uses -1, AbletonOSC's append convention)"
+      end
+    end
+
+    # `Validation` walks `properties` and consults `required` per-property, so a
+    # name listed in `required` that matches no property is never checked — and
+    # the call then falls through to `do_call/2`'s catch-all and reports
+    # "Unknown tool", the misleading message this validator exists to replace.
+    test "every required name is a declared property" do
+      for {tool, path, schema} <- all_schemas(),
+          name <- Map.get(schema, :required, []) do
+        assert Map.has_key?(Map.get(schema, :properties, %{}), name),
+               "#{tool}#{path} requires #{inspect(name)} but declares no such property — " <>
+                 "Validation would silently not enforce it"
+      end
+    end
+
+    # Flattens every property in the surface to {tool_name, dotted_path,
+    # property_name, spec}, descending into arrays of objects and nested
+    # objects.
+    defp all_properties do
+      Enum.flat_map(Definitions.all(), fn %{name: tool, parameters: schema} ->
+        Enum.map(properties_of(schema), fn {path, name, spec} -> {tool, path, name, spec} end)
+      end)
+    end
+
+    defp properties_of(schema, prefix \\ "") do
+      schema
+      |> Map.get(:properties, %{})
+      |> Enum.flat_map(fn {name, spec} ->
+        path = if prefix == "", do: name, else: "#{prefix}.#{name}"
+        [{path, name, spec} | descend(spec, path)]
+      end)
+    end
+
+    defp descend(%{type: "array", items: %{type: "object"} = items}, path),
+      do: properties_of(items, path <> "[]")
+
+    defp descend(%{type: "object"} = spec, path), do: properties_of(spec, path)
+    defp descend(_spec, _path), do: []
+
+    # The same walk, but yielding each object schema itself rather than its
+    # properties — `required` lives on the schema, not on the property.
+    defp all_schemas do
+      Enum.flat_map(Definitions.all(), fn %{name: tool, parameters: schema} ->
+        Enum.map(schemas_of(schema), fn {path, spec} -> {tool, path, spec} end)
+      end)
+    end
+
+    defp schemas_of(schema, prefix \\ "") do
+      nested =
+        schema
+        |> Map.get(:properties, %{})
+        |> Enum.flat_map(fn {name, spec} ->
+          descend_schema(spec, "#{prefix}.#{name}")
+        end)
+
+      [{prefix, schema} | nested]
+    end
+
+    defp descend_schema(%{type: "array", items: %{type: "object"} = items}, path),
+      do: schemas_of(items, path <> "[]")
+
+    defp descend_schema(%{type: "object"} = spec, path), do: schemas_of(spec, path)
+    defp descend_schema(_spec, _path), do: []
+  end
+
   describe "to_anthropic_tools/0" do
     test "returns tools in Anthropic API format" do
       tools = Definitions.to_anthropic_tools()

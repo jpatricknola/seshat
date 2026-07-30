@@ -122,6 +122,49 @@ defmodule Seshat.Tools.HandlersTest do
       params = %{"track" => 0, "value" => -1.0}
       assert Handlers.stringify_keys(params) == params
     end
+
+    # Validation runs on the stringified map, so both entry shapes are held to
+    # the same schema — MCP mode must not be the lenient one.
+    test "atom-keyed params are validated identically" do
+      assert {:error, message} = Handlers.call("set_track_pan", %{track: 0, value: 2.0})
+      assert message =~ "- value: must be at most 1.0 (got 2.0)"
+      refute_receive {:osc_out, _, _}
+    end
+  end
+
+  describe "parameter validation" do
+    setup :osc_sink
+
+    # The point of the central validator: a value outside its declared range
+    # never becomes a datagram. `track: -1` is the case that motivated it —
+    # AbletonOSC's Python would have deleted the *last* track and echoed
+    # "track -1" as though that were the target.
+    test "an out-of-range value is rejected before anything is sent" do
+      assert {:error, message} =
+               Handlers.call("set_track_pan", %{"track" => 0, "value" => 2.0})
+
+      assert message =~ "Invalid parameters for set_track_pan"
+      assert message =~ "nothing was sent to Ableton"
+      refute_receive {:osc_out, _, _}
+    end
+
+    test "a negative track index is rejected before anything is sent" do
+      assert {:error, message} = Handlers.call("delete_track", %{"track" => -1})
+      assert message =~ "- track: must be at least 0 (got -1)"
+      refute_receive {:osc_out, _, _}
+    end
+
+    test "a missing required param names the param, not the tool" do
+      assert {:error, message} = Handlers.call("set_track_mute", %{"track" => 0})
+      assert message =~ "- muted: required but missing"
+      refute message =~ "Unknown tool"
+      refute_receive {:osc_out, _, _}
+    end
+
+    test "valid params still reach the wire" do
+      assert {:ok, _msg} = Handlers.call("set_track_pan", %{"track" => 0, "value" => 1.0})
+      assert_receive {:osc_out, "/live/track/set/panning", [0, 1.0]}
+    end
   end
 
   describe "format_browser_items/2" do
@@ -930,15 +973,22 @@ defmodule Seshat.Tools.HandlersTest do
   end
 
   describe "record_clip validation" do
-    # Only the transport-free error path: `ensure_bars/1` is checked before any
-    # Transport.query, so a bad `bars` value never reaches Ableton — same
-    # precedent as "set_clip_properties validation" above. Everything else in
-    # record_clip's guard chain queries Ableton and belongs in the smoke test.
+    # Only the transport-free error path: a bad `bars` value never reaches
+    # Ableton — same precedent as "set_clip_properties validation" above.
+    # Everything else in record_clip's guard chain queries Ableton and belongs
+    # in the smoke test.
+    #
+    # Since `bars` gained `minimum: 0.01`, the central schema validator in
+    # `Handlers.call/2` catches these before `ensure_bars/1` does, so the
+    # message is the schema one. `ensure_bars/1` stays as a belt, but its error
+    # branch is now unreachable through `call/2` — `bars` is either absent or
+    # already known to be a number ≥ 0.01 — so nothing below exercises it, and
+    # no test here can.
     test "rejects a zero bars count before touching Ableton" do
       assert {:error, message} =
                Handlers.call("record_clip", %{"track" => 0, "clip_slot" => 0, "bars" => 0})
 
-      assert message =~ "bars must be a positive number of bars"
+      assert message =~ "- bars: must be at least 0.01"
       assert message =~ "got 0"
     end
 
@@ -946,7 +996,7 @@ defmodule Seshat.Tools.HandlersTest do
       assert {:error, message} =
                Handlers.call("record_clip", %{"track" => 0, "clip_slot" => 0, "bars" => -4})
 
-      assert message =~ "bars must be a positive number of bars"
+      assert message =~ "- bars: must be at least 0.01"
       assert message =~ "got -4"
     end
 
@@ -954,7 +1004,8 @@ defmodule Seshat.Tools.HandlersTest do
       assert {:error, message} =
                Handlers.call("record_clip", %{"track" => 0, "clip_slot" => 0, "bars" => "four"})
 
-      assert message =~ "bars must be a positive number of bars"
+      assert message =~ "- bars: must be a number"
+      assert message =~ ~s(got "four")
     end
   end
 
@@ -1729,8 +1780,10 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     # Every non-nil term is truthy in Elixir, so a bare `if` would turn a
-    # boolean spelled as `0` into 1 — the opposite of intent. Reachable in
-    # API-key mode, where nothing validates a tool call against the schema.
+    # boolean spelled as `0` into 1 — the opposite of intent. `Validation` now
+    # rejects that shape in `call/2` for both modes, so this pins the direct
+    # caller of the public `clip_property_writes/2`, which does not go through
+    # it.
     test "a boolean spelled as 0/1 is not inverted" do
       assert Handlers.clip_property_writes(%{}, %{"looping" => 0, "legato" => 1}) ==
                {:ok, [{"looping", 0}, {"legato", 1}]}

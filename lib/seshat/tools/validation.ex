@@ -1,34 +1,47 @@
 defmodule Seshat.Tools.Validation do
   @moduledoc """
-  Validates tool parameters against the JSON Schema in `Seshat.Tools.Definitions`.
+  Enforces the JSON Schema each tool declares in `Seshat.Tools.Definitions`.
 
-  This is the authoritative bounds check for both entry modes. Neither one
-  enforces the schemas on its own: the Anthropic API does not validate tool
-  input at all, and Peri (MCP mode) checks a bound without re-checking the base
-  type, so `track: 1.5` satisfies `{:integer, {:gte, 0}}`. `Handlers.call/2`
-  runs this before dispatch, so a bad value is rejected before any OSC leaves
-  the process.
+  The schemas were advisory until this module existed. The Anthropic API does
+  not enforce tool schemas at all, so API-key mode had no validation layer
+  whatsoever; MCP mode had Peri, which checks bounds without re-checking the
+  base type (a `{:integer, {:gte, 0}}` guards on `is_numeric/1`), so a bounded
+  integer param accepted `1.5`. Both leaks mattered because AbletonOSC's Python
+  indexes Live's collections directly — `song.tracks[-1]` is the *last* track,
+  so `delete_track` with `track: -1` used to delete a real track and echo
+  "track -1" as if that were the target.
 
-  Rejection, never coercion: a schema saying `integer` means an integer, and
-  truncating `1.5` or clamping `2.0` to `1.0` would silently execute something
-  the model didn't ask for.
+  So this is the authoritative check, called from `Seshat.Tools.Handlers.call/2`
+  — the single dispatch point both entry modes funnel through — before anything
+  reaches `Seshat.OSC.Transport`. Because it reads the schemas rather than
+  hand-listing rules, every tool added later is covered by construction.
 
-  All violations are collected rather than stopping at the first, so the model
-  can fix everything in one retry. Each line ends with the parameter's own
-  schema description where it has one — that text is already the model-facing
-  teaching material, so it is reused instead of writing a second set of hints.
+  Pure: no process, no OSC, no side effects.
+
+  Deliberately *not* here: existence checks ("does track 7 exist?"). Those are
+  dynamic session state, not schema, and stay with the guard-getter pattern in
+  the handlers. Nothing is coerced, either — a schema saying `integer` rejects
+  `1.5` rather than truncating it, because silently executing something the
+  model didn't ask for is the defect class this module exists to kill.
   """
 
   alias Seshat.Tools.Definitions
 
-  @schemas Map.new(Definitions.all(), &{&1.name, &1.parameters})
+  @schemas Map.new(Definitions.all(), fn tool -> {tool.name, tool.parameters} end)
 
   @doc """
-  Checks `params` against the named tool's schema.
+  Validates `params` against the named tool's declared schema.
 
-  `params` must already be string-keyed (`Handlers.stringify_keys/1` runs
-  first). An unknown tool name is `:ok` — `Handlers.do_call/2`'s catch-all owns
-  the "Unknown tool" reply.
+  `params` must already be string-keyed — `Handlers.stringify_keys/1` runs
+  first, so the MCP mode's atom keys and the Anthropic API's string keys are
+  validated identically.
+
+  Returns `:ok` for an unknown tool name: `do_call/2`'s catch-all owns the
+  "Unknown tool" reply, and duplicating it here would only make the two
+  disagree later.
+
+  All violations are collected rather than stopping at the first, so a model
+  fixing its call gets the whole list in one retry.
   """
   @spec validate(String.t(), map()) :: :ok | {:error, String.t()}
   def validate(name, params) when is_binary(name) and is_map(params) do
@@ -37,87 +50,80 @@ defmodule Seshat.Tools.Validation do
         :ok
 
       {:ok, schema} ->
-        case object_violations(schema, params, "") do
+        case violations(schema, params, "") do
           [] -> :ok
-          violations -> {:error, message(name, violations)}
+          found -> {:error, message(name, found)}
         end
     end
   end
 
-  defp message(name, violations) do
-    lines = Enum.map_join(violations, "\n", &render/1)
-    "Invalid parameters for #{name} — nothing was sent to Ableton:\n#{lines}"
+  defp message(name, found) do
+    "Invalid parameters for #{name} — nothing was sent to Ableton:\n" <>
+      Enum.join(found, "\n")
   end
 
-  defp render({path, reason, nil}), do: "- #{path}: #{reason}"
-  defp render({path, reason, description}), do: "- #{path}: #{reason} — #{description}"
-
-  # Sorted so a multi-violation message reads the same way every time; map key
-  # order is not guaranteed.
-  defp object_violations(schema, params, prefix) do
-    properties = Map.get(schema, :properties, %{})
+  # Params not named in the schema are ignored: handler clauses already ignore
+  # unknown keys, and Peri governs the MCP wire.
+  defp violations(%{properties: properties} = schema, params, path) when is_map(params) do
     required = Map.get(schema, :required, [])
 
-    (Map.keys(properties) ++ required)
-    |> Enum.uniq()
-    |> Enum.sort()
-    |> Enum.flat_map(fn name ->
-      spec = Map.get(properties, name, %{})
-      path = prefix <> name
-
-      cond do
-        Map.has_key?(params, name) -> value_violations(path, spec, Map.get(params, name))
-        name in required -> [{path, "required but missing", Map.get(spec, :description)}]
-        true -> []
+    properties
+    |> Enum.sort_by(fn {name, _spec} -> name end)
+    |> Enum.flat_map(fn {name, spec} ->
+      case Map.fetch(params, name) do
+        {:ok, value} -> check(spec, value, join(path, name))
+        :error -> missing(name in required, spec, join(path, name))
       end
     end)
   end
 
-  # An enum spec also carries a `:type`, but membership is the tighter check and
-  # subsumes it.
-  defp value_violations(path, %{enum: values} = spec, value) do
+  defp violations(_schema, _params, _path), do: []
+
+  defp missing(true, spec, path), do: [violation(path, "required but missing", spec)]
+  defp missing(false, _spec, _path), do: []
+
+  # An enum is the tighter constraint and subsumes the type check, matching
+  # `Seshat.MCP.Schema`'s ordering. Otherwise the type is checked first and the
+  # bounds only afterwards: Elixir's term ordering would happily conclude
+  # `"abc" >= 0`, so an unchecked type makes the bounds comparison meaningless.
+  defp check(%{enum: values} = spec, value, path) do
     if value in values do
       []
     else
       allowed = Enum.map_join(values, ", ", &inspect/1)
-      [{path, "must be one of #{allowed} (got #{inspect(value)})", Map.get(spec, :description)}]
+      [violation(path, "must be one of #{allowed} (got #{inspect(value)})", spec)]
     end
   end
 
-  defp value_violations(path, spec, value) do
-    case type_error(Map.get(spec, :type), value) do
-      nil ->
-        bounds_violations(path, spec, value) ++ nested_violations(path, spec, value)
-
-      expected ->
-        [{path, "must be #{expected} (got #{inspect(value)})", Map.get(spec, :description)}]
+  defp check(spec, value, path) do
+    if type_ok?(spec, value) do
+      bounds(spec, value, path) ++ nested(spec, value, path)
+    else
+      [violation(path, "must be #{type_name(spec)} (got #{inspect(value)})", spec)]
     end
   end
 
-  # Returns the expected-type phrase when the value is wrong, or nil when it is
-  # acceptable. Type checking is what keeps the bounds comparison honest —
-  # Elixir's term ordering would happily conclude `"abc" >= 0`.
-  defp type_error("integer", value) when is_integer(value), do: nil
-  defp type_error("integer", _value), do: "an integer"
-  defp type_error("number", value) when is_number(value), do: nil
-  defp type_error("number", _value), do: "a number"
-  defp type_error("string", value) when is_binary(value), do: nil
-  defp type_error("string", _value), do: "a string"
-  defp type_error("boolean", value) when is_boolean(value), do: nil
-  defp type_error("boolean", _value), do: "a boolean"
-  defp type_error("array", value) when is_list(value), do: nil
-  defp type_error("array", _value), do: "an array"
-  defp type_error("object", value) when is_map(value), do: nil
-  defp type_error("object", _value), do: "an object"
-  defp type_error(_type, _value), do: nil
+  defp type_ok?(%{type: "integer"}, value), do: is_integer(value)
+  defp type_ok?(%{type: "number"}, value), do: is_number(value)
+  defp type_ok?(%{type: "string"}, value), do: is_binary(value)
+  defp type_ok?(%{type: "boolean"}, value), do: is_boolean(value)
+  defp type_ok?(%{type: "array"}, value), do: is_list(value)
+  defp type_ok?(%{type: "object"}, value), do: is_map(value) and not is_struct(value)
+  defp type_ok?(_spec, _value), do: true
 
-  defp bounds_violations(path, spec, value) when is_number(value) do
-    description = Map.get(spec, :description)
+  defp type_name(%{type: "integer"}), do: "an integer"
+  defp type_name(%{type: "number"}), do: "a number"
+  defp type_name(%{type: "string"}), do: "a string"
+  defp type_name(%{type: "boolean"}), do: "a boolean"
+  defp type_name(%{type: "array"}), do: "an array"
+  defp type_name(%{type: "object"}), do: "an object"
 
+  # Inclusive, and only reached once the value is known to be the right type.
+  defp bounds(spec, value, path) when is_number(value) do
     below =
       case Map.fetch(spec, :minimum) do
         {:ok, min} when value < min ->
-          [{path, "must be at least #{inspect(min)} (got #{inspect(value)})", description}]
+          [violation(path, "must be at least #{inspect(min)} (got #{inspect(value)})", spec)]
 
         _ ->
           []
@@ -126,7 +132,7 @@ defmodule Seshat.Tools.Validation do
     above =
       case Map.fetch(spec, :maximum) do
         {:ok, max} when value > max ->
-          [{path, "must be at most #{inspect(max)} (got #{inspect(value)})", description}]
+          [violation(path, "must be at most #{inspect(max)} (got #{inspect(value)})", spec)]
 
         _ ->
           []
@@ -135,17 +141,26 @@ defmodule Seshat.Tools.Validation do
     below ++ above
   end
 
-  defp bounds_violations(_path, _spec, _value), do: []
+  defp bounds(_spec, _value, _path), do: []
 
-  defp nested_violations(path, %{type: "array", items: items}, value) when is_list(value) do
+  defp nested(%{type: "array", items: items}, value, path) when is_list(value) do
     value
     |> Enum.with_index()
-    |> Enum.flat_map(fn {item, index} -> value_violations("#{path}[#{index}]", items, item) end)
+    |> Enum.flat_map(fn {item, index} -> check(items, item, "#{path}[#{index}]") end)
   end
 
-  defp nested_violations(path, %{type: "object"} = spec, value) when is_map(value) do
-    object_violations(spec, value, path <> ".")
+  defp nested(%{type: "object"} = spec, value, path), do: violations(spec, value, path)
+  defp nested(_spec, _value, _path), do: []
+
+  # The parameter's own description is already the model-facing teaching text,
+  # so a violation reuses it rather than inventing a second set of hints.
+  defp violation(path, text, spec) do
+    case Map.get(spec, :description) do
+      nil -> "- #{path}: #{text}"
+      description -> "- #{path}: #{text} — #{description}"
+    end
   end
 
-  defp nested_violations(_path, _spec, _value), do: []
+  defp join("", name), do: name
+  defp join(path, name), do: "#{path}.#{name}"
 end

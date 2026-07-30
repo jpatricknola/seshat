@@ -442,6 +442,61 @@ Report which rules held and which drifted, and say which channel each one is
 in — a rule that fails after moving into a tool description is evidence about
 the division in `Seshat.Instructions`'s moduledoc, not just about wording.
 
+## If the change touches the advertised MCP schema (`Seshat.MCP.Schema` or a tool's JSON Schema)
+
+`mix test` asserts the *generated* `input_schema` inside the BEAM. It cannot tell
+you whether a real client accepts what that encodes to, and the failure mode is
+not one bad call — a client that rejects the schema refuses the **whole list**,
+so every tool silently disappears and the session looks like Seshat was never
+connected.
+
+1. **List the tools over a real handshake.** Not through this conversation's tool
+   list: a client caches `tools/list` at connect, so after restarting the server
+   your cached list is the *old* schema and proves nothing. This is also how you
+   tell "the server is wrong" from "my client is stale" — the distinction that
+   otherwise costs twenty minutes.
+
+   ```bash
+   python3 -c '
+   import json, urllib.request
+   U = "http://localhost:4000/mcp"
+   H = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+   def post(body, sid=None):
+       h = dict(H)
+       if sid: h["Mcp-Session-Id"] = sid
+       r = urllib.request.urlopen(urllib.request.Request(U, json.dumps(body).encode(), h), timeout=15)
+       raw = r.read().decode()
+       if raw.startswith(("event:", "data:")):
+           raw = [l[5:].strip() for l in raw.splitlines() if l.startswith("data:")][0]
+       return json.loads(raw), r.headers.get("Mcp-Session-Id")
+   _, sid = post({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}})
+   post({"jsonrpc":"2.0","method":"notifications/initialized"}, sid)
+   t, _ = post({"jsonrpc":"2.0","id":2,"method":"tools/list"}, sid)
+   tools = t["result"]["tools"]
+   print("tools listed:", len(tools))
+   print(json.dumps(next(x for x in tools if x["name"] == "set_track_pan")["inputSchema"]["properties"]["value"]))
+   '
+   ```
+
+   The count must match `Definitions.all()`, and the property you changed must
+   carry what you intended. Swap `set_track_pan`/`value` for whatever moved.
+
+2. **Then Claude Desktop specifically**, in a fresh conversation: confirm the
+   tools appear at all. It is the client nothing else here exercises, and the one
+   with a history of failing quietly (it truncates server instructions at 2,048
+   characters without saying so). A schema it dislikes shows up as an empty tool
+   list, not an error message.
+
+3. **Call one tool per changed shape** and confirm a valid call still lands and
+   an invalid one is refused without reaching Live — read the target back, since
+   a refusal that silently *did* send is the thing worth catching.
+
+Recorded 2026-07-30, when bounds moved into the advertised schema: the encoded
+shape became `oneOf: [{"type": "number", "minimum": …, "maximum": …}, {"type":
+"integer", …}]`. Bounds *inside* `oneOf` branches were the untested combination;
+all 53 tools listed fine over a raw handshake, and Claude Desktop was not
+covered.
+
 ## Clean up and report
 
 5. Delete any scratch tracks/scenes/clips you created (`delete_track`,
@@ -450,3 +505,44 @@ the division in `Seshat.Instructions`'s moduledoc, not just about wording.
 6. Report: what you exercised, what you verified by reading state back, what
    failed or timed out, and what can only be judged by ear (sound choice,
    levels, timing feel) — flag those explicitly for the user to check.
+7. **If the branch has an open PR, write the results into its body.** A smoke
+   test is the only evidence that the live half works, and it is exactly the
+   evidence a reviewer cannot reproduce — the PR body is where it belongs.
+
+   ```bash
+   gh pr view --json number,body --jq .number   # empty output = no PR, stop here
+   ```
+
+   Read the existing body, edit it, and write it back from a file:
+
+   ```bash
+   gh pr view --json body --jq .body > /tmp/pr-body.md
+   # edit /tmp/pr-body.md, then:
+   gh pr edit --body-file /tmp/pr-body.md
+   ```
+
+   **Never pass `--body` inline and never retype the body from memory** — both
+   silently discard whatever you did not reproduce, and the plan report and
+   review verdict already in there are not yours to drop.
+
+   Add (or, on a re-run, *replace*) one section headed
+   "Live verification — smoke-tested DATE", taking DATE from the `date`
+   command, placed directly after the summary so it reads before the
+   implementation detail. Put in it:
+
+   - the headline behaviour, stated as what a user would notice, not as a tool
+     call: what was broken before and what happens now;
+   - a table of what you exercised and what came back — normal call, boundary,
+     invalid input, and the read-back that proves the effect actually landed;
+   - **what you did not cover, named specifically.** An untested client, a
+     hardware path you had no input routed for, a check you skipped because
+     Live was in the wrong state. A smoke test that reports only successes reads
+     as full coverage and quietly retires the checks nobody ran.
+
+   Correct anything the body now states falsely — a body written before the run
+   usually carries an open question the run just answered, and leaving it says
+   the work is still outstanding.
+
+   Findings that are real but out of scope for the branch go in the body as
+   findings *and* into [docs/ROADMAP.md](docs/ROADMAP.md) as an issue, cited by
+   title. The body is read once at merge; the roadmap is the queue.

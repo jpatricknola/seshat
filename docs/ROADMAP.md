@@ -1,22 +1,25 @@
 # Roadmap
 
 The single living list of what to do next — **features, defects and security
-work in one ranked queue.** **#1 is the biggest win, work top to bottom.**
-Ranking is **impact-per-effort**: mission impact weighed against cost, so a
-medium-impact quick win outranks a high-impact slog. Issue numbers are ranks,
-not stable identifiers — when something ships, delete its issue and let the rest
-renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan
-doc, move that doc to [archive/](archive/) with a status banner.
+work in one ranked queue.** **The top item is the biggest win, work top to
+bottom.** Ranking is **impact-per-effort**: mission impact weighed against cost,
+so a medium-impact quick win outranks a high-impact slog. Issue numbers are
+ranks, not stable identifiers — when something ships, delete its issue and let
+the rest renumber (the `/ship` skill handles this). If a shipped issue had a
+detailed plan doc, move that doc to [archive/](archive/) with a status banner.
 
-**So cite an item by its title, never by its rank, anywhere outside this file.**
+**So cite an item by its title, never by its rank — including inside this file.**
 A rank is correct only until the next ship, and a stale one doesn't look stale —
 it silently points at a different item. Every cross-reference written by rank has
 already gone wrong at least once ("roadmap #5 and #12" in the smoke-test skill
 meant quantize and browser preview when written; three ships later those ranks
-were two unrelated defects). Inside this file ranks are fine — they renumber
-together. Dated historical records ([archive/](archive/), validation-run
-findings) keep whatever rank was true when written; they are history, not
-pointers.
+were two unrelated defects). In-file references used to be exempt on the grounds
+that they renumber together — they don't: inserting one issue on 2026-07-30
+turned up two in-file pointers that were *already* off by one, silently pointing
+at the wrong neighbour. The heading numbers are the ranking and renumber
+wholesale; every reference to an issue is by title. Dated historical records
+([archive/](archive/), validation-run findings) keep whatever rank was true when
+written; they are history, not pointers.
 [archive/](archive/) holds point-in-time plans and decision records — never treat
 those as current.
 
@@ -44,11 +47,12 @@ The canonical OSC address reference is
 [abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
 address — naming is irregular, and a wrong address fails silently.
 
-**#1–#2 are all defects, and that is the point.** The feature queue is
-displaced because they are either near-free or silently corrupting data. #8
-and #9 are one catalog pass.
+**The top item is a defect, and that is the point.** The feature queue is
+displaced because it is silently corrupting data — an unverified `create_track`
+index. "Make catalog persistence atomic" and "Catalog staleness check" are one
+catalog pass.
 
-**The play-and-keep arc (#4 · #6):** today the agent generates and the user
+**The play-and-keep arc (quantize · groove):** today the agent generates and the user
 listens. `capture_midi` (shipped 2026-07-28), per-clip properties (shipped
 2026-07-29 — a clip's own loop brace, play markers, and launch settings are now
 readable and writable), and session record (shipped 2026-07-29 —
@@ -61,36 +65,7 @@ with the fork.
 
 ---
 
-## #1 · Enforce tool ranges and non-negative indices centrally
-
-**Goal:** out-of-range numbers and negative indices are rejected before they
-reach Ableton, in one place that covers both entry modes.
-
-**Why:** two defects with one seam. `minimum: 0` is present on the newer tools
-and missing on the older ones (`set_track_pan`, `set_track_volume`,
-`delete_track`, `duplicate_track`, `set_track_name`), and Python indexes Live's
-collections directly — so `track: -1` operates on the *last* track while the
-reply echoes "track -1". Separately, [schema.ex:45](../lib/seshat/mcp/schema.ex#L45)
-turns every JSON Schema `number` into an unconstrained
-`{:either, {:float, :integer}}`, so `set_track_pan` accepts `2.0` against a
-declared maximum of `1.0`.
-
-**Planner notes:**
-- **Validate in `Handlers`.** The review framed the bounds loss as an MCP
-  conversion problem, which implies API-key mode is fine — it isn't: that path
-  has no validation layer at all and the Anthropic API does not enforce tool
-  schemas either. `Handlers.call/2` is the single dispatch point both modes
-  share.
-- Correct `MCP.Schema` too, so the advertised schema matches what is enforced.
-- **No Python bounds checks.** The review's third bullet would diverge
-  `track.py`, `clip.py` and `scene.py` permanently for redundant defence once
-  Elixir validates and the socket is loopback-bound.
-- The realistic caller is a model hallucinating Python's `-1 == last`, not an
-  attacker.
-- Findings #3 and #4 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
-- Plan: [PLAN_enforce_tool_ranges.md](PLAN_enforce_tool_ranges.md).
-
-## #2 · Verify `create_track` actually succeeds
+## #1 · Verify `create_track` actually succeeds
 
 **Goal:** confirm the track count rose before returning an index and naming it.
 
@@ -109,7 +84,7 @@ loads or note writes then target the wrong track.
 - Finding #6 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
 - Plan: [PLAN_verify_create_track.md](PLAN_verify_create_track.md).
 
-## #3 · `start_new_project` — the setup wizard, and prompt budget back
+## #2 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -154,7 +129,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #4 · `quantize_clip` — the most common MIDI cleanup
+## #3 · `quantize_clip` — the most common MIDI cleanup
 
 **Goal:** quantize a clip's notes to a grid with an amount (0–1 for partial
 quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
@@ -179,7 +154,7 @@ burns tool calls.
 - Partial quantize (amount < 1.0) is the musically useful form — full
   quantize kills feel. The description should teach that.
 
-## #5 · `set_time_signature`
+## #4 · `set_time_signature`
 
 **Goal:** `/live/song/set/signature_numerator` +
 `/live/song/set/signature_denominator`.
@@ -191,7 +166,7 @@ with a manual step today.
 **Planner notes:** two addresses, one tool. Session state already listens to
 both properties, so the echo can verify against the mirror.
 
-## #6 · Groove amount — "make it swing"
+## #5 · Groove amount — "make it swing"
 
 **Goal:** read/set the global groove amount:
 `/live/song/get|set/groove_amount`.
@@ -201,6 +176,51 @@ Small, upstream, and it completes the play-and-keep arc's editing vocabulary.
 
 **Planner notes:** single scalar property, transport-tool shaped. Check the
 value range in the API docs rather than assuming 0–1.
+
+## #6 · Model-readable rejections for invalid tool parameters in MCP mode
+
+**Goal:** an out-of-range or wrong-typed parameter comes back to the model as
+`Seshat.Tools.Validation`'s message — naming the parameter, the bound, the value
+it got, and the parameter's own description — in MCP mode as well as API-key
+mode.
+
+**Why:** bounds are enforced in both modes now ("Enforce tool ranges and
+non-negative indices centrally", shipped 2026-07-30), but in MCP mode Peri
+rejects at the wire first, and a Peri rejection is a JSON-RPC error rather than
+a tool result. Measured against the running server on 2026-07-30:
+
+- Claude Code surfaced `set_track_pan value: 2.0` to the model as nothing but
+  `MCP error -32602: Invalid params` — the explanatory `data.message` never
+  reached it.
+- That detail is Elixir internals anyway: `expected either {:float, {:range,
+  ...}} or {:integer, {:range, ...}}, got: 2.0`, and `should be greater then or
+  equal to 0` (Peri's own typo).
+- For a nested array it is **empty**: a bad note velocity produces `"notes: "` —
+  no note index, no field, no reason.
+
+The designed message reaches the model only in the narrow band where Peri passes
+and the central validator catches, such as a non-integer index (`track: 1.5`). A
+model that cannot read why its call was refused cannot fix it, and this feature
+made refusals far more common than they used to be — previously the bad value
+went through to Live.
+
+**Planner notes:**
+- The seam is the generated component in
+  [mcp/tools.ex](../lib/seshat/mcp/tools.ex): when Peri's `validate_input`
+  fails, run `Seshat.Tools.Validation.validate/2` against the raw params and
+  return its message as a tool result instead of letting the protocol error
+  through.
+- **Keep the bounds in the advertised schema.** That half shipped and is the
+  client's only machine-readable contract. This item is about which layer
+  *speaks*, not which layer knows.
+- Decide the fallback for a violation the central validator does not model (an
+  unknown property, a malformed array), where Peri refuses but `validate/2`
+  returns `:ok`. Falling back to Peri's text is acceptable; falling through to
+  the handler is not.
+- Nothing in `mix test` sees this: the suite exercises `Handlers.call/2` and the
+  components' `validate_input` separately, never a client's view of a refusal.
+  Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
+  handshake.
 
 ## #7 · Preserve partial agent results at the tool-iteration limit
 
@@ -238,8 +258,8 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
   empty table. Real, but reindex is a rare user-initiated operation that freezes
   Live's UI for up to a minute and that the user is waiting on; a few
   milliseconds of empty results inside that window is not observable.
-- **Do this in one pass with #9** — same writer, and #9 needs a built-at
-  timestamp written there anyway.
+- **Do this in one pass with "Catalog staleness check"** — same writer, and that
+  issue needs a built-at timestamp written there anyway.
 - Finding #8 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
 
 ## #9 · Catalog staleness check — reindex without being asked
@@ -257,7 +277,8 @@ stays announced and cause-driven instead of manual or unprompted.
 
 **Planner notes:**
 - `catalog.json` needs a built-at timestamp if the merge writer doesn't
-  already record one — which is why this pairs with #8.
+  already record one — which is why this pairs with "Make catalog persistence
+atomic".
 - The Ableton DB path comes from `Seshat.Library.AbletonDB` (per-machine;
   the Windows caveat stays with "Deliberately not planned", not this issue).
 - Decide the surfacing point: a line in `search_library` replies, a startup
@@ -418,10 +439,10 @@ a fixed set of realistic "describe a sound" queries, so every further catalog
 lever gets measured instead of argued.
 
 **Why:** lever №9 of [sound-search-options.md](sound-search-options.md),
-estimated at a morning's work. It exists to **gate #16–#21**: after #11 lands,
-the eval decides whether any of the remaining catalog levers are still worth
-buying. Sequenced after #11 because #11 is a certain win with or without
-numbers.
+estimated at a morning's work. It exists to **gate the catalog levers below it**:
+after "Catalog vocabulary" lands, the eval decides whether any of the remaining
+catalog levers are still worth buying. Sequenced after "Catalog vocabulary"
+because that one is a certain win with or without numbers.
 
 **Planner notes:** the result-quality work already used a six-query/77-slot
 benchmark informally (see
@@ -431,10 +452,10 @@ catalog — no Ableton needed.
 
 ---
 
-**Gate: issues #16–#21 are catalog levers that wait on #15's eval.** Buy each
-only if the eval still shows the miss it targets after #11 lands. They're
-ranked by [sound-search-options.md](sound-search-options.md)'s
-impact-per-effort ordering.
+**Gate: the six issues below are catalog levers that wait on "Search eval
+harness".** Buy each only if the eval still shows the miss it targets after
+"Catalog vocabulary" lands. They're ranked by
+[sound-search-options.md](sound-search-options.md)'s impact-per-effort ordering.
 
 ## #16 · Widen the search slate at tied score bands
 
@@ -495,7 +516,7 @@ reindex time, using an API key or an MCP-client-driven tagging turn.
 
 **Why:** lever №5 — highest ceiling (it attacks the thin-signal problem
 directly: ~200 of 5,795 entries say anything real about their sound) and
-highest cost. Last resort: buy only if the #15 eval still shows first-slate
+highest cost. Last resort: buy only if the search eval still shows first-slate
 misses on thin-tagged entries after everything above. Concrete evidence from
 the 2026-07-28 validation run: for "warm, slightly out-of-tune electric
 piano," the character lived only in preset *names* — E-Piano Rusty, Old
@@ -541,7 +562,8 @@ gain is latency and tokens, not user-visible experience, hence the rank.
 
 **Planner notes:** needs device add/remove listeners per track — check what
 upstream offers before assuming a new handler is required. The clip-grid
-precedent applies (see #26 note): query-on-demand shipped first, promotion to
+precedent applies (see the "Clip grid in session state" note): query-on-demand
+shipped first, promotion to
 push state only once usage justified the subscription surface. Usage now
 plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
@@ -578,8 +600,8 @@ into push-fresh `Session.State`.
 wait for evidence the grid is read constantly. Session record has now shipped
 alongside `capture_midi`, so the trigger this item was waiting on has
 happened — worth checking whether grid-read frequency actually justifies the
-subscription surface before building it. Index-keyed listeners like #23's —
-these are ordinary fork commits on the fixed base class.
+subscription surface before building it. Index-keyed listeners, like the
+device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
 ## #27 · Small OSC breadth — grab bag
 
