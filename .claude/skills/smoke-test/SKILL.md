@@ -77,9 +77,8 @@ whole surface. Before anything else:
 
 ## If the change touches an address with no tool yet
 
-`/live/clip/quantize` and `/live/browser/preview_item` / `stop_preview` are
-served by the fork but have no Seshat tool (roadmap: `quantize_clip` and browser
-preview audition), so the MCP
+`/live/browser/preview_item` and `/live/browser/stop_preview` are served by the
+fork but have no Seshat tool (roadmap: browser preview audition), so the MCP
 surface can't reach them. Drive them by raw OSC — **send-only**, so nothing
 binds port 11001 and Seshat's own reader stays alive:
 
@@ -88,14 +87,10 @@ python3 -c '
 import sys; sys.path.insert(0, "priv/AbletonOSC")
 from pythonosc.udp_client import SimpleUDPClient
 c = SimpleUDPClient("127.0.0.1", 11000)
-c.send_message("/live/clip/quantize", [0, 0, 8, 1.0])   # track 0, clip 0, 1/16, full
+c.send_message("/live/browser/preview_item", ["query:Sounds#Bass:FileId_5200"])
 '
 ```
 
-- **Quantize**: record or write a deliberately sloppy MIDI clip, then quantize
-  it. Grid `8` is sixteenths — if it lands on half notes, the handler took the
-  wrong enum. Then undo and re-run with amount `0.5`: the notes should move
-  halfway toward the grid, not all the way.
 - **Preview**: `preview_item` with a `uri` from `search_library`, with Live's
   cue output routed somewhere audible and the cue level up. Confirm it sounds
   *without* anything being added to the set, and that `stop_preview` silences
@@ -196,6 +191,49 @@ rather than from any run:
    rather than burning fourteen timeouts.
 7. **Follow cam.** A brace edit leaves the clip selected with the note editor
    open.
+
+## If the change touches `quantize_clip`
+
+`/live/clip/quantize` **never replies** — success, a bad grid integer, and a
+Remote Scripts copy predating the fork are all the same silence on the wire — so
+nothing in `mix test` can tell you the notes moved, let alone where to. Drive it
+through the tool (not raw OSC): the string→int mapping, the before/after diff
+and the reply wording only exist in `quantize_clip`.
+
+Play or write a deliberately sloppy MIDI clip first — notes a little either side
+of the beat, at least one pair of same-pitch notes close together.
+
+1. **The headline, and the check that catches the enum.** `"1/16"` at amount
+   1.0. Notes land on the grid in the note editor and the reply's counts match
+   what visibly moved. **Confirm the landing positions are 1/16ths — 0.25-beat
+   spacing — and not 1/32nds.** That single observation is what caught the
+   documented `GridQuantization` table being wrong in every row (measured
+   31 Jul 2026); it is the regression check for anyone "fixing"
+   `grid_quantization/1` back toward an older doc.
+2. **Partial strength.** `undo`, then the same grid at amount 0.5. Notes move
+   *toward* the grid, not onto it, and the reply still counts them. Live
+   interpolates linearly: a note at 1.37 with a 1.25 target lands at 1.31.
+3. **Already tight.** Quantize the same clip twice at 1.0. The second call
+   reports "no note changed" — read that reply and confirm its stale-install
+   hint doesn't read as an error, because here silence is normal.
+4. **Triplets.** `"1/8T"` and `"1/16T"` on a straight part: notes land on
+   thirds and sixths of a beat. The old docs claimed triplet grids did not
+   exist, so this confirms the tool reaches values that were written off.
+5. **Collisions.** A full quantize that stacks two same-pitch notes. Expect the
+   count-change wording: same-point collisions **merge** into one note keeping
+   the *later* velocity, while a post-move same-pitch overlap instead **trims**
+   the earlier note's duration. Both are Live's behaviour, measured — the reply
+   should say which happened.
+6. **Audio clip.** Rejected cleanly by `ensure_midi_clip`, with no warp markers
+   touched.
+7. **Refusals cost nothing.** `amount: 0` errors immediately (0% strength moves
+   nothing), and an empty slot errors via `ensure_clip` — neither should take a
+   guard timeout.
+8. **Undo.** One `undo` restores the take.
+9. **Non-4/4.** The mapping measured identical in 4/4 and 6/8, so a quantize in
+   an odd meter is a cheap confirmation nothing meter-dependent crept in.
+10. **Follow cam.** The quantized clip is left selected with the note editor
+    open — the notes snapping on screen *is* the confirmation.
 
 ## If the change touches the recording tools (`record_clip` / `stop_recording`)
 

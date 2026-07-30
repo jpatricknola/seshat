@@ -1840,6 +1840,198 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "grid_quantization/1" do
+    # These six integers were MEASURED AGAINST A RUNNING LIVE on 2026-07-31 —
+    # one clip per enum value, probe notes chosen so each candidate grid lands
+    # somewhere distinguishable, read back with /live/clip/get/notes.
+    #
+    # docs/abletonosc-api-docs.md and the fork's clip.py comment both used to say
+    # `5=1/2, 6=1/4, 7=1/8, 8=1/16, 9=1/32`, and every row of that was wrong.
+    # Both have since been corrected to match this table. If you are here because
+    # some other document disagrees with these numbers, the instrument won: do
+    # not "fix" this back. The address never replies, so a wrong integer here is
+    # silent everywhere except in Live, where notes land on the wrong grid.
+    test "maps every offered grid string to its measured GridQuantization int" do
+      assert Handlers.grid_quantization("1/4") == 1
+      assert Handlers.grid_quantization("1/8") == 2
+      assert Handlers.grid_quantization("1/8T") == 3
+      assert Handlers.grid_quantization("1/16") == 5
+      assert Handlers.grid_quantization("1/16T") == 6
+      assert Handlers.grid_quantization("1/32") == 8
+    end
+
+    test "covers exactly the grids the tool schema offers" do
+      offered =
+        Seshat.Tools.Definitions.all()
+        |> Enum.find(&(&1.name == "quantize_clip"))
+        |> get_in([:parameters, :properties, "grid", :enum])
+
+      for grid <- offered do
+        assert is_integer(Handlers.grid_quantization(grid)),
+               "quantize_clip offers grid #{inspect(grid)} but grid_quantization/1 has no clause"
+      end
+    end
+  end
+
+  describe "send_quantize/4" do
+    setup :osc_sink
+
+    # The one test this tool cannot ship without. /live/clip/quantize never
+    # replies, so a typo'd address or a swapped grid/amount argument order passes
+    # grid_quantization/1, passes format_quantize_result/7, passes the Python
+    # tripwire in vendored_addresses_test, and then fails silently inside Live.
+    # Only the wire shows it.
+    #
+    # Safe at this layer despite the no-Transport.query/3 rule: send_message/2 is
+    # fire-and-forget, so the guards and notes reads are never entered.
+    test "puts the address, the measured grid int and a float amount on the wire" do
+      assert :ok = Handlers.send_quantize(0, 0, "1/16", 0.5)
+      assert_receive {:osc_out, "/live/clip/quantize", [0, 0, 5, 0.5]}
+    end
+
+    test "forces float encoding even when the amount arrives as an integer" do
+      assert :ok = Handlers.send_quantize(2, 3, "1/8T", 1)
+      assert_receive {:osc_out, "/live/clip/quantize", [2, 3, 3, 1.0]}
+    end
+  end
+
+  describe "format_quantize_result/7" do
+    # note/1 is the shared builder from "format_clip_notes/5" above.
+    test "reports how many of the clip's notes moved, and names the clip" do
+      before_notes = [
+        note(%{pitch: 60, start_time: 0.09}),
+        note(%{pitch: 62, start_time: 1.37}),
+        note(%{pitch: 64, start_time: 2.0})
+      ]
+
+      after_notes = [
+        note(%{pitch: 60, start_time: 0.0}),
+        note(%{pitch: 62, start_time: 1.25}),
+        note(%{pitch: 64, start_time: 2.0})
+      ]
+
+      result =
+        Handlers.format_quantize_result(1, 0, "Keys", "1/16", 0.6, before_notes, after_notes)
+
+      assert result =~ ~s{Quantized "Keys" (track 1, slot 0)}
+      assert result =~ "2 of 3 note(s) moved toward the 1/16 grid at 60% strength"
+      assert result =~ "undo reverses it"
+    end
+
+    test "falls back to the indices when the name read failed" do
+      result =
+        Handlers.format_quantize_result(
+          1,
+          0,
+          nil,
+          "1/16",
+          1.0,
+          [note(%{start_time: 0.09})],
+          [note(%{start_time: 0.0})]
+        )
+
+      assert result =~ "Quantized the clip in slot 0 on track 1"
+      assert result =~ "100% strength"
+    end
+
+    test "hedges the no-change case toward a stale AbletonOSC install" do
+      notes = [note(%{pitch: 60, start_time: 0.0}), note(%{pitch: 64, start_time: 1.0})]
+
+      result = Handlers.format_quantize_result(0, 0, "Keys", "1/16", 0.5, notes, notes)
+
+      assert result =~ "no note changed"
+      assert result =~ "may already sit on the 1/16 grid"
+      assert result =~ "mix abletonosc.install"
+      refute result =~ "moved toward"
+    end
+
+    test "states the merge when same-pitch notes collided on one grid point" do
+      before_notes = [
+        note(%{pitch: 64, start_time: 2.02, velocity: 100}),
+        note(%{pitch: 64, start_time: 2.10, velocity: 110}),
+        note(%{pitch: 60, start_time: 0.0})
+      ]
+
+      after_notes = [
+        note(%{pitch: 64, start_time: 2.0, velocity: 110}),
+        note(%{pitch: 60, start_time: 0.0})
+      ]
+
+      result =
+        Handlers.format_quantize_result(2, 1, "Hats", "1/16", 1.0, before_notes, after_notes)
+
+      assert result =~ "2 of 3 note(s) moved"
+      assert result =~ "now has 2 note(s) rather than 3"
+      assert result =~ "merged into the note there, keeping the later velocity"
+      assert result =~ "Undo restores them"
+    end
+
+    test "states the trim when the count held but a note got shorter" do
+      before_notes = [
+        note(%{pitch: 64, start_time: 2.02, duration: 0.5}),
+        note(%{pitch: 64, start_time: 2.40, duration: 0.5})
+      ]
+
+      after_notes = [
+        note(%{pitch: 64, start_time: 2.0, duration: 0.25}),
+        note(%{pitch: 64, start_time: 2.25, duration: 0.5})
+      ]
+
+      result =
+        Handlers.format_quantize_result(0, 0, "Bass", "1/16", 1.0, before_notes, after_notes)
+
+      assert result =~ "2 of 2 note(s) moved"
+      assert result =~ "Some note lengths changed too"
+      assert result =~ "trimmed the earlier one"
+    end
+
+    test "says so rather than inventing a reason when the count grew" do
+      result =
+        Handlers.format_quantize_result(
+          0,
+          0,
+          "Keys",
+          "1/8",
+          1.0,
+          [note(%{pitch: 60, start_time: 0.09})],
+          [note(%{pitch: 60, start_time: 0.0}), note(%{pitch: 62, start_time: 0.5})]
+        )
+
+      assert result =~ "quantize is not expected to add notes"
+      assert result =~ "get_clip_notes"
+    end
+  end
+
+  describe "quantize_clip" do
+    # No socket and no sink on purpose: a zero amount is rejected before the
+    # first guard, so nothing may reach Transport at all. If this test ever
+    # starts timing out, the early return has been lost.
+    test "rejects 0% strength before touching Ableton" do
+      assert {:error, message} =
+               Handlers.call("quantize_clip", %{
+                 "track" => 0,
+                 "clip_slot" => 0,
+                 "grid" => "1/16",
+                 "amount" => 0.0
+               })
+
+      assert message =~ "0% strength"
+      assert message =~ "try 0.5"
+    end
+
+    test "rejects an integer 0 the same way" do
+      assert {:error, message} =
+               Handlers.call("quantize_clip", %{
+                 "track" => 0,
+                 "clip_slot" => 0,
+                 "grid" => "1/16",
+                 "amount" => 0
+               })
+
+      assert message =~ "0% strength"
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})

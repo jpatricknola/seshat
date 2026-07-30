@@ -1356,6 +1356,50 @@ defmodule Seshat.Tools.Definitions do
         },
         required: ["value"]
       }
+    },
+    %{
+      name: "quantize_clip",
+      description:
+        "Quantize a MIDI clip's notes toward a rhythmic grid using Live's own " <>
+          "quantize — one call replaces the read→remove→rewrite dance, and a " <>
+          "single undo reverses it. Track and " <>
+          "clip_slot are 0-based; slot N sits in scene N. grid is the note value " <>
+          "to snap to — \"1/16\" is the usual choice for played parts, and the " <>
+          "T values are triplet grids for shuffled or triplet-feel playing that " <>
+          "a straight grid would flatten. Only note starts move: a note keeps " <>
+          "its length unless the move lands it on another note of the same " <>
+          "pitch, which merges the pair. " <>
+          "amount is how far each note moves toward the grid: 1.0 " <>
+          "lands exactly on it, which sounds mechanical on a played take; " <>
+          "0.5–0.8 tightens the timing while keeping the human feel — start " <>
+          "around 0.5 after capture_midi or record_clip, listen, and repeat or " <>
+          "undo. The reply reports how many notes moved. MIDI clips only: an " <>
+          "audio clip is rejected with an error, not warped.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"},
+          "grid" => %{
+            type: "string",
+            enum: ["1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4"],
+            description:
+              "Note value to quantize to. \"1/16\" suits most played parts. " <>
+                "The T values are triplet grids — use them for parts played in " <>
+                "triplet or shuffle feel, which a straight grid would flatten. " <>
+                "Grids coarser than 1/4 are not available."
+          },
+          "amount" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description:
+              "Quantize strength: 1.0 = exactly on the grid (mechanical), " <>
+                "0.5–0.8 = tightened but still human"
+          }
+        },
+        required: ["track", "clip_slot", "grid", "amount"]
+      }
     }
   ]
 

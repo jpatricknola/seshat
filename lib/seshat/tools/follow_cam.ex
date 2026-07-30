@@ -72,7 +72,8 @@ defmodule Seshat.Tools.FollowCam do
              "duplicate_clip",
              "capture_midi",
              "set_clip_properties",
-             "stop_recording"
+             "stop_recording",
+             "quantize_clip"
            ] do
     [
       {"/live/view/set/selected_clip", [track, slot]},

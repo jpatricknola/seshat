@@ -25,7 +25,10 @@ defmodule Seshat.Tools.FollowCamTest do
     # tweak but its headline use is reshaping a clip's audible extent right
     # after a capture, and the moved loop brace in the note editor is the
     # confirmation.
-    test "remove_notes, duplicate_clip, capture_midi, set_clip_properties and stop_recording steer the same way" do
+    # quantize_clip belongs here for the plainest reason of all: it rewrites the
+    # clip's note starts, and the notes visibly snapping in the note editor is
+    # the confirmation the reply's counts are describing.
+    test "remove_notes, duplicate_clip, capture_midi, set_clip_properties, stop_recording and quantize_clip steer the same way" do
       expected = FollowCam.calls("write_midi_notes", %{track: 0, slot: 3})
 
       tools = [
@@ -33,7 +36,8 @@ defmodule Seshat.Tools.FollowCamTest do
         "duplicate_clip",
         "capture_midi",
         "set_clip_properties",
-        "stop_recording"
+        "stop_recording",
+        "quantize_clip"
       ]
 
       for tool <- tools do

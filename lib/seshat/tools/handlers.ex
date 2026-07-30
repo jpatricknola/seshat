@@ -613,6 +613,140 @@ defmodule Seshat.Tools.Handlers do
   end
 
   @doc """
+  The `GridQuantization` integer for one of `quantize_clip`'s grid strings.
+
+  **These integers were measured against a running Live on 2026-07-31**, one
+  clip per enum value, with probe notes chosen so every candidate grid lands
+  somewhere distinguishable. `docs/abletonosc-api-docs.md` and the comment in
+  the fork's `abletonosc/clip.py` both used to claim `5=1/2, 6=1/4, 7=1/8,
+  8=1/16, 9=1/32`, and **every row of that was wrong** — both have since been
+  corrected to the table below. If you are here because the code and some
+  other document disagree, the instrument won: do not "fix" this back.
+
+  The full measured mapping, including what this function deliberately never
+  sends: `0` no grid, `1` 1/4, `2` 1/8, `3` and `4` 1/8 triplet, `5` 1/16,
+  `6` and `7` 1/16 triplet, `8` 1/32, `≥9` invalid (Live's callback raises,
+  AbletonOSC swallows it, nothing moves and nothing is reported). There is no
+  1/2 grid and there are no bar-length grids, which is why the tool's enum
+  stops at 1/4. Duplicated pairs send the lower value.
+
+  A wrong integer here is silent in every layer: the address never replies, so
+  the only symptom is notes landing on the wrong grid in Live.
+  """
+  @spec grid_quantization(String.t()) :: 1 | 2 | 3 | 5 | 6 | 8
+  def grid_quantization("1/4"), do: 1
+  def grid_quantization("1/8"), do: 2
+  def grid_quantization("1/8T"), do: 3
+  def grid_quantization("1/16"), do: 5
+  def grid_quantization("1/16T"), do: 6
+  def grid_quantization("1/32"), do: 8
+
+  @doc """
+  Sends the quantize itself. Fire-and-forget: the address never replies.
+
+  `amount / 1.0` forces float encoding. AbletonOSC passes OSC-decoded values
+  straight through to `clip.quantize(grid, amount)`, so an int32 `1` arriving
+  where Live expects a float is a risk taken for nothing.
+  """
+  @spec send_quantize(integer(), integer(), String.t(), number()) :: :ok | {:error, String.t()}
+  def send_quantize(track, slot, grid, amount) do
+    case Transport.send_message("/live/clip/quantize", [
+           track,
+           slot,
+           grid_quantization(grid),
+           amount / 1.0
+         ]) do
+      :ok -> :ok
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  @doc """
+  Describes what a quantize did, from the notes read either side of it.
+
+  The diff is deliberately multiset-style (`before -- after`) rather than
+  paired note tracking. Live's collision handling was measured on 2026-07-31
+  and has two shapes: two same-pitch notes landing on the *same* grid point
+  **merge** into one (the later note's velocity survives, so the count
+  shrinks), while two landing on *different* points that now overlap keep the
+  count but **trim** the earlier note's duration to end where the later one
+  starts. Paired tracking would have to model both and would still be
+  guessing; a multiset diff reports both correctly as "changed", and the
+  count and duration checks below say which happened.
+
+  There is deliberately no Elixir-side "was this note off-grid?" arithmetic —
+  modelling target positions is exactly the beat math this tool exists to
+  retire, and after the enum finding it is the last thing that should be
+  duplicating Live's own.
+
+  `clip_name` may be `nil`: the name read is garnish and never fails the tool.
+  """
+  @spec format_quantize_result(
+          integer(),
+          integer(),
+          String.t() | nil,
+          String.t(),
+          number(),
+          [map()],
+          [map()]
+        ) :: String.t()
+  def format_quantize_result(track, slot, clip_name, grid, amount, before_notes, after_notes) do
+    subject = quantize_subject(track, slot, clip_name)
+    strength = "#{round(amount * 100)}% strength"
+    moved = before_notes -- after_notes
+
+    if moved == [] do
+      # Silence is what success looks like on this address, so an unchanged
+      # clip and a Remote Scripts copy predating the fork are indistinguishable
+      # from here. Same reasoning as @return_extension_hint, but attached to the
+      # no-change case rather than a timeout — here silence is normal.
+      "Quantize sent, but no note changed — #{subject} may already sit on the #{grid} grid at " <>
+        "#{strength}. If the timing audibly didn't change, the installed AbletonOSC may " <>
+        "predate /live/clip/quantize: run mix abletonosc.install and restart Live."
+    else
+      "Quantized #{subject}: #{length(moved)} of #{length(before_notes)} note(s) moved toward " <>
+        "the #{grid} grid at #{strength}." <>
+        quantize_collision_note(before_notes, after_notes) <>
+        " Listen back — undo reverses it in one step if the feel went stiff."
+    end
+  end
+
+  defp quantize_subject(track, slot, nil), do: "the clip in slot #{slot} on track #{track}"
+
+  defp quantize_subject(track, slot, clip_name),
+    do: ~s{"#{clip_name}" (track #{track}, slot #{slot})}
+
+  defp quantize_collision_note(before_notes, after_notes) do
+    lost = length(before_notes) - length(after_notes)
+
+    cond do
+      lost > 0 ->
+        " The clip now has #{length(after_notes)} note(s) rather than #{length(before_notes)}: " <>
+          "#{lost} same-pitch note(s) landed on a spot already taken and merged into the note " <>
+          "there, keeping the later velocity. Undo restores them."
+
+      lost < 0 ->
+        " The clip now has #{length(after_notes)} note(s) rather than #{length(before_notes)} — " <>
+          "quantize is not expected to add notes, so re-read the clip with get_clip_notes " <>
+          "before building on it."
+
+      durations_changed?(before_notes, after_notes) ->
+        " Some note lengths changed too: where a move put two same-pitch notes on top of each " <>
+          "other, Live trimmed the earlier one to end where the later one starts."
+
+      true ->
+        ""
+    end
+  end
+
+  # Multiset comparison, for the same reason the diff above is one: it answers
+  # "did any length change?" without pretending to know which note became which.
+  defp durations_changed?(before_notes, after_notes) do
+    Enum.sort(Enum.map(before_notes, & &1.duration)) !=
+      Enum.sort(Enum.map(after_notes, & &1.duration))
+  end
+
+  @doc """
   Chunks the flat `/live/song/get/track_data` reply into one map per track.
 
   The reply carries, per track, the values of `@track_data_properties` in
@@ -1883,6 +2017,53 @@ defmodule Seshat.Tools.Handlers do
        "Timed out reading the notes in slot #{Map.get(params, "clip_slot", 0)} on track " <>
          "#{track}. Check the track index against get_session_state, and that Ableton is " <>
          "running with AbletonOSC enabled."}
+  end
+
+  # Live's own quantize, not an Elixir-side snap: the grid arithmetic stays
+  # where it is already correct (and where, unlike every published description
+  # of Live's grid enum, it is correct at all — see `grid_quantization/1`).
+  #
+  # Transport-direct rather than a %Command{}: one logical operation, and
+  # Registry is for the three multi-step mutation sequences it owns.
+  #
+  # The address never replies. Success, a bad grid integer, and a Remote
+  # Scripts copy that predates the fork are all the same silence on the wire,
+  # so the tool's honesty comes from reading the notes back either side of the
+  # send and diffing them — the same shape as capture_midi's grid snapshot and
+  # delete_device's count re-read. AbletonOSC processes datagrams in arrival
+  # order and `clip.quantize()` runs synchronously inside its callback, so the
+  # second read sees the post-quantize clip.
+  defp do_call("quantize_clip", %{
+         "track" => track,
+         "clip_slot" => slot,
+         "grid" => grid,
+         "amount" => amount
+       }) do
+    with :ok <- reject_zero_amount(amount),
+         :ok <- ensure_clip(track, slot),
+         :ok <- ensure_midi_clip(track, slot),
+         clip_name = read_clip_name(track, slot),
+         {:ok, before_notes} <- read_all_notes(track, slot),
+         :ok <- ensure_notes_to_quantize(before_notes, track, slot),
+         :ok <- send_quantize(track, slot, grid, amount),
+         {:ok, after_notes} <- read_all_notes(track, slot) do
+      FollowCam.steer("quantize_clip", %{track: track, slot: slot})
+
+      {:ok,
+       format_quantize_result(track, slot, clip_name, grid, amount, before_notes, after_notes)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  catch
+    # Deliberately not "nothing was sent": the exit can happen either side of
+    # the quantize message, and once it is on the wire claiming nothing changed
+    # would be a lie (the set_clip_properties precedent).
+    :exit, _ ->
+      {:error,
+       "Lost contact with the OSC transport while quantizing the clip in slot #{slot} on " <>
+         "track #{track}. The quantize may or may not have been applied — read the clip back " <>
+         "with get_clip_notes, and check Ableton is running with AbletonOSC enabled."}
   end
 
   # --- Sound catalog ---
@@ -3442,6 +3623,76 @@ defmodule Seshat.Tools.Handlers do
 
       {:error, message} ->
         {:error, message}
+    end
+  end
+
+  # --- Quantize guards and reads ---
+
+  # 0% strength provably cannot move a note, so it is a trap rather than an
+  # option — the same argument that keeps `no_grid` (enum 0) out of the tool's
+  # grid list. It has to live here: `Seshat.Tools.Validation` reads only
+  # `:minimum`, with no `exclusiveMinimum` branch to reject 0.0 at the schema.
+  # Without this the zero case would reach the nothing-moved reply and tell the
+  # user their AbletonOSC install might be stale, which at 0% is a fabrication.
+  defp reject_zero_amount(amount) when amount == 0 do
+    {:error,
+     "amount 0 is 0% strength, which cannot move any note — try 0.5 to tighten the timing " <>
+       "while keeping the feel."}
+  end
+
+  defp reject_zero_amount(_amount), do: :ok
+
+  # The name is garnish: it only decides whether the reply says "Keys" or "the
+  # clip in slot 0 on track 1", so a failed read falls back rather than failing
+  # a quantize that would otherwise have succeeded.
+  defp read_clip_name(track, slot) do
+    case query_echoed(
+           "/live/clip/get/name",
+           [track, slot],
+           "the name of the clip in slot #{slot} on track #{track}",
+           @clip_index_hint
+         ) do
+      {:ok, name} when is_binary(name) -> name
+      _other -> nil
+    end
+  end
+
+  defp ensure_notes_to_quantize([], track, slot) do
+    {:error, "The clip in slot #{slot} on track #{track} has no notes to quantize."}
+  end
+
+  defp ensure_notes_to_quantize(_notes, _track, _slot), do: :ok
+
+  # No range args: AbletonOSC defaults to the whole clip.
+  #
+  # It can't ride `query_echoed/4` for the same reason `read_device_names/2`
+  # can't — `unwrap_payload/1` reads single-value payloads and this reply is a
+  # whole note list — so the echo check and its reissue-once defence are spelled
+  # out here, following that helper rather than `get_clip_notes`'s destructure
+  # (which discards the echoed indices entirely).
+  #
+  # Be clear about what the check buys: it catches a *cross-clip* straggler — a
+  # notes query abandoned by an earlier timeout, plausible here because an
+  # oversized reply truncates and surfaces as one. It does nothing about this
+  # tool's own hazard, two identical back-to-back queries: a late or duplicate
+  # answer to the *before* read satisfying the *after* read carries the same
+  # indices, passes this check, and reads as "nothing moved". Only the hedged
+  # nothing-moved wording stands against that.
+  defp read_all_notes(track, slot, reissued? \\ false) do
+    case Transport.query("/live/clip/get/notes", [track, slot]) do
+      {:ok, {_addr, [echoed_track, echoed_slot | fields]}}
+      when echoed_track == track and echoed_slot == slot ->
+        parse_clip_notes(fields)
+
+      {:ok, {_addr, _mismatched}} ->
+        if reissued? do
+          {:error, stale_reply_error("the notes in slot #{slot} on track #{track}")}
+        else
+          read_all_notes(track, slot, true)
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 

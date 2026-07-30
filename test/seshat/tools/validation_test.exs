@@ -86,6 +86,27 @@ defmodule Seshat.Tools.ValidationTest do
     end
   end
 
+  describe "quantize_clip" do
+    # "1/2" rather than a triplet value: the triplet grids are real and offered,
+    # while a 1/2 grid is both a plausible model guess and a thing Live's
+    # GridQuantization enum genuinely cannot do — nothing in its valid range is
+    # coarser than a 1/4 note. That is the case worth pinning.
+    test "rejects a grid Live has no enum value for" do
+      params = %{"track" => 0, "clip_slot" => 0, "grid" => "1/2", "amount" => 0.5}
+
+      assert {:error, message} = Validation.validate("quantize_clip", params)
+      assert message =~ "- grid: must be one of"
+      assert message =~ ~s(got "1/2")
+    end
+
+    test "rejects a strength above 1.0" do
+      params = %{"track" => 0, "clip_slot" => 0, "grid" => "1/16", "amount" => 1.5}
+
+      assert {:error, message} = Validation.validate("quantize_clip", params)
+      assert message =~ "- amount: must be at most 1.0 (got 1.5)"
+    end
+  end
+
   describe "nested structures" do
     test "reports the path into an array of objects" do
       notes = [%{"pitch" => 60, "start_beat" => 0.0, "duration" => 1.0, "velocity" => 0}]
