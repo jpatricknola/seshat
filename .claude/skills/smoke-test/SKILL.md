@@ -265,12 +265,31 @@ first.
 1. **The bind itself.** `lsof -nP -iUDP:11000`. The only AbletonOSC line must
    read `127.0.0.1:11000`; `*:11000` or `0.0.0.0:11000` is exactly the
    regression this change exists to close.
-2. **The fixed default reply route.** Call `/live/test` and confirm it comes
-   back `"ok"`. `manager.py`'s `test_callback` replies with a bare
-   `self.osc_server.send(...)`, not a tuple returned through
-   `process_message`, so this is the one call that exercises the removed
-   last-sender rewrite directly — everything else below only proves the
-   per-message reply path still works.
+2. **The fixed default reply route.** `manager.py`'s `test_callback` replies
+   with a bare `self.osc_server.send(...)`, not a tuple returned through
+   `process_message`, so `/live/test` is the one call that exercises the
+   removed last-sender rewrite directly — everything else here only proves the
+   per-message reply path still works. No tool sends it, and the reply goes to
+   the fixed 11001 that a running Seshat already owns, so **stop Seshat for
+   the length of this check** (`[Errno 48] Address already in use` on the bind
+   means you didn't):
+   ```bash
+   python3 -c '
+   import socket, sys; sys.path.insert(0, "priv/AbletonOSC")
+   from pythonosc.udp_client import SimpleUDPClient
+   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+   s.bind(("127.0.0.1", 11001)); s.settimeout(5)
+   SimpleUDPClient("127.0.0.1", 11000).send_message("/live/test", [])
+   print(s.recvfrom(1024))
+   '
+   ```
+   Expect a datagram carrying `/live/test` and `ok` (Live also flashes
+   "Received OSC OK" in its status bar — that only proves the callback *ran*,
+   so it is not a substitute for receiving the reply). A timeout is the
+   failure this check exists to catch, and nothing else here would catch it.
+   If stopping Seshat isn't practical, item 3's listener push travels the same
+   `osc_server.send` default route — record that you substituted it rather
+   than reporting this item as run.
 3. **Callback replies and listener pushes both still land on 11001.**
    `get_session_state(refresh: true)`, then change tempo or a track's volume
    by hand in Live, then call `get_session_state` again and confirm it sees
@@ -282,8 +301,9 @@ first.
    `seshat-browser-export-*.json`: one with a modification time more than ten
    minutes old (backdate it — `touch -A`/`os.utime`), one fresh. Reindex must
    succeed, remove the stale fixture, leave the fresh one alone, and clean up
-   only the export it just created (`Catalog.reindex/1`'s `after` block deletes
-   nothing but the path Python replied with). Remove the fresh fixture by hand
+   only the export it just created (`Catalog.consume_export/3`'s `after` block
+   deletes nothing but the path Python replied with, and only once it has
+   validated it). Remove the fresh fixture by hand
    once you've confirmed it survived — nothing in this system will ever do
    that for you.
 5. **The obsolete path-taking form, from outside Seshat.** Send it with a

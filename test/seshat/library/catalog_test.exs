@@ -711,6 +711,71 @@ defmodule Seshat.Library.CatalogTest do
     end
   end
 
+  # Python's stale sweep is the backstop for exports Elixir never learns the
+  # name of — a timeout, a lost reply, a refused path. It is not an excuse to
+  # abandon one we did validate, so every outcome after validation must delete.
+  describe "consume_export/3" do
+    setup context do
+      root =
+        Path.join(System.tmp_dir!(), "seshat-consume-test-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(root)
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      Map.merge(context, %{root: root, export: Path.join(root, "seshat-browser-export-x1.json")})
+    end
+
+    test "removes the export after a successful reindex",
+         %{root: root, export: export} = context do
+      %{server: server} = start_catalog(context)
+      File.write!(export, ~s({"sounds": [{"name": "Kick.adg", "path": "Drums", "uri": "q:1"}]}))
+
+      assert {:ok, _summary} = Catalog.consume_export(export, root, server)
+      refute File.exists?(export), "a consumed export must not survive the reindex"
+    end
+
+    test "removes the export when its JSON is malformed",
+         %{root: root, export: export} = context do
+      %{server: server} = start_catalog(context)
+      File.write!(export, ~s({"sounds": [{"name": "truncated))
+
+      assert {:error, message} = Catalog.consume_export(export, root, server)
+      assert message =~ "Could not decode the browser export"
+      refute File.exists?(export), "a corrupt export must not be left behind"
+    end
+
+    test "removes an export that decodes to something other than an object",
+         %{root: root, export: export} = context do
+      %{server: server} = start_catalog(context)
+      File.write!(export, "[]")
+
+      assert {:error, message} = Catalog.consume_export(export, root, server)
+      assert message =~ "not a JSON object"
+      refute File.exists?(export)
+    end
+
+    test "removes the export when it cannot be read", %{root: root, export: export} = context do
+      %{server: server} = start_catalog(context)
+      File.write!(export, "{}")
+      File.chmod!(export, 0o000)
+
+      assert {:error, message} = Catalog.consume_export(export, root, server)
+      assert message =~ "Could not read"
+      refute File.exists?(export)
+    end
+
+    # The one outcome that must NOT delete: a path we refused is not ours.
+    test "leaves a file that fails validation exactly where it is", %{root: root} = context do
+      %{server: server} = start_catalog(context)
+      intruder = Path.join(root, "not-an-export.json")
+      File.write!(intruder, "{}")
+
+      assert {:error, message} = Catalog.consume_export(intruder, root, server)
+      assert message =~ "not named"
+      assert File.exists?(intruder), "an unvalidated path must never be deleted"
+    end
+  end
+
   describe "persistence" do
     setup :start_catalog
 

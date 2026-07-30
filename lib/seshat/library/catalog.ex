@@ -260,13 +260,31 @@ defmodule Seshat.Library.Catalog do
     # deleted once it has been validated — so the cleanup can't be hoisted above
     # the query the way a path we chose ourselves could be. Python sweeps up
     # anything this never gets to see (a timeout, a lost reply, a refused path).
-    with {:ok, path, export} <- export_browser() do
+    with {:ok, path} <- export_browser() do
+      consume_export(path, Path.expand(@export_root), server)
+    end
+  end
+
+  @doc false
+  # Validation and deletion live in one function on purpose: every way of
+  # splitting them leaves a path where Elixir has validated a file and then
+  # abandons it. Reading and decoding are inside the cleanup block for exactly
+  # that reason — a truncated or corrupt export is the case where we know the
+  # name, so leaving it for Python's stale sweep would be a choice, not a
+  # necessity. A path that fails validation is never deleted: it is not ours.
+  # `expected_root` is a parameter so tests can drive the whole consume-and-
+  # clean-up lifecycle against a tmp dir instead of the developer's home.
+  @spec consume_export(String.t(), String.t(), atom()) :: {:ok, map()} | {:error, term()}
+  def consume_export(path, expected_root, server \\ __MODULE__) do
+    with {:ok, validated} <- validated_export_path(path, expected_root) do
       try do
-        with {:ok, entries} <- build_entries(export) do
+        with {:ok, body} <- read_export_file(validated),
+             {:ok, export} <- decode_export(body),
+             {:ok, entries} <- build_entries(export) do
           GenServer.call(server, {:replace, entries}, 30_000)
         end
       after
-        File.rm(path)
+        File.rm(validated)
       end
     end
   end
@@ -896,7 +914,7 @@ defmodule Seshat.Library.Catalog do
   defp export_browser do
     case Transport.query("/live/browser/export", [], @export_timeout) do
       {:ok, {_address, [path, "ok", _total]}} when is_binary(path) ->
-        read_export(path)
+        {:ok, path}
 
       # Matched before the generic error below: this exact message is the old
       # handler's, and it means the install is stale rather than the walk failed.
@@ -919,14 +937,6 @@ defmodule Seshat.Library.Catalog do
       # the same instruction the stale-install hint above gives.
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  defp read_export(path) do
-    with {:ok, validated} <- validated_export_path(path, Path.expand(@export_root)),
-         {:ok, body} <- read_export_file(validated),
-         {:ok, export} <- decode_export(body) do
-      {:ok, validated, export}
     end
   end
 
