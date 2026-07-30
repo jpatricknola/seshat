@@ -211,8 +211,15 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top item is `quantize_clip` (the most common MIDI cleanup), with
-the rest of the play-and-keep arc behind it. The defect that used to top the
+2026-07-31 its top item is `set_time_signature`, with the rest of the
+play-and-keep arc (groove/swing) behind it. `quantize_clip` shipped
+2026-07-31: it snaps a MIDI clip's notes to a grid with a partial-strength
+amount via the Live Object Model's `Clip.quantize`, using a string grid enum
+(`"1/16"`, `"1/8T"`, …) that hides a `GridQuantization` integer table
+corrected against measurements of live Ableton — the previously documented
+table was wrong in every row (`docs/abletonosc-api-docs.md`, the fork's
+`clip.py` comment, and `Seshat.Tools.Handlers.grid_quantization/1` all carry
+the fix). The defect that used to top the
 queue is fixed: `create_track`
 now counts tracks before and after the create and only reports an index once
 the count rose by exactly one, erroring honestly otherwise instead of naming
