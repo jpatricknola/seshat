@@ -12,7 +12,7 @@ defmodule Seshat.Commands.RegistryTest do
   alias Seshat.Commands.Registry
 
   describe "ensure_return_created/2" do
-    test "a count that went up means the return track was created" do
+    test "a count that rose by exactly one means the return track was created" do
       assert Registry.ensure_return_created(0, 1) == :ok
       assert Registry.ensure_return_created(2, 3) == :ok
     end
@@ -24,8 +24,7 @@ defmodule Seshat.Commands.RegistryTest do
     test "a count that jumped by more than one refuses to guess which return is ours" do
       assert {:error, message} = Registry.ensure_return_created(3, 5)
 
-      assert message =~ "3"
-      assert message =~ "5"
+      assert message =~ "went from 3 to 5"
       assert message =~ "more than one"
       assert message =~ "Nothing was renamed"
       refute message =~ "limit of 12"
@@ -74,8 +73,7 @@ defmodule Seshat.Commands.RegistryTest do
     test "a count that jumped by more than one refuses to guess which track is ours" do
       assert {:error, message} = Registry.ensure_track_created(3, 5)
 
-      assert message =~ "3"
-      assert message =~ "5"
+      assert message =~ "went from 3 to 5"
       assert message =~ "more than one track"
       assert message =~ "Nothing was renamed"
     end
