@@ -18,6 +18,16 @@ The canonical OSC address reference is
 [abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
 address — naming is irregular, and a wrong address fails silently.
 
+**Neither security work nor bug fixes are on this queue** — it is the feature
+list. Two sibling docs hold the rest:
+
+- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) — network exposure. Split in two:
+  the OSC sockets are already bound beyond loopback today, so three items are
+  **active work**; the HTTP items are gated behind deployment or a second user.
+- [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md) — the active correctness
+  backlog, from the 2026-07-29 external review: confirmed defects, each with a
+  verified response, plus a declined section.
+
 **The play-and-keep arc (#5 · #6):** today the agent generates and
 the user listens. `capture_midi` (shipped 2026-07-28), per-clip properties
 (shipped 2026-07-29 — a clip's own loop brace, play markers, and launch

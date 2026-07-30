@@ -197,6 +197,22 @@ cleanup) leads. Keep it current: when something ships, run the `/ship` skill
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
+ROADMAP.md is the *feature* queue only. Two sibling docs carry the rest, and
+both are live:
+
+- [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure, split
+  into **Fix now** and **Deployment-gated**. The OSC sockets already bind beyond
+  loopback (AbletonOSC binds `0.0.0.0`; our reply socket binds the wildcard), so
+  those three items are active work, not deferred. Only the HTTP items wait on a
+  gate. Check it before loosening a bind or adding an entry point.
+- [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the active correctness backlog
+  from the 2026-07-29 external review: confirmed defects plus speculative risks,
+  each carrying a verified response that narrows or rejects the recommended fix,
+  and a declined section. Its **Accepted actions** list is the canonical order;
+  the original review's own priority list is kept below it as history. Read the
+  response before acting on a finding — several recommendations were rejected
+  for conflicting with settled decisions in this repo.
+
 [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) is a standing design review of the
 whole tool surface — one verdict per tool, plus the coverage gaps that feed
 ROADMAP.md. It is the place to check whether a tool has a known wart before
