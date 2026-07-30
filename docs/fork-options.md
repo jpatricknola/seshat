@@ -99,7 +99,8 @@ here, because nothing on the Elixir side knows which world it's in:
   changes **zero lines** in `lib/`.
 - The vendored handler files are **byte-identical in either world** — they
   become normal committed modules in the fork.
-- New vendored *extensions* (roadmap #2, #7, #14, #19) port for free; they're
+- New vendored *extensions* (every roadmap item needing an address upstream
+  lacks) port for free; they're
   additive files whichever mechanism delivers them.
 
 The switch surface is flat: the installer task, the repo layout, two tests,

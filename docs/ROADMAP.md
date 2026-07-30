@@ -7,6 +7,16 @@ medium-impact quick win outranks a high-impact slog. Issue numbers are ranks,
 not stable identifiers — when something ships, delete its issue and let the rest
 renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan
 doc, move that doc to [archive/](archive/) with a status banner.
+
+**So cite an item by its title, never by its rank, anywhere outside this file.**
+A rank is correct only until the next ship, and a stale one doesn't look stale —
+it silently points at a different item. Every cross-reference written by rank has
+already gone wrong at least once ("roadmap #5 and #12" in the smoke-test skill
+meant quantize and browser preview when written; three ships later those ranks
+were two unrelated defects). Inside this file ranks are fine — they renumber
+together. Dated historical records ([archive/](archive/), validation-run
+findings) keep whatever rank was true when written; they are history, not
+pointers.
 [archive/](archive/) holds point-in-time plans and decision records — never treat
 those as current.
 

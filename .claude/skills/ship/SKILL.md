@@ -22,6 +22,12 @@ are often no-ops, but check rather than assume.
    the work surfaced follow-ups worth doing later, add them where they fit —
    the roadmap gains items the same way it loses them.
 
+   Renumber the remaining items and any *internal* cross-references. Do **not**
+   go hunting for rank references in other files: nothing outside ROADMAP.md is
+   allowed to cite an item by rank (the roadmap's own preamble states this), so
+   an out-of-file rank reference is a bug in that file, not renumbering work you
+   owe. If you notice one, rewrite it to name the item's title instead.
+
 3. **Archive the plan doc, if one exists.** If the feature had a detailed plan
    in [docs/](docs/) (outside `archive/`), move it to
    [docs/archive/](docs/archive/) and prepend the banner style the other
