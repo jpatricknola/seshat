@@ -210,8 +210,12 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top two are both defects: tool-parameter bounds are
-inconsistently enforced, and `create_track` returns an index unverified.
+2026-07-30 its top item is a defect: `create_track` returns an index
+unverified. Tool-parameter bounds are no longer the inconsistent half of that
+pair — `Seshat.Tools.Validation` now validates every call against its schema
+from `Seshat.Tools.Definitions` before `Handlers.call/2` dispatches, both
+entry modes share it, and `MCP.Schema`'s number branch carries `minimum`/
+`maximum` through to the wire-advertised `oneOf` (shipped 2026-07-30).
 `Transport` now serializes OSC queries through an internal queue with a
 per-request timer — one query in flight at a time, matched by address against
 that request only, and a timed-out caller's request dropped rather than sent —

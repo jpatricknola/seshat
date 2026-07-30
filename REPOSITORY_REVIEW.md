@@ -656,7 +656,7 @@ is the current rank.
 | #2 tests mutate a live set, #10 README | **Shipped 2026-07-30** — see [docs/archive/PLAN_test_isolation.md](docs/archive/PLAN_test_isolation.md) |
 | #7 fabricated session state | Stop fabricating session state after OSC failures |
 | #1 single pending query slot | Serialize OSC queries and clean up timed-out callers |
-| #3 negative indices, #4 numeric bounds | Enforce tool ranges and non-negative indices centrally |
+| #3 negative indices, #4 numeric bounds | **Shipped 2026-07-30** — see [docs/archive/PLAN_enforce_tool_ranges.md](docs/archive/PLAN_enforce_tool_ranges.md) |
 | #6 `create_track` unverified index | Verify `create_track` actually succeeds |
 | #9 agent iteration limit | Preserve partial agent results at the tool-iteration limit |
 | #8 catalog persistence | Make catalog persistence atomic and report write failures |
