@@ -12,8 +12,8 @@ This doc holds two different things, and the distinction is the whole point:
   fixing it buys nothing.
 
 **Scheduling lives in [ROADMAP.md](ROADMAP.md), not here.** The three Fix-now
-items are ranked there as **#2** (AbletonOSC loopback bind), **#3** (browser
-export path) and **#4** (Elixir listener and decoder) — #2 and #3 ship as one
+items are ranked there as **#1** (AbletonOSC loopback bind), **#2** (browser
+export path) and **#3** (Elixir listener and decoder) — #1 and #2 ship as one
 submodule commit and one `mix abletonosc.install`. The gated items are
 deliberately absent from that queue. This doc is the evidence and the reasoning.
 

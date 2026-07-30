@@ -1,8 +1,33 @@
 # Plan — Isolate tests from live Ableton, and correct the safety documentation
 
-ROADMAP #1. Two halves of one problem: `mix test` sends real mutation packets
-to a running Live set, and `README.md` tells contributors it doesn't. Findings
-#2 and #10 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+> **Archived 2026-07-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `Seshat.OSC.Transport` now
+> reads its ports from config (`:osc_send_port`/`:osc_reply_port`,
+> `lib/seshat/osc/transport.ex`), `config/test.exs` points the suite at
+> 31000/31001 instead of AbletonOSC's own 11000/11001, and
+> `test/support/osc_sink.ex` asserts every OSC-sending test's mutation at the
+> wire instead of trusting `Transport.send_message/2`'s return value. The
+> three test files that reach the wire
+> (`test/seshat/tools/handlers_test.exs`, `test/seshat/agent_test.exs`,
+> `test/seshat/osc/transport_test.exs`) were reworked accordingly, and
+> `.claude/rules/testing.md` gained the "never let a test send OSC to a real
+> Ableton" rule. One follow-up landed with the close-out rather than the
+> implementation: `docs/osc-port-contention.md`'s description of
+> `transport_test.exs`'s setup was still naming the literal port 11001 after
+> the port became configurable — corrected in the same commit that archived
+> this plan. Two low-severity nits from review were knowingly left open — see
+> the PR for `test-fixin` for both: the tripwire test in `transport_test.exs`
+> inherits a socket-binding `setup` it doesn't need (fails loudly rather than
+> clearly if `config/test.exs`'s ports ever regress), and `README.md:240`
+> tells users to look for a `"Port 11001 already in use"` warning while
+> `transport.ex:104` actually logs `"OSC reply port 11001 is already bound by
+> another process"` — a pre-existing wording mismatch in the same file this
+> plan touched, unrelated to test isolation itself.
+
+ROADMAP #1 at the time this was written. Two halves of one problem: `mix test`
+sends real mutation packets to a running Live set, and `README.md` tells
+contributors it doesn't. Findings #2 and #10 in
+[../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
 
 ## Context
 

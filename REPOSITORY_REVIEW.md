@@ -648,19 +648,19 @@ accepted scope, including the parts of a recommendation that were rejected.
 
 | Finding | Roadmap rank |
 |---|---|
-| #2 tests mutate a live set, #10 README | **#1** Isolate tests from live Ableton, correct the safety documentation |
-| #7 fabricated session state | **#5** Stop fabricating session state after OSC failures |
-| #1 single pending query slot | **#6** Serialize OSC queries and clean up timed-out callers |
-| #3 negative indices, #4 numeric bounds | **#7** Enforce tool ranges and non-negative indices centrally |
-| #6 `create_track` unverified index | **#8** Verify `create_track` actually succeeds |
-| #9 agent iteration limit | **#13** Preserve partial agent results at the tool-iteration limit |
-| #8 catalog persistence | **#14** Make catalog persistence atomic and report write failures |
-| #5 mutations report success on send | **#16** Verify destructive mutations before reporting success |
-| MCP supervisor `:temporary` | **#20** Restart the MCP supervisor after abnormal failure |
-| LiveView conversation growth | **#28** Cap large tool-result payloads in API-key mode |
+| #2 tests mutate a live set, #10 README | **Shipped 2026-07-30** — see [docs/archive/PLAN_test_isolation.md](docs/archive/PLAN_test_isolation.md) |
+| #7 fabricated session state | **#4** Stop fabricating session state after OSC failures |
+| #1 single pending query slot | **#5** Serialize OSC queries and clean up timed-out callers |
+| #3 negative indices, #4 numeric bounds | **#6** Enforce tool ranges and non-negative indices centrally |
+| #6 `create_track` unverified index | **#7** Verify `create_track` actually succeeds |
+| #9 agent iteration limit | **#12** Preserve partial agent results at the tool-iteration limit |
+| #8 catalog persistence | **#13** Make catalog persistence atomic and report write failures |
+| #5 mutations report success on send | **#15** Verify destructive mutations before reporting success |
+| MCP supervisor `:temporary` | **#19** Restart the MCP supervisor after abnormal failure |
+| LiveView conversation growth | **#27** Cap large tool-result payloads in API-key mode |
 | The three declined findings | Not scheduled — see [Declined](#declined--not-planned) |
 
-The security findings removed from this review are ranked as roadmap #2–#4;
+The security findings removed from this review are ranked as roadmap #1–#3;
 their evidence is in [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md).
 
 ### Original: three highest-priority fixes
