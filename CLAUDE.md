@@ -178,6 +178,7 @@ on this machine everything still works.
 - `mix test` — full suite, no Ableton required, and safe to run with Live open: in `MIX_ENV=test` the transport's ports come from config and point at throwaway UDP ports, never AbletonOSC's 11000/11001, so tests that start `Transport` reach `Seshat.Test.OSCSink` instead of Live. `Seshat.Agent` is tested with `Req.Test`; MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed — the `/smoke-test` skill is the checklist for that. See [README.md](README.md).
+- `/full-smoke` runs every section of that checklist in one sweep, scoped to what needs no human: no Live restart, no server restart, no ears, no second client. It defers to `/smoke-test` for what each check *is* and only decides what runs, what gets an automated stand-in, and what is skipped — so its report always carries a named Uncovered list. Use it as the routine sweep; use `/smoke-test` itself when a specific change needs the hands-and-ears checks too.
 - [docs/validation-script.md](docs/validation-script.md) is the human-run version: a guided lo-fi session a person reads to Seshat, building a real sketch while touching the tool surface as it stood on 2026-07-27; the doc lists exactly which tools that was. Tools added since aren't in it — `/smoke-test` covers those. Use it when a batch of features needs validating by ear and eye rather than by agent. [docs/validation-script.txt](docs/validation-script.txt) is its copy-paste companion — the same script stripped of prose, with the 2026-07-27 run's findings written inline under the first few prompts (those produced the push-based session state work and the removal of `create_project` — see [docs/archive/create-project-removal.md](docs/archive/create-project-removal.md)).
 - The `audit-osc` workflow ([.claude/workflows/audit-osc.js](.claude/workflows/audit-osc.js)) fans out agents to verify every `/live/` address in `lib/` against the canonical docs — worth running after an AbletonOSC upgrade or a batch of new tools.
 
@@ -210,8 +211,9 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-30 its top item is `start_new_project` (the setup wizard, and prompt
-budget back). The defect that used to top the queue is fixed: `create_track`
+2026-07-30 its top item is `quantize_clip` (the most common MIDI cleanup), with
+the rest of the play-and-keep arc behind it. The defect that used to top the
+queue is fixed: `create_track`
 now counts tracks before and after the create and only reports an index once
 the count rose by exactly one, erroring honestly otherwise instead of naming
 and steering to a track that may not exist (`Seshat.Commands.Registry`,

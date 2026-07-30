@@ -464,19 +464,44 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 ### Quantization grid
 
 `/live/clip/quantize`'s `grid` argument is Live's `GridQuantization` enum, which
-is **not** the `RecordingQuantization` enum used elsewhere in Live's API. Getting
-the two confused quantizes sixteenths to half notes, silently.
+is **not** the `RecordingQuantization` enum used elsewhere in Live's API, and
+**not** the `launch_quantization` enum `set_clip_properties` uses (where 1/16 is
+`12`). Sending the wrong integer quantizes to the wrong grid, silently.
+
+The table below was **measured against a running Live on 2026-07-31**, one clip
+per enum value, five probe notes chosen so that every candidate grid produces a
+distinct set of landing positions, `amount` 1.0, read back with
+`/live/clip/get/notes`. Identical results in 4/4 and 6/8, so the mapping does
+not depend on the time signature.
 
 | Value | Grid | | Value | Grid |
 |---|---|---|---|---|
-| 0 | none | | 5 | 1/2 |
-| 1 | 8 bars | | 6 | 1/4 |
-| 2 | 4 bars | | 7 | 1/8 |
-| 3 | 2 bars | | 8 | 1/16 |
-| 4 | 1 bar | | 9 | 1/32 |
+| 0 | none (nothing moves) | | 5 | **1/16** (0.25 beat) |
+| 1 | 1/4 (1.0 beat) | | 6 | 1/16 triplet (1/6 beat) |
+| 2 | 1/8 (0.5 beat) | | 7 | 1/16 triplet (1/6 beat) |
+| 3 | 1/8 triplet (1/3 beat) | | 8 | 1/32 (0.125 beat) |
+| 4 | 1/8 triplet (1/3 beat) | | ≥9 | invalid — nothing happens |
 
-There are no triplet grids: swing comes from the song's `swing_amount`, which
-`quantize` honours.
+Notes on the measurements, because they contradict what this file said until
+2026-07-31 (previously: `1=8 bars … 5=1/2, 6=1/4, 7=1/8, 8=1/16, 9=1/32`, every
+row of it wrong, and the same claim still appears in a comment in the fork's
+`abletonosc/clip.py`):
+
+- **Triplet grids exist** — 1/8T and 1/16T. The old claim that there are none,
+  and that swing instead comes from the song's `swing_amount`, is wrong in its
+  first half; the second half is untested here, and the bridge exposes no
+  `swing_amount` address to test it with.
+- **There are no bar-length grids, and no 1/2 grid.** Nothing in the valid
+  range is coarser than a 1/4 note.
+- **3 and 4 behave identically, as do 6 and 7.** Reproduced across separate
+  runs and both meters. Reason unknown; prefer the lower value of each pair.
+- **Values ≥ 9 do nothing at all.** No error, no reply, no movement — the
+  callback raises inside AbletonOSC and the exception is logged and swallowed,
+  which on the wire is indistinguishable from success.
+- Only note *starts* move; durations are preserved, except that a move which
+  lands two same-pitch notes on one point **merges** them (later velocity
+  wins) and a move that creates a same-pitch overlap **trims** the earlier
+  note. `amount` is linear: `new = old + amount × (target − old)`.
 
 ---
 

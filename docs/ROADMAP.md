@@ -65,7 +65,137 @@ with the fork.
 
 ---
 
-## #1 · `start_new_project` — the setup wizard, and prompt budget back
+## #1 · `quantize_clip` — the most common MIDI cleanup
+
+**Goal:** quantize a clip's notes to a grid with an amount (0–1 for partial
+quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
+
+**Why:** "tighten the timing" is the most common cleanup move on played
+MIDI — the direct follow-up to `capture_midi`/session record (both shipped).
+Today it takes a full
+read → remove → rewrite by hand, which loses Live-native swing handling and
+burns tool calls.
+
+**Planner notes:**
+- **The address already exists:** the fork ships `/live/clip/quantize
+  [track_id, clip_id, grid, amount]` via the clip methods list (per upstream
+  PR #198). What remains here is the Elixir tool. The grid is the
+  `GridQuantization` enum (0=none, 4=bar, 6=1/4, 7=1/8, 8=1/16, 9=1/32 —
+  full table in
+  [abletonosc-api-docs.md](abletonosc-api-docs.md)), **not**
+  `RecordingQuantization` — the tool description must carry it.
+- The rejected alternative (Elixir-side read → snap → rewrite with existing
+  note tools) is recorded here deliberately: zero install surface but worse
+  results (no Live-native swing). Don't resurrect it without new evidence.
+- Partial quantize (amount < 1.0) is the musically useful form — full
+  quantize kills feel. The description should teach that.
+- **Plan:** [PLAN_quantize_clip.md](PLAN_quantize_clip.md) (2026-07-30) —
+  pure Elixir, no install step; grid as a string enum to kill the
+  GridQuantization/launch_quantization integer confusion; verified by a
+  before/after note diff since the address never replies.
+
+## #2 · `set_time_signature`
+
+**Goal:** `/live/song/set/signature_numerator` +
+`/live/song/set/signature_denominator`.
+
+**Why:** cheap symmetry win — `get_session_state` reports the time signature
+and `set_tempo` exists, but there's no setter. Anything in 3/4 or 6/8 starts
+with a manual step today.
+
+**Planner notes:** two addresses, one tool. Session state already listens to
+both properties, so the echo can verify against the mirror.
+
+- **Plan:** [PLAN_set_time_signature.md](PLAN_set_time_signature.md)
+  (2026-07-30) — pure Elixir, fire-and-forget like `set_tempo`; denominator
+  as an integer enum {1, 2, 4, 8, 16} because Live silently swallows invalid
+  values; the mirror's existing listeners are the verification channel
+  (smoke-checked via `get_session_state` without refresh).
+
+## #3 · Groove amount — "make it swing"
+
+**Goal:** read/set the global groove amount:
+`/live/song/get|set/groove_amount`.
+
+**Why:** the third leg of played-MIDI cleanup after quantize: humanize/swing.
+Small, upstream, and it completes the play-and-keep arc's editing vocabulary.
+
+**Planner notes:** single scalar property, transport-tool shaped. Check the
+value range in the API docs rather than assuming 0–1.
+
+- **Plan:** [PLAN_groove_amount.md](PLAN_groove_amount.md) (2026-07-30) —
+  research found `groove_amount` alone can't deliver "make it swing" (it only
+  scales grooves already assigned to clips, which Seshat can't assign), so
+  the plan pairs it with `Song.swing_amount` — the knob `quantize_clip`
+  honours — exposed via a one-line fork addition to `song.py` (install +
+  Live restart required). Two tools (`set_swing_amount`,
+  `set_groove_amount`), both LOM-verified at 0.0–1.0, both mirrored into
+  session state as the read side. Ships after `quantize_clip` (the
+  descriptions reference it).
+
+## #4 · `show_view` — the follow cam can't be asked to look anywhere
+
+**Goal:** a tool that shows a named pane in Live — Session, Arrangement, the
+clip's note editor, the device chain, the browser. Use it for explicit
+navigation ("show me the arrangement"), but primarily **before a
+view-specific action**: show Session, then launch the clip; show the device
+chain, then change the device; show Arrangement, then move the song loop
+brace. The user should see the action happen in its visual context, not be
+told where to look afterwards.
+
+**Why:** it closes a hole in a principle we already committed to. The follow
+cam's contract is that the view follows the work and the user is told *what to
+look at, never how to navigate there*
+([lib/seshat/tools/follow_cam.ex](../lib/seshat/tools/follow_cam.ex),
+`Seshat.Instructions`). But that steering happens **after** a limited set of
+creates, writes and deletes. Many actions already work without changing panes:
+from Arrangement, Seshat can launch a Session clip; from Session, it can change
+a device or the Arrangement loop brace. The mutation lands, but the user
+cannot watch it. There is also no way to move the view on an explicit request,
+so "show me the notes again" falls back to keyboard instructions. Both violate
+the same principle: if Live exposes the navigation, Seshat should put the work
+on screen itself. Hit on 2026-07-31 while checking a plan's open question: the
+Arrangement loop brace was needed and the assistant had to talk the user
+through switching views by hand.
+
+**Planner notes:**
+- **The address already ships** — `/live/view/show_view [view_name]`, our own
+  extension in the fork's `abletonosc/view.py`, documented at
+  [abletonosc-api-docs.md](abletonosc-api-docs.md). **No Python half, no
+  install step.** It takes Live's own pane names: `Browser`, `Arranger`,
+  `Session`, `Detail`, `Detail/Clip`, `Detail/DeviceChain`. `FollowCam` today
+  sends only three of the six; `Arranger` and `Browser` have never been sent
+  by anything.
+- So this is one definition plus one handler clause — an enum parameter over
+  those six names, and the description's real job is mapping how people
+  actually say them ("arrangement", "the timeline", "session", "the grid",
+  "the note editor", "the browser") onto Live's spelling, `Arranger`
+  included, which nobody says out loud.
+- **Show first, act second is the primary contract.** Teach the model to call
+  `show_view` immediately before an action with a natural visual home. Seshat
+  cannot read the currently visible pane, so make the call unconditionally;
+  re-showing an open pane is assumed harmless and is a smoke-test item. This
+  is model-driven sequencing in the tool description plus shared instructions,
+  not pre-steering copied into every action handler.
+- **Keep the existing follow cam.** It remains deterministic post-action
+  confirmation and recovery for the mutations it already covers; this tool
+  fills the pre-action and explicit-navigation gaps rather than replacing it.
+- **Silent, like every view address** — an unknown pane name does nothing and
+  replies nothing. The enum is what makes that unreachable; same reasoning as
+  `set_time_signature`'s denominator.
+- The reply should name the pane in the user's language ("Arrangement view",
+  "clip editor"), not echo Live's internal spelling; the silent address cannot
+  verify the screen, and `screenshot_live` remains the separate seeing feature.
+- Sequenced here because it is nearly free and repairs a stated principle,
+  where the items behind it add new capability. It is **not** a substitute for
+  `screenshot_live` — that one lets Seshat *see*; this one lets Seshat
+  *point*.
+- **Plan:** [PLAN_show_view.md](PLAN_show_view.md) (2026-07-31) — one Elixir
+  tool over the address that already ships; use it both for explicit navigation
+  and immediately before view-specific actions so the user sees the change
+  happen, with the existing follow cam retained as post-action confirmation.
+
+## #5 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -110,55 +240,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #2 · `quantize_clip` — the most common MIDI cleanup
-
-**Goal:** quantize a clip's notes to a grid with an amount (0–1 for partial
-quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
-
-**Why:** "tighten the timing" is the most common cleanup move on played
-MIDI — the direct follow-up to `capture_midi`/session record (both shipped).
-Today it takes a full
-read → remove → rewrite by hand, which loses Live-native swing handling and
-burns tool calls.
-
-**Planner notes:**
-- **The address already exists:** the fork ships `/live/clip/quantize
-  [track_id, clip_id, grid, amount]` via the clip methods list (per upstream
-  PR #198). What remains here is the Elixir tool. The grid is the
-  `GridQuantization` enum (0=none, 4=bar, 6=1/4, 7=1/8, 8=1/16, 9=1/32 —
-  full table in
-  [abletonosc-api-docs.md](abletonosc-api-docs.md)), **not**
-  `RecordingQuantization` — the tool description must carry it.
-- The rejected alternative (Elixir-side read → snap → rewrite with existing
-  note tools) is recorded here deliberately: zero install surface but worse
-  results (no Live-native swing). Don't resurrect it without new evidence.
-- Partial quantize (amount < 1.0) is the musically useful form — full
-  quantize kills feel. The description should teach that.
-
-## #3 · `set_time_signature`
-
-**Goal:** `/live/song/set/signature_numerator` +
-`/live/song/set/signature_denominator`.
-
-**Why:** cheap symmetry win — `get_session_state` reports the time signature
-and `set_tempo` exists, but there's no setter. Anything in 3/4 or 6/8 starts
-with a manual step today.
-
-**Planner notes:** two addresses, one tool. Session state already listens to
-both properties, so the echo can verify against the mirror.
-
-## #4 · Groove amount — "make it swing"
-
-**Goal:** read/set the global groove amount:
-`/live/song/get|set/groove_amount`.
-
-**Why:** the third leg of played-MIDI cleanup after quantize: humanize/swing.
-Small, upstream, and it completes the play-and-keep arc's editing vocabulary.
-
-**Planner notes:** single scalar property, transport-tool shaped. Check the
-value range in the API docs rather than assuming 0–1.
-
-## #5 · Model-readable rejections for invalid tool parameters in MCP mode
+## #6 · Model-readable rejections for invalid tool parameters in MCP mode
 
 **Goal:** an out-of-range or wrong-typed parameter comes back to the model as
 `Seshat.Tools.Validation`'s message — naming the parameter, the bound, the value
@@ -203,7 +285,7 @@ went through to Live.
   Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
   handshake.
 
-## #6 · Preserve partial agent results at the tool-iteration limit
+## #7 · Preserve partial agent results at the tool-iteration limit
 
 **Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
 already executed and the conversation so far, and surface a warning in the UI.
@@ -223,7 +305,7 @@ matters most.
   neither helps.
 - Finding #9 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
 
-## #7 · Make catalog persistence atomic and report write failures
+## #8 · Make catalog persistence atomic and report write failures
 
 **Goal:** a reindex that cannot be persisted says so, and a crash mid-write
 cannot leave a truncated `catalog.json`.
@@ -243,7 +325,7 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
   issue needs a built-at timestamp written there anyway.
 - Finding #8 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
 
-## #8 · Catalog staleness check — reindex without being asked
+## #9 · Catalog staleness check — reindex without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -265,7 +347,7 @@ atomic".
 - Decide the surfacing point: a line in `search_library` replies, a startup
   check, or both.
 
-## #9 · Verify destructive mutations before reporting success
+## #10 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -291,7 +373,7 @@ trigger is a stale model-held index.
   slog of the correctness items.
 - Finding #5 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
 
-## #10 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #11 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -318,7 +400,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #11 · Producer personas — switchable musical taste
+## #12 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* — musical taste, and only taste — onto the base
 session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
@@ -374,7 +456,7 @@ changes what Seshat reaches for, never how it works.
   and the base text's voice section already reads as execute-the-user's-taste,
   which is what a persona slots underneath.
 
-## #12 · `screenshot_live` — let Seshat see the screen
+## #13 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -395,7 +477,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - API-key mode would need image blocks threaded through `Seshat.Agent`'s
   loop — decide whether to support it there or keep this MCP-only.
 
-## #13 · Restart the MCP supervisor after abnormal failure
+## #14 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -413,7 +495,7 @@ healthy — the tools simply stop existing, with nothing saying why.
   scheduling it.
 - Speculative risk in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
 
-## #14 · Search eval harness — numbers before opinions
+## #15 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -438,7 +520,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](sound-search-options.md)'s impact-per-effort ordering.
 
-## #15 · Widen the search slate at tied score bands
+## #16 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -448,7 +530,7 @@ pretending rank means something inside it.
 provably can't close (a graded per-term variant measured +1 slot across six
 queries and was rejected). Hours of work, honest fix.
 
-## #16 · Accepted-search memory
+## #17 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -461,7 +543,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #17 · Browser preview audition
+## #18 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -477,7 +559,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #18 · Opt-in `samples` index
+## #19 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -490,7 +572,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #19 · LLM enrichment at reindex
+## #20 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an API key or an MCP-client-driven tagging turn.
@@ -504,7 +586,7 @@ piano," the character lived only in preset *names* — E-Piano Rusty, Old
 School, MKII Old, Cheap were invisible to tag scoring because no warm/aged/
 detuned vocabulary exists to carry them.
 
-## #20 · User XMP tags
+## #21 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -515,7 +597,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #21 · Cap large tool-result payloads in API-key mode
+## #22 · Cap large tool-result payloads in API-key mode
 
 **Goal:** bound what accumulates in `Seshat.Agent`'s `messages` and the
 LiveView's log for the life of a conversation.
@@ -531,7 +613,7 @@ needed. MCP mode is primary and keeps no history in this process, which is why
 this ranks here. Speculative risk in
 [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
 
-## #22 · Device list per track in session state
+## #23 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -550,7 +632,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #23 · Return/master mixer completeness
+## #24 · Return/master mixer completeness
 
 **Goal:** return-track pan/mute/solo, master pan, cue volume.
 
@@ -562,7 +644,7 @@ LOM details: return mute/solo are plain listenable props, master pan is
 `mixer_device.panning`, cue volume is `mixer_device.cue_volume`, and the
 master has no mute/solo/arm.)
 
-## #24 · Modify a note in place
+## #25 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -570,7 +652,7 @@ read → remove range → rewrite.
 **Why:** the current path works but is three calls and a footgun
 (`remove_notes` ranges). Cleaner, not urgent.
 
-## #25 · Clip grid in session state — only if usage demands it
+## #26 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -584,7 +666,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #26 · Small OSC breadth — grab bag
+## #27 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -597,7 +679,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
 - **Sends on return tracks** (return→return routing, feedback sends) —
   niche, needs Live's "sends only" awareness, no named workflow yet.
 
-## #27 · MCP mode in the browser UI
+## #28 · MCP mode in the browser UI
 
 **Goal:** give `AssistantLive` a second backend — headless Claude Code
 (`claude -p`) as a subprocess consuming Seshat's own `/mcp` endpoint — so the
@@ -613,7 +695,7 @@ that may have drifted) in
 [archive/PLAN_mcp_browser_ui.md](archive/PLAN_mcp_browser_ui.md) — verify the
 CLI flags against current Claude Code before trusting it.
 
-## #28 · Adopt MCP `2026-07-28` when Anubis supports it
+## #29 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
