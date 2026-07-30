@@ -36,13 +36,19 @@ humanize/swing leg. Research against the Live Object Model reference
    get/set/observe, 0.0–1.0, "affects MIDI Recording Quantization and all
    direct calls to `Clip.quantize`". That is precisely the played-MIDI
    cleanup flow: set the swing, then `quantize_clip`
-   ([PLAN_quantize_clip.md](PLAN_quantize_clip.md), this run, ships first) —
-   and the swing rides record quantization for future takes too. Our own
-   docs already point at it: the GridQuantization note in
+   ([archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md), shipped
+   2026-07-31, ahead of this plan) —
+   and the swing rides record quantization for future takes too. This is a
+   LOM claim, not yet a verified one: `quantize_clip`
+   ([archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md)) measured
+   the GridQuantization table against a running Live and found the *other*
+   half of the old claim — "no triplet grids" — false, so it demoted the
+   `swing_amount` half to UNVERIFIED in
    [abletonosc-api-docs.md](abletonosc-api-docs.md) and the fork's `clip.py`
-   comment both say "swing comes from the song's `swing_amount`, which
-   `quantize` honours" — but no OSC address serves it, so today the model
-   would be directed toward a dial only the user's mouse can reach.
+   rather than carry it forward untested. This plan's own smoke check (below)
+   still needs to confirm it before anything here relies on it — and no OSC
+   address serves `swing_amount` yet regardless, so today the model would be
+   directed toward a dial only the user's mouse can reach.
 3. **Both are plain listenable song scalars**, exactly like `tempo`:
    `properties_rw` entries get `/get`, `/set`, `/start_listen`,
    `/stop_listen` generated, `_start_listen` pushes the current value on
@@ -154,13 +160,15 @@ literal-grep `registered_addresses/1` cannot see the new addresses and
 the docs test falsely) — nor do the addresses join `@vendored_song_addresses`
 (the used→registered test would fail for the same reason). This is exactly
 the `clip.py` `quantize` situation, and the guard is the same shape as
-[PLAN_quantize_clip.md](PLAN_quantize_clip.md) part 4: a grep test asserting
-`File.read!("priv/AbletonOSC/abletonosc/song.py")` contains `"swing_amount"`
+[archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md) part 4: a grep
+test asserting `File.read!("priv/AbletonOSC/abletonosc/song.py")` contains
+`"swing_amount"`
 (one line, appears exactly once), with a failure message pointing at
 `SESHAT.md`'s divergence entry and this tool — because an upstream merge that
 drops the line is otherwise invisible: every other song address still
-answers, and swing sets go back to failing the way all OSC fails. If
-quantize's tripwire describe block has landed by then, sit beside it.
+answers, and swing sets go back to failing the way all OSC fails. Quantize's
+tripwire describe block has already landed
+(`test/seshat/osc/vendored_addresses_test.exs`) — sit beside it.
 
 ### 4. Define the tools — `lib/seshat/tools/definitions.ex`
 
@@ -237,9 +245,8 @@ Decisions folded in, so they don't reopen during implementation:
   costs real range and would be invisible: the silent `_set_property` makes
   an over-bound value a no-op, not an error.
 - Both descriptions name `quantize_clip`, so this ships **after**
-  [PLAN_quantize_clip.md](PLAN_quantize_clip.md) (roadmap order already says
-  so). If order ever flips, reword the references — never ship a description
-  pointing at a tool that doesn't exist.
+  [archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md), which has
+  now shipped — the tool exists and the description can name it safely.
 
 ### 5. Handle them — `lib/seshat/tools/handlers.ex`
 

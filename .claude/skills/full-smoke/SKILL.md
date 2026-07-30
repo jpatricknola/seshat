@@ -82,10 +82,12 @@ reported as the original check having run.
   run the recording checks that need 4/4 in 4/4 and the two-bars-in-6/8 check
   in 6/8, then restore the original signature the same way.
 - **Quantize "by eye"** → numeric: `write_midi_notes` with starts deliberately
-  off-grid by known offsets, raw-OSC quantize (grid 8, amount 1.0),
-  `get_clip_notes` → every start on a sixteenth multiple. `undo`, re-run with
-  amount 0.5 → starts exactly halfway to the grid. This is *stronger* than the
-  by-eye original; timing feel by ear stays uncovered.
+  off-grid by known offsets, then `quantize_clip` with grid `"1/16"` and amount
+  1.0, then `get_clip_notes` → every start on a **0.25-beat** multiple (a
+  0.125 spacing means a 1/32 grid was sent — that is the enum regression the
+  measured table exists to catch). `undo`, re-run with amount 0.5 → starts
+  exactly halfway to the grid. This is *stronger* than the by-eye original;
+  timing feel by ear stays uncovered.
 - **Preview audibility** → send `preview_item` / `stop_preview` raw and verify
   what is checkable: nothing added to the set (`get_session_state`,
   `get_track_devices`) and a clean Log.txt tail. Whether it *sounds* is
@@ -139,7 +141,8 @@ Ordering exists to keep state changes from invalidating later checks:
 6. Device tools section, on a stock device and a rack loaded via
    `load_device`; plugin coverage only if one is already in the set.
 7. Clip-properties section, including the §05 aliasing wart check.
-8. No-tool-yet addresses: quantize (numeric, as above) and preview (as above).
+8. Quantize section (numeric, as above), then the one remaining no-tool-yet
+   address: preview (as above).
 9. Recording section — 4/4 checks, then the 6/8 check via the signature
    substitution, then restore the signature.
 10. Network-boundary section: export fixtures (plant stale + fresh in

@@ -55,46 +55,18 @@ persistence atomic" and "Catalog staleness check" are one catalog pass.
 **The play-and-keep arc (quantize · groove):** today the agent generates and the user
 listens. `capture_midi` (shipped 2026-07-28), per-clip properties (shipped
 2026-07-29 — a clip's own loop brace, play markers, and launch settings are now
-readable and writable), and session record (shipped 2026-07-29 —
+readable and writable), session record (shipped 2026-07-29 —
 `record_clip`/`stop_recording` land a deliberate take, fixed-length or
-open-ended, into a chosen Session slot) were the first three steps; these two
-remaining issues — quantize, groove — carry the rest: the user plays, Seshat
-keeps it and cleans it up. That is the largest gap between the current state and
-the mission, and it is cheap: mostly upstream addresses, and quantize's now ships
-with the fork.
+open-ended, into a chosen Session slot), and `quantize_clip` (shipped
+2026-07-31 — tightens timing to a grid with a partial-amount knob, and
+corrected the fork's `GridQuantization` table along the way, which was wrong
+in every row) were the first four steps; the one remaining issue — groove —
+carries the rest: the user plays, Seshat keeps it and cleans it up. It is
+cheap: mostly upstream addresses.
 
 ---
 
-## #1 · `quantize_clip` — the most common MIDI cleanup
-
-**Goal:** quantize a clip's notes to a grid with an amount (0–1 for partial
-quantize), via the Live Object Model's `Clip.quantize(grid, amount)`.
-
-**Why:** "tighten the timing" is the most common cleanup move on played
-MIDI — the direct follow-up to `capture_midi`/session record (both shipped).
-Today it takes a full
-read → remove → rewrite by hand, which loses Live-native swing handling and
-burns tool calls.
-
-**Planner notes:**
-- **The address already exists:** the fork ships `/live/clip/quantize
-  [track_id, clip_id, grid, amount]` via the clip methods list (per upstream
-  PR #198). What remains here is the Elixir tool. The grid is the
-  `GridQuantization` enum (0=none, 4=bar, 6=1/4, 7=1/8, 8=1/16, 9=1/32 —
-  full table in
-  [abletonosc-api-docs.md](abletonosc-api-docs.md)), **not**
-  `RecordingQuantization` — the tool description must carry it.
-- The rejected alternative (Elixir-side read → snap → rewrite with existing
-  note tools) is recorded here deliberately: zero install surface but worse
-  results (no Live-native swing). Don't resurrect it without new evidence.
-- Partial quantize (amount < 1.0) is the musically useful form — full
-  quantize kills feel. The description should teach that.
-- **Plan:** [PLAN_quantize_clip.md](PLAN_quantize_clip.md) (2026-07-30) —
-  pure Elixir, no install step; grid as a string enum to kill the
-  GridQuantization/launch_quantization integer confusion; verified by a
-  before/after note diff since the address never replies.
-
-## #2 · `set_time_signature`
+## #1 · `set_time_signature`
 
 **Goal:** `/live/song/set/signature_numerator` +
 `/live/song/set/signature_denominator`.
@@ -112,7 +84,7 @@ both properties, so the echo can verify against the mirror.
   values; the mirror's existing listeners are the verification channel
   (smoke-checked via `get_session_state` without refresh).
 
-## #3 · Groove amount — "make it swing"
+## #2 · Groove amount — "make it swing"
 
 **Goal:** read/set the global groove amount:
 `/live/song/get|set/groove_amount`.
@@ -133,7 +105,7 @@ value range in the API docs rather than assuming 0–1.
   session state as the read side. Ships after `quantize_clip` (the
   descriptions reference it).
 
-## #4 · `show_view` — the follow cam can't be asked to look anywhere
+## #3 · `show_view` — the follow cam can't be asked to look anywhere
 
 **Goal:** a tool that shows a named pane in Live — Session, Arrangement, the
 clip's note editor, the device chain, the browser. Use it for explicit
@@ -195,7 +167,7 @@ through switching views by hand.
   and immediately before view-specific actions so the user sees the change
   happen, with the existing follow cam retained as post-action confirmation.
 
-## #5 · `start_new_project` — the setup wizard, and prompt budget back
+## #4 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -240,7 +212,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #6 · Model-readable rejections for invalid tool parameters in MCP mode
+## #5 · Model-readable rejections for invalid tool parameters in MCP mode
 
 **Goal:** an out-of-range or wrong-typed parameter comes back to the model as
 `Seshat.Tools.Validation`'s message — naming the parameter, the bound, the value
@@ -285,7 +257,7 @@ went through to Live.
   Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
   handshake.
 
-## #7 · Preserve partial agent results at the tool-iteration limit
+## #6 · Preserve partial agent results at the tool-iteration limit
 
 **Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
 already executed and the conversation so far, and surface a warning in the UI.
@@ -304,6 +276,37 @@ matters most.
 - The LiveView error branch leaves history unchanged; both halves need doing or
   neither helps.
 - Finding #9 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+
+## #7 · `undo` can revert far more than the last action
+
+**Goal:** either make single scripted actions land as separate Live undo
+steps, or make Seshat's `undo` tool honest about what it is actually about to
+revert.
+
+**Why:** smoke-testing `quantize_clip` on 2026-07-31 found that a single
+`undo` call after `create_track` → `write_midi_notes` reverted the *entire
+track*, not just the last write — reproduced three times, including with
+5-second pauses inserted between every step to rule out Live batching
+rapid-fire calls into one undo group. It reproduces with zero `quantize_clip`
+calls in the sequence, so this is not something that feature introduced; it
+is how Live's own undo history groups mutations driven by a control-surface
+script, or a fork/AbletonOSC behavior in front of it. A user who asks to
+"undo the quantize" after a short multi-step exchange could silently lose an
+entire track's worth of work instead.
+
+**Planner notes:**
+- Open research question, not a confirmed fix: check whether the Live Object
+  Model exposes `Song.begin_undo_step()`/`end_undo_step()` (or equivalent) to
+  a Remote Script, and whether wrapping each `/live/...` handler call in the
+  fork in its own step actually separates them — the 5-second-pause
+  reproduction suggests grouping may not be about call timing at all, so this
+  may not be fixable from the fork's side.
+- If no fix is available at the Python/LOM layer, the fallback is honesty
+  rather than silence: `undo`'s tool description and/or `Seshat.Instructions`
+  should say plainly that one `undo` may revert more than the most recent
+  visible action when several mutations happened in quick succession.
+- Reproduction: `create_track` → `write_midi_notes` (any notes) → `undo` →
+  the track is gone, not just the clip's notes. No quantize step needed.
 
 ## #8 · Make catalog persistence atomic and report write failures
 

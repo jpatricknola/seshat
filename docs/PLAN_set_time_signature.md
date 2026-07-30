@@ -184,8 +184,10 @@ end
 
 - **`test/seshat/tools/definitions_test.exs`** — two edits, not one. Bump the
   count assertion: `53 → 54` if this lands before
-  [PLAN_quantize_clip.md](PLAN_quantize_clip.md)'s `quantize_clip`, `54 → 55`
-  after it. **And add `set_time_signature` beside `set_tempo` in the
+  [archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md)'s
+  `quantize_clip`, `54 → 55` after it — that plan has since shipped, taking
+  the count to 54, so this now lands as `54 → 55`. **And add
+  `set_time_signature` beside `set_tempo` in the
   `expected` name list** in "includes all expected tool names" — the count
   assertion alone would pass if the tool were named something else or
   silently replaced another, so the manual inventory is what actually pins

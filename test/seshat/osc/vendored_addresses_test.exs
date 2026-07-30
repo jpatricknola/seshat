@@ -274,6 +274,42 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     end
   end
 
+  # `/live/clip/quantize` is invisible to both checks above by construction:
+  # clip.py registers its addresses in a loop (`"/live/clip/%s" % method`), so
+  # the literal-grep `registered_addresses/1` can't see it, and `/live/clip/` is
+  # not a vendored prefix, so the Elixir-side literal isn't swept into
+  # `used_addresses` either. Losing `"quantize"` from that methods list in an
+  # upstream merge would be exactly as silent as every other loss in this file —
+  # the address simply stops existing, and a send-only address that no longer
+  # exists is indistinguishable from one that worked.
+  #
+  # clip.py deliberately does *not* join @handler_files: its loop registration
+  # would make `registered_addresses/1` under-report and trip the docs test
+  # falsely.
+  describe "the quantize method on the clip handler" do
+    @clip_file "priv/AbletonOSC/abletonosc/clip.py"
+
+    # The double-quoted literal, not the bare word: `quantize` appears twice
+    # in clip.py — once in the prose comment above the methods list, once as
+    # the list entry — so a grep for the bare word stays green after the entry
+    # is deleted, which is precisely the regression this test exists to catch.
+    test "clip.py still registers quantize in its generic methods list" do
+      assert File.read!(@clip_file) =~ ~s("quantize"),
+             """
+             #{@clip_file} no longer lists "quantize" among its generic methods.
+
+             That single list entry is the whole of /live/clip/quantize — it is a
+             fork addition (upstream PR #198), taken into clip.py rather than a
+             handler file of ours, so nothing else in this suite can see it. Without
+             it the address is unregistered, and since it never replies even when it
+             works, Seshat's quantize_clip tool would report success forever while
+             moving nothing.
+
+             Reinstate it and check SESHAT.md's "Additions to upstream's code".
+             """
+    end
+  end
+
   # Two deliberate departures from upstream's *behaviour*, neither of which any
   # address-level check can see: upstream's OSC socket binds every interface and
   # retargets its default reply address to whoever spoke last, which handed full,

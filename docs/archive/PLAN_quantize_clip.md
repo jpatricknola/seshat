@@ -1,5 +1,13 @@
 # Plan — `quantize_clip`: the most common MIDI cleanup
 
+> **Archived 2026-07-31 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `quantize_clip` lives in
+> `Seshat.Tools.Definitions`/`Seshat.Tools.Handlers`, backed by the fork's
+> already-shipped `/live/clip/quantize`; the corrected `GridQuantization`
+> table it depends on is in `docs/abletonosc-api-docs.md` and the fork's
+> `clip.py` comment. The one remaining follow-up — groove/swing — is
+> "Groove amount" on [../ROADMAP.md](../ROADMAP.md).
+
 Roadmap item "`quantize_clip` — the most common MIDI cleanup" (top of the queue
 at time of writing). One new tool — `quantize_clip` — that snaps a MIDI clip's
 notes toward a rhythmic grid with a strength amount, via the Live Object
@@ -15,7 +23,7 @@ measurements:
   contract"). Correcting `abletonosc-api-docs.md` is part of this work, and the
   matching comment in the fork's `clip.py` is corrected with it — a
   comment-only submodule commit, so the two-commit dance and a reinstall apply
-  ([osc.md](../.claude/rules/osc.md)) even though no Python behaviour moves.
+  ([osc.md](../../.claude/rules/osc.md)) even though no Python behaviour moves.
 - A tripwire test (part 4) keeps an upstream merge from dropping the method
   silently.
 
@@ -66,7 +74,7 @@ Research confirmed the roadmap entry's claims against the real sources:
 3. **Verification can reuse the note-reading plumbing wholesale.**
    `get_clip_notes` already turns `/live/clip/get/notes` replies into note
    maps (`parse_clip_notes/1` in
-   [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)), and the
+   [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)), and the
    empty-slot / audio-clip guards (`ensure_clip/3`, `ensure_midi_clip/2`)
    exist. AbletonOSC processes datagrams in arrival order and
    `clip.quantize()` runs synchronously inside the callback, so a notes query
@@ -106,7 +114,7 @@ documented table is wrong**:
 | 3 | 1/8 triplet (1/3 beat) | 8 | 1/32 (0.125 beat) |
 | 4 | 1/8 triplet (1/3 beat) | ≥9 | **invalid — nothing happens at all** |
 
-[abletonosc-api-docs.md](abletonosc-api-docs.md) and the comment in the fork's
+[abletonosc-api-docs.md](../abletonosc-api-docs.md) and the comment in the fork's
 `clip.py` both claim `1=8 bars … 5=1/2, 6=1/4, 7=1/8, 8=1/16, 9=1/32`. Every
 one of those rows is false. Had the plan shipped as first written, its string
 enum would have mapped `"1/16"` to `8` — a **1/32** grid — `"1/8"` to `7`, a
@@ -261,7 +269,7 @@ Specifics:
   whole clip) and reuses `parse_clip_notes/1`. It **checks the echoed track and
   slot indices and reissues once on mismatch**, following `read_device_names/2`
   rather than `get_clip_notes`'s destructure — that clause discards `_t, _s`
-  ([handlers.ex:1866](../lib/seshat/tools/handlers.ex#L1866)) and inherits the
+  ([handlers.ex:1866](../../lib/seshat/tools/handlers.ex#L1866)) and inherits the
   reply-correlation hazard `query_echoed/5` exists to blunt. It can't ride
   `query_echoed/4` for the same reason `read_device_names/2` can't:
   `unwrap_payload/1` reads single-value payloads and this reply is a whole
@@ -314,7 +322,7 @@ Specifics:
     same argument that keeps `no_grid=0` out of the grid enum — an input that
     provably does nothing is a trap, not an option — and it has to live in the
     handler because `Seshat.Tools.Validation` reads only `:minimum`
-    ([validation.ex:124](../lib/seshat/tools/validation.ex#L124)), with no
+    ([validation.ex:124](../../lib/seshat/tools/validation.ex#L124)), with no
     `exclusiveMinimum` branch to reject 0.0 at the schema. Without this the
     zero case falls through to the nothing-moved reply and tells the user their
     AbletonOSC install may be stale, which at 0% strength is a fabrication.
@@ -394,7 +402,7 @@ falsely.
   never replies, so a typo'd address or a swapped grid/amount argument order
   passes `grid_quantization/1`, passes `format_quantize_result/7`, passes the
   Python tripwire (which only proves `"quantize"` is still registered), and
-  fails silently in Live. [testing.md](../.claude/rules/testing.md) asks for
+  fails silently in Live. [testing.md](../../.claude/rules/testing.md) asks for
   wire assertions over reply strings for exactly this reason; a send-only
   address is the case it was written for.
 - **`test/seshat/tools/follow_cam_test.exs`** — `calls("quantize_clip", %{track: t, slot: s})`
@@ -409,7 +417,7 @@ falsely.
 - **`.claude/skills/smoke-test/SKILL.md`** — its "If the change touches an
   address with no tool yet" section currently names `/live/clip/quantize` as
   tool-less and drives it by raw `python3` OSC
-  ([SKILL.md:78–98](../.claude/skills/smoke-test/SKILL.md#L78-L98)). Move the
+  ([SKILL.md:78–98](../../.claude/skills/smoke-test/SKILL.md#L78-L98)). Move the
   quantize checks into the normal MCP flow, driven through `quantize_clip`
   (`undo` then amount 0.5 moves notes halfway; before/after note counts match
   the reply) — and leave only browser preview in the raw-OSC section. Leaving
@@ -435,7 +443,7 @@ falsely.
 
   **Do it in the implementation commit, not before.** Unlike the docs fix,
   this one is not free: `priv/AbletonOSC` is a submodule, so it costs the full
-  sequence in [osc.md](../.claude/rules/osc.md) — `git -C priv/AbletonOSC
+  sequence in [osc.md](../../.claude/rules/osc.md) — `git -C priv/AbletonOSC
   checkout master` first, commit and push inside the submodule, then
   `git add priv/AbletonOSC` from the root **in the same Seshat commit as the
   Elixir side** — plus `mix abletonosc.install` and a Live restart so the copy
