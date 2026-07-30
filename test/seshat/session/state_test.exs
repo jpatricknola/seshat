@@ -106,6 +106,18 @@ defmodule Seshat.Session.StateTest do
     test "an empty mirror against an empty session is not stale" do
       refute State.stale?([], [])
     end
+
+    # `nil` is "we could not read the list", which is a different fact from "the
+    # list is empty" and must not reconcile against anything. Being stale against
+    # every pushed list is what heals a failed refresh: the next structure push
+    # disagrees by definition and triggers the authoritative re-read.
+    test "an unknown mirror is stale against an empty session" do
+      assert State.stale?(nil, [])
+    end
+
+    test "an unknown mirror is stale against a live session" do
+      assert State.stale?(nil, ["Drums"])
+    end
   end
 
   describe "song structure pushes" do
@@ -147,6 +159,21 @@ defmodule Seshat.Session.StateTest do
       assert push(mirrored, "/live/song/get/tracks", ["Drums", "Bass"]) == mirrored
     end
 
+    # A refresh that couldn't read the track count leaves `tracks: nil`, and
+    # `stale?(nil, _)` is true, so without the brake every subsequent push would
+    # refresh again — the unbounded spin, reached by the failure path this whole
+    # change adds. Pre-setting the record proves the brake still holds when the
+    # mirror side is unknown rather than a list.
+    test "the brake still holds when the mirror side is unknown" do
+      mirrored =
+        state(%{
+          tracks: nil,
+          unreconciled: %{tracks: ["Drums", "Bass"]}
+        })
+
+      assert push(mirrored, "/live/song/get/tracks", ["Drums", "Bass"]) == mirrored
+    end
+
     test "the return list gets the same brake" do
       mirrored =
         state(%{
@@ -169,6 +196,30 @@ defmodule Seshat.Session.StateTest do
       state = push(mirrored, "/live/song/get/tracks", ["Drums"])
 
       assert state.unreconciled == %{}
+    end
+  end
+
+  describe "track scalar pushes onto an unknown track list" do
+    # A failed refresh leaves `tracks: nil` — unknown, not empty. A scalar push
+    # for a list we don't hold has nothing to land on, and building a one-track
+    # mirror out of a volume push would invent every other field. Dropped, and
+    # the next structure push re-reads the lot.
+    test "a volume push is a no-op" do
+      mirrored = state(%{tracks: nil})
+
+      assert push(mirrored, "/live/track/get/volume", [0, 0.5]) == mirrored
+    end
+
+    test "a name push is a no-op" do
+      mirrored = state(%{tracks: nil})
+
+      assert push(mirrored, "/live/track/get/name", [0, "Drums"]) == mirrored
+    end
+
+    test "a mute push is a no-op" do
+      mirrored = state(%{tracks: nil})
+
+      assert push(mirrored, "/live/track/get/mute", [0, 1]) == mirrored
     end
   end
 

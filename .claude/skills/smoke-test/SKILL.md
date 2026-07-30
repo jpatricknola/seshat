@@ -345,6 +345,51 @@ first.
    AbletonOSC reply shape — the log line carries the reason and a byte
    preview, which is what would need loosening.
 
+## If the change touches `Session.State`'s refresh or `get_session_state`'s reply
+
+The mirror answers `nil` — "unknown" — for anything Ableton didn't answer, and
+`get_session_state` renders that as unknown rather than a plausible number.
+**Nothing in `mix test` executes any of it**: every changed branch lives in
+`do_refresh/1`, which reaches `Transport.query/3` by design, so this checklist
+is the verification by construction. The formatters are pure-tested
+(`handlers_test.exs`); the failure path that produces `nil` at all is only
+reachable here.
+
+With the Seshat server running, **quit Ableton Live** (or toggle AbletonOSC off
+in Live's MIDI preferences). Then, in order — steps 1 and 2 are timing-coupled,
+so read both before starting:
+
+1. **Force a failed refresh.** `get_session_state` with `refresh: true`, once →
+   the timeout error from `maybe_refresh/1` ("Refreshing from Ableton timed
+   out"). The GenServer is **still refreshing** when that error arrives: against
+   a dead Ableton `do_refresh/1` takes roughly 37s (six song queries at 5s each,
+   the 5s `num_tracks` probe, the 2s returns probe) while the caller gives up at
+   30s, so about 7s of it remain.
+2. **Read again immediately** (inside those ~7s), plain, **no** refresh → the
+   mid-refresh error: "The session mirror did not answer — it may be mid-refresh
+   against an unresponsive Ableton. Try again shortly". The call queues behind
+   the running refresh and exits its own 5s call timeout. **This is a required
+   check, not a caveat** — it is the only live exercise of that message, and it
+   must read as "try again shortly", never as an empty session. If you miss the
+   window the call simply succeeds; retry from step 1 rather than treating that
+   success as a failure.
+3. **Wait ≥10s, then read again**, plain, no refresh → the unknown-state reply.
+   Expect tempo, time signature, key and playing state all reported unknown, the
+   track list reported unknown-**not**-empty, and the trailing explanation
+   sentence ("Unknown values mean Ableton did not answer…") present **exactly
+   once**. **It must not say 120 BPM, 4/4, C Major, or list the previous set's
+   tracks** — those four are the fabrications this behaviour exists to remove,
+   and any of them appearing here is the whole check failing.
+4. **Still with Live closed**, `record_clip` on any track with `bars: 4` → the
+   time-signature-unknown error naming `refresh: true` and saying nothing was
+   recorded. Not a crash (an `ArithmeticError` from a `nil` numerator), and not
+   a generic timeout message.
+5. **Start Live again.** AbletonOSC's `/live/startup` fires a refresh on its
+   own; wait for it, then `get_session_state` plain → real values, no unknown
+   remnants anywhere, and no trailing explanation sentence. This is the recovery
+   half: listener re-subscription pushes the current value of everything, so
+   anything a lost datagram nil'd repopulates without a manual refresh.
+
 ## If the change touches session guidance (`Seshat.Instructions` or a tool description)
 
 The only checks in this repo that exercise **what the model says** rather than

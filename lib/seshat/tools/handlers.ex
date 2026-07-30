@@ -884,6 +884,33 @@ defmodule Seshat.Tools.Handlers do
     bars * numerator * 4 / denominator
   end
 
+  @doc """
+  `record_clip`'s `bars` against a song map, as `{:ok, beats}` or an error.
+
+  `{:ok, nil}` for no `bars` — an open-ended take needs no signature and must
+  keep working when the mirror is degraded. But converting bars to beats *does*
+  need one, and a `nil` numerator or denominator would otherwise reach
+  `record_length_beats/3` and raise `ArithmeticError` mid-tool-call. Refusing is
+  better than recording a take of the wrong length off a guessed 4/4: the guard
+  sits ahead of every OSC send in `record_clip`, so "nothing was recorded" is
+  true when this errors.
+  """
+  @spec record_length_from(number() | nil, map()) :: {:ok, float() | nil} | {:error, String.t()}
+  def record_length_from(nil, _song), do: {:ok, nil}
+
+  def record_length_from(bars, %{time_sig_numerator: num, time_sig_denominator: den})
+      when is_nil(num) or is_nil(den) do
+    {:error,
+     "The time signature isn't known (Ableton did not answer when the session was last " <>
+       "read), so a #{bars}-bar length can't be converted to beats and nothing was recorded. " <>
+       "Call get_session_state with refresh: true first, or omit bars to record open-ended " <>
+       "and stop_recording when done."}
+  end
+
+  def record_length_from(bars, song) do
+    {:ok, record_length_beats(bars, song.time_sig_numerator, song.time_sig_denominator)}
+  end
+
   @range_params ~w(start_pitch pitch_span start_time time_span)
 
   @doc """
@@ -932,14 +959,146 @@ defmodule Seshat.Tools.Handlers do
     "#{length(sends)} send(s) on track #{track}:\n\n#{lines}"
   end
 
+  # Appended once to a whole `get_session_state` reply that contains any unknown
+  # at all. One sentence for the reply, not one per field: the per-field strings
+  # stay short so a half-degraded session doesn't drown the readable half, and
+  # the *explanation* — why a value is missing and what to do — is worth saying
+  # exactly once.
+  @unknown_explanation "Unknown values mean Ableton did not answer when the mirror was last " <>
+                         "read — pass refresh: true to re-read, and check Ableton is running " <>
+                         "with AbletonOSC enabled."
+
+  @doc """
+  The whole `get_session_state` reply, from the four mirrored values.
+
+  Composition lives here rather than in the caller because the "exactly one
+  trailing explanation for the whole reply" rule is a property of the
+  composition, not of any one formatter. It `or`s the formatters' `unknown?`
+  flags rather than sniffing the composed text for the word "unknown", which
+  would work right up until a track is legitimately named that.
+  """
+  @spec format_session_state(map(), [map()] | nil, [map()], map() | nil) :: String.t()
+  def format_session_state(song, tracks, return_tracks, master) do
+    {song_line, song_unknown?} = format_song_line(song)
+    {track_summary, tracks_unknown?} = format_track_summary(tracks)
+    return_summary = format_return_tracks(return_tracks, master)
+
+    body = "#{song_line}\n\n#{track_summary}\n\n#{return_summary}"
+
+    if song_unknown? or tracks_unknown? or returns_unknown?(return_tracks, master) do
+      "#{body}\n\n#{@unknown_explanation}"
+    else
+      body
+    end
+  end
+
+  # `master: nil` is both "the extension never answered" (so returns are
+  # unavailable too) and "that one query was lost" — either way the reply says
+  # something is missing, and the explanation belongs with it.
+  defp returns_unknown?(_return_tracks, nil), do: true
+
+  defp returns_unknown?(return_tracks, _master) do
+    Enum.any?(return_tracks, &(is_nil(&1.name) or is_nil(&1.volume)))
+  end
+
+  @doc """
+  The song line of `get_session_state`'s reply, plus whether any of it was
+  unknown.
+
+  Renders per field, so a lost tempo reply doesn't cost the time signature: only
+  the phrase whose source is `nil` says "unknown". The caller owns the trailing
+  explanation — see `format_session_state/4`.
+  """
+  @spec format_song_line(map()) :: {String.t(), boolean()}
+  def format_song_line(song) do
+    tempo = if is_nil(song.tempo), do: "tempo unknown", else: "#{song.tempo} BPM"
+
+    signature_unknown? =
+      is_nil(song.time_sig_numerator) or is_nil(song.time_sig_denominator)
+
+    signature =
+      if signature_unknown?,
+        do: "time signature unknown",
+        else: "#{song.time_sig_numerator}/#{song.time_sig_denominator}"
+
+    playing =
+      case song.is_playing do
+        nil -> "playing state unknown"
+        true -> "playing"
+        false -> "stopped"
+      end
+
+    # Never `Pitch.pitch_class_name(nil)` — it quietly returns "", which would
+    # print "key:  Major" and read as a key we simply forgot to name.
+    key_unknown? = is_nil(song.root_note) or is_nil(song.scale_name)
+
+    key =
+      if key_unknown?,
+        do: "key unknown",
+        else: "key: #{Pitch.pitch_class_name(song.root_note)} #{song.scale_name}"
+
+    unknown? =
+      is_nil(song.tempo) or signature_unknown? or is_nil(song.is_playing) or key_unknown?
+
+    {Enum.join([tempo, signature, playing, key], ", "), unknown?}
+  end
+
+  @doc """
+  The per-track block of `get_session_state`'s reply, plus whether any of it was
+  unknown.
+
+  `nil` (the track list couldn't be read) and `[]` (a verified empty set) are
+  deliberately different sentences: presenting an unreachable Ableton as a set
+  with no tracks is the fabrication this whole path exists to stop.
+  """
+  @spec format_track_summary([map()] | nil) :: {String.t(), boolean()}
+  def format_track_summary(nil) do
+    {"The track list could not be read from Ableton — it is unknown, not empty. " <>
+       "Pass refresh: true to re-read.", true}
+  end
+
+  def format_track_summary([]) do
+    {"No tracks in current session (Ableton may not be connected)", false}
+  end
+
+  def format_track_summary(tracks) do
+    formatted = Enum.map(tracks, &format_track_line/1)
+
+    {Enum.map_join(formatted, "\n", &elem(&1, 0)), Enum.any?(formatted, &elem(&1, 1))}
+  end
+
+  defp format_track_line(t) do
+    label =
+      if is_nil(t.name),
+        do: "Track #{t.index} (name unknown)",
+        else: ~s{Track #{t.index} "#{t.name}"}
+
+    pan = if is_nil(t.pan), do: "pan unknown", else: "pan=#{Float.round(t.pan / 1.0, 2)}"
+
+    volume =
+      if is_nil(t.volume), do: "volume unknown", else: "volume=#{Float.round(t.volume / 1.0, 2)}"
+
+    mute = if t.mute == true, do: " [muted]", else: ""
+    solo = if t.solo == true, do: " [solo]", else: ""
+
+    # One marker for the pair: two unanswered flag queries are one lost refresh,
+    # and "[mute unknown] [solo unknown]" is twice the noise for the same fact.
+    flags_unknown? = is_nil(t.mute) or is_nil(t.solo)
+    flags = if flags_unknown?, do: " [mute/solo unknown]", else: ""
+
+    unknown? = is_nil(t.name) or is_nil(t.pan) or is_nil(t.volume) or flags_unknown?
+
+    {"#{label}: #{pan}, #{volume}#{mute}#{solo}#{flags}", unknown?}
+  end
+
   @doc """
   Formats the return tracks and the master level for `get_session_state`.
 
   `master` is `nil` when `/live/master/get/volume` never answered, which means
   Seshat's AbletonOSC extension isn't installed — say so rather than reporting a
-  set with no returns, which looks identical but isn't. A single return's
-  `volume` is `nil` on the same principle: one lost reply, and the fader position
-  is unknown rather than 0.85.
+  set with no returns, which looks identical but isn't. A single return's `name`
+  or `volume` is `nil` on the same principle: one lost reply, and that field is
+  unknown rather than "Return 1" or 0.85.
   """
   @spec format_return_tracks([map()], map() | nil) :: String.t()
   def format_return_tracks(_return_tracks, nil) do
@@ -954,12 +1113,14 @@ defmodule Seshat.Tools.Handlers do
   def format_return_tracks(return_tracks, master) do
     lines =
       Enum.map_join(return_tracks, "\n", fn r ->
-        ~s{Return #{r.index} "#{r.name}" (send #{send_letter(r.index)}): } <>
-          volume_field(r.volume)
+        "#{return_label(r)} (send #{send_letter(r.index)}): " <> volume_field(r.volume)
       end)
 
     "#{lines}\nMaster: volume=#{round_volume(master.volume)}"
   end
+
+  defp return_label(%{name: nil, index: index}), do: "Return #{index} (name unknown)"
+  defp return_label(r), do: ~s{Return #{r.index} "#{r.name}"}
 
   # A guessed fader position reads as real and the model does relative moves off
   # it ("turn the delay down a bit" from a fictional 0.85 is an increase), so an
@@ -1997,35 +2158,21 @@ defmodule Seshat.Tools.Handlers do
          "AbletonOSC enabled."}
   end
 
+  # Reads the four mirrored values and hands them to the pure formatter. The exit
+  # catch is a *mirror* that didn't answer — realistically it is mid-refresh
+  # against an unresponsive Ableton, since `do_refresh/1` blocks the GenServer
+  # for the length of every guard timeout it hits. Reporting that as an empty
+  # session (which this used to do) is the same fabrication as a guessed tempo,
+  # just wearing a different coat: the caller has no way to tell "I couldn't ask"
+  # from "there is nothing there".
   defp serve_session_state do
-    song = State.song()
-    tracks = State.tracks()
-
-    playing = if song.is_playing, do: "playing", else: "stopped"
-
-    song_line =
-      "#{song.tempo} BPM, #{song.time_sig_numerator}/#{song.time_sig_denominator}, #{playing}, " <>
-        "key: #{Pitch.pitch_class_name(song.root_note)} #{song.scale_name}"
-
-    track_summary =
-      if tracks == [] do
-        "No tracks in current session (Ableton may not be connected)"
-      else
-        Enum.map_join(tracks, "\n", fn t ->
-          mute = if t.mute, do: " [muted]", else: ""
-          solo = if t.solo, do: " [solo]", else: ""
-
-          "Track #{t.index} \"#{t.name}\": pan=#{Float.round(t.pan, 2)}, " <>
-            "volume=#{Float.round(t.volume, 2)}#{mute}#{solo}"
-        end)
-      end
-
-    return_summary = format_return_tracks(State.return_tracks(), State.master())
-
-    {:ok, "#{song_line}\n\n#{track_summary}\n\n#{return_summary}"}
+    {:ok,
+     format_session_state(State.song(), State.tracks(), State.return_tracks(), State.master())}
   catch
     :exit, _ ->
-      {:ok, "No tracks in current session (Ableton may not be connected)"}
+      {:error,
+       "The session mirror did not answer — it may be mid-refresh against an unresponsive " <>
+         "Ableton. Try again shortly, and check Ableton is running with AbletonOSC enabled."}
   end
 
   defp to_track_type("midi"), do: :midi
@@ -2309,12 +2456,12 @@ defmodule Seshat.Tools.Handlers do
        "recorded. Omit it for a take that runs until stop_recording."}
   end
 
+  # The `nil` short-circuit stays here as well as inside `record_length_from/2`:
+  # an open-ended take has no reason to need the mirror at all, and routing it
+  # through `State.song()` would make a GenServer that is mid-refresh able to
+  # fail a `record_clip` call that asks nothing of it.
   defp record_length(nil), do: {:ok, nil}
-
-  defp record_length(bars) do
-    song = State.song()
-    {:ok, record_length_beats(bars, song.time_sig_numerator, song.time_sig_denominator)}
-  end
+  defp record_length(bars), do: record_length_from(bars, State.song())
 
   # A third OSC argument is `ClipSlot.fire()`'s first optional positional one,
   # `record_length` — AbletonOSC's clip_slot handler forwards everything past the
