@@ -28,6 +28,8 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 `Application.View.hide_view(name)` as a setter — then surface both in the tool
 layer, so Seshat can tell which panes are open and can put one away.
 
+**Plan:** [PLAN_read_and_hide_views.md](PLAN_read_and_hide_views.md)
+
 **Why:** `show_view` shipped 2026-07-31 able to show a pane and nothing else.
 Its own description has to admit the blind spot in as many words — "Seshat
 cannot read the currently visible pane, so call this even if the requested pane
