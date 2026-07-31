@@ -107,6 +107,38 @@ defmodule Seshat.Tools.ValidationTest do
     end
   end
 
+  describe "set_time_signature" do
+    # AbletonOSC's `_set_property` logs and swallows whatever the Live API
+    # rejects, and setters never reply — so a signature Live cannot express is
+    # indistinguishable from success on the wire. These three cases are what
+    # keeps that hole closed: the refusal happens here, before anything is sent.
+    test "rejects a numerator below the minimum" do
+      assert {:error, message} =
+               Validation.validate("set_time_signature", %{"numerator" => 0, "denominator" => 4})
+
+      assert message =~ "- numerator: must be at least 1 (got 0)"
+    end
+
+    test "rejects a denominator Live's own control has no setting for" do
+      assert {:error, message} =
+               Validation.validate("set_time_signature", %{"numerator" => 3, "denominator" => 3})
+
+      assert message =~ "- denominator: must be one of 1, 2, 4, 8, 16 (got 3)"
+    end
+
+    test "rejects a float numerator rather than coercing it" do
+      assert {:error, message} =
+               Validation.validate("set_time_signature", %{"numerator" => 6.0, "denominator" => 8})
+
+      assert message =~ "- numerator: must be an integer (got 6.0)"
+    end
+
+    test "accepts an odd signature inside the bounds" do
+      assert :ok =
+               Validation.validate("set_time_signature", %{"numerator" => 7, "denominator" => 8})
+    end
+  end
+
   describe "nested structures" do
     test "reports the path into an array of objects" do
       notes = [%{"pitch" => 60, "start_beat" => 0.0, "duration" => 1.0, "velocity" => 0}]

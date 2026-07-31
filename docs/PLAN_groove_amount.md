@@ -59,7 +59,7 @@ humanize/swing leg. Research against the Live Object Model reference
    mirror").
 4. **Setters are silent and swallow rejection** (`_set_property` logs and
    swallows Live API exceptions; a set never replies). Same posture as
-   [PLAN_set_time_signature.md](PLAN_set_time_signature.md): schema bounds
+   [archive/PLAN_set_time_signature.md](archive/PLAN_set_time_signature.md): schema bounds
    make invalid values unrepresentable, the setter stays fire-and-forget per
    [.claude/rules/osc.md](../.claude/rules/osc.md), and the listener echo into
    the mirror is the verification channel.
