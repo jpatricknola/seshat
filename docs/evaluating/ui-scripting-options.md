@@ -7,38 +7,44 @@ scripting the Mac UI instead. This note evaluates that idea so it doesn't get
 re-litigated from scratch, and so the next proposal starts from what has
 already been measured.
 
-**Current position: no decision to build.** One mechanism (synthetic
-keystrokes) is declined outright on evidence Seshat already paid for once. The
-other (Accessibility element scripting) is plausible but rests on one unproven
-assumption about Live's window; the next step is the [spike](#the-spike-that-decides-it)
-below, not a design. No roadmap entry exists yet — per house practice
+**Current position: no decision to build.** Blind keystrokes — sent without
+reading UI state before or after — are the wrong shape for reasons intrinsic
+to the mechanism, laid out below. Accessibility element scripting is the
+plausible route, but rests on one unproven assumption about Live's window;
+the next step is the [spike](#the-spike-that-decides-it) below, not a design. No roadmap entry exists yet — per house practice
 ([sound-search-options.md](sound-search-options.md)), this doc holds the
 evidence and the roadmap holds the order, and this one doesn't earn a rank
 until the spike says the assumption holds.
 
-## The prior art: Seshat already shipped keystrokes once, and removed them
+## The prior art: what `create_project`'s removal does and doesn't establish
 
 [archive/create-project-removal.md](../archive/create-project-removal.md)
-(2026-07-28) is the controlling precedent. `create_project` drove Live with an
-AppleScript Cmd+N, and every failure it records is a property of the
-*mechanism*, not of the feature around it:
+(2026-07-28) is the one place Seshat has driven Live's UI before, so it gets
+cited — but read it for what it actually decided. The tool was removed because
+the **feature** was wrong, not as a verdict on keystrokes: the AppleScript
+Cmd+N was *redundant* once the stripped default set meant Live already opens
+into a blank set; the track-clearing half failed for **OSC** reasons
+(fire-and-forget deletes into a post-load settling window — nothing to do with
+the keystroke); and the one hard step, saving and closing a set with real
+work, is a human decision no mechanism performs safely. "Start a new project"
+turned out to be `create_track` calls; the tool had nothing left to do.
 
-- **Blind targeting.** A keystroke goes to whatever has focus. The Cmd+N "only
-  worked when it was redundant" — when a fresh set was already open.
-- **No read-back.** Nothing confirms the keypress did anything. The
-  fire-and-forget deletes that followed were lost into a settling window no
-  code could see the end of.
-- **Modal state is invisible and fatal.** Live's "save changes?" dialog
-  swallowed the keystroke and blocked everything, and no code can click *Don't
-  Save* on the user's behalf without discarding their work.
+What the episode *does* usefully record about the keystroke leg, where it ran
+against a set with unsaved changes:
 
-Send-and-hope, exactly like a silent OSC setter — but aimed at a target that
-moves and with consequences that can include a user's unsaved work. That
-removal ended with "everything is OSC," and nothing since has weakened it.
+- **Blind targeting.** A keystroke goes to whatever has focus, and nothing
+  confirms it landed or did anything.
+- **Modal state is invisible.** Live's "save changes?" dialog swallowed the
+  Cmd+N and blocked everything, undetectably.
 
-**Synthetic keystrokes are therefore declined as a mechanism, permanently.**
-Any future proposal in this area means Accessibility element scripting, which
-does not share those properties.
+Those are intrinsic properties of a keystroke sent without reading UI state —
+send-and-hope, like a silent OSC setter, but aimed at a target that moves.
+They are reasons to require the *verified* form of UI automation, not a ban:
+**bare keystrokes are out as a mechanism; a keystroke inside a read-verified
+loop** (confirm focus and the absence of a modal first, read the effect back
+after) **is an acceptable actuation detail** where a target has a shortcut but
+no clickable element. The preferred form is still acting on named elements —
+Accessibility scripting — which is what the rest of this note evaluates.
 
 ## Why AX element scripting is a different thing
 
@@ -122,9 +128,9 @@ app that custom-draws can expose anything from a full semantic AX tree to a
 single opaque `AXGroup`. The menu bar is native, so menu items are almost
 certainly real elements; the Preferences panel's audio-device dropdown — the
 number-one use case — may expose nothing at all. If it doesn't, the only
-fallback is clicking at coordinates, which inherits every blindness that got
-keystrokes declined, and the correct outcome is to decline the whole feature
-and record it here.
+fallback is clicking at coordinates, which has every blindness of a bare
+keystroke and none of the verifiability, and the correct outcome is to decline
+the whole feature and record it here.
 
 This could not be tested on 2026-07-31: element queries died on the
 permission granularity above before reaching Live's tree.
