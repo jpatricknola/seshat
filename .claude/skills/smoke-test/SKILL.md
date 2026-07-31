@@ -402,10 +402,10 @@ so read both before starting:
 1. **Force a failed refresh.** `get_session_state` with `refresh: true`, once →
    the timeout error from `maybe_refresh/1` ("Refreshing from Ableton timed
    out"). The GenServer is **still refreshing** when that error arrives: against
-   a dead Ableton `do_refresh/1` takes roughly 37s (six song queries at 5s each,
-   the 5s `num_tracks` probe, the 2s returns probe) while the caller gives up at
-   30s, so about 7s of it remain.
-2. **Read again immediately** (inside those ~7s), plain, **no** refresh → the
+   a dead Ableton `do_refresh/1` takes roughly 47s (eight song queries at 5s
+   each, the 5s `num_tracks` probe, the 2s returns probe) while the caller
+   gives up at 30s, so about 17s of it remain.
+2. **Read again immediately** (inside those ~17s), plain, **no** refresh → the
    mid-refresh error: "The session mirror did not answer — it may be mid-refresh
    against an unresponsive Ableton. Try again shortly". The call queues behind
    the running refresh and exits its own 5s call timeout. **This is a required
@@ -414,8 +414,9 @@ so read both before starting:
    window the call simply succeeds; retry from step 1 rather than treating that
    success as a failure.
 3. **Wait ≥10s, then read again**, plain, no refresh → the unknown-state reply.
-   Expect tempo, time signature, key and playing state all reported unknown, the
-   track list reported unknown-**not**-empty, and the trailing explanation
+   Expect tempo, time signature, key, playing state, groove amount and swing
+   amount all reported unknown, the track list reported unknown-**not**-empty,
+   and the trailing explanation
    sentence ("Unknown values mean Ableton did not answer…") present **exactly
    once**. **It must not say 120 BPM, 4/4, C Major, or list the previous set's
    tracks** — those four are the fabrications this behaviour exists to remove,

@@ -49,7 +49,7 @@ defmodule Seshat.Session.State do
   @query_timeout 5_000
 
   # A full refresh against an Ableton that has stopped answering is a stack of
-  # per-property guard timeouts, and no constant can bound it: the six song
+  # per-property guard timeouts, and no constant can bound it: the eight song
   # properties alone reach @query_timeout each before the first track is read,
   # and the per-track cost grows with the session. So this is a ceiling on how
   # long the *caller* waits, not on the refresh — the GenServer finishes in its
