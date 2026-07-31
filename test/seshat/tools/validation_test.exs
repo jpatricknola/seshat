@@ -86,6 +86,111 @@ defmodule Seshat.Tools.ValidationTest do
     end
   end
 
+  # `target` is the one optional parameter shared by six tools, so it is also
+  # the one place a schema drift would silently widen six call surfaces at once.
+  describe "the device tools' target" do
+    @device_tools ~w(
+      load_device get_track_devices get_device_parameters
+      set_device_parameter delete_device bypass_device
+    )
+
+    defp with_target(tool, target) do
+      Map.put(minimal_device_params(tool), "target", target)
+    end
+
+    defp minimal_device_params("load_device"), do: %{"track" => 0, "uri" => "query:X"}
+    defp minimal_device_params("get_track_devices"), do: %{"track" => 0}
+    defp minimal_device_params("get_device_parameters"), do: %{"track" => 0, "device" => 0}
+
+    defp minimal_device_params("set_device_parameter"),
+      do: %{"track" => 0, "device" => 0, "parameter" => 0, "value" => 0.5}
+
+    defp minimal_device_params("delete_device"), do: %{"track" => 0, "device" => 0}
+
+    defp minimal_device_params("bypass_device"),
+      do: %{"track" => 0, "device" => 0, "enabled" => false}
+
+    test "every device tool accepts 'return' and 'master'" do
+      for tool <- @device_tools do
+        assert :ok = Validation.validate(tool, with_target(tool, "return")),
+               "#{tool} rejected target: 'return'"
+
+        assert :ok = Validation.validate(tool, with_target(tool, "master")),
+               "#{tool} rejected target: 'master'"
+      end
+    end
+
+    # "send" or "returns" would reach a do_call clause that doesn't exist and
+    # fall through to the catch-all's "Unknown tool", which is a lie.
+    test "every device tool rejects any other string" do
+      for tool <- @device_tools do
+        assert {:error, message} = Validation.validate(tool, with_target(tool, "send"))
+        assert message =~ ~S[- target: must be one of "return", "master" (got "send")]
+      end
+    end
+
+    test "omitting target is fine — it is optional on all six" do
+      for tool <- @device_tools do
+        assert :ok = Validation.validate(tool, minimal_device_params(tool)),
+               "#{tool} treated target as required"
+      end
+    end
+  end
+
+  describe "the return and master mixer setters" do
+    test "return pan takes the full -1.0…1.0 range and nothing outside it" do
+      assert :ok =
+               Validation.validate("set_return_track_pan", %{"return_track" => 0, "value" => -1.0})
+
+      assert :ok =
+               Validation.validate("set_return_track_pan", %{"return_track" => 0, "value" => 1.0})
+
+      assert {:error, message} =
+               Validation.validate("set_return_track_pan", %{"return_track" => 0, "value" => 1.5})
+
+      assert message =~ "- value: must be at most 1.0 (got 1.5)"
+
+      assert {:error, message} =
+               Validation.validate("set_return_track_pan", %{"return_track" => 0, "value" => -1.1})
+
+      assert message =~ "- value: must be at least -1.0 (got -1.1)"
+    end
+
+    test "master pan takes the same range" do
+      assert :ok = Validation.validate("set_master_pan", %{"value" => -1.0})
+      assert {:error, _} = Validation.validate("set_master_pan", %{"value" => -2.0})
+    end
+
+    # Cue volume is a fader, not a pan: negative is not a legal position.
+    test "cue volume is 0.0…1.0, never negative" do
+      assert :ok = Validation.validate("set_cue_volume", %{"value" => 0.0})
+      assert :ok = Validation.validate("set_cue_volume", %{"value" => 1.0})
+      assert {:error, _} = Validation.validate("set_cue_volume", %{"value" => -0.1})
+      assert {:error, _} = Validation.validate("set_cue_volume", %{"value" => 1.1})
+    end
+
+    test "the mute and solo flags are booleans, and the return index floors at 0" do
+      assert :ok =
+               Validation.validate("set_return_track_mute", %{
+                 "return_track" => 0,
+                 "muted" => true
+               })
+
+      assert {:error, message} =
+               Validation.validate("set_return_track_solo", %{"return_track" => 0, "soloed" => 1})
+
+      assert message =~ "- soloed: must be a boolean (got 1)"
+
+      assert {:error, message} =
+               Validation.validate("set_return_track_mute", %{
+                 "return_track" => -1,
+                 "muted" => true
+               })
+
+      assert message =~ "- return_track: must be at least 0 (got -1)"
+    end
+  end
+
   describe "show_view" do
     # The enum is Live's own spelling, and the one irregularity worth pinning is
     # that users say "Arrangement" while Live calls it "Arranger". No translation

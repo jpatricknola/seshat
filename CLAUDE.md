@@ -209,18 +209,38 @@ on this machine everything still works.
 [docs/ROADMAP.md](docs/ROADMAP.md) is the single living list of what's not
 built yet, written as a priority-ordered issue queue — #1 is the biggest win,
 work top to bottom. The play-and-keep arc (capture MIDI, session record, clip
-cleanup, quantize, groove/swing) is now complete, and so is the follow cam's
-missing half (`show_view`, `hide_view`, `get_view_state`); `start_new_project`
-leads the queue next. Keep it
-current: when something ships, run the `/ship` skill
+cleanup, quantize, groove/swing) is now complete, so is the follow cam's
+missing half (`show_view`, `hide_view`, `get_view_state`), and so is devices
+on return and master tracks — the sends system is now fully self-serve. Keep
+it current: when something ships, run the `/ship` skill
 (or by hand: remove its issue there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-31 its top item is `start_new_project`, the setup wizard that would
-catch "let's start a new project" and move the replace-not-append rule off
-the capped instructions budget and into a tool description. `show_view`
+2026-07-31 its top item is model-readable rejections for invalid tool
+parameters in MCP mode: a Peri validation failure surfaces to the model as a
+bare JSON-RPC error today, hiding `Seshat.Tools.Validation`'s own message.
+`start_new_project` — the read-only
+setup wizard that would catch "let's start a new project" and move the
+replace-not-append rule off the capped instructions budget and into a tool
+description — now sits a few places below it. Devices on return and master
+tracks shipped 2026-07-31, closing what had led the queue: `create_return_track`
+no longer ships an empty return the user has to fill in by hand in Live — the
+six device tools (`load_device`, `get_track_devices`, `get_device_parameters`,
+`set_device_parameter`, `delete_device`, `bypass_device`) all gained an
+optional `target: "return" | "master"`, and five new mixer tools
+(`set_return_track_pan`, `set_return_track_mute`, `set_return_track_solo`,
+`set_master_pan`, `set_cue_volume`) complete the return/master mixer surface.
+Two ordinary fork commits in files Seshat already owned did the work:
+`return_track.py` goes from 14 to 51 registered addresses and `browser.py`
+gains `load_item_on_return`/`load_item_on_master` alongside the existing
+`load_item`, sharing one `_load_onto` tail with a measured stray-track guard
+(loading an instrument-only browser item onto a return or the master errors
+by name instead of silently landing on a phantom MIDI track). Plan archived
+at
+[docs/archive/PLAN_return_master_devices.md](docs/archive/PLAN_return_master_devices.md).
+`show_view`
 shipped 2026-07-31, closing the gap where the follow cam could only react to
 a mutation, never be asked to look somewhere or show a pane before an
 action: one tool and one Transport-direct handler clause sending

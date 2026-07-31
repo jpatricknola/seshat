@@ -21,7 +21,134 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · `start_new_project` — the setup wizard, and prompt budget back
+## #1 · Model-readable rejections for invalid tool parameters in MCP mode
+
+**Goal:** an out-of-range or wrong-typed parameter comes back to the model as
+`Seshat.Tools.Validation`'s message — naming the parameter, the bound, the value
+it got, and the parameter's own description — in MCP mode as well as API-key
+mode.
+
+**Why:** bounds are enforced in both modes now ("Enforce tool ranges and
+non-negative indices centrally", shipped 2026-07-30), but in MCP mode Peri
+rejects at the wire first, and a Peri rejection is a JSON-RPC error rather than
+a tool result. Measured against the running server on 2026-07-30:
+
+- Claude Code surfaced `set_track_pan value: 2.0` to the model as nothing but
+  `MCP error -32602: Invalid params` — the explanatory `data.message` never
+  reached it.
+- That detail is Elixir internals anyway: `expected either {:float, {:range,
+  ...}} or {:integer, {:range, ...}}, got: 2.0`, and `should be greater then or
+  equal to 0` (Peri's own typo).
+- For a nested array it is **empty**: a bad note velocity produces `"notes: "` —
+  no note index, no field, no reason.
+
+The designed message reaches the model only in the narrow band where Peri passes
+and the central validator catches, such as a non-integer index (`track: 1.5`). A
+model that cannot read why its call was refused cannot fix it, and this feature
+made refusals far more common than they used to be — previously the bad value
+went through to Live.
+
+**User stories:**
+- As a producer, when Seshat reaches for an out-of-range value, it reads the
+  refusal, corrects the value, and quietly retries — instead of surfacing a
+  cryptic "invalid params" failure I'm left to interpret.
+
+**Planner notes:**
+- The seam is the generated component in
+  [mcp/tools.ex](../lib/seshat/mcp/tools.ex): when Peri's `validate_input`
+  fails, run `Seshat.Tools.Validation.validate/2` against the raw params and
+  return its message as a tool result instead of letting the protocol error
+  through.
+- **Keep the bounds in the advertised schema.** That half shipped and is the
+  client's only machine-readable contract. This item is about which layer
+  *speaks*, not which layer knows.
+- Decide the fallback for a violation the central validator does not model (an
+  unknown property, a malformed array), where Peri refuses but `validate/2`
+  returns `:ok`. Falling back to Peri's text is acceptable; falling through to
+  the handler is not.
+- Nothing in `mix test` sees this: the suite exercises `Handlers.call/2` and the
+  components' `validate_input` separately, never a client's view of a refusal.
+  Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
+  handshake.
+
+## #2 · Coalesce mirror refreshes — a burst of setters makes state unreadable
+
+**Goal:** several mutations in a row followed by `get_session_state` returns the
+state, not "the session mirror did not answer".
+
+**Why:** every setter handler ends with `State.refresh()`, a cast that queues a
+*full* re-query of the session. Measured against Live 12.4.3 on 2026-07-31, one
+full refresh takes **~3.4s** in a near-empty set (one track, one return). Five
+setters therefore queue ~17s of work in a GenServer that serves reads on the
+same process, and `serve_session_state`'s four `GenServer.call`s use the 5s
+default timeout — so they exit and the tool reports the mirror as unavailable.
+
+Reproduced deterministically twice by `/smoke-test` on 2026-07-31: five
+return/master mixer setters, then `get_session_state`, fails every time. The
+same burst with five *regular-track* setters did not fail, which is why this
+surfaced with the return/master mixer work — that change took the
+`State.refresh()` call sites from 6 to 11 and made each refresh more expensive
+(four queries per return instead of two, three for the master instead of one).
+The shape is general, though: it is the refresh-per-setter pattern meeting a
+refresh that costs seconds, and more setters will keep arriving.
+
+"Set a few things, then show me where we are" is an ordinary sentence, so this
+is reachable in normal use, and the failure names Ableton ("check Ableton is
+running") when Ableton is fine — pointing the user at the wrong thing.
+
+**User stories:**
+- As a producer, when I ask for several mixer changes and then ask what the
+  session looks like, I get the session — not a diagnostic about an
+  unresponsive Ableton that is in fact responding.
+
+**Planner notes:**
+- **The refresh is largely redundant with the push design.** Every value these
+  setters write already has a listener pushing it back
+  ([session/state.ex](../lib/seshat/session/state.ex)); the trailing
+  `State.refresh()` re-reads the whole session to learn what the listener was
+  about to deliver anyway. Ask first whether the setters need it at all —
+  `create_*`/`delete_*`, which change *structure*, are a different case from a
+  setter that moves one fader.
+- If refreshes stay, coalesce them: a pending-refresh flag so N queued casts
+  collapse into one, and/or a targeted refresh that re-reads only the affected
+  object instead of the whole set.
+- Consider whether reads should be served without blocking on a refresh at all —
+  an ETS table or a separate reader would decouple "the mirror is rebuilding"
+  from "the mirror cannot be read". That is the larger change; measure before
+  choosing it.
+- The 5s default on `serve_session_state`'s calls is the proximate trigger and
+  the tempting fix. Raising it only converts a fast wrong answer into a slow
+  one — the queued work is the actual defect.
+- Nothing in `mix test` sees this: it needs a live Ableton for the refresh to
+  take real time. Found by `/smoke-test`, and any fix needs the same check —
+  five setters, then an immediate unrefreshed read.
+
+## #3 · Preserve partial agent results at the tool-iteration limit
+
+**Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
+already executed and the conversation so far, and surface a warning in the UI.
+
+**Why:** [agent.ex:83-86](../lib/seshat/agent.ex#L83-L86) discards both
+`executed` and `messages` and returns a generic error. Nine or ten rounds of
+real mutations land, the UI reports an error with no record of them, the
+conversation isn't kept, and the obvious user response — retry — repeats
+everything. Partial side effects go invisible exactly when recovery information
+matters most.
+
+**User stories:**
+- As a producer in the browser UI, when a long exchange dies at the iteration
+  limit, I can still see which changes already landed in my set — so hitting
+  retry doesn't blindly repeat nine rounds of mutations.
+
+**Planner notes:**
+- Scoped to API-key mode, which is the dev/fallback path — that is why it ranks
+  here and not higher. The fix is small and the failure is silent, which is the
+  combination worth clearing.
+- The LiveView error branch leaves history unchanged; both halves need doing or
+  neither helps.
+- From the 2026-07-29 external review, accepted as written.
+
+## #4 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -72,122 +199,6 @@ asserting a cleanup unconditionally and hoping the model checks.
   discipline, load-bearing here.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
-
-## #2 · Devices on return and master tracks — make the sends system self-serve
-
-**Goal:** load, inspect, tweak, bypass, and delete devices on return and
-master tracks, and complete the return/master mixer surface (return
-pan/mute/solo, master pan, cue volume) in the same pass.
-
-**Why:** `create_return_track` ships an empty return, and every send into it
-is silent until the user drops the effect in by hand in Live — the tool's own
-description apologizes for it ("Seshat cannot yet load a device onto a return
-track"). The 2026-07-31 external tool audit
-made this its top recommendation, which is exactly the "real workflow needs
-them" condition the Deliberately-not-planned entry for return/master device
-loading was waiting on. Absorbs the former "Return/master mixer completeness"
-item: same fork file, one package that makes returns first-class tracks.
-
-**User stories:**
-- As a producer, "make a reverb return and send the vocal to it" works end to
-  end — the return gets a reverb loaded onto it, not an empty track and
-  instructions for doing it by hand.
-- As a producer, "brighten the reverb" or "mute the delay return" just works,
-  the same as it would on any regular track.
-
-**Planner notes:**
-- Both halves are ordinary fork commits in files we already own.
-  `/live/browser/load_item` (our `browser.py`) resolves its target from
-  `song.tracks` only, so loading onto a return/master needs the handler to
-  resolve those targets too; device chain read/delete/bypass/parameters on
-  returns belong in `return_track.py`, which already owns the return/master
-  surface. Two-commit fork workflow, `mix abletonosc.install`, Live restart.
-- The mixer half is already scoped: the 2026-07-28 PR review confirmed the LOM
-  details — return mute/solo are plain listenable props, master pan is
-  `mixer_device.panning`, cue volume is `mixer_device.cue_volume`, and the
-  master has no mute/solo/arm.
-- Tool-surface decision for the plan: extend the existing device tools with a
-  return/master target versus separate return-device tools. The send/return
-  tools chose a separate 0-based index space (`return_track` param); follow
-  whatever keeps model tool-selection unambiguous.
-- When this ships, update the descriptions that state the old limitation:
-  `create_return_track` ("cannot yet load"), `delete_device` and
-  `bypass_device` ("Regular tracks only").
-
-## #3 · Model-readable rejections for invalid tool parameters in MCP mode
-
-**Goal:** an out-of-range or wrong-typed parameter comes back to the model as
-`Seshat.Tools.Validation`'s message — naming the parameter, the bound, the value
-it got, and the parameter's own description — in MCP mode as well as API-key
-mode.
-
-**Why:** bounds are enforced in both modes now ("Enforce tool ranges and
-non-negative indices centrally", shipped 2026-07-30), but in MCP mode Peri
-rejects at the wire first, and a Peri rejection is a JSON-RPC error rather than
-a tool result. Measured against the running server on 2026-07-30:
-
-- Claude Code surfaced `set_track_pan value: 2.0` to the model as nothing but
-  `MCP error -32602: Invalid params` — the explanatory `data.message` never
-  reached it.
-- That detail is Elixir internals anyway: `expected either {:float, {:range,
-  ...}} or {:integer, {:range, ...}}, got: 2.0`, and `should be greater then or
-  equal to 0` (Peri's own typo).
-- For a nested array it is **empty**: a bad note velocity produces `"notes: "` —
-  no note index, no field, no reason.
-
-The designed message reaches the model only in the narrow band where Peri passes
-and the central validator catches, such as a non-integer index (`track: 1.5`). A
-model that cannot read why its call was refused cannot fix it, and this feature
-made refusals far more common than they used to be — previously the bad value
-went through to Live.
-
-**User stories:**
-- As a producer, when Seshat reaches for an out-of-range value, it reads the
-  refusal, corrects the value, and quietly retries — instead of surfacing a
-  cryptic "invalid params" failure I'm left to interpret.
-
-**Planner notes:**
-- The seam is the generated component in
-  [mcp/tools.ex](../lib/seshat/mcp/tools.ex): when Peri's `validate_input`
-  fails, run `Seshat.Tools.Validation.validate/2` against the raw params and
-  return its message as a tool result instead of letting the protocol error
-  through.
-- **Keep the bounds in the advertised schema.** That half shipped and is the
-  client's only machine-readable contract. This item is about which layer
-  *speaks*, not which layer knows.
-- Decide the fallback for a violation the central validator does not model (an
-  unknown property, a malformed array), where Peri refuses but `validate/2`
-  returns `:ok`. Falling back to Peri's text is acceptable; falling through to
-  the handler is not.
-- Nothing in `mix test` sees this: the suite exercises `Handlers.call/2` and the
-  components' `validate_input` separately, never a client's view of a refusal.
-  Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
-  handshake.
-
-## #4 · Preserve partial agent results at the tool-iteration limit
-
-**Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
-already executed and the conversation so far, and surface a warning in the UI.
-
-**Why:** [agent.ex:83-86](../lib/seshat/agent.ex#L83-L86) discards both
-`executed` and `messages` and returns a generic error. Nine or ten rounds of
-real mutations land, the UI reports an error with no record of them, the
-conversation isn't kept, and the obvious user response — retry — repeats
-everything. Partial side effects go invisible exactly when recovery information
-matters most.
-
-**User stories:**
-- As a producer in the browser UI, when a long exchange dies at the iteration
-  limit, I can still see which changes already landed in my set — so hitting
-  retry doesn't blindly repeat nine rounds of mutations.
-
-**Planner notes:**
-- Scoped to API-key mode, which is the dev/fallback path — that is why it ranks
-  here and not higher. The fix is small and the failure is silent, which is the
-  combination worth clearing.
-- The LiveView error branch leaves history unchanged; both halves need doing or
-  neither helps.
-- From the 2026-07-29 external review, accepted as written.
 
 ## #5 · `undo` can revert far more than the last action
 
@@ -827,9 +838,7 @@ flow, so this is not an active break.
 - Device *reordering* (removal & bypass
   shipped — see `delete_device`/`bypass_device`), rack inner chains, parameter
   listeners (live meters/automation following) — revisit if a real workflow
-  needs them. (Return/master-track device loading was listed here until
-  2026-07-31, when its revisit condition fired — see "Devices on return and
-  master tracks" in the queue.)
+  needs them.
 - Embeddings or a semantic index for the catalog — the LLM is already the
   semantic layer and has the musical context.
 - Replacing AbletonOSC with a Max for Live WebSocket bridge — weighed and

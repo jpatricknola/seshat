@@ -437,17 +437,52 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  @doc """
-  Formats the parallel name/type/class_name lists of the
-  `/live/track/get/devices/*` replies into one line per device, in chain order.
+  @typedoc """
+  Which device chain a device tool is aimed at.
+
+  Three index spaces, three sets of OSC addresses, and — the reason this exists
+  as a value rather than a bare integer — three different ways to name the
+  target in a reply. `{:return, 0}` rendered with the regular-track wording
+  would say "track 0", which is a *different, existing* track: the reply would
+  be wrong rather than merely vague.
   """
-  @spec format_device_chain(integer(), list(), list(), list()) :: String.t()
-  def format_device_chain(track, [], _types, _classes) do
+  @type chain :: {:track, integer()} | {:return, integer()} | :master
+
+  @doc """
+  How a reply names the chain a device tool acted on.
+
+  "master (shown as Main in Live 12)" is spelled out because Live 12's mixer
+  prints `Main` while every tool here says master — a user told to look at "the
+  master" has to be able to find it on screen.
+  """
+  @spec chain_label(chain()) :: String.t()
+  def chain_label({:track, index}), do: "track #{index}"
+  def chain_label({:return, index}), do: "return track #{index}"
+  def chain_label(:master), do: "the master track (shown as Main in Live 12)"
+
+  @doc """
+  Formats the parallel name/type/class_name lists of a device-chain read into
+  one line per device, in chain order.
+
+  The `chain` says which of the three index spaces the numbers belong to; see
+  `t:chain/0`.
+  """
+  @spec format_device_chain(chain(), list(), list(), list()) :: String.t()
+  def format_device_chain({:track, track}, [], _types, _classes) do
     "No devices on track #{track}. If this is a MIDI track it will be silent — " <>
       "load an instrument with list_browser_items + load_device."
   end
 
-  def format_device_chain(track, names, types, classes) do
+  def format_device_chain({:return, index}, [], _types, _classes) do
+    "No devices on return track #{index}, so every send into it is silent — load an audio " <>
+      "effect with list_browser_items + load_device (target: 'return')."
+  end
+
+  def format_device_chain(:master, [], _types, _classes) do
+    "No devices on #{chain_label(:master)} — the mix passes through untouched."
+  end
+
+  def format_device_chain(chain, names, types, classes) do
     lines =
       [names, types, classes]
       |> Enum.zip()
@@ -456,7 +491,70 @@ defmodule Seshat.Tools.Handlers do
         "Device #{index} \"#{name}\" — #{device_type_label(type)} (#{class})"
       end)
 
-    "#{length(names)} device(s) on track #{track}:\n\n#{lines}"
+    "#{length(names)} device(s) on #{chain_label(chain)}:\n\n#{lines}"
+  end
+
+  @doc """
+  Splits the flat tail of a combined device-chain reply into parallel lists.
+
+  The vendored `/live/return_track/get/devices` and `/live/master/get/devices`
+  answer with `count` followed by `count` × `(name, type, class_name)` — one
+  reply where upstream needs three. Both halves of that promise are checked: a
+  tail that isn't a whole number of triples, or whose triple count disagrees
+  with the declared `count`, is a reply this code can't read rather than one to
+  truncate quietly into a chain that is missing a device.
+  """
+  @spec parse_device_chain(list()) :: {:ok, {list(), list(), list()}} | {:error, String.t()}
+  def parse_device_chain([count | tail]) when is_integer(count) and count >= 0 do
+    if rem(length(tail), 3) == 0 and div(length(tail), 3) == count do
+      triples = Enum.chunk_every(tail, 3)
+
+      {:ok,
+       {Enum.map(triples, &Enum.at(&1, 0)), Enum.map(triples, &Enum.at(&1, 1)),
+        Enum.map(triples, &Enum.at(&1, 2))}}
+    else
+      {:error,
+       "Unexpected device list from Live: it declared #{count} device(s) but sent " <>
+         "#{length(tail)} value(s), which is not #{count} × (name, type, class). The chain was " <>
+         "not read — run `mix abletonosc.install` and restart Ableton Live."}
+    end
+  end
+
+  def parse_device_chain(other) do
+    {:error,
+     "Unexpected device list from Live: #{inspect(other)} does not start with a device count. " <>
+       "The chain was not read — run `mix abletonosc.install` and restart Ableton Live."}
+  end
+
+  @doc """
+  Splits the flat tail of a combined device-parameter reply into parallel lists.
+
+  Same contract as `parse_device_chain/1` one level down: `device_name`, then
+  `count`, then `count` × `(name, value, min, max)`.
+  """
+  @spec parse_device_parameters(list()) ::
+          {:ok, {String.t(), list(), list(), list(), list()}} | {:error, String.t()}
+  def parse_device_parameters([device_name, count | tail])
+      when is_binary(device_name) and is_integer(count) and count >= 0 do
+    if rem(length(tail), 4) == 0 and div(length(tail), 4) == count do
+      quads = Enum.chunk_every(tail, 4)
+
+      {:ok,
+       {device_name, Enum.map(quads, &Enum.at(&1, 0)), Enum.map(quads, &Enum.at(&1, 1)),
+        Enum.map(quads, &Enum.at(&1, 2)), Enum.map(quads, &Enum.at(&1, 3))}}
+    else
+      {:error,
+       "Unexpected parameter list from Live: '#{device_name}' declared #{count} parameter(s) " <>
+         "but sent #{length(tail)} value(s), which is not #{count} × (name, value, min, max). " <>
+         "Nothing was read — run `mix abletonosc.install` and restart Ableton Live."}
+    end
+  end
+
+  def parse_device_parameters(other) do
+    {:error,
+     "Unexpected parameter list from Live: #{inspect(other)} does not start with a device name " <>
+       "and a parameter count. Nothing was read — run `mix abletonosc.install` and restart " <>
+       "Ableton Live."}
   end
 
   @doc """
@@ -468,15 +566,16 @@ defmodule Seshat.Tools.Handlers do
   timeout and still can't say what went wrong. Checking against the chain we
   just read says it immediately, and prints the chain so the retry is one step.
   """
-  @spec device_out_of_range_error(integer(), integer(), list()) :: String.t()
-  def device_out_of_range_error(track, device, []) do
-    "Track #{track} has no devices, so there is nothing to delete (asked for device " <>
-      "#{device}). Check the chain with get_track_devices."
+  @spec device_out_of_range_error(chain(), integer(), list()) :: String.t()
+  def device_out_of_range_error(chain, device, []) do
+    "There are no devices on #{chain_label(chain)}, so there is nothing to delete (asked for " <>
+      "device #{device}). Check the chain with get_track_devices."
   end
 
-  def device_out_of_range_error(track, device, names) do
-    "Track #{track} has #{length(names)} device(s) (indices 0–#{length(names) - 1}) — there " <>
-      "is no device #{device}. Chain: #{format_chain_inline(names)}."
+  def device_out_of_range_error(chain, device, names) do
+    "There are #{length(names)} device(s) on #{chain_label(chain)} (indices " <>
+      "0–#{length(names) - 1}) — there is no device #{device}. Chain: " <>
+      "#{format_chain_inline(names)}."
   end
 
   @doc """
@@ -487,17 +586,17 @@ defmodule Seshat.Tools.Handlers do
   before the delete costs nothing and saves a `get_track_devices` round trip
   that the model would otherwise have to know to make.
   """
-  @spec deleted_device_reply(integer(), integer(), list()) :: String.t()
-  def deleted_device_reply(track, device, names) do
+  @spec deleted_device_reply(chain(), integer(), list()) :: String.t()
+  def deleted_device_reply(chain, device, names) do
     deleted = Enum.at(names, device)
 
     case List.delete_at(names, device) do
       [] ->
-        "Deleted '#{deleted}' (device #{device}) from track #{track}. Its device chain is now " <>
-          "empty."
+        "Deleted '#{deleted}' (device #{device}) from #{chain_label(chain)}. Its device chain " <>
+          "is now empty."
 
       remaining ->
-        "Deleted '#{deleted}' (device #{device}) from track #{track}. Remaining chain: " <>
+        "Deleted '#{deleted}' (device #{device}) from #{chain_label(chain)}. Remaining chain: " <>
           "#{format_chain_inline(remaining)} — later device indices have shifted down by one."
     end
   end
@@ -530,23 +629,23 @@ defmodule Seshat.Tools.Handlers do
   @doc """
   The success reply for `bypass_device`, once the toggle is confirmed.
   """
-  @spec bypass_reply(String.t(), integer(), integer(), boolean()) :: String.t()
-  def bypass_reply(name, track, device, true) do
-    "'#{name}' (device #{device} on track #{track}) is now On."
+  @spec bypass_reply(String.t(), chain(), integer(), boolean()) :: String.t()
+  def bypass_reply(name, chain, device, true) do
+    "'#{name}' (device #{device} on #{chain_label(chain)}) is now On."
   end
 
-  def bypass_reply(name, track, device, false) do
-    "'#{name}' (device #{device} on track #{track}) is now Off — bypassed, settings kept."
+  def bypass_reply(name, chain, device, false) do
+    "'#{name}' (device #{device} on #{chain_label(chain)}) is now Off — bypassed, settings kept."
   end
 
   @doc """
   The no-op reply for `bypass_device` — parameter 0 already read the requested
   state, so nothing was written and the reply must not claim otherwise.
   """
-  @spec bypass_noop_reply(String.t(), integer(), integer(), boolean()) :: String.t()
-  def bypass_noop_reply(name, track, device, enabled) do
-    "'#{name}' (device #{device} on track #{track}) was already #{on_off_label(enabled)} — " <>
-      "nothing to do."
+  @spec bypass_noop_reply(String.t(), chain(), integer(), boolean()) :: String.t()
+  def bypass_noop_reply(name, chain, device, enabled) do
+    "'#{name}' (device #{device} on #{chain_label(chain)}) was already " <>
+      "#{on_off_label(enabled)} — nothing to do."
   end
 
   defp on_off_label(true), do: "On"
@@ -556,9 +655,9 @@ defmodule Seshat.Tools.Handlers do
   Formats the parallel parameter name/value/min/max lists of the
   `/live/device/get/parameters/*` replies into one line per parameter.
   """
-  @spec format_device_parameters(integer(), integer(), String.t(), list(), list(), list(), list()) ::
+  @spec format_device_parameters(chain(), integer(), String.t(), list(), list(), list(), list()) ::
           String.t()
-  def format_device_parameters(track, device, device_name, names, values, mins, maxes) do
+  def format_device_parameters(chain, device, device_name, names, values, mins, maxes) do
     lines =
       [names, values, mins, maxes]
       |> Enum.zip()
@@ -567,7 +666,8 @@ defmodule Seshat.Tools.Handlers do
         "#{index}. #{name} = #{format_number(value)} (range #{format_number(min)}–#{format_number(max)})"
       end)
 
-    "Device #{device} \"#{device_name}\" on track #{track} — #{length(names)} parameter(s):\n\n#{lines}"
+    "Device #{device} \"#{device_name}\" on #{chain_label(chain)} — #{length(names)} " <>
+      "parameter(s):\n\n#{lines}"
   end
 
   @doc """
@@ -1179,8 +1279,11 @@ defmodule Seshat.Tools.Handlers do
   # something is missing, and the explanation belongs with it.
   defp returns_unknown?(_return_tracks, nil), do: true
 
-  defp returns_unknown?(return_tracks, _master) do
-    Enum.any?(return_tracks, &(is_nil(&1.name) or is_nil(&1.volume)))
+  defp returns_unknown?(return_tracks, master) do
+    is_nil(master.pan) or is_nil(master.cue_volume) or is_nil(master.volume) or
+      Enum.any?(return_tracks, fn r ->
+        is_nil(r.name) or is_nil(r.volume) or is_nil(r.pan) or is_nil(r.mute) or is_nil(r.solo)
+      end)
   end
 
   @doc """
@@ -1283,13 +1386,16 @@ defmodule Seshat.Tools.Handlers do
   end
 
   @doc """
-  Formats the return tracks and the master level for `get_session_state`.
+  Formats the return tracks and the master mixer state for `get_session_state`.
 
   `master` is `nil` when `/live/master/get/volume` never answered, which means
   Seshat's AbletonOSC extension isn't installed — say so rather than reporting a
-  set with no returns, which looks identical but isn't. A single return's `name`
-  or `volume` is `nil` on the same principle: one lost reply, and that field is
-  unknown rather than "Return 1" or 0.85.
+  set with no returns, which looks identical but isn't. Any individual field is
+  `nil` on the same principle: one lost reply, and that field is unknown rather
+  than "Return 1" or 0.85.
+
+  Return lines carry pan and mute/solo in the same style as regular track lines,
+  so the model reads one mixer, not two.
   """
   @spec format_return_tracks([map()], map() | nil) :: String.t()
   def format_return_tracks(_return_tracks, nil) do
@@ -1298,16 +1404,30 @@ defmodule Seshat.Tools.Handlers do
 
   def format_return_tracks([], master) do
     "No return tracks in this set — nothing to send to yet; create one with " <>
-      "create_return_track.\nMaster: volume=#{round_volume(master.volume)}"
+      "create_return_track.\n#{master_line(master)}"
   end
 
   def format_return_tracks(return_tracks, master) do
-    lines =
-      Enum.map_join(return_tracks, "\n", fn r ->
-        "#{return_label(r)} (send #{send_letter(r.index)}): " <> volume_field(r.volume)
-      end)
+    lines = Enum.map_join(return_tracks, "\n", &return_line/1)
 
-    "#{lines}\nMaster: volume=#{round_volume(master.volume)}"
+    "#{lines}\n#{master_line(master)}"
+  end
+
+  defp return_line(r) do
+    mute = if r.mute == true, do: " [muted]", else: ""
+    solo = if r.solo == true, do: " [solo]", else: ""
+    flags = if is_nil(r.mute) or is_nil(r.solo), do: " [mute/solo unknown]", else: ""
+
+    "#{return_label(r)} (send #{send_letter(r.index)}): #{volume_field(r.volume)}, " <>
+      "#{pan_field(r.pan)}#{mute}#{solo}#{flags}"
+  end
+
+  # "master (shown as Main in Live 12)" once per discovery path: the tool
+  # vocabulary says master everywhere, and Live 12's mixer prints Main — a user
+  # told to check "the master" has to be able to find it on screen.
+  defp master_line(master) do
+    "Master (shown as Main in Live 12): #{volume_field(master.volume)}, " <>
+      "#{pan_field(master.pan)}, cue #{cue_field(master.cue_volume)}"
   end
 
   defp return_label(%{name: nil, index: index}), do: "Return #{index} (name unknown)"
@@ -1318,6 +1438,12 @@ defmodule Seshat.Tools.Handlers do
   # unanswered volume query says so instead.
   defp volume_field(nil), do: "volume unknown (a reply was lost — try get_session_state again)"
   defp volume_field(value), do: "volume=#{round_volume(value)}"
+
+  defp pan_field(nil), do: "pan unknown"
+  defp pan_field(value), do: "pan=#{Float.round(value / 1.0, 2)}"
+
+  defp cue_field(nil), do: "unknown"
+  defp cue_field(value), do: "volume=#{round_volume(value)}"
 
   @doc """
   Send index → the letter Live's mixer prints on it: send 0 = A, send 1 = B.
@@ -1374,8 +1500,14 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp device_type_label(1), do: "audio effect"
-  defp device_type_label(2), do: "instrument"
+  # Live's DeviceType enum, measured against Live 12.4.3 on 2026-07-31 by loading
+  # a known instrument and a known audio effect and reading the type back: an
+  # Operator reports 1, a Reverb and an EQ Eight report 2. These two were the
+  # wrong way round until then — every device chain named its instruments audio
+  # effects and its audio effects instruments — and the docs said so too. Both
+  # were guessed from upstream's naming, never checked against Live.
+  defp device_type_label(1), do: "instrument"
+  defp device_type_label(2), do: "audio effect"
   defp device_type_label(4), do: "MIDI effect"
   defp device_type_label(other), do: "type #{other}"
 
@@ -1749,8 +1881,8 @@ defmodule Seshat.Tools.Handlers do
 
         {:ok,
          ~s{Created return track "#{name}" (return #{index} — send #{send_letter(index)} on } <>
-           "every track). It has no effect on it yet: Seshat cannot load a device onto a " <>
-           "return track, so ask the user to drag one on in Live."}
+           "every track). It has no effect on it yet, so every send into it is silent: load " <>
+           "one now with load_device (target: 'return', track: #{index})."}
 
       {:error, reason} when is_binary(reason) ->
         {:error, reason}
@@ -1813,6 +1945,78 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  defp do_call("set_return_track_pan", %{"return_track" => index, "value" => value}) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/panning",
+             [index],
+             "the pan of return track #{index}",
+             @return_extension_hint
+           ),
+         :ok <- Transport.send_message("/live/return_track/set/panning", [index, value / 1.0]) do
+      label = return_track_label(index)
+      State.refresh()
+
+      {:ok,
+       "Set pan on return track #{index}#{label} to #{value} (#{pan_display(value)}) — was " <>
+         "#{format_number(old)} (#{pan_display(old)})"}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("set_return_track_mute", %{"return_track" => index, "muted" => muted}) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/mute",
+             [index],
+             "the mute state of return track #{index}",
+             @return_extension_hint
+           ),
+         :ok <-
+           Transport.send_message(
+             "/live/return_track/set/mute",
+             [index, if(muted, do: 1, else: 0)]
+           ) do
+      label = return_track_label(index)
+      State.refresh()
+
+      {:ok,
+       "#{if muted, do: "Muted", else: "Unmuted"} return track #{index}#{label} — was " <>
+         "#{if truthy?(old), do: "muted", else: "unmuted"}. Every track's send into it is " <>
+         "unchanged."}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("set_return_track_solo", %{"return_track" => index, "soloed" => soloed}) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/solo",
+             [index],
+             "the solo state of return track #{index}",
+             @return_extension_hint
+           ),
+         :ok <-
+           Transport.send_message(
+             "/live/return_track/set/solo",
+             [index, if(soloed, do: 1, else: 0)]
+           ) do
+      label = return_track_label(index)
+      State.refresh()
+
+      {:ok,
+       "#{if soloed, do: "Soloed", else: "Unsoloed"} return track #{index}#{label} — was " <>
+         "#{if truthy?(old), do: "soloed", else: "not soloed"}."}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
   defp do_call("set_master_volume", %{"value" => value}) do
     with {:ok, old} <- master_volume(),
          :ok <- Transport.send_message("/live/master/set/volume", [value / 1.0]) do
@@ -1821,6 +2025,35 @@ defmodule Seshat.Tools.Handlers do
       {:ok,
        "Set master volume to #{value} (#{volume_display(value)}) — was " <>
          "#{format_number(old)} (#{volume_display(old)})"}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("set_master_pan", %{"value" => value}) do
+    with {:ok, old} <- master_bare_float("/live/master/get/panning", "the master pan"),
+         :ok <- Transport.send_message("/live/master/set/panning", [value / 1.0]) do
+      State.refresh()
+
+      {:ok,
+       "Set the master pan (shown as Main in Live 12) to #{value} (#{pan_display(value)}) — " <>
+         "was #{format_number(old)} (#{pan_display(old)})"}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("set_cue_volume", %{"value" => value}) do
+    with {:ok, old} <- master_bare_float("/live/master/get/cue_volume", "the cue volume"),
+         :ok <- Transport.send_message("/live/master/set/cue_volume", [value / 1.0]) do
+      State.refresh()
+
+      {:ok,
+       "Set the cue (preview/headphone) volume to #{value} (#{volume_display(value)}) — was " <>
+         "#{format_number(old)} (#{volume_display(old)}). This is the browser-preview level, " <>
+         "not the master output."}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
@@ -2291,28 +2524,114 @@ defmodule Seshat.Tools.Handlers do
          "that `mix abletonosc.install` has been run to add the browser handler."}
   end
 
+  # --- load_device on a return / the master ---
+  #
+  # Their own addresses rather than a widened /live/browser/load_item, so the
+  # reply arity itself says which index space was targeted — and because the two
+  # vendored endpoints verify that the load *landed*, which the regular-track one
+  # has no need to. Loading a non-effect onto a return or the master doesn't
+  # fail in Live: it silently creates a stray MIDI track and loads it there
+  # (measured 2026-07-31), so the error path below is the normal outcome of
+  # asking for an instrument, not an edge case.
+  defp do_call("load_device", %{"track" => track, "uri" => uri, "target" => "return"}) do
+    query = Transport.query("/live/browser/load_item_on_return", [track, uri], @load_timeout)
+
+    case query do
+      {:ok, {_address, args}} ->
+        case load_outcome(args, [track, uri]) do
+          {:loaded, [return_name, device_name, device]} ->
+            Catalog.record_load(uri)
+            FollowCam.steer("load_device", %{return: track, device: device})
+
+            {:ok,
+             ~s{Loaded '#{device_name}' onto return track #{track} "#{return_name}"} <>
+               "#{loaded_device_note(device)}. Every track's send #{send_letter(track)} now " <>
+               "feeds it."}
+
+          {:remote_error, message} ->
+            {:error, message}
+
+          :stale ->
+            {:error, stale_load_error("return track #{track}", uri)}
+
+          _other ->
+            {:error, unexpected_chain_reply("return track #{track}", args)}
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       extension_missing_error(
+         "load a device onto return track #{track}",
+         "it is unknown whether anything was loaded — check Ableton before retrying"
+       )}
+  end
+
+  defp do_call("load_device", %{"uri" => uri, "target" => "master"}) do
+    case Transport.query("/live/browser/load_item_on_master", [uri], @load_timeout) do
+      {:ok, {_address, args}} ->
+        case load_outcome(args, [uri]) do
+          {:loaded, [device_name, device]} ->
+            Catalog.record_load(uri)
+            FollowCam.steer("load_device", %{master: true, device: device})
+
+            {:ok,
+             "Loaded '#{device_name}' onto #{chain_label(:master)}" <>
+               "#{loaded_device_note(device)} — it now processes the whole mix."}
+
+          {:remote_error, message} ->
+            {:error, message}
+
+          :stale ->
+            {:error, stale_load_error(chain_label(:master), uri)}
+
+          _other ->
+            {:error, unexpected_chain_reply(chain_label(:master), args)}
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       extension_missing_error(
+         "load a device onto #{chain_label(:master)}",
+         "it is unknown whether anything was loaded — check Ableton before retrying"
+       )}
+  end
+
   defp do_call("load_device", %{"track" => track, "uri" => uri}) do
     case Transport.query("/live/browser/load_item", [track, uri], @load_timeout) do
-      {:ok, {_address, [_track, _uri, "ok", name, device]}} ->
-        Catalog.record_load(uri)
-        FollowCam.steer("load_device", %{track: track, device: device})
-        {:ok, "Loaded '#{name}' onto track #{track}#{loaded_device_note(device)}"}
-
-      {:ok, {_address, [_track, _uri, "error", message]}} ->
-        {:error, message}
-
-      # The 4-element ok reply is the *previous* shape of this address, which is
-      # our own — so seeing it means Live is running an older copy of the fork.
-      # Not a compat path: a self-diagnosing refusal, since the device did load
-      # and a silent degrade would hide why the view never followed.
-      {:ok, {_address, [_track, _uri, "ok", name]}} ->
-        {:error,
-         "Loaded '#{name}' onto track #{track}, but Ableton is running an older copy of " <>
-           "Seshat's AbletonOSC extension: its reply carries no device index, so the view " <>
-           "can't follow the load. Run `mix abletonosc.install` and restart Ableton Live."}
-
       {:ok, {_address, args}} ->
-        {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
+        case load_outcome(args, [track, uri]) do
+          {:loaded, [name, device]} ->
+            Catalog.record_load(uri)
+            FollowCam.steer("load_device", %{track: track, device: device})
+            {:ok, "Loaded '#{name}' onto track #{track}#{loaded_device_note(device)}"}
+
+          # The 4-element ok reply is the *previous* shape of this address, which
+          # is our own — so seeing it means Live is running an older copy of the
+          # fork. Not a compat path: a self-diagnosing refusal, since the device
+          # did load and a silent degrade would hide why the view never followed.
+          {:loaded, [name]} ->
+            {:error,
+             "Loaded '#{name}' onto track #{track}, but Ableton is running an older copy of " <>
+               "Seshat's AbletonOSC extension: its reply carries no device index, so the view " <>
+               "can't follow the load. Run `mix abletonosc.install` and restart Ableton Live."}
+
+          {:remote_error, message} ->
+            {:error, message}
+
+          :stale ->
+            {:error, stale_load_error("track #{track}", uri)}
+
+          _other ->
+            {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
+        end
 
       {:error, reason} ->
         {:error, inspect(reason)}
@@ -2327,6 +2646,14 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Device chain / parameters ---
 
+  defp do_call("get_track_devices", %{"track" => track, "target" => "return"}) do
+    read_vendored_chain("/live/return_track/get/devices", [track], {:return, track})
+  end
+
+  defp do_call("get_track_devices", %{"target" => "master"}) do
+    read_vendored_chain("/live/master/get/devices", [], :master)
+  end
+
   defp do_call("get_track_devices", %{"track" => track}) do
     with {:ok, {_addr, [_track | names]}} <-
            Transport.query("/live/track/get/devices/name", [track]),
@@ -2334,7 +2661,7 @@ defmodule Seshat.Tools.Handlers do
            Transport.query("/live/track/get/devices/type", [track]),
          {:ok, {_addr, [_track | classes]}} <-
            Transport.query("/live/track/get/devices/class_name", [track]) do
-      {:ok, format_device_chain(track, names, types, classes)}
+      {:ok, format_device_chain({:track, track}, names, types, classes)}
     else
       {:error, reason} -> {:error, inspect(reason)}
     end
@@ -2343,6 +2670,28 @@ defmodule Seshat.Tools.Handlers do
       {:error,
        "Timed out reading devices on track #{track}. Check the track index against " <>
          "get_session_state, and that Ableton is running with AbletonOSC enabled."}
+  end
+
+  defp do_call("get_device_parameters", %{
+         "track" => track,
+         "device" => device,
+         "target" => "return"
+       }) do
+    read_vendored_parameters(
+      "/live/return_track/device/get/parameters",
+      [track, device],
+      {:return, track},
+      device
+    )
+  end
+
+  defp do_call("get_device_parameters", %{"device" => device, "target" => "master"}) do
+    read_vendored_parameters(
+      "/live/master/device/get/parameters",
+      [device],
+      :master,
+      device
+    )
   end
 
   defp do_call("get_device_parameters", %{"track" => track, "device" => device}) do
@@ -2356,7 +2705,16 @@ defmodule Seshat.Tools.Handlers do
            Transport.query("/live/device/get/parameters/min", [track, device]),
          {:ok, {_addr, [_t, _d | maxes]}} <-
            Transport.query("/live/device/get/parameters/max", [track, device]) do
-      {:ok, format_device_parameters(track, device, device_name, names, values, mins, maxes)}
+      {:ok,
+       format_device_parameters(
+         {:track, track},
+         device,
+         device_name,
+         names,
+         values,
+         mins,
+         maxes
+       )}
     else
       {:error, reason} -> {:error, inspect(reason)}
     end
@@ -2365,6 +2723,45 @@ defmodule Seshat.Tools.Handlers do
       {:error,
        "Timed out reading device #{device} on track #{track}. Check both indices with " <>
          "get_track_devices first."}
+  end
+
+  # The pre-read is not decoration on the vendored paths: the setter is silent,
+  # so without it a bad device or parameter index would be discovered only
+  # *after* something was sent — and the vendored getter answers a bad index with
+  # an error envelope immediately, which is the whole reason it exists.
+  defp do_call("set_device_parameter", %{
+         "track" => track,
+         "device" => device,
+         "parameter" => parameter,
+         "value" => value,
+         "target" => "return"
+       }) do
+    set_vendored_parameter(
+      {:return, track},
+      "/live/return_track/device/get/parameter/value_string",
+      "/live/return_track/device/set/parameter/value",
+      [track, device, parameter],
+      device,
+      parameter,
+      value
+    )
+  end
+
+  defp do_call("set_device_parameter", %{
+         "device" => device,
+         "parameter" => parameter,
+         "value" => value,
+         "target" => "master"
+       }) do
+    set_vendored_parameter(
+      :master,
+      "/live/master/device/get/parameter/value_string",
+      "/live/master/device/set/parameter/value",
+      [device, parameter],
+      device,
+      parameter,
+      value
+    )
   end
 
   defp do_call("set_device_parameter", %{
@@ -2399,9 +2796,36 @@ defmodule Seshat.Tools.Handlers do
   # read the chain first (which validates the track index, bounds-checks the
   # device index in Elixir, and captures the names for the reply), then re-read
   # the count afterwards as the only confirmation available.
+  # No count sandwich on the vendored paths: the vendored delete *replies*, with
+  # the chain length re-read from Live afterwards. That is both the confirmation
+  # and the check — `remaining` disagreeing with what the pre-read implies means
+  # something else changed the chain, and saying so is better than reporting a
+  # delete that may not be the one asked for.
+  defp do_call("delete_device", %{"track" => track, "device" => device, "target" => "return"}) do
+    delete_vendored_device(
+      {:return, track},
+      "/live/return_track/get/devices",
+      [track],
+      "/live/return_track/delete_device",
+      device,
+      &[track, &1]
+    )
+  end
+
+  defp do_call("delete_device", %{"device" => device, "target" => "master"}) do
+    delete_vendored_device(
+      :master,
+      "/live/master/get/devices",
+      [],
+      "/live/master/delete_device",
+      device,
+      &[&1]
+    )
+  end
+
   defp do_call("delete_device", %{"track" => track, "device" => device}) do
     with {:ok, names} <- read_device_names(track),
-         {:ok, device} <- ensure_device_index(track, device, names),
+         {:ok, device} <- ensure_device_index({:track, track}, device, names),
          :ok <- Transport.send_message("/live/track/delete_device", [track, device]),
          :ok <- confirm_device_count(track, length(names) - 1) do
       FollowCam.steer("delete_device", %{
@@ -2410,7 +2834,7 @@ defmodule Seshat.Tools.Handlers do
         remaining: length(names) - 1
       })
 
-      {:ok, deleted_device_reply(track, device, names)}
+      {:ok, deleted_device_reply({:track, track}, device, names)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
@@ -2422,6 +2846,45 @@ defmodule Seshat.Tools.Handlers do
   # device. The display value is read *before* the write and the write refused
   # unless it reads On/Off, so a device that breaks the assumption gets a clean,
   # self-diagnosing error instead of a wrong parameter silently changed.
+  defp do_call("bypass_device", %{
+         "track" => track,
+         "device" => device,
+         "enabled" => enabled,
+         "target" => "return"
+       }) do
+    bypass_vendored_device(
+      {:return, track},
+      %{
+        name: "/live/return_track/device/get/name",
+        value_string: "/live/return_track/device/get/parameter/value_string",
+        value: "/live/return_track/device/get/parameter/value",
+        set: "/live/return_track/device/set/parameter/value"
+      },
+      [track, device],
+      device,
+      enabled
+    )
+  end
+
+  defp do_call("bypass_device", %{
+         "device" => device,
+         "enabled" => enabled,
+         "target" => "master"
+       }) do
+    bypass_vendored_device(
+      :master,
+      %{
+        name: "/live/master/device/get/name",
+        value_string: "/live/master/device/get/parameter/value_string",
+        value: "/live/master/device/get/parameter/value",
+        set: "/live/master/device/set/parameter/value"
+      },
+      [device],
+      device,
+      enabled
+    )
+  end
+
   defp do_call("bypass_device", %{"track" => track, "device" => device, "enabled" => enabled}) do
     subject = "device #{device} on track #{track}"
 
@@ -2435,7 +2898,21 @@ defmodule Seshat.Tools.Handlers do
              @device_index_hint
            ),
          :ok <- ensure_on_off_switch(name, prior) do
-      set_device_enabled(track, device, name, enabled, prior)
+      set_device_enabled({:track, track}, device, name, enabled, prior, fn value ->
+        with :ok <-
+               Transport.send_message(
+                 "/live/device/set/parameter/value",
+                 [track, device, 0, value]
+               ) do
+          confirm_device_enabled_at(
+            "/live/device/get/parameter/value",
+            [track, device, 0],
+            {:track, track},
+            device,
+            enabled
+          )
+        end
+      end)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
@@ -3059,10 +3536,81 @@ defmodule Seshat.Tools.Handlers do
     :exit, _ -> {:error, extension_missing_error("read the master volume", "nothing was changed")}
   end
 
+  # The index-less master getters reply with a bare value and no envelope, so
+  # `query_echoed/4` (which strips echoed indices) doesn't fit them — this is
+  # `master_volume/0`'s shape generalized over the address. A timeout is a
+  # missing install, exactly as there.
+  defp master_bare_float(address, subject) do
+    case Transport.query(address, [], @guard_timeout) do
+      {:ok, {_addr, [value]}} when is_number(value) ->
+        {:ok, value}
+
+      {:ok, {_addr, args}} ->
+        {:error, "Unexpected reply from #{address}: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ -> {:error, extension_missing_error("read #{subject}", "nothing was changed")}
+  end
+
   defp extension_missing_error(attempted, consequence) do
     "Timed out trying to #{attempted}, so #{consequence}. Those addresses come from Seshat's " <>
       "AbletonOSC extension rather than upstream, so run `mix abletonosc.install` and restart " <>
       "Ableton Live — and check Live is running with AbletonOSC enabled."
+  end
+
+  # A reply in a shape this code can't read, on one of Seshat's own addresses.
+  # An older installed copy of the fork is the realistic cause, so the hint says
+  # so rather than blaming the index.
+  defp unexpected_chain_reply(target, args) do
+    "Unexpected reply from Live when loading onto #{target}: #{inspect(args)}. The installed " <>
+      "copy of Seshat's AbletonOSC extension may predate this address — run " <>
+      "`mix abletonosc.install` and restart Ableton Live."
+  end
+
+  @doc """
+  Decides what a device-load reply means, before anything acts on it.
+
+  `asked` is what this call sent — `[track_or_return_index, uri]` or `[uri]` —
+  and the reply echoes it back in front of the payload. `Seshat.OSC.Transport`
+  correlates replies by address alone, so a load abandoned by an earlier timeout
+  can still answer the next load on the same address: the echo is the only thing
+  that distinguishes this call's reply from that straggler's.
+
+  Getting that wrong is worse here than on a getter. A stale *success* would make
+  the tool record the wrong URI as loaded, steer the view using a device index
+  from a different chain, and tell the user a device landed somewhere it did not
+  — all while the load actually asked for may still be in flight.
+
+  Hence `:stale` rather than the reissue `query_echoed/5` performs on a mismatched
+  getter: a load is a mutation, and reissuing one could load a second device.
+  There is nothing safe to do but report the outcome as unknown.
+  """
+  @spec load_outcome(list(), list()) ::
+          {:loaded, list()} | {:remote_error, String.t()} | :stale | :unexpected
+  def load_outcome(reply_args, asked) do
+    {echoed, payload} = Enum.split(reply_args, length(asked))
+
+    cond do
+      length(echoed) < length(asked) -> :unexpected
+      not indices_match?(echoed, asked) -> :stale
+      true -> load_payload(payload)
+    end
+  end
+
+  defp load_payload(["ok" | rest]), do: {:loaded, rest}
+  defp load_payload(["error", message]) when is_binary(message), do: {:remote_error, message}
+  defp load_payload(_other), do: :unexpected
+
+  # Deliberately does not tell the user to just try again: the load this reply
+  # belongs to may have landed, and a blind retry is how one device becomes two.
+  defp stale_load_error(target, uri) do
+    "Ableton's reply when loading '#{uri}' onto #{target} was about a different load — it " <>
+      "belongs to an earlier request that timed out. Nothing further was sent, and whether " <>
+      "anything was loaded is unknown: check with get_track_devices before retrying, since " <>
+      "retrying blind could load a second copy."
   end
 
   # One name query per return plus one send query per return. Tiny replies, and
@@ -3157,15 +3705,243 @@ defmodule Seshat.Tools.Handlers do
   # Floats are tolerated the way `query_echoed/5` documents for indices — 1.0
   # reaches Ableton as device 1 — so the bounds check normalises rather than
   # rejects, and hands back the index the rest of the sequence should use.
-  defp ensure_device_index(track, device, names) do
+  defp ensure_device_index(chain, device, names) do
     index = if is_number(device), do: trunc(device), else: device
 
     if is_integer(index) and index >= 0 and index < length(names) do
       {:ok, index}
     else
-      {:error, device_out_of_range_error(track, device, names)}
+      {:error, device_out_of_range_error(chain, device, names)}
     end
   end
+
+  # --- Return / master device chains ---
+  #
+  # These addresses are Seshat's own and always reply, so silence can only mean
+  # the extension isn't installed — which is why every error path below carries
+  # @return_extension_hint (or extension_missing_error) and names the chain it
+  # was aimed at. None of them may fall through to the regular-track wording:
+  # "check the track index with get_session_state" is actively misleading when
+  # the real answer is `mix abletonosc.install`.
+
+  defp read_vendored_chain(address, indices, chain) do
+    subject = "the devices on #{chain_label(chain)}"
+
+    with {:ok, flat} <- query_vendored_list(address, indices, subject),
+         {:ok, {names, types, classes}} <- parse_device_chain(flat) do
+      {:ok, format_device_chain(chain, names, types, classes)}
+    end
+  end
+
+  defp read_vendored_parameters(address, indices, chain, device) do
+    subject = "the parameters of device #{device} on #{chain_label(chain)}"
+
+    with {:ok, flat} <- query_vendored_list(address, indices, subject),
+         {:ok, {device_name, names, values, mins, maxes}} <- parse_device_parameters(flat) do
+      {:ok, format_device_parameters(chain, device, device_name, names, values, mins, maxes)}
+    end
+  end
+
+  # `query_echoed/5`'s shape, but for a reply whose payload is a whole list
+  # rather than one value — the same reason `read_device_names/2` spells its own
+  # echo check out. Including the reissue-once stale defence: Transport
+  # correlates by address alone, so a reply abandoned by an earlier timeout can
+  # still answer this query with another return's chain.
+  defp query_vendored_list(address, indices, subject, reissued? \\ false) do
+    case Transport.query(address, indices, @guard_timeout) do
+      {:ok, {_addr, values}} ->
+        {echoed, payload} = Enum.split(values, length(indices))
+
+        if indices_match?(echoed, indices) do
+          case unwrap_list_payload(payload, indices) do
+            {:ok, list} ->
+              {:ok, list}
+
+            {:error, message} ->
+              {:error, remote_error(message)}
+
+            :unexpected_shape ->
+              if reissued? do
+                {:error, stale_reply_error(subject)}
+              else
+                query_vendored_list(address, indices, subject, true)
+              end
+          end
+        else
+          if reissued? do
+            {:error, stale_reply_error(subject)}
+          else
+            query_vendored_list(address, indices, subject, true)
+          end
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ -> {:error, guard_timeout_error(subject, @return_extension_hint)}
+  end
+
+  # An index-less master getter has nothing to look up and so carries no
+  # envelope — the payload *is* the list. Everything else is browser.py's
+  # ok/error envelope with the list spliced in behind the "ok".
+  defp unwrap_list_payload(payload, []), do: {:ok, payload}
+  defp unwrap_list_payload(["ok" | rest], _indices), do: {:ok, rest}
+
+  defp unwrap_list_payload(["error", message], _indices) when is_binary(message),
+    do: {:error, message}
+
+  defp unwrap_list_payload(_payload, _indices), do: :unexpected_shape
+
+  defp set_vendored_parameter(chain, get_address, set_address, indices, device, parameter, value) do
+    subject = "parameter #{parameter} of device #{device} on #{chain_label(chain)}"
+
+    with {:ok, _prior} <- query_echoed(get_address, indices, subject, @return_extension_hint),
+         :ok <- Transport.send_message(set_address, indices ++ [value / 1.0]),
+         {:ok, display} <- read_back_value(get_address, indices) do
+      {:ok, "Set #{subject} to #{value} — it now reads '#{display}'"}
+    else
+      :unconfirmed ->
+        {:error,
+         "The set was sent but reading #{subject} back did not confirm it — verify with " <>
+           "get_device_parameters."}
+
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  end
+
+  # Deliberately not `query_echoed/5`: its timeout wording says "nothing further
+  # was sent", which is false once the setter is already on the wire. A
+  # post-mutation read reports uncertainty, not refusal.
+  defp read_back_value(address, indices) do
+    case Transport.query(address, indices, @guard_timeout) do
+      {:ok, {_addr, values}} ->
+        {echoed, payload} = Enum.split(values, length(indices))
+
+        with true <- indices_match?(echoed, indices),
+             {:ok, value} <- unwrap_payload(payload) do
+          {:ok, value}
+        else
+          _ -> :unconfirmed
+        end
+
+      {:error, _reason} ->
+        :unconfirmed
+    end
+  catch
+    :exit, _ -> :unconfirmed
+  end
+
+  defp delete_vendored_device(
+         chain,
+         list_address,
+         list_indices,
+         delete_address,
+         device,
+         build_args
+       ) do
+    subject = "the devices on #{chain_label(chain)}"
+
+    with {:ok, flat} <- query_vendored_list(list_address, list_indices, subject),
+         {:ok, {names, _types, _classes}} <- parse_device_chain(flat),
+         {:ok, device} <- ensure_device_index(chain, device, names),
+         {:ok, remaining} <-
+           query_vendored_delete(delete_address, build_args.(device), chain, device),
+         :ok <- ensure_remaining(chain, device, remaining, length(names) - 1) do
+      FollowCam.steer(
+        "delete_device",
+        Map.merge(chain_facts(chain), %{
+          device: device,
+          remaining: remaining
+        })
+      )
+
+      {:ok, deleted_device_reply(chain, device, names)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp query_vendored_delete(address, args, chain, device) do
+    case Transport.query(address, args, @guard_timeout) do
+      {:ok, {_addr, values}} ->
+        {echoed, payload} = Enum.split(values, length(args))
+
+        if indices_match?(echoed, args) do
+          case unwrap_payload(payload) do
+            {:ok, remaining} when is_integer(remaining) ->
+              {:ok, remaining}
+
+            {:error, message} ->
+              {:error, remote_error(message)}
+
+            _other ->
+              {:error,
+               "Live's reply to deleting device #{device} on #{chain_label(chain)} was not a " <>
+                 "device count (#{inspect(payload)}), so it is unknown whether it was removed. " <>
+                 "Verify with get_track_devices."}
+          end
+        else
+          {:error,
+           "The reply confirming the delete was not about device #{device} on " <>
+             "#{chain_label(chain)} (got #{inspect(values)}) — likely left over from an " <>
+             "earlier timed-out query, so it is unknown whether the device was removed. " <>
+             "Verify with get_track_devices."}
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "The delete of device #{device} on #{chain_label(chain)} got no reply, so it is unknown " <>
+         "whether it was removed. #{@return_extension_hint}"}
+  end
+
+  defp ensure_remaining(_chain, _device, remaining, expected) when remaining == expected, do: :ok
+
+  defp ensure_remaining(chain, device, remaining, expected) do
+    {:error,
+     "The delete of device #{device} on #{chain_label(chain)} reported #{remaining} device(s) " <>
+       "left, not #{expected} — the chain changed underneath this call. Re-read it with " <>
+       "get_track_devices before acting on any index."}
+  end
+
+  defp bypass_vendored_device(chain, addresses, indices, device, enabled) do
+    subject = "device #{device} on #{chain_label(chain)}"
+
+    with {:ok, name} <-
+           query_echoed(addresses.name, indices, subject, @return_extension_hint),
+         {:ok, prior} <-
+           query_echoed(
+             addresses.value_string,
+             indices ++ [0],
+             "the on/off switch of #{subject}",
+             @return_extension_hint
+           ),
+         :ok <- ensure_on_off_switch(name, prior) do
+      set_device_enabled(chain, device, name, enabled, prior, fn value ->
+        with :ok <- Transport.send_message(addresses.set, indices ++ [0, value]) do
+          confirm_device_enabled_at(addresses.value, indices ++ [0], chain, device, enabled)
+        end
+      end)
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  # The facts a follow-cam clause keys on, per chain — the one place the three
+  # index spaces are turned into steering vocabulary.
+  defp chain_facts({:track, track}), do: %{track: track}
+  defp chain_facts({:return, index}), do: %{return: index}
+  defp chain_facts(:master), do: %{master: true}
 
   # The only defence the no-reply delete address allows. Raw `Transport.query`
   # deliberately, not `query_echoed/4`: that helper's timeout wording says
@@ -3201,22 +3977,26 @@ defmodule Seshat.Tools.Handlers do
   # Steering happens on the no-op path too: showing the device is the
   # confirmation either way, and "it was already off" is exactly the answer a
   # user is most likely to want to see for themselves.
-  defp set_device_enabled(track, device, name, enabled, prior) do
+  #
+  # `mutate` is the whole difference between the three chains — send the toggle
+  # on that chain's address, read it back on that chain's address — so the
+  # decision (already in the requested state? steer where?) lives here once
+  # rather than three times.
+  defp set_device_enabled(chain, device, name, enabled, prior, mutate) do
     if String.downcase(to_string(prior)) == String.downcase(on_off_label(enabled)) do
-      FollowCam.steer("bypass_device", %{track: track, device: device})
-      {:ok, bypass_noop_reply(name, track, device, enabled)}
+      FollowCam.steer("bypass_device", Map.put(chain_facts(chain), :device, device))
+      {:ok, bypass_noop_reply(name, chain, device, enabled)}
     else
-      with :ok <-
-             Transport.send_message(
-               "/live/device/set/parameter/value",
-               [track, device, 0, if(enabled, do: 1.0, else: 0.0)]
-             ),
-           :ok <- confirm_device_enabled(track, device, enabled) do
-        FollowCam.steer("bypass_device", %{track: track, device: device})
-        {:ok, bypass_reply(name, track, device, enabled)}
-      else
-        {:error, reason} when is_binary(reason) -> {:error, reason}
-        {:error, reason} -> {:error, inspect(reason)}
+      case mutate.(if(enabled, do: 1.0, else: 0.0)) do
+        :ok ->
+          FollowCam.steer("bypass_device", Map.put(chain_facts(chain), :device, device))
+          {:ok, bypass_reply(name, chain, device, enabled)}
+
+        {:error, reason} when is_binary(reason) ->
+          {:error, reason}
+
+        {:error, reason} ->
+          {:error, inspect(reason)}
       end
     end
   end
@@ -3224,27 +4004,32 @@ defmodule Seshat.Tools.Handlers do
   # Numeric readback rather than the display string: "Device On" is quantized to
   # exactly 0.0/1.0, so the comparison is safe, and it can't be confused by
   # however a given device chooses to spell its display value. Raw
-  # `Transport.query` for the same reason as `confirm_device_count/2`.
-  defp confirm_device_enabled(track, device, enabled) do
+  # `Transport.query` for the same reason as `confirm_device_count/2` — this runs
+  # after the mutation, so a timeout is uncertainty rather than a refusal.
+  defp confirm_device_enabled_at(address, indices, chain, device, enabled) do
     expected = if enabled, do: 1.0, else: 0.0
+    subject = "the on/off switch of device #{device} on #{chain_label(chain)}"
 
-    case Transport.query("/live/device/get/parameter/value", [track, device, 0]) do
-      {:ok, {_addr, [t, d, p, value]}}
-      when t == track and d == device and p == 0 and is_number(value) ->
-        if value / 1.0 == expected do
-          :ok
+    case Transport.query(address, indices, @guard_timeout) do
+      {:ok, {_addr, values}} ->
+        {echoed, payload} = Enum.split(values, length(indices))
+
+        with true <- indices_match?(echoed, indices),
+             {:ok, value} when is_number(value) <- unwrap_payload(payload) do
+          if value / 1.0 == expected do
+            :ok
+          else
+            {:error,
+             "The toggle was sent but #{subject} still reads #{format_number(value)}, not " <>
+               "#{expected} — check it with get_device_parameters."}
+          end
         else
-          {:error,
-           "The toggle was sent but device #{device} on track #{track} still reports its " <>
-             "on/off parameter as #{format_number(value)}, not #{expected} — check it with " <>
-             "get_device_parameters."}
+          _other ->
+            {:error,
+             "The reply confirming the toggle was not about #{subject} (got " <>
+               "#{inspect(values)}) — likely left over from an earlier timed-out query. " <>
+               "Verify with get_device_parameters."}
         end
-
-      {:ok, {_addr, args}} ->
-        {:error,
-         "The reply confirming the toggle was not about the on/off switch of device " <>
-           "#{device} on track #{track} (got #{inspect(args)}) — likely left over from an " <>
-           "earlier timed-out query. Verify with get_device_parameters."}
 
       {:error, reason} ->
         {:error, inspect(reason)}
@@ -3252,7 +4037,8 @@ defmodule Seshat.Tools.Handlers do
   catch
     :exit, _ ->
       {:error,
-       "The toggle was sent but reading it back timed out — verify with get_device_parameters."}
+       "The toggle was sent but reading the on/off switch of device #{device} on " <>
+         "#{chain_label(chain)} back timed out — verify with get_device_parameters."}
   end
 
   # --- Clip property helpers ---

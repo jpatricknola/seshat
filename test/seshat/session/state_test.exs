@@ -33,7 +33,13 @@ defmodule Seshat.Session.StateTest do
     %{index: index, name: name, volume: 0.85, pan: 0.0, mute: false, solo: false}
   end
 
-  defp return(index, name), do: %{index: index, name: name, volume: 0.85}
+  defp return(index, name) do
+    %{index: index, name: name, volume: 0.85, pan: 0.0, mute: false, solo: false}
+  end
+
+  defp master(overrides \\ %{}) do
+    Map.merge(%{volume: 0.85, pan: 0.0, cue_volume: 0.85}, overrides)
+  end
 
   defp push(state, address, args) do
     {:noreply, state} = State.handle_info({:osc_message, address, args}, state)
@@ -295,10 +301,106 @@ defmodule Seshat.Session.StateTest do
       assert push(mirrored, "/live/return_track/get/volume", [3, 0.5]) == mirrored
     end
 
-    test "a master push replaces the master level" do
-      state = push(state(), "/live/master/get/volume", [0.7])
+    test "a pan push updates that return and no other" do
+      state =
+        %{return_tracks: [return(0, "Reverb"), return(1, "Delay")]}
+        |> state()
+        |> push("/live/return_track/get/panning", [1, -0.4])
 
-      assert state.master == %{volume: 0.7}
+      assert Enum.map(state.return_tracks, & &1.pan) == [0.0, -0.4]
+    end
+
+    test "a pan query reply carries its ok envelope and still lands" do
+      state =
+        %{return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/return_track/get/panning", [0, "ok", 0.25])
+
+      assert Enum.map(state.return_tracks, & &1.pan) == [0.25]
+    end
+
+    # The getter replies 0/1 and Live's own listener pushes a bool, so both
+    # spellings have to normalize — otherwise the mirror holds two ways of
+    # saying "muted" and every reader has to know both.
+    test "a mute push normalizes an int to a boolean" do
+      state =
+        %{return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/return_track/get/mute", [0, 1])
+
+      assert Enum.map(state.return_tracks, & &1.mute) == [true]
+    end
+
+    test "a mute push normalizes a bool the same way" do
+      state =
+        %{return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/return_track/get/mute", [0, true])
+
+      assert Enum.map(state.return_tracks, & &1.mute) == [true]
+    end
+
+    test "a mute query reply carries its ok envelope and still lands" do
+      state =
+        %{return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/return_track/get/mute", [0, "ok", 1])
+
+      assert Enum.map(state.return_tracks, & &1.mute) == [true]
+    end
+
+    test "a solo push normalizes and touches only that return" do
+      state =
+        %{return_tracks: [return(0, "Reverb"), return(1, "Delay")]}
+        |> state()
+        |> push("/live/return_track/get/solo", [1, 1])
+
+      assert Enum.map(state.return_tracks, & &1.solo) == [false, true]
+    end
+
+    test "a solo query reply carries its ok envelope and still lands" do
+      state =
+        %{return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/return_track/get/solo", [0, "ok", 0])
+
+      assert Enum.map(state.return_tracks, & &1.solo) == [false]
+    end
+
+    test "a master volume push leaves pan and cue volume alone" do
+      state =
+        %{master: master()}
+        |> state()
+        |> push("/live/master/get/volume", [0.7])
+
+      assert state.master == %{volume: 0.7, pan: 0.0, cue_volume: 0.85}
+    end
+
+    test "a master pan push leaves volume and cue volume alone" do
+      state =
+        %{master: master()}
+        |> state()
+        |> push("/live/master/get/panning", [-0.25])
+
+      assert state.master == %{volume: 0.85, pan: -0.25, cue_volume: 0.85}
+    end
+
+    test "a cue volume push leaves volume and pan alone" do
+      state =
+        %{master: master()}
+        |> state()
+        |> push("/live/master/get/cue_volume", [0.4])
+
+      assert state.master == %{volume: 0.85, pan: 0.0, cue_volume: 0.4}
+    end
+
+    # There is exactly one master, so there is no index to be wrong about — a
+    # push arriving before any refresh has read one builds the map rather than
+    # being dropped. The fields it doesn't carry stay unknown, never 0.0.
+    test "a master push into an empty mirror builds it with the rest unknown" do
+      state = push(state(), "/live/master/get/panning", [0.5])
+
+      assert state.master == %{volume: nil, pan: 0.5, cue_volume: nil}
     end
 
     # The error envelope shares its address and arity with the ok envelope, so
@@ -317,9 +419,26 @@ defmodule Seshat.Session.StateTest do
       assert push(mirrored, "/live/return_track/get/volume", [0, "error", "no such return"]) ==
                mirrored
     end
+
+    test "pan, mute and solo error envelopes are ignored rather than mirrored" do
+      mirrored = state(%{return_tracks: [return(0, "Reverb")]})
+
+      for address <- [
+            "/live/return_track/get/panning",
+            "/live/return_track/get/mute",
+            "/live/return_track/get/solo"
+          ] do
+        assert push(mirrored, address, [0, "error", "no such return"]) == mirrored
+      end
+    end
   end
 
   # `/live/startup` and the stale branches of the two structure pushes all call
   # do_refresh/1, which queries Ableton — untestable here by design
   # (testing.md: never reach Transport.query/3), and covered by /smoke-test.
+  # That includes subscribe_return_listeners/1's five start_listen sends: the
+  # plan asked for a unit test of "subscription sends for all new listeners",
+  # but the function is private and reachable only through do_refresh/1, so
+  # there is no pure entry point to call it through. New mixer smoke item 3
+  # ("Push, not poll") is the actual coverage.
 end

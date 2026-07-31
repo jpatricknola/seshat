@@ -194,6 +194,101 @@ defmodule Seshat.Tools.FollowCamTest do
     end
   end
 
+  # `/live/view/set/selected_track` and `set/selected_device` index `song.tracks`,
+  # where returns and the master don't appear — so every clause below has to use
+  # one of Seshat's own selects. Steering a return's device with the regular
+  # address wouldn't fail; it would silently show a *different* track's device,
+  # which is the whole reason these are separate clauses rather than one.
+  describe "devices on return tracks" do
+    test "a load selects the device on the return and opens the chain" do
+      assert FollowCam.calls("load_device", %{return: 1, device: 0}) == [
+               {"/live/return_track/select_device", [1, 0]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "a load with no device index yet falls back to the return itself" do
+      assert FollowCam.calls("load_device", %{return: 2, device: -1}) == [
+               {"/live/return_track/select", [2]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "bypass shows the return's device it toggled" do
+      assert FollowCam.calls("bypass_device", %{return: 0, device: 2}) == [
+               {"/live/return_track/select_device", [0, 2]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "deleting from the middle of a return's chain lands on the successor" do
+      assert FollowCam.calls("delete_device", %{return: 1, device: 0, remaining: 2}) == [
+               {"/live/return_track/select_device", [1, 0]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "deleting the last device on a return clamps back one" do
+      assert FollowCam.calls("delete_device", %{return: 1, device: 2, remaining: 2}) == [
+               {"/live/return_track/select_device", [1, 1]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "emptying a return's chain shows the empty chain on the return" do
+      assert FollowCam.calls("delete_device", %{return: 3, device: 0, remaining: 0}) == [
+               {"/live/return_track/select", [3]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+  end
+
+  describe "devices on the master track" do
+    # The master has no index at all, so its facts carry `master: true` rather
+    # than a number — and both of its select addresses take one argument fewer.
+    test "a load selects the device on the master and opens the chain" do
+      assert FollowCam.calls("load_device", %{master: true, device: 1}) == [
+               {"/live/master/select_device", [1]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "a load with no device index yet falls back to the master itself" do
+      assert FollowCam.calls("load_device", %{master: true, device: -1}) == [
+               {"/live/master/select", []},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "bypass shows the master's device it toggled" do
+      assert FollowCam.calls("bypass_device", %{master: true, device: 0}) == [
+               {"/live/master/select_device", [0]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "deleting from the middle of the master's chain lands on the successor" do
+      assert FollowCam.calls("delete_device", %{master: true, device: 0, remaining: 2}) == [
+               {"/live/master/select_device", [0]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "deleting the last device on the master clamps back one" do
+      assert FollowCam.calls("delete_device", %{master: true, device: 2, remaining: 2}) == [
+               {"/live/master/select_device", [1]},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+
+    test "emptying the master's chain shows the empty chain on the master" do
+      assert FollowCam.calls("delete_device", %{master: true, device: 0, remaining: 0}) == [
+               {"/live/master/select", []},
+               {"/live/view/show_view", ["Detail/DeviceChain"]}
+             ]
+    end
+  end
+
   describe "tools that don't steer" do
     # The in-list is settled and exhaustive: parameter tweaks, transport,
     # renames and reads deliberately leave the view alone. A view that jumps on

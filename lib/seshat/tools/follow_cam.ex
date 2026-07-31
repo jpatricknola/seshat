@@ -51,6 +51,7 @@ defmodule Seshat.Tools.FollowCam do
     * `:track`, `:slot` — clip coordinates (slot = scene index)
     * `:device` — device index within `track.devices`
     * `:return` — return-track index, its own index space
+    * `:master` — `true`, the master track; it has no index at all
     * `:scene`
     * `:remaining` — how many objects of that kind are left *after* a delete
 
@@ -186,6 +187,72 @@ defmodule Seshat.Tools.FollowCam do
   def calls("delete_device", %{track: track, device: device, remaining: remaining}) do
     [
       {"/live/view/set/selected_device", [track, min(device, remaining - 1)]},
+      {"/live/view/show_view", ["Detail/DeviceChain"]}
+    ]
+  end
+
+  # --- Devices on return tracks and the master ---
+  #
+  # The same three shapes again, on the two chains `/live/view/set/selected_*`
+  # can't reach: those addresses index `song.tracks`, so a return or the master
+  # needs one of Seshat's own selects. The pane call still comes from upstream's
+  # `show_view` — `song.view.select_device` opens Detail/DeviceChain on its own
+  # (measured 2026-07-31), but asking for it explicitly costs one silent
+  # datagram and makes the steering identical across all three chains.
+  def calls("load_device", %{return: index, device: -1}) do
+    [
+      {"/live/return_track/select", [index]},
+      {"/live/view/show_view", ["Detail/DeviceChain"]}
+    ]
+  end
+
+  def calls(tool, %{return: index, device: device})
+      when tool in ["load_device", "bypass_device"] and device >= 0 do
+    [
+      {"/live/return_track/select_device", [index, device]},
+      {"/live/view/show_view", ["Detail/DeviceChain"]}
+    ]
+  end
+
+  def calls("delete_device", %{return: index, device: _device, remaining: 0}) do
+    [
+      {"/live/return_track/select", [index]},
+      {"/live/view/show_view", ["Detail/DeviceChain"]}
+    ]
+  end
+
+  def calls("delete_device", %{return: index, device: device, remaining: remaining}) do
+    [
+      {"/live/return_track/select_device", [index, min(device, remaining - 1)]},
+      {"/live/view/show_view", ["Detail/DeviceChain"]}
+    ]
+  end
+
+  def calls("load_device", %{master: true, device: -1}) do
+    [
+      {"/live/master/select", []},
+      {"/live/view/show_view", ["Detail/DeviceChain"]}
+    ]
+  end
+
+  def calls(tool, %{master: true, device: device})
+      when tool in ["load_device", "bypass_device"] and device >= 0 do
+    [
+      {"/live/master/select_device", [device]},
+      {"/live/view/show_view", ["Detail/DeviceChain"]}
+    ]
+  end
+
+  def calls("delete_device", %{master: true, device: _device, remaining: 0}) do
+    [
+      {"/live/master/select", []},
+      {"/live/view/show_view", ["Detail/DeviceChain"]}
+    ]
+  end
+
+  def calls("delete_device", %{master: true, device: device, remaining: remaining}) do
+    [
+      {"/live/master/select_device", [min(device, remaining - 1)]},
       {"/live/view/show_view", ["Detail/DeviceChain"]}
     ]
   end

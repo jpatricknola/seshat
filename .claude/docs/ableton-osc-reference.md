@@ -204,3 +204,42 @@ consequences:
   for the same property. The properties `Session.State` listens to are in
   `@listened_properties` / `@listened_song_properties` — keep gating queries off
   that list where there's a choice.
+
+## Measuring the Live API without building the feature first
+
+Plenty of questions about the Live Object Model can't be answered from source —
+what `browser.load_item` does with an instrument while a return is selected,
+whether an assignment sticks, what a parameter's real range and display string
+are. They can be *measured* in minutes, without a Live restart and without
+writing any of the feature. The rig (validated 2026-07-31, Live 12.4.3):
+
+1. **Add a temporary probe handler to the installed copy**, at
+   `~/Music/Ableton/User Library/Remote Scripts/AbletonOSC/abletonosc/return_track.py`
+   — never the repo. No fork commit, no pin bump, nothing to revert in git.
+   `return_track.py` is on `reload_imports`' list, which is why it's the
+   convenient host.
+2. **Trigger it with fire-and-forget UDP to 11000** — `/live/api/reload`
+   (registered in `manager.py`, re-imports the handler modules and re-runs
+   `init_api`) then your probe address. Sending only, so you never bind 11001
+   and never contend with the running Seshat server for AbletonOSC's fixed
+   reply port. A dozen lines of `socket.sendto` with hand-rolled OSC padding is
+   enough; no reply plumbing is needed.
+3. **Read the answers out of Live's own log**, not off the wire:
+   `~/Library/Preferences/Ableton/Live <version>/Log.txt`, where
+   `self.logger.info` lands. Prefix every line with something greppable and
+   record the log's line count first so you can read only what your run added.
+4. **Restore with `mix abletonosc.install`, then reload again**, and confirm
+   the probe address is gone (it logs `Unknown OSC address`).
+
+Two rules for the probe itself. **Snapshot before mutating and undo after** —
+record device lists and track counts at the start, delete only what the probe
+created, restore the previous selection, and delete a return track the probe
+added. **Wrap every measurement in its own `try`/`except` and log the
+exception**: reading `master_track.mute` raises `RuntimeError` rather than
+returning falsy, so one unguarded probe line aborts the rest of the run, and
+`hasattr` is not a safe feature test on LOM objects.
+
+Ask before running one. It writes into the user's Remote Scripts and reloads
+the bridge under a live session, and a probe that loads devices mutates a real
+set — cheap to undo, but the user's call, and the answer may be "that session
+is a scratch set, go ahead."

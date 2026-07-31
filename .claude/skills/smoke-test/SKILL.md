@@ -157,6 +157,92 @@ on more than one kind of device:
    that one" — the set ends holding only the winner. Then an effect A/B via
    `bypass_device`.
 
+## If the change touches devices on return or master tracks (`target: "return"` / `"master"`)
+
+Every address behind `target` is vendored — `return_track.py` and `browser.py`
+in the fork — so **`mix test` has executed none of it**. Reinstall and restart
+Live first (the bridge section above), or every check below passes for the wrong
+reason. Set up: one MIDI track with an audible clip playing, one return track,
+and a send from the track into it.
+
+1. **The headline workflow.** `create_return_track "Room Reverb"`, then
+   `load_device target: "return", track: <that index>` with a Reverb uri. The
+   reply names *both* the return and the device; the view lands on the return's
+   device chain; raising the track's send is now audible. Live renames the
+   return as the first device lands (`A-Return` → `A-Reverb`) — confirm the
+   reply carries the **post-load** name, not the one it was created with.
+2. **Master.** `load_device target: "master"` with an EQ Eight. The reply names
+   the master, the view lands on the master's device chain, and the whole mix is
+   affected.
+3. **The stray-track guard** — the one measured behaviour this whole guard
+   exists for. Load an *instrument* (Operator) with `target: "return"`, and
+   again with `target: "master"`. Both must **error**, naming the stray MIDI
+   track Live created; nothing may be claimed as loaded; and the stray track
+   must still be there afterwards (the tool never deletes it — the model should
+   offer `delete_track`). If either reports success, the verification in
+   `browser.py`'s `_verify_landed` is not running.
+4. **The read/write surface, on both chains.** With `target: "return"` and
+   `target: "master"`:
+   - `get_track_devices` lists the chain and says "return track N" / "the
+     master track", never "track N".
+   - `get_device_parameters` lists every parameter of a large device (Reverb,
+     EQ Eight) in one reply — watch for truncation, this is the combined
+     getter's only real test.
+   - `set_device_parameter` changes an audible parameter and the reply echoes
+     Live's own display string.
+   - `bypass_device` toggles the device off and on, audibly, and repeating it
+     replies "already Off" without writing.
+   - `delete_device` removes it, the reply's remaining chain matches a fresh
+     `get_track_devices`, and the view lands sensibly (successor device, or the
+     empty chain).
+5. **Error paths must be errors, not timeouts.** A bad device index on either
+   chain comes back **immediately** with an error envelope naming the chain —
+   these getters always reply. A ≈2s stall instead means the installed copy
+   predates this work. Try a bad index at every depth, not just the device:
+   a bad **device** index on `set_device_parameter` or `bypass_device` (valid
+   return, out-of-range device) must error the same way — this is the case
+   that used to come back as a false "try again" timeout, because the
+   parameter index in the reply was echoed as `-1` instead of the value
+   actually asked for.
+6. **A slow-loading effect, not just the stray-track guard.** If a
+   third-party VST3/AU effect is installed, load it (not an instrument) with
+   `target: "return"`. Some plugins instantiate asynchronously, which can
+   leave `_verify_landed` seeing no change yet and reporting an error for a
+   load that in fact succeeds a moment later — item 3 above only exercises
+   the synchronous Operator case. If this happens, confirm with
+   `get_track_devices` whether the device actually landed; either way this is
+   a known limitation of the guard (see the plan's review notes), not a new
+   regression to chase.
+
+## If the change touches the return/master mixer tools (`set_return_track_pan` / `set_return_track_mute` / `set_return_track_solo` / `set_master_pan` / `set_cue_volume`)
+
+All five are vendored too — reinstall and restart Live first.
+
+1. Each setter moves the right control in Live's mixer, and its reply names the
+   old value as well as the new one.
+2. `set_return_track_mute` silences the shared effect for every track feeding
+   it, and the sends themselves are untouched (check `get_track_sends`).
+   `set_return_track_solo` hears the return alone.
+3. **Push, not poll.** Move each of those controls *by hand in Live* and
+   confirm `get_session_state` reflects it without `refresh: true`: return pan,
+   mute and solo; master pan; cue volume. This is what the new listeners are
+   for, and a missed `start_listen` looks exactly like a working tool until you
+   try this.
+4. **Listener rebind.** Delete a return track, then move the pan/mute/solo of
+   the return that took its index. `get_session_state` must show the change on
+   the *right* return — a stale binding writes one return's state onto another.
+5. `get_session_state`'s return lines carry pan and mute/solo; the master line
+   carries pan and cue volume and names itself "shown as Main in Live 12".
+6. **Cue volume is audible.** `preview_item` a preset, then change
+   `set_cue_volume` and preview again — the preview level follows. The scales
+   are already measured (master pan −1.0…1.0 shown as `50L`/`C`/`50R`, cue
+   0.0…1.0 on track volume's dB curve with `0.85` = `0.0 dB`), so this check is
+   about audibility, not range.
+7. **A stale install is distinguishable.** Before reinstalling — or against an
+   older Remote Scripts copy — every one of these five tools, and every
+   `target:` call above, must fail with the `mix abletonosc.install` hint rather
+   than a bare timeout or a regular-track error message.
+
 ## If the change touches the clip property tools (`get_clip_properties` / `set_clip_properties`)
 
 Every clip setter is fire-and-forget and Live's own rejection of an invalid loop

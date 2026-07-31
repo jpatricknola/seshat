@@ -87,16 +87,39 @@ be able to say yes/no to each one.
    ROADMAP.md entry (the "MCP mode in the browser UI" entry shows the style).
    Do **not** remove or shrink the entry — that happens at `/ship` time.
 
-5. **Address open questions.** take a pass at the open questions recorded in
-   the plan. Do your best effort to address them properly, or at least make
-   a confident recommendation if you are unable to resolve it.
+5. **Address open questions — by experiment, not by reasoning, wherever
+   Ableton can answer.** Take a pass at every open question the plan recorded
+   and try to *close* it. A question that needs live Ableton is not a reason
+   to leave it open: check whether Live is actually running
+   (`ps aux | grep Ableton`), and if it is, measure the answer.
+
+   **Assume the running Live session exists only for the issue being worked
+   on.** Experimenting in it is fine and expected — load a device, create a
+   return track, assign a selection, read a parameter's real range. Snapshot
+   what you touch and undo it afterwards, but don't refuse to touch anything.
+   The rig is written up under "Measuring the Live API without building the
+   feature first" in
+   [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md):
+   a temporary probe handler in the *installed* Remote Scripts copy,
+   `/live/api/reload` plus a probe address over fire-and-forget UDP, answers
+   read out of Live's `Log.txt`, then `mix abletonosc.install` to restore. No
+   Live restart, no fork commit, minutes not hours. Fold every measurement
+   back into the plan: the answer in the Open questions section, and the
+   assumption it replaces corrected wherever the body relied on it.
+
+   **The only question that may stay open is one no available resource can
+   answer** — not one that merely needs a running DAW, a browser search, or a
+   file you haven't read yet. If Live isn't running, or a question genuinely
+   needs something you cannot reach, say exactly what is missing and make a
+   confident recommendation the implementer can act on.
 
 6. **Stop and summarize.** No implementation. Report: which item you planned,
    the two or three decisions most worth the user's attention, anything
-   research contradicted in the roadmap entry, and the Open questions
-   verbatim — the ones needing the user's call asked directly, the ones
-   needing Ableton noted as blockers to check first during implementation.
-   Implementation starts only when the user says go.
+   research contradicted in the roadmap entry, what you measured against live
+   Ableton and what it changed, and the Open questions verbatim — the ones
+   needing the user's call asked directly, and for any still open, what
+   resource was missing (per step 5, "needs Ableton" is not an answer when
+   Ableton is running). Implementation starts only when the user says go.
 
    End by recommending `/plan-review` — it re-derives this plan's OSC
    contract independently of you, judges whether the approach is the least

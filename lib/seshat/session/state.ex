@@ -87,17 +87,21 @@ defmodule Seshat.Session.State do
   def song, do: GenServer.call(__MODULE__, :song)
 
   @doc """
-  Return tracks, in send order — `%{index, name, volume}`, where return 0 is
-  send A on every regular track. Empty when the extension isn't answering, and a
-  single entry's `volume` is `nil` when that one query went unanswered — never a
-  guessed number.
+  Return tracks, in send order — `%{index, name, volume, pan, mute, solo}`, where
+  return 0 is send A on every regular track. Empty when the extension isn't
+  answering, and a single field is `nil` when that one query went unanswered —
+  never a guessed number.
   """
   def return_tracks, do: GenServer.call(__MODULE__, :return_tracks)
 
   @doc """
-  Master track level as `%{volume: float}`, or `nil` when
+  Master track mixer state as `%{volume, pan, cue_volume}`, or `nil` when
   `/live/master/get/volume` never answered — i.e. Seshat's AbletonOSC extension
-  isn't installed. `nil` is "unknown", never "zero".
+  isn't installed. `nil` is "unknown", never "zero", and that holds per field
+  too: a lost `panning` reply leaves `pan: nil` rather than a centred guess.
+
+  The master has no mute, solo or arm — reading one raises inside Live rather
+  than returning something falsy — so there is nothing here to mirror.
   """
   def master, do: GenServer.call(__MODULE__, :master)
 
@@ -255,11 +259,56 @@ defmodule Seshat.Session.State do
     {:noreply, update_return(state, idx, :volume, value)}
   end
 
-  # The master getter takes no index, so it has no envelope — push and query
-  # reply are the same single-value shape.
+  def handle_info({:osc_message, "/live/return_track/get/panning", [idx, "ok", value]}, state)
+      when is_float(value) do
+    {:noreply, update_return(state, idx, :pan, value)}
+  end
+
+  def handle_info({:osc_message, "/live/return_track/get/panning", [idx, value]}, state)
+      when is_float(value) do
+    {:noreply, update_return(state, idx, :pan, value)}
+  end
+
+  # Normalized at the boundary: the getter replies 0/1 and Live's own listener
+  # pushes a bool, so the mirror would otherwise hold two spellings of the same
+  # fact and every reader would have to know both.
+  def handle_info({:osc_message, "/live/return_track/get/mute", [idx, "ok", value]}, state)
+      when is_integer(value) or is_boolean(value) do
+    {:noreply, update_return(state, idx, :mute, to_bool(value))}
+  end
+
+  def handle_info({:osc_message, "/live/return_track/get/mute", [idx, value]}, state)
+      when is_integer(value) or is_boolean(value) do
+    {:noreply, update_return(state, idx, :mute, to_bool(value))}
+  end
+
+  def handle_info({:osc_message, "/live/return_track/get/solo", [idx, "ok", value]}, state)
+      when is_integer(value) or is_boolean(value) do
+    {:noreply, update_return(state, idx, :solo, to_bool(value))}
+  end
+
+  def handle_info({:osc_message, "/live/return_track/get/solo", [idx, value]}, state)
+      when is_integer(value) or is_boolean(value) do
+    {:noreply, update_return(state, idx, :solo, to_bool(value))}
+  end
+
+  # The master getters take no index, so they have no envelope — push and query
+  # reply are the same single-value shape. Each writes one field and leaves its
+  # siblings alone; replacing the whole map would blank pan and cue volume on
+  # every volume push.
   def handle_info({:osc_message, "/live/master/get/volume", [value]}, state)
       when is_float(value) do
-    {:noreply, %{state | master: %{volume: value}}}
+    {:noreply, update_master(state, :volume, value)}
+  end
+
+  def handle_info({:osc_message, "/live/master/get/panning", [value]}, state)
+      when is_float(value) do
+    {:noreply, update_master(state, :pan, value)}
+  end
+
+  def handle_info({:osc_message, "/live/master/get/cue_volume", [value]}, state)
+      when is_float(value) do
+    {:noreply, update_master(state, :cue_volume, value)}
   end
 
   def handle_info({:osc_message, "/live/song/get/tempo", [value]}, state) do
@@ -509,7 +558,14 @@ defmodule Seshat.Session.State do
       %{
         index: i,
         name: query_string(transport, "/live/return_track/get/name", i, @return_probe_timeout),
-        volume: query_float(transport, "/live/return_track/get/volume", i, @return_probe_timeout)
+        volume: query_float(transport, "/live/return_track/get/volume", i, @return_probe_timeout),
+        pan: query_float(transport, "/live/return_track/get/panning", i, @return_probe_timeout),
+        mute:
+          query_int(transport, "/live/return_track/get/mute", i, @return_probe_timeout)
+          |> to_bool(),
+        solo:
+          query_int(transport, "/live/return_track/get/solo", i, @return_probe_timeout)
+          |> to_bool()
       }
     end)
   end
@@ -524,7 +580,24 @@ defmodule Seshat.Session.State do
   # real.
   defp read_master(transport) do
     case probe(transport, "/live/master/get/volume", [], @return_probe_timeout) do
-      {:ok, [volume]} when is_float(volume) -> %{volume: volume}
+      {:ok, [volume]} when is_float(volume) ->
+        %{
+          volume: volume,
+          pan: master_float(transport, "/live/master/get/panning"),
+          cue_volume: master_float(transport, "/live/master/get/cue_volume")
+        }
+
+      _no_answer ->
+        nil
+    end
+  end
+
+  # Only the volume read decides whether the master is readable at all (above);
+  # these two are per-field, so a lost datagram for one costs that field and
+  # nothing else. Bare replies, no envelope — these getters take no index.
+  defp master_float(transport, address) do
+    case probe(transport, address, [], @return_probe_timeout) do
+      {:ok, [value]} when is_float(value) -> value
       _no_answer -> nil
     end
   end
@@ -555,9 +628,14 @@ defmodule Seshat.Session.State do
     for %{index: index} <- return_tracks do
       Transport.send_message("/live/return_track/start_listen/name", [index])
       Transport.send_message("/live/return_track/start_listen/volume", [index])
+      Transport.send_message("/live/return_track/start_listen/panning", [index])
+      Transport.send_message("/live/return_track/start_listen/mute", [index])
+      Transport.send_message("/live/return_track/start_listen/solo", [index])
     end
 
     Transport.send_message("/live/master/start_listen/volume", [])
+    Transport.send_message("/live/master/start_listen/panning", [])
+    Transport.send_message("/live/master/start_listen/cue_volume", [])
   end
 
   defp subscribe_listeners(tracks) do
@@ -603,6 +681,20 @@ defmodule Seshat.Session.State do
   # index is re-bound. Without that a deleted return leaves its neighbour
   # listening under two indices at once, and this function would faithfully
   # write one return's name onto another.
+  # A push for a master the mirror doesn't hold *does* build one, unlike
+  # `update_track/4`'s drop — there is exactly one master, so there is no index
+  # to be wrong about and no structure to guess at. The two unpushed fields stay
+  # `nil`: unknown, and repopulated by their own listeners' first push.
+  defp update_master(%{master: nil} = state, key, value) do
+    Logger.debug("Master #{key} → #{inspect(value)} (mirror had no master yet)")
+    %{state | master: Map.put(%{volume: nil, pan: nil, cue_volume: nil}, key, value)}
+  end
+
+  defp update_master(state, key, value) do
+    Logger.debug("Master #{key} → #{inspect(value)}")
+    %{state | master: Map.put(state.master, key, value)}
+  end
+
   defp update_return(state, index, key, value) do
     Logger.debug("Return #{index} #{key} → #{inspect(value)}")
 
@@ -660,6 +752,11 @@ defmodule Seshat.Session.State do
       {:ok, [false]} -> 0
       {:ok, [idx, true]} when idx == index -> 1
       {:ok, [idx, false]} when idx == index -> 0
+      # The return/master extension's ok-envelope, as in query_string/query_float
+      # above: `/live/return_track/get/mute` and `get/solo` reply this shape.
+      {:ok, [idx, "ok", v]} when idx == index and is_integer(v) -> v
+      {:ok, [idx, "ok", true]} when idx == index -> 1
+      {:ok, [idx, "ok", false]} when idx == index -> 0
       _ -> nil
     end
   end

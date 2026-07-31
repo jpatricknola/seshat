@@ -115,6 +115,33 @@ defmodule Seshat.MCP.ToolsTest do
     test "a non-numeric value on a bounded number errors rather than crashing" do
       assert {:error, _} = validate("set_track_pan", %{"track" => 0, "value" => "loud"})
     end
+
+    # `target` is the first *optional* enum shared across six tools, so a
+    # converter that dropped optionality would break all six at once, and one
+    # that dropped the enum would let "send" through to a do_call clause that
+    # doesn't exist. Optional enums already exist elsewhere
+    # (set_clip_properties' launch_mode / warp_mode) — this is the regression
+    # assertion for the six schemas this change touched, not new converter
+    # behaviour.
+    test "the device tools' optional target enum is enforced at the wire" do
+      params = %{"track" => 0, "device" => 0}
+
+      assert {:ok, _} = validate("get_device_parameters", params)
+      assert {:ok, _} = validate("get_device_parameters", Map.put(params, "target", "return"))
+      assert {:ok, _} = validate("get_device_parameters", Map.put(params, "target", "master"))
+      assert {:error, _} = validate("get_device_parameters", Map.put(params, "target", "send"))
+    end
+
+    test "every device tool advertises the same target enum" do
+      for tool <- ~w(load_device get_track_devices get_device_parameters
+                     set_device_parameter delete_device bypass_device) do
+        component = Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == tool))
+        target = component.input_schema["properties"]["target"]
+
+        assert target["enum"] == ["return", "master"], "#{tool} advertises #{inspect(target)}"
+        refute tool in Map.get(component.input_schema, "required", [])
+      end
+    end
   end
 
   describe "advertised input schema" do
