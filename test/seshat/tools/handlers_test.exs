@@ -896,6 +896,31 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert Handlers.load_outcome(reply, [1, "query:AudioFx#Reverb"]) == :unexpected
     end
+
+    # The regular-track load echoes the same two fields, and is the busiest of the
+    # three paths — an ordinary load_device call goes through it — so it is the
+    # likeliest place for a straggler to be picked up, not the least.
+    test "guards the regular-track load, whose echo has the same shape" do
+      assert Handlers.load_outcome([2, "query:Synths#Operator", "ok", "Operator", 0], [
+               2,
+               "query:Synths#Operator"
+             ]) == {:loaded, ["Operator", 0]}
+
+      assert Handlers.load_outcome([5, "query:Synths#Operator", "ok", "Operator", 0], [
+               2,
+               "query:Synths#Operator"
+             ]) == :stale
+    end
+
+    # An older installed fork replies without the device index. That is a shorter
+    # payload, not a mismatched echo, and the caller still needs to tell the two
+    # apart to keep its self-diagnosing message.
+    test "keeps the older fork's index-less reply distinguishable from a stale one" do
+      assert Handlers.load_outcome([2, "query:Synths#Operator", "ok", "Operator"], [
+               2,
+               "query:Synths#Operator"
+             ]) == {:loaded, ["Operator"]}
+    end
   end
 
   describe "format_device_chain/4" do

@@ -2606,26 +2606,32 @@ defmodule Seshat.Tools.Handlers do
 
   defp do_call("load_device", %{"track" => track, "uri" => uri}) do
     case Transport.query("/live/browser/load_item", [track, uri], @load_timeout) do
-      {:ok, {_address, [_track, _uri, "ok", name, device]}} ->
-        Catalog.record_load(uri)
-        FollowCam.steer("load_device", %{track: track, device: device})
-        {:ok, "Loaded '#{name}' onto track #{track}#{loaded_device_note(device)}"}
-
-      {:ok, {_address, [_track, _uri, "error", message]}} ->
-        {:error, message}
-
-      # The 4-element ok reply is the *previous* shape of this address, which is
-      # our own — so seeing it means Live is running an older copy of the fork.
-      # Not a compat path: a self-diagnosing refusal, since the device did load
-      # and a silent degrade would hide why the view never followed.
-      {:ok, {_address, [_track, _uri, "ok", name]}} ->
-        {:error,
-         "Loaded '#{name}' onto track #{track}, but Ableton is running an older copy of " <>
-           "Seshat's AbletonOSC extension: its reply carries no device index, so the view " <>
-           "can't follow the load. Run `mix abletonosc.install` and restart Ableton Live."}
-
       {:ok, {_address, args}} ->
-        {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
+        case load_outcome(args, [track, uri]) do
+          {:loaded, [name, device]} ->
+            Catalog.record_load(uri)
+            FollowCam.steer("load_device", %{track: track, device: device})
+            {:ok, "Loaded '#{name}' onto track #{track}#{loaded_device_note(device)}"}
+
+          # The 4-element ok reply is the *previous* shape of this address, which
+          # is our own — so seeing it means Live is running an older copy of the
+          # fork. Not a compat path: a self-diagnosing refusal, since the device
+          # did load and a silent degrade would hide why the view never followed.
+          {:loaded, [name]} ->
+            {:error,
+             "Loaded '#{name}' onto track #{track}, but Ableton is running an older copy of " <>
+               "Seshat's AbletonOSC extension: its reply carries no device index, so the view " <>
+               "can't follow the load. Run `mix abletonosc.install` and restart Ableton Live."}
+
+          {:remote_error, message} ->
+            {:error, message}
+
+          :stale ->
+            {:error, stale_load_error("track #{track}", uri)}
+
+          _other ->
+            {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
+        end
 
       {:error, reason} ->
         {:error, inspect(reason)}
