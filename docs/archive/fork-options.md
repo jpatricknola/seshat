@@ -1,5 +1,10 @@
 # Fork options: patching AbletonOSC in place vs maintaining a fork
 
+> **Archived 2026-07-31.** The decision below was made and fully executed —
+> the fork exists, the migration playbook ran, and the patch-in-place world
+> the body describes is gone. Kept for the reasoning. Current divergences and
+> merge hazards live in the fork's own `SESHAT.md`.
+>
 > ## ⚠️ Status: decided, 2026-07-28 — **we forked.**
 >
 > Two triggers fired together:
@@ -119,7 +124,7 @@ triggers.
    footnote. Any plan for those items must answer "does this create a second
    override?" explicitly.
 2. **Needing to edit an upstream file** rather than append beside it —
-   e.g. the ACK convention from [bridge-options.md](bridge-options.md)
+   e.g. the ACK convention from [bridge-options.md](../bridge-options.md)
    turning out to need changes in upstream's OSC server rather than our own
    handler.
 3. **Recurring anchor drift.** One upstream refactor that moves the anchors
@@ -144,7 +149,7 @@ triggers.
    greps `lib/` literals against what the Python registers) — retarget its
    Python paths.
 6. Update CLAUDE.md's module map and vendored-handler section, and
-   [.claude/rules/osc.md](../.claude/rules/osc.md).
+   [.claude/rules/osc.md](../../.claude/rules/osc.md).
 
 Ongoing cost from that day: merging upstream releases.
 

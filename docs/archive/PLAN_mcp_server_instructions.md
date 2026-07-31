@@ -352,7 +352,7 @@ No tool added or removed → no `definitions_test.exs` count bump.
 - [CLAUDE.md](../../CLAUDE.md): add `lib/seshat/instructions.ex` to the module
   map; one line in the "Two entry points" section noting both modes share
   `Seshat.Instructions`.
-- [docs/TOOL_AUDIT.md](../TOOL_AUDIT.md): note on the `search_library` inventory
+- [docs/TOOL_AUDIT.md](TOOL_AUDIT.md): note on the `search_library` inventory
   row that the diagnostic-leak wart is fixed (reply now marks diagnostics as
   internal).
 
@@ -494,7 +494,7 @@ nothing to smoke-test — it sends `nil` by design.
   - **Tool and parameter descriptions** — 145 `description:` fields in
     [lib/seshat/tools/definitions.ex](../../lib/seshat/tools/definitions.ex).
     These are prompts, and most of Seshat's model-facing words live here.
-    They are governed already (house style, [TOOL_AUDIT.md](../TOOL_AUDIT.md) §04
+    They are governed already (house style, [TOOL_AUDIT.md](TOOL_AUDIT.md) §04
     as the exemplar) and revising them is a standing audit job, not this
     issue's. The instructions exist for what *no* tool description can say;
     anything a single tool can state belongs in its description and stays

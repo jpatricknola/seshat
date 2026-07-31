@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Close out a shipped feature — update ROADMAP.md, archive its plan doc, sync CLAUDE.md and TOOL_AUDIT.md. Use after a feature lands, when the user says something "shipped" or "is done", or when ROADMAP.md still lists work that exists in the code.
+description: Close out a shipped feature — update ROADMAP.md, archive its plan doc, sync CLAUDE.md. Use after a feature lands, when the user says something "shipped" or "is done", or when ROADMAP.md still lists work that exists in the code.
 argument-hint: [what shipped, e.g. "send levels"]
 ---
 
@@ -21,6 +21,11 @@ are often no-ops, but check rather than assume.
    section. If only part shipped, rewrite the entry to just the remainder. If
    the work surfaced follow-ups worth doing later, add them where they fit —
    the roadmap gains items the same way it loses them.
+
+   **Do not leave a "shipped" banner or recap paragraph in ROADMAP.md.** The
+   roadmap documents future work only; ship history belongs in git, CLAUDE.md's
+   Current focus, and the archived plan doc. Mention shipped work in an item
+   only when an open item needs it as context.
 
    Renumber the remaining items and any *internal* cross-references. Do **not**
    go hunting for rank references in other files: nothing outside ROADMAP.md is
@@ -53,21 +58,7 @@ are often no-ops, but check rather than assume.
    Changed flow or conventions → fix the relevant section. No changes needed
    is a fine answer, but look.
 
-5. **Update [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md).** Its §05 inventory
-   carries one row per tool, and a shipped fix usually invalidates one. Two
-   cases to look for, both easy to miss because nothing enforces them:
-
-   - The feature **cleared a known wart** — a row saying **Known wart (external
-     review, MM/YYYY)** about behavior that no longer exists. Delete that note
-     (keep the row's real description) rather than leaving a defect recorded as
-     current.
-   - The feature **added, merged, or changed a tool** — add or rewrite its row,
-     and fix the tool count if §05 or an earlier section states one.
-
-   A row that still describes fixed behavior is worse than no row: the next
-   session reads it as a live defect and plans against it.
-
-6. **Check [.claude/docs/](.claude/docs/)** — if the feature changed how
+5. **Check [.claude/docs/](.claude/docs/)** — if the feature changed how
    tools are added, how commands flow, or added OSC gotchas, update the
    matching doc.
 
@@ -79,6 +70,6 @@ are often no-ops, but check rather than assume.
    addresses) — an address added under a prefix upstream owns, like
    `/live/clip/quantize`, is documented by hand or not at all.
 
-7. **Verify** with `mix precommit` if anything outside `docs/` changed, then
+6. **Verify** with `mix precommit` if anything outside `docs/` changed, then
    summarize: what was removed from the roadmap, what was archived, what
    follow-ups were added.

@@ -170,7 +170,8 @@ rather than from any run:
 2. **Looping-off aliasing.** With looping off, `get_clip_properties` should show
    the loop points tracking the play markers. Then set `looping` *and* the loop
    points in one call and confirm the intended brace results — this is the
-   **known wart** recorded in [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) §05: the pair-context read happens before the `looping` toggle goes out, so
+   **known wart** recorded by the 07/2026 review: the
+   pair-context read happens before the `looping` toggle goes out, so
    on a clip whose stored brace differs from its markers the ordering and the
    single-sided validation can both run on stale values. If it misbehaves, the
    fix is to send `looping` first and read the pair context after.

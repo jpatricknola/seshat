@@ -195,7 +195,7 @@ on this machine everything still works.
 ## Design decisions worth knowing
 
 - **AbletonOSC is one bridge, not the architecture.** `OSC.Transport` isolates the wire mechanics (UDP, OSC encoding, reply correlation); the `/live/...` address strings deliberately live inline in `Handlers`, `Registry`, and `Session.State` — no abstraction layer, all sites greppable via `"/live/`. If the bridge ever changed, the stable seam is the tool contract in `Definitions`: the tool names and schemas stay, everything below `Handlers` gets reimplemented. Alternatives were weighed in [docs/bridge-options.md](docs/bridge-options.md) — staying on AbletonOSC is a decision, not an accident.
-- **We maintain the bridge.** Seshat runs [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), a fork of `ideoforms/AbletonOSC`, as a submodule at `priv/AbletonOSC`; `mix abletonosc.install` copies it wholesale into Live's Remote Scripts. Forked 2026-07-28 because two things could no longer be done by patching: a second dict-assignment override, and edits to upstream files with no `add_handler` seam at all ([docs/fork-options.md](docs/fork-options.md) records the reasoning and the merge playbook; the fork's own `SESHAT.md` lists every divergence). Two consequences worth internalising: **editing bridge Python is two commits** — one in the submodule, one bumping the pin here — and **git worktrees don't populate submodules**, so a fresh worktree needs `git submodule update --init` or the Python-grepping tests fail.
+- **We maintain the bridge.** Seshat runs [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), a fork of `ideoforms/AbletonOSC`, as a submodule at `priv/AbletonOSC`; `mix abletonosc.install` copies it wholesale into Live's Remote Scripts. Forked 2026-07-28 because two things could no longer be done by patching: a second dict-assignment override, and edits to upstream files with no `add_handler` seam at all ([docs/archive/fork-options.md](docs/archive/fork-options.md) records the reasoning; the fork's own `SESHAT.md` lists every divergence and the merge hazards). Two consequences worth internalising: **editing bridge Python is two commits** — one in the submodule, one bumping the pin here — and **git worktrees don't populate submodules**, so a fresh worktree needs `git submodule update --init` or the Python-grepping tests fail.
 - **MCP mode is primary.** It needs no API key — the user's Claude subscription covers the reasoning. API-key mode exists for dev and for users without an MCP client.
 - **Only one Seshat can read Ableton at a time.** AbletonOSC replies to a fixed port (11001), so the second instance to start is deaf — it can send but never receives. `.mcp.json` therefore points MCP clients at the running server's HTTP endpoint rather than spawning `mix mcp`, which means the server must be running for the tools to exist. Reasoning and rejected alternatives in [docs/osc-port-contention.md](docs/osc-port-contention.md).
 - **The LLM does the resolving.** Track names → indices, "the reverb" → device index, note names → MIDI numbers. Tools stay dumb and mechanical; the prompt in `Seshat.Agent` carries the music theory.
@@ -266,27 +266,16 @@ unknown rather than a guess (shipped 2026-07-30). The OSC network boundary
 itself is now fully hardened — AbletonOSC's loopback bind, the browser-export
 path restriction, and the Elixir listener/decoder hardening (loopback bind,
 source validation, a strict non-crashing decoder in `Seshat.OSC.Message`) all
-shipped 2026-07-30. Two sibling docs hold the *evidence* behind the remaining
-items, not a competing queue:
+shipped 2026-07-30. One sibling doc holds the *evidence* behind the remaining
+security items, not a competing queue:
 
-- [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the 2026-07-29 external review.
-  Each confirmed defect with file:line evidence and a **Reviewer response**
-  recording what we accepted, narrowed, or rejected, plus a declined section.
-  **Read the response before planning a roadmap item that links here** — several
-  of the review's recommendations were rejected for conflicting with settled
-  decisions (structured setter acknowledgements, Python bounds checks, protocol
-  request IDs).
-- [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure, split
-  into **Fix now** (all three items resolved 2026-07-30) and **Deployment-gated**
-  (HTTP auth, production binding, rate limiting — deliberately absent from the
-  queue until something binds beyond loopback or a second user is invited).
-  Check it before loosening a bind or adding an entry point.
-
-[docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) is a standing design review of the
-whole tool surface — one verdict per tool, plus the coverage gaps that feed
-ROADMAP.md. It is the place to check whether a tool has a known wart before
-"fixing" it, and the inventory table wants updating whenever a tool is added,
-fixed, or merged.
+- [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure. Its
+  three open items (HTTP auth, production binding, rate limiting) are all
+  dormant behind one gate and deliberately absent from the queue until
+  something binds beyond loopback or a second user is invited; the OSC-layer
+  work that was reachable before any deployment shipped 2026-07-30 and is
+  summarised there under Resolved. Check it before loosening a bind or adding
+  an entry point.
 
 ## Framework rules
 

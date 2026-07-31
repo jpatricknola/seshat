@@ -1,70 +1,24 @@
 # Roadmap
 
-The single living list of what to do next — **features, defects and security
-work in one ranked queue.** **The top item is the biggest win, work top to
-bottom.** Ranking is **impact-per-effort**: mission impact weighed against cost,
-so a medium-impact quick win outranks a high-impact slog. Issue numbers are
-ranks, not stable identifiers — when something ships, delete its issue and let
-the rest renumber (the `/ship` skill handles this). If a shipped issue had a
-detailed plan doc, move that doc to [archive/](archive/) with a status banner.
+The single living list of what to do next — features, defects, and security
+work in one ranked queue. The top item is the biggest win, work top to
+bottom. 
 
-**So cite an item by its title, never by its rank — including inside this file.**
+**Adding an issue to the roadmap**
+An issue must state its goal and why it's worth building. Where the value is user-visible, include user stories — concrete moments that show the feature earning its place. Internal plumbing items wont usually have a user story. An issue must also include context for the plan author — a roadmap entry is **not** an implementation plan. Plans get written per issue (the `/plan` skill) when the work is picked up.  
+
+Ranking criteria is **impact-per-effort**, mission impact weighed against cost. A medium-impact quick win outranks a high-impact slog.  Place the new issue in the appropriate order for its priority.  
+
+**Removing an issue from the roadmap**
+Issue numbers are ranks, not stable identifiers - when something ships, delete all trace of it from the roadmap and let the rest renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan doc, move that doc to [archive/](archive/) with a status banner. Nothing else about a ship stays here — this file documents future work only, and ship history lives in git, CLAUDE.md's Current focus, and [archive/](archive/). A shipped thing is mentioned below only where an *open* item needs it as context.  **Cite an issue by its title, never by its rank**
 A rank is correct only until the next ship, and a stale one doesn't look stale —
-it silently points at a different item. Every cross-reference written by rank has
-already gone wrong at least once ("roadmap #5 and #12" in the smoke-test skill
-meant quantize and browser preview when written; three ships later those ranks
-were two unrelated defects). In-file references used to be exempt on the grounds
-that they renumber together — they don't: inserting one issue on 2026-07-30
-turned up two in-file pointers that were *already* off by one, silently pointing
-at the wrong neighbour. The heading numbers are the ranking and renumber
-wholesale; every reference to an issue is by title. Dated historical records
-([archive/](archive/), validation-run findings) keep whatever rank was true when
-written; they are history, not pointers.
-[archive/](archive/) holds point-in-time plans and decision records — never treat
-those as current.
+it silently points at a different item. Any cross-reference written by rank will quickly become wrong, trust me, its happened a lot.
 
-Each issue gives the goal, why it's worth building, and the context a plan author
-needs — it is **not** an implementation plan. Plans get written per issue (the
-`/plan` skill) when the work is picked up.
+**[Deliberately not planned](#deliberately-not-planned)**
+The section at the end of this file records ideas that were weighed and
+declined, each with the condition that would reopen it. Check it before
+proposing or re-proposing work. Add to the list when rejecting a proposed issue.  
 
-**Two sibling docs hold the evidence, not the queue.** Ranked items that came
-from the 2026-07-29 external review link into them; read the linked section
-before planning one, because several of the review's recommendations were
-verified and then deliberately narrowed or rejected:
-
-- [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md) — the review itself: each
-  confirmed defect with file:line evidence, a response recording what we accepted
-  and what we declined, and a declined section for findings we are not acting on.
-- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) — security work. Its **Fix now**
-  section is fully resolved as of 2026-07-30: the AbletonOSC loopback bind,
-  the browser export path restriction, and the Elixir listener/decoder
-  hardening all shipped. Its **Deployment-gated** items are *not* in this
-  queue: HTTP authentication, production binding, rate limiting and the
-  multi-user design activate only when something binds beyond loopback or a
-  second person is invited.
-
-The canonical OSC address reference is
-[abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
-address — naming is irregular, and a wrong address fails silently.
-
-**The `create_track` defect that used to top this queue shipped 2026-07-30** —
-it now verifies the track count rose by exactly one before naming and
-reporting the index, instead of returning it unverified. "Make catalog
-persistence atomic" and "Catalog staleness check" are one catalog pass.
-
-**The play-and-keep arc (quantize · groove) is complete.** Today the agent
-generates and the user listens. `capture_midi` (shipped 2026-07-28), per-clip
-properties (shipped 2026-07-29 — a clip's own loop brace, play markers, and
-launch settings are now readable and writable), session record (shipped
-2026-07-29 — `record_clip`/`stop_recording` land a deliberate take,
-fixed-length or open-ended, into a chosen Session slot), `quantize_clip`
-(shipped 2026-07-31 — tightens timing to a grid with a partial-amount knob,
-and corrected the fork's `GridQuantization` table along the way, which was
-wrong in every row), and groove/swing (shipped 2026-07-31 — `set_swing_amount`, a one-line fork
-addition to `song.py`, and `set_groove_amount`, both mirrored into
-`get_session_state`; see
-[archive/PLAN_groove_amount.md](archive/PLAN_groove_amount.md)) closed out the
-arc: the user plays, Seshat keeps it and cleans it up.
 
 ---
 
@@ -92,6 +46,15 @@ the same principle: if Live exposes the navigation, Seshat should put the work
 on screen itself. Hit on 2026-07-31 while checking a plan's open question: the
 Arrangement loop brace was needed and the assistant had to talk the user
 through switching views by hand.
+
+**User stories:**
+- As a producer looking at Arrangement, when I ask Seshat to launch a clip,
+  the Session grid comes up first — I watch the clip fire instead of hearing
+  a change I can't see.
+- As a producer, when I say "show me the notes again," the clip editor just
+  opens; nobody talks me through Tab and keyboard shortcuts.
+- As a producer, when Seshat changes a device, the device chain is on screen
+  — so I can see, and grab, the knob it just moved.
 
 **Planner notes:**
 - **The address already ships** — `/live/view/show_view [view_name]`, our own
@@ -146,6 +109,13 @@ far more reliably than a bullet in a block that gets truncated from the
 bottom, and a reply can name the empty track it actually found instead of
 asserting a cleanup unconditionally and hoping the model checks.
 
+**User stories:**
+- As a producer saying "let's start something fresh," I get a quick read of
+  what's in the open set and one question — genre, tempo, mood, reference —
+  so the session starts from my idea, not from leftovers.
+- As a producer, the default set's empty leftover track gets noticed and put
+  to use, instead of new tracks silently piling up beside it.
+
 **Planner notes:**
 - **The 2,048-character ceiling is the point.** Claude Desktop truncates
   server `instructions` mid-sentence at 2,048 characters and says nothing
@@ -175,7 +145,48 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #3 · Model-readable rejections for invalid tool parameters in MCP mode
+## #3 · Devices on return and master tracks — make the sends system self-serve
+
+**Goal:** load, inspect, tweak, bypass, and delete devices on return and
+master tracks, and complete the return/master mixer surface (return
+pan/mute/solo, master pan, cue volume) in the same pass.
+
+**Why:** `create_return_track` ships an empty return, and every send into it
+is silent until the user drops the effect in by hand in Live — the tool's own
+description apologizes for it ("Seshat cannot yet load a device onto a return
+track"). The 2026-07-31 external tool audit
+made this its top recommendation, which is exactly the "real workflow needs
+them" condition the Deliberately-not-planned entry for return/master device
+loading was waiting on. Absorbs the former "Return/master mixer completeness"
+item: same fork file, one package that makes returns first-class tracks.
+
+**User stories:**
+- As a producer, "make a reverb return and send the vocal to it" works end to
+  end — the return gets a reverb loaded onto it, not an empty track and
+  instructions for doing it by hand.
+- As a producer, "brighten the reverb" or "mute the delay return" just works,
+  the same as it would on any regular track.
+
+**Planner notes:**
+- Both halves are ordinary fork commits in files we already own.
+  `/live/browser/load_item` (our `browser.py`) resolves its target from
+  `song.tracks` only, so loading onto a return/master needs the handler to
+  resolve those targets too; device chain read/delete/bypass/parameters on
+  returns belong in `return_track.py`, which already owns the return/master
+  surface. Two-commit fork workflow, `mix abletonosc.install`, Live restart.
+- The mixer half is already scoped: the 2026-07-28 PR review confirmed the LOM
+  details — return mute/solo are plain listenable props, master pan is
+  `mixer_device.panning`, cue volume is `mixer_device.cue_volume`, and the
+  master has no mute/solo/arm.
+- Tool-surface decision for the plan: extend the existing device tools with a
+  return/master target versus separate return-device tools. The send/return
+  tools chose a separate 0-based index space (`return_track` param); follow
+  whatever keeps model tool-selection unambiguous.
+- When this ships, update the descriptions that state the old limitation:
+  `create_return_track` ("cannot yet load"), `delete_device` and
+  `bypass_device` ("Regular tracks only").
+
+## #4 · Model-readable rejections for invalid tool parameters in MCP mode
 
 **Goal:** an out-of-range or wrong-typed parameter comes back to the model as
 `Seshat.Tools.Validation`'s message — naming the parameter, the bound, the value
@@ -202,6 +213,11 @@ model that cannot read why its call was refused cannot fix it, and this feature
 made refusals far more common than they used to be — previously the bad value
 went through to Live.
 
+**User stories:**
+- As a producer, when Seshat reaches for an out-of-range value, it reads the
+  refusal, corrects the value, and quietly retries — instead of surfacing a
+  cryptic "invalid params" failure I'm left to interpret.
+
 **Planner notes:**
 - The seam is the generated component in
   [mcp/tools.ex](../lib/seshat/mcp/tools.ex): when Peri's `validate_input`
@@ -220,7 +236,7 @@ went through to Live.
   Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
   handshake.
 
-## #4 · Preserve partial agent results at the tool-iteration limit
+## #5 · Preserve partial agent results at the tool-iteration limit
 
 **Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
 already executed and the conversation so far, and surface a warning in the UI.
@@ -232,15 +248,20 @@ conversation isn't kept, and the obvious user response — retry — repeats
 everything. Partial side effects go invisible exactly when recovery information
 matters most.
 
+**User stories:**
+- As a producer in the browser UI, when a long exchange dies at the iteration
+  limit, I can still see which changes already landed in my set — so hitting
+  retry doesn't blindly repeat nine rounds of mutations.
+
 **Planner notes:**
 - Scoped to API-key mode, which is the dev/fallback path — that is why it ranks
   here and not higher. The fix is small and the failure is silent, which is the
   combination worth clearing.
 - The LiveView error branch leaves history unchanged; both halves need doing or
   neither helps.
-- Finding #9 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- From the 2026-07-29 external review, accepted as written.
 
-## #5 · `undo` can revert far more than the last action
+## #6 · `undo` can revert far more than the last action
 
 **Goal:** either make single scripted actions land as separate Live undo
 steps, or make Seshat's `undo` tool honest about what it is actually about to
@@ -257,6 +278,11 @@ script, or a fork/AbletonOSC behavior in front of it. A user who asks to
 "undo the quantize" after a short multi-step exchange could silently lose an
 entire track's worth of work instead.
 
+**User stories:**
+- As a producer who says "undo the quantize" after a few minutes of
+  back-and-forth, only the quantize is reverted — or Seshat warns me it's
+  about to take the whole track with it, before anything is lost.
+
 **Planner notes:**
 - Open research question, not a confirmed fix: check whether the Live Object
   Model exposes `Song.begin_undo_step()`/`end_undo_step()` (or equivalent) to
@@ -271,7 +297,7 @@ entire track's worth of work instead.
 - Reproduction: `create_track` → `write_midi_notes` (any notes) → `undo` →
   the track is gone, not just the clip's notes. No quantize step needed.
 
-## #6 · Make catalog persistence atomic and report write failures
+## #7 · Make catalog persistence atomic and report write failures
 
 **Goal:** a reindex that cannot be persisted says so, and a crash mid-write
 cannot leave a truncated `catalog.json`.
@@ -279,6 +305,11 @@ cannot leave a truncated `catalog.json`.
 **Why:** [catalog.ex:831-838](../lib/seshat/library/catalog.ex#L831-L838) logs a
 write failure and then returns `{:ok, summary}` — the UI reports success while
 the next start restores an old or empty catalog. `File.write/2` is not atomic.
+
+**User stories:**
+- As a producer, if a reindex couldn't be saved I'm told right then — not
+  left to discover at the next launch that search has been answering from an
+  old library.
 
 **Planner notes:**
 - Write to a temporary file, sync, rename — then report durable success.
@@ -289,9 +320,10 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
   milliseconds of empty results inside that window is not observable.
 - **Do this in one pass with "Catalog staleness check"** — same writer, and that
   issue needs a built-at timestamp written there anyway.
-- Finding #8 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- From the 2026-07-29 external review; the durability half accepted, the ETS
+  generation swap declined above.
 
-## #7 · Catalog staleness check — reindex without being asked
+## #8 · Catalog staleness check — reindex without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -304,6 +336,11 @@ asking whether an index exists yet — backwards. The user shouldn't need to
 know indexing exists. The check costs two file stats; the expensive rebuild
 stays announced and cause-driven instead of manual or unprompted.
 
+**User stories:**
+- As a producer who just installed a new Pack, Seshat notices its index is
+  stale, tells me a one-minute refresh is coming, and runs it — I never have
+  to know indexing exists.
+
 **Planner notes:**
 - `catalog.json` needs a built-at timestamp if the merge writer doesn't
   already record one — which is why this pairs with "Make catalog persistence
@@ -313,7 +350,7 @@ atomic".
 - Decide the surfacing point: a line in `search_library` replies, a startup
   check, or both.
 
-## #8 · Verify destructive mutations before reporting success
+## #9 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -323,6 +360,11 @@ as `:gen_udp.send/4` returns.
 delete or a dropped packet is indistinguishable from a successful one — and the
 follow cam then steers to a destination that may not exist. The reachable
 trigger is a stale model-held index.
+
+**User stories:**
+- As a producer, when a delete never actually happened in Live, Seshat says
+  so — instead of confirming success and steering my view toward a track
+  that doesn't exist.
 
 **Planner notes:**
 - **Keep ordinary parameter setters fire-and-forget.** The review's headline
@@ -337,9 +379,16 @@ trigger is a stale model-held index.
   the remaining destructive operations and stop.
 - Ranked here rather than higher because the surface is broad — this is the
   slog of the correctness items.
-- Finding #5 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- From the 2026-07-29 external review; the verify-before-mutate half accepted,
+  structured setter acknowledgements rejected above.
+- **Fold in the `remove_notes` footgun fix** (2026-07-31 external tool
+  audit): with no range given it silently deletes every note in the clip. Require an explicit range or `all: true`
+  before a full wipe — the same principle (destructive intent must be
+  explicit), a few lines in `Definitions` + `Handlers`, and small enough to
+  ride along here (or as a drive-by before this item is picked up) rather
+  than rank on its own.
 
-## #9 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #10 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -355,6 +404,14 @@ device tag vs. `Distorted` the character tag). Highest certain win left in
 the catalog area, at Low/Low-Med effort. №2 also enables future levers, which
 is why they ship together.
 
+**User stories:**
+- As a producer asking for "a warm pad," the first slate is right because
+  Seshat already knows this library's word for it is `Soft` — it sees the
+  menu before ordering instead of guessing and learning from misses.
+- As a producer asking for "something distorted," I get presets with a
+  distorted *character*, not everything touched by the Distortion *device* —
+  the axes keep those apart.
+
 **Planner notes:**
 - The axis lives in `files.parent_id`, which
   `Seshat.Library.AbletonDB.read_tags/1` currently discards; the
@@ -366,7 +423,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #10 · Producer personas — switchable musical taste
+## #11 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* — musical taste, and only taste — onto the base
 session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
@@ -383,6 +440,13 @@ Everything behavioral — slate style, opinionatedness, register, the
 the base text ([lib/seshat/instructions.ex](../lib/seshat/instructions.ex),
 shipped 2026-07-29) and stays consistent across personas. Swapping producers
 changes what Seshat reaches for, never how it works.
+
+**User stories:**
+- As a producer, "load me Volt Kessler" changes what every following pick
+  reaches for — a different palette, same tools, no re-explaining a whole
+  aesthetic in every prompt.
+- As a producer with a direction of my own, my stated taste still leads; the
+  persona only fills in where I haven't said anything yet.
 
 **Planner notes:**
 - **MCP `instructions` are delivered once, at initialize** — mid-session
@@ -422,7 +486,7 @@ changes what Seshat reaches for, never how it works.
   and the base text's voice section already reads as execute-the-user's-taste,
   which is what a persona slots underneath.
 
-## #11 · `screenshot_live` — let Seshat see the screen
+## #12 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -435,6 +499,11 @@ screen (focused view, open dialogs, browser panes), so UI questions today
 get guesses. Trigger is user UI questions, not routine post-action use —
 the follow cam (shipped 2026-07-29) covers that.
 
+**User stories:**
+- As a producer asking "why can't I see the notes?", Seshat looks at my
+  actual screen and answers — instead of guessing from mirrored state that
+  can't see a dialog, a collapsed pane, or where focus went.
+
 **Planner notes:**
 - Verify Anubis supports image content in tool results (the MCP spec does).
 - Downscale before returning — full-res screenshots are token-expensive.
@@ -443,7 +512,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - API-key mode would need image blocks threaded through `Seshat.Agent`'s
   loop — decide whether to support it there or keep this MCP-only.
 
-## #12 · Restart the MCP supervisor after abnormal failure
+## #13 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -459,9 +528,10 @@ healthy — the tools simply stop existing, with nothing saying why.
   restarts on abnormal exit only, which is exactly the case described.
 - One line. Do it in passing while touching `application.ex` rather than
   scheduling it.
-- Speculative risk in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- Raised as a speculative risk by the 2026-07-29 external review — the failure
+  has not been reproduced, only reasoned from the child spec.
 
-## #13 · Search eval harness — numbers before opinions
+## #14 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -486,7 +556,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](sound-search-options.md)'s impact-per-effort ordering.
 
-## #14 · Widen the search slate at tied score bands
+## #15 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -496,7 +566,12 @@ pretending rank means something inside it.
 provably can't close (a graded per-term variant measured +1 slot across six
 queries and was rejected). Hours of work, honest fix.
 
-## #15 · Accepted-search memory
+**User stories:**
+- As a producer choosing an e-piano, when dozens of presets score
+  identically, I see the honest breadth of the tie — not an arbitrary top
+  five pretending rank means something inside it.
+
+## #16 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -505,11 +580,16 @@ accepted preset" — and let it bias future rankings.
 description→preset association is thrown away today. Compounds over time; a
 personal tool can afford a personal memory.
 
+**User stories:**
+- As a producer who settled on a particular preset for "dusty keys" last
+  week, the same request surfaces it first this week — my accepted picks
+  teach the search what my words mean.
+
 **Planner notes:** this is the one catalog feature that wants a write-side
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #16 · Browser preview audition
+## #17 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -520,12 +600,17 @@ instantiate.
 pads as well as ten seconds of audio. Explicitly sequenced after the eval:
 better search may make it unnecessary.
 
+**User stories:**
+- As a producer torn between two `Soft` pads the tags can't tell apart, we
+  flip through their browser previews and pick by ear — ten candidates
+  auditioned in the time one heavy preset takes to load.
+
 **Planner notes:** the fork already ships `/live/browser/preview_item` and
 `/live/browser/stop_preview`; what remains here is the Elixir tool. The
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #17 · Opt-in `samples` index
+## #18 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -534,11 +619,16 @@ returned **only** when `category: samples` is explicitly requested.
 unfindable while `Crackle Vinyl Pop.wav` sits in the browser. Sample uris
 carry FileIds, so tag-awareness comes free.
 
+**User stories:**
+- As a producer asking for "a vinyl crackle," the sample that's sitting
+  right there in Live's browser is actually findable — today no search can
+  reach it.
+
 **Planner notes:** samples is why `EXPORT_CATEGORIES` excludes it and the
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #18 · LLM enrichment at reindex
+## #19 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an API key or an MCP-client-driven tagging turn.
@@ -552,7 +642,12 @@ piano," the character lived only in preset *names* — E-Piano Rusty, Old
 School, MKII Old, Cheap were invisible to tag scoring because no warm/aged/
 detuned vocabulary exists to carry them.
 
-## #19 · User XMP tags
+**User stories:**
+- As a producer asking for "a warm, slightly out-of-tune electric piano,"
+  the presets whose character lives only in their names — E-Piano Rusty,
+  MKII Old — finally rank on their sound instead of their tag luck.
+
+## #20 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -561,9 +656,13 @@ detuned vocabulary exists to carry them.
 library can have; currently ignored. Small, but only matters once the user
 actually tags things — hence the low rank.
 
+**User stories:**
+- As a producer who has tagged parts of my own library, those tags count in
+  search — they're the most precise signal about my sounds that exists.
+
 ---
 
-## #20 · Cap large tool-result payloads in API-key mode
+## #21 · Cap large tool-result payloads in API-key mode
 
 **Goal:** bound what accumulates in `Seshat.Agent`'s `messages` and the
 LiveView's log for the life of a conversation.
@@ -576,10 +675,39 @@ and LiveView process memory grows with it.
 **Planner notes:** capping large tool-result payloads before they enter
 `messages` is the cheap majority of the fix; skip summarising old turns until
 needed. MCP mode is primary and keeps no history in this process, which is why
-this ranks here. Speculative risk in
-[../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+this ranks here. Raised as a speculative risk by the 2026-07-29 external review
+— reasoned from the code, not reproduced.
 
-## #21 · Device list per track in session state
+## #22 · Read-only audio input display — warn before a silent take
+
+**Goal:** surface a track's audio input routing, read-only, so `record_clip`
+can warn when an audio take is about to record nothing.
+
+**Why:** `record_clip`'s description admits Seshat "cannot choose or check
+the input," so an audio take is a coin flip on whether anything was routed —
+a silent take discovered after the fact. Upstream already has every address
+needed (`/live/track/get/input_routing_type` / `_channel` and the
+`available_*` lists — no fork change). Raised as a Medium gap by the
+2026-07-31 external tool audit; ranked
+here rather than higher because audio recording is a side path in a
+MIDI-first workflow and the failure it prevents is recoverable and already
+documented in `record_clip`'s description.
+
+**User stories:**
+- As a producer setting up a guitar take, Seshat tells me "that track is
+  listening to Ext. In 3/4" — or that no input is routed — before recording,
+  instead of us finding a silent clip after.
+
+**Planner notes:**
+- Read side only. The write side (`/live/track/set/input_routing_*`) stays in
+  the grab bag — that's where the sharp edges are.
+- Smallest version: `record_clip` reads the routing before firing on an audio
+  track and names it in the reply. Decide whether it's also worth a line in
+  `get_session_state` before building more surface than the warning needs.
+- Routing values are strings from Live's own menus; report them verbatim,
+  don't interpret.
+
+## #23 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -598,19 +726,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #22 · Return/master mixer completeness
-
-**Goal:** return-track pan/mute/solo, master pan, cue volume.
-
-**Why:** the sends/returns work shipped levels only. The fork's
-`return_track.py` handler already has the return/master surface open, so
-each of these is one more address as an ordinary fork commit — low-effort
-breadth whenever someone's nearby. (The 2026-07-28 PR review confirmed the
-LOM details: return mute/solo are plain listenable props, master pan is
-`mixer_device.panning`, cue volume is `mixer_device.cue_volume`, and the
-master has no mute/solo/arm.)
-
-## #23 · Modify a note in place
+## #24 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -618,7 +734,12 @@ read → remove range → rewrite.
 **Why:** the current path works but is three calls and a footgun
 (`remove_notes` ranges). Cleaner, not urgent.
 
-## #24 · Clip grid in session state — only if usage demands it
+**User stories:**
+- As a producer saying "make the third note a little quieter," that's one
+  clean edit — not a read, a range delete, and a rewrite that can clip the
+  notes around it.
+
+## #25 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -632,7 +753,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #25 · Small OSC breadth — grab bag
+## #26 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -641,11 +762,19 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
 - **MIDI mapping** — `/live/midimap/map_cc`. Power-user feature.
 - **Beat listener** — `/live/song/start_listen/beat` for sync/visualization.
 - **Groups · routing/IO · automation** — grouping tracks, input/output
-  routing & monitoring, automation envelopes.
+  routing & monitoring, automation envelopes. (The read-only input *display*
+  graduated to its own item, "Read-only audio input display"; the write side
+  stays here.)
 - **Sends on return tracks** (return→return routing, feedback sends) —
   niche, needs Live's "sends only" awareness, no named workflow yet.
+- **Groove Pool assignment by index** — `Clip.groove` is unserializable over
+  the wire, but a fork handler could assign it Python-side from
+  `song.groove_pool.grooves[i]`, which would make `set_groove_amount` live in
+  Seshat-only sessions. Niche until a user actually has grooves in their
+  pool; recorded so the "groove amount is inert" audit finding doesn't get
+  re-litigated.
 
-## #26 · MCP mode in the browser UI
+## #27 · MCP mode in the browser UI
 
 **Goal:** give `AssistantLive` a second backend — headless Claude Code
 (`claude -p`) as a subprocess consuming Seshat's own `/mcp` endpoint — so the
@@ -656,12 +785,16 @@ per-conversation toggle.
 Designed but never built; ranked low because MCP mode already serves the
 project's one user.
 
+**User stories:**
+- As a producer using the browser UI, my Claude subscription covers the
+  conversation — no API key to provision just to chat with my own set.
+
 **Planner notes:** full design (milestones, streaming UI, tested CLI flags
 that may have drifted) in
 [archive/PLAN_mcp_browser_ui.md](archive/PLAN_mcp_browser_ui.md) — verify the
 CLI flags against current Claude Code before trusting it.
 
-## #27 · Adopt MCP `2026-07-28` when Anubis supports it
+## #28 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
@@ -721,19 +854,54 @@ flow, so this is not an active break.
   [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) for the two triggers that activate
   them. Note that authentication alone does not make Seshat multi-user — one
   transport, one mirror, one Ableton.
-- **Three findings from the 2026-07-29 review were declined** — the vendored
-  Python test harness's import-time reload, the `pythonosc` invalid escape
-  sequence, and `:rest_for_one` for PubSub recovery. Reasons and
-  reconsider-if conditions are in
-  [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md)'s declined section; don't
-  re-derive them.
+- **The vendored Python test harness reloads AbletonOSC on import.**
+  `priv/AbletonOSC/tests/__init__.py` sends `/live/api/reload` at module level,
+  outside any fixture, so even `pytest --collect-only` reloads the Remote Script
+  in a live session. Declined 2026-07-30: it is upstream's harness and we never
+  run it — `mix test` only *greps* the vendored Python
+  (`vendored_addresses_test`), and nothing here invokes `pytest`. Fixing it
+  means carrying a divergence in a file we do not execute through every upstream
+  merge. Instead: don't run `pytest` against a Live session that matters.
+  **Reconsider if** we ever adopt the Python suite as part of our own
+  verification.
+- **`pythonosc`'s dispatcher has an invalid escape sequence.**
+  `priv/AbletonOSC/pythonosc/dispatcher.py` uses `'[\w|\+]*'`, which emits a
+  `SyntaxWarning` and treats `|` as a literal class member. Declined 2026-07-30:
+  this is `pythonosc` vendored inside AbletonOSC vendored inside our fork — two
+  levels from code we own — and editing it buys one silenced warning for a
+  `SESHAT.md` divergence entry and a merge conflict surface. **Reconsider if**
+  an Ableton release bumps the bundled Python to a version where this is an
+  error, or if the file needs changing for another reason — then fix it in
+  passing. Upstream `pythonosc` is the right owner.
+- **A PubSub restart would leave `Session.State` permanently unsubscribed.**
+  State subscribes only in `init/1`, and it is a `:one_for_one` sibling of
+  `Phoenix.PubSub`, so a PubSub restart leaves it registered in a dead registry
+  and deaf to OSC broadcasts. The mechanism is real. Declined 2026-07-30 because
+  the offered fix is worse than the disease: `:rest_for_one` at
+  [application.ex:39](../lib/seshat/application.ex#L39) would, given the current
+  child order, restart Transport, Session.State, Catalog, the MCP supervisor
+  **and the Phoenix endpoint** on any PubSub blip — a guaranteed heavy failure
+  traded for a hypothetical one. `Phoenix.PubSub` crashing is close to unheard
+  of. **Reconsider if it is ever actually observed**, and then take the targeted
+  option: monitor PubSub and re-subscribe after replacement.
+  `get_session_state`'s `refresh: true` is already a manual backstop for a
+  mirror that has gone stale for any reason.
+- **The monitored refresh worker for `Session.State`** — an overall deadline
+  plus freshness/connection/last-error metadata, the larger half of the
+  2026-07-29 review's session-refresh finding. Only the fabricated-defaults half
+  shipped (2026-07-30); refresh still runs sequential synchronous OSC calls
+  inside the GenServer. Deferred, not declined: the blocking window is short and
+  has never been observed, and the OSC query queue changed the contention
+  picture anyway. **Reconsider if the blocking window is ever actually seen.**
 - **Arrangement view** — everything Seshat does is Session view. Upstream has
   arrangement addresses (`/live/track/get/arrangement_clips/*`, arrangement
   overdub, song position) — revisit if a real workflow needs the timeline.
-- Return/master-track device loading, device *reordering* (removal & bypass
+- Device *reordering* (removal & bypass
   shipped — see `delete_device`/`bypass_device`), rack inner chains, parameter
   listeners (live meters/automation following) — revisit if a real workflow
-  needs them.
+  needs them. (Return/master-track device loading was listed here until
+  2026-07-31, when its revisit condition fired — see "Devices on return and
+  master tracks" in the queue.)
 - Embeddings or a semantic index for the catalog — the LLM is already the
   semantic layer and has the musical context.
 - Replacing AbletonOSC with a Max for Live WebSocket bridge — weighed and

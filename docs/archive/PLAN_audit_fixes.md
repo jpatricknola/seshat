@@ -4,13 +4,13 @@
 > helpers (`volume_display/1`, `pan_display/1`) live in
 > `Seshat.Tools.Handlers`, with the description work in
 > `Seshat.Tools.Definitions` — merged in #15. The audit items this plan
-> deliberately declined stay recorded in [TOOL_AUDIT.md](../TOOL_AUDIT.md);
+> deliberately declined stay recorded in [TOOL_AUDIT.md](TOOL_AUDIT.md);
 > the coverage gaps it excluded are tracked on
 > [ROADMAP.md](../ROADMAP.md).
 
 # Plan — Tool audit fixes
 
-Follow-ups from [TOOL_AUDIT.md](../TOOL_AUDIT.md) (25 Jul 2026). Scope:
+Follow-ups from [TOOL_AUDIT.md](TOOL_AUDIT.md) (25 Jul 2026). Scope:
 the correctness and description fixes on **existing** tools — the two silent
 failures, the misleading volume scale, and a small description-consistency
 pass. **No new tools here**: every coverage gap the audit found (sends,

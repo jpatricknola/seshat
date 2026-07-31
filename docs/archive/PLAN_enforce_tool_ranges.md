@@ -347,7 +347,7 @@ lock them in.
   left in place; near-zero cost, and their neighborhoods are being edited by
   [PLAN_stop_fabricating_session_state.md](PLAN_stop_fabricating_session_state.md).
 - **`create_scene`'s `index`-vs-`scene` param naming drift** — recorded in
-  [TOOL_AUDIT.md](../TOOL_AUDIT.md) §03 as a Low, not this item.
+  [TOOL_AUDIT.md](TOOL_AUDIT.md) §03 as a Low, not this item.
 - **TOOL_AUDIT.md sweep** — §03's correction note and the "≥4 outstanding"
   tally get updated at `/ship` time, per that doc's own convention.
 - **Rate limiting / auth on the entry points** — deployment-gated, see
@@ -429,4 +429,4 @@ lock them in.
    well-formed integer today. That ambiguity is **pre-existing** — it is what
    `{:either, {:float, :integer}}` has always encoded to — and this plan
    neither causes nor worsens it, so fixing it is a separate item
-   ([TOOL_AUDIT.md](../TOOL_AUDIT.md) material, not this one).
+   ([TOOL_AUDIT.md](TOOL_AUDIT.md) material, not this one).

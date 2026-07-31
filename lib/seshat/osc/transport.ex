@@ -29,8 +29,10 @@ defmodule Seshat.OSC.Transport do
   a reply is matched against the in-flight request's address only. That removes
   the collision where two overlapping queries overwrote a single slot and one
   caller got the other's data. It does not remove every collision, because
-  correlation is still by address alone — there is no request id on the wire
-  and none is coming (see `REPOSITORY_REVIEW.md` finding #1). Two residual
+  correlation is still by address alone — there is no request id on the wire and
+  none is coming: adding one means a wire-format divergence on every address,
+  carried against upstream forever, to solve what this queue already solves.
+  That was settled when the queue was built; do not resurrect it. Two residual
   classes remain:
 
   1. **A straggler on the in-flight address answers the wrong query.** Query A
