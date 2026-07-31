@@ -89,6 +89,17 @@ defmodule Seshat.Tools.Handlers do
   # in `Definitions` is the same six, `hide_view`'s is deliberately narrower.
   @view_names ["Browser", "Arranger", "Session", "Detail", "Detail/Clip", "Detail/DeviceChain"]
 
+  @doc false
+  # Test-only window onto @view_names: it's a third hand-maintained copy of
+  # show_view's six names (alongside Definitions' enum and the literal keys
+  # main_view_line/2 and detail_panel_line/1 pattern-match on), with no
+  # compiler tripwire if it drifts from them. A dropped or renamed entry here
+  # leaves get_view_state's visibility map missing a key, and
+  # main_view_line(nil, false) has no clause — a FunctionClauseError instead
+  # of a graceful failure. Exposed so the test suite can assert set equality
+  # against Definitions without going through Transport.query.
+  def view_names, do: @view_names
+
   # --- Clip properties (get_clip_properties / set_clip_properties) ---
   #
   # Property names are the OSC address suffixes, so one list drives the schema,

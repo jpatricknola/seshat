@@ -337,6 +337,24 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "get_view_state's queried views" do
+    # @view_names drives which panes get_view_state reads and is a third
+    # hand-maintained copy of the same six names as show_view's enum — with no
+    # tripwire if it drifts. A dropped or renamed entry leaves the visibility
+    # map missing a key, and main_view_line(nil, false) has no clause: a
+    # FunctionClauseError instead of a graceful failure. Same shape as
+    # hide_view's subset test above, but set equality rather than a subset,
+    # since get_view_state means to cover every pane show_view can show.
+    test "matches show_view's enum exactly" do
+      offered =
+        Seshat.Tools.Definitions.all()
+        |> Enum.find(&(&1.name == "show_view"))
+        |> get_in([:parameters, :properties, "view", :enum])
+
+      assert Enum.sort(Handlers.view_names()) == Enum.sort(offered)
+    end
+  end
+
   describe "view_state_summary/1" do
     # Live's panes overlap rather than partition, so this formatter is where the
     # six flags become one honest sentence: the main view is *derived* from the
@@ -381,6 +399,20 @@ defmodule Seshat.Tools.HandlersTest do
       assert Handlers.view_state_summary(
                visibility(%{"Detail" => true, "Detail/DeviceChain" => true})
              ) =~ "Detail panel: open, showing the device chain."
+    end
+
+    # Detail/Clip and Detail/DeviceChain are measured mutually exclusive (only
+    # one tab active at a time), so this read should be impossible too — same
+    # rule as the Session/Arranger disagreement below: say so rather than pick
+    # a tab that wasn't reported.
+    test "states the uncertainty when Detail/Clip and Detail/DeviceChain both read true" do
+      summary =
+        Handlers.view_state_summary(
+          visibility(%{"Detail" => true, "Detail/Clip" => true, "Detail/DeviceChain" => true})
+        )
+
+      assert summary =~
+               "Detail panel: open, but Live reports both the clip editor and the device chain active."
     end
 
     test "reports the detail panel closed, and says nothing about a tab" do
