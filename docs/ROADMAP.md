@@ -1,38 +1,24 @@
 # Roadmap
 
-The single living list of what to do next — **features, defects, and security
-work in one ranked queue.** **The top item is the biggest win, work top to
-bottom.** Ranking is **impact-per-effort**: mission impact weighed against cost,
-so a medium-impact quick win outranks a high-impact slog. Issue numbers are
-ranks, not stable identifiers — when something ships, delete all trace of it from the roadmap and let the rest renumber (the `/ship` skill handles this). If a shipped issue had a
-detailed plan doc, move that doc to [archive/](archive/) with a status banner.
-Nothing else about a ship stays here — this file documents future work only, and ship history
-lives in git, CLAUDE.md's Current focus, and [archive/](archive/). A shipped
-thing is mentioned below only where an *open* item needs it as context.
+The single living list of what to do next — features, defects, and security
+work in one ranked queue. The top item is the biggest win, work top to
+bottom. 
 
-**Cite an item by its title, never by its rank**
+**Adding an issue to the roadmap**
+An issue must state its goal and why it's worth building. Where the value is user-visible, include user stories — concrete moments that show the feature earning its place. Internal plumbing items wont usually have a user story. An issue must also include context for the plan author — a roadmap entry is **not** an implementation plan. Plans get written per issue (the `/plan` skill) when the work is picked up.  
+
+Ranking criteria is **impact-per-effort**, mission impact weighed against cost. A medium-impact quick win outranks a high-impact slog.  Place the new issue in the appropriate order for its priority.  
+
+**Removing an issue from the roadmap**
+Issue numbers are ranks, not stable identifiers - when something ships, delete all trace of it from the roadmap and let the rest renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan doc, move that doc to [archive/](archive/) with a status banner. Nothing else about a ship stays here — this file documents future work only, and ship history lives in git, CLAUDE.md's Current focus, and [archive/](archive/). A shipped thing is mentioned below only where an *open* item needs it as context.  **Cite an issue by its title, never by its rank**
 A rank is correct only until the next ship, and a stale one doesn't look stale —
-it silently points at a different item. Any cross-reference written by rank will quickly become wrong.
-
-**Adding to the roadmap**
-Each issue must state the goal and why it's worth building. Where the value is user-visible, an issue also carries **user stories** — concrete moments that show the feature earning its place. Internal plumbing items skip them. An issue should also include context for the plan author — a roadmap entry is **not** an implementation plan. Plans get written per issue (the `/plan` skill) when the work is picked up. 
+it silently points at a different item. Any cross-reference written by rank will quickly become wrong, trust me, its happened a lot.
 
 **[Deliberately not planned](#deliberately-not-planned)**
 The section at the end of this file records ideas that were weighed and
 declined, each with the condition that would reopen it. Check it before
-proposing or re-proposing work.
+proposing or re-proposing work. Add to the list when rejecting a proposed issue.  
 
-**One sibling doc holds evidence rather than queue:**
-
-- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) — security work. Everything it
-  still lists is dormant behind a gate and *not* in this queue: HTTP
-  authentication, production binding, rate limiting and the multi-user design
-  activate only when something binds beyond loopback or a second person is
-  invited.
-
-The canonical OSC address reference is
-[abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
-address — naming is irregular, and a wrong address fails silently.
 
 ---
 
