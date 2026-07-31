@@ -103,6 +103,63 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "set_swing_amount" do
+    setup :osc_sink
+
+    # 0.25 rather than a rounder-looking 0.2 because OSC floats are 32-bit: 0.2
+    # comes back off the wire as 0.20000000298023224 and would need a delta to
+    # assert on. The values that survive exactly are the binary fractions.
+    test "sends a float and tells the model quantizing is what applies it" do
+      assert {:ok, msg} = Handlers.call("set_swing_amount", %{"amount" => 0.25})
+
+      assert msg =~ "0.25"
+      assert msg =~ "quantize"
+      # Floats, not int32: `setattr` on a float LOM property must not be handed
+      # an integer, and `_set_property` would swallow the rejection silently.
+      assert_receive {:osc_out, "/live/song/set/swing_amount", [0.25]}
+    end
+
+    # Fork-only address: a Remote Scripts copy predating the pin drops it
+    # indistinguishably from success, so the hint has to ride the reply.
+    test "the reply names the reinstall as the fix when nothing swings" do
+      assert {:ok, msg} = Handlers.call("set_swing_amount", %{"amount" => 0.0})
+
+      assert msg =~ "mix abletonosc.install"
+      assert_receive {:osc_out, "/live/song/set/swing_amount", [+0.0]}
+    end
+
+    test "an integer amount still goes on the wire as a float" do
+      assert {:ok, _msg} = Handlers.call("set_swing_amount", %{"amount" => 1})
+      assert_receive {:osc_out, "/live/song/set/swing_amount", [1.0]}
+    end
+  end
+
+  describe "set_groove_amount" do
+    setup :osc_sink
+
+    test "sends a float and says it only scales already-assigned grooves" do
+      assert {:ok, msg} = Handlers.call("set_groove_amount", %{"amount" => 0.75})
+
+      assert msg =~ "0.75"
+      assert msg =~ "Groove Pool"
+      assert_receive {:osc_out, "/live/song/set/groove_amount", [0.75]}
+    end
+
+    # 1.3 is the dial's 130%, above swing's ceiling — the value that proves the
+    # two bounds were not harmonised. It is not exactly representable in the
+    # 32-bit float OSC puts on the wire, hence the delta rather than a match.
+    test "the dial's maximum reaches the wire" do
+      assert {:ok, _msg} = Handlers.call("set_groove_amount", %{"amount" => 1.3})
+      assert_receive {:osc_out, "/live/song/set/groove_amount", [sent]}
+      assert_in_delta sent, 1.3, 1.0e-6
+    end
+
+    test "an integer amount still goes on the wire as a float" do
+      assert {:ok, _msg} = Handlers.call("set_groove_amount", %{"amount" => 1})
+      assert_receive {:osc_out, "/live/song/set/groove_amount", [1.0]}
+    end
+  end
+
   describe "get_session_state" do
     test "returns session info or handles missing Ableton" do
       # Session.State crashes on startup when Ableton isn't running,
@@ -947,7 +1004,9 @@ defmodule Seshat.Tools.HandlersTest do
           time_sig_denominator: 4,
           is_playing: false,
           root_note: 0,
-          scale_name: "Major"
+          scale_name: "Major",
+          groove_amount: 0.0,
+          swing_amount: 0.16
         },
         overrides
       )
@@ -1418,7 +1477,7 @@ defmodule Seshat.Tools.HandlersTest do
   describe "format_song_line/1" do
     test "a fully known song renders every field and flags nothing" do
       assert {line, false} = Handlers.format_song_line(song())
-      assert line == "120.0 BPM, 4/4, stopped, key: C Major"
+      assert line == "120.0 BPM, 4/4, stopped, key: C Major, groove 0.0, swing 0.16"
     end
 
     test "a playing song says so" do
@@ -1434,11 +1493,16 @@ defmodule Seshat.Tools.HandlersTest do
           time_sig_denominator: nil,
           is_playing: nil,
           root_note: nil,
-          scale_name: nil
+          scale_name: nil,
+          groove_amount: nil,
+          swing_amount: nil
         })
 
       assert {line, true} = Handlers.format_song_line(unknown)
-      assert line == "tempo unknown, time signature unknown, playing state unknown, key unknown"
+
+      assert line ==
+               "tempo unknown, time signature unknown, playing state unknown, key unknown, " <>
+                 "groove unknown, swing unknown"
     end
 
     # Per field, not per line: one lost tempo reply must not cost the signature.
@@ -1473,6 +1537,37 @@ defmodule Seshat.Tools.HandlersTest do
     test "root note zero is C, not unknown" do
       assert {line, false} = Handlers.format_song_line(song(%{root_note: 0}))
       assert line =~ "key: C Major"
+    end
+
+    # Raw floats, matching what set_swing_amount and set_groove_amount accept —
+    # a percentage here would read back as a number the tools would reject.
+    test "groove and swing render as the numbers their setters take" do
+      assert {line, false} = Handlers.format_song_line(song(%{groove_amount: 1.3}))
+      assert line =~ "groove 1.3"
+      assert line =~ "swing 0.16"
+    end
+
+    # An install predating the fork pin never answers /live/song/get/swing_amount,
+    # so this is the state the reply must be honest about rather than show 0.0.
+    test "an unknown swing is stated, not guessed, and flags the line" do
+      assert {line, true} = Handlers.format_song_line(song(%{swing_amount: nil}))
+      assert line =~ "swing unknown"
+      assert line =~ "groove 0.0"
+    end
+
+    test "an unknown groove is stated too" do
+      assert {line, true} = Handlers.format_song_line(song(%{groove_amount: nil}))
+      assert line =~ "groove unknown"
+      assert line =~ "swing 0.16"
+    end
+
+    # 0.0 is straight/off, and it is not nil — the truthiness bug one field over.
+    test "zero groove and zero swing are values, not unknowns" do
+      assert {line, false} =
+               Handlers.format_song_line(song(%{groove_amount: 0.0, swing_amount: 0.0}))
+
+      assert line =~ "groove 0.0"
+      assert line =~ "swing 0.0"
     end
   end
 

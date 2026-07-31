@@ -42,6 +42,7 @@ defmodule Seshat.Session.State do
   @listened_properties ~w(panning volume mute solo name)
   @listened_song_properties ~w(
     tempo signature_numerator signature_denominator is_playing root_note scale_name
+    groove_amount swing_amount
   )
 
   # The default query timeout, matching Transport's own.
@@ -78,7 +79,7 @@ defmodule Seshat.Session.State do
 
   @doc """
   The mirrored song scalars — `%{tempo, time_sig_numerator, time_sig_denominator,
-  is_playing, root_note, scale_name}`.
+  is_playing, root_note, scale_name, groove_amount, swing_amount}`.
 
   Every field is `nil` when the last read couldn't get it — unknown, never a
   guess. Callers must handle `nil` rather than assume 120 BPM or 4/4.
@@ -147,7 +148,9 @@ defmodule Seshat.Session.State do
       time_sig_denominator: nil,
       is_playing: nil,
       root_note: nil,
-      scale_name: nil
+      scale_name: nil,
+      groove_amount: nil,
+      swing_amount: nil
     }
 
     state = %{
@@ -283,6 +286,14 @@ defmodule Seshat.Session.State do
     {:noreply, update_song(state, :scale_name, value)}
   end
 
+  def handle_info({:osc_message, "/live/song/get/groove_amount", [value]}, state) do
+    {:noreply, update_song(state, :groove_amount, value)}
+  end
+
+  def handle_info({:osc_message, "/live/song/get/swing_amount", [value]}, state) do
+    {:noreply, update_song(state, :swing_amount, value)}
+  end
+
   def handle_info({:osc_message, "/live/track/get/panning", [idx, value]}, state) do
     {:noreply, update_track(state, idx, :pan, value)}
   end
@@ -386,7 +397,16 @@ defmodule Seshat.Session.State do
       time_sig_denominator: query_song_int(Transport, "/live/song/get/signature_denominator"),
       is_playing: query_song_int(Transport, "/live/song/get/is_playing") |> to_bool(),
       root_note: query_song_int(Transport, "/live/song/get/root_note"),
-      scale_name: query_song_string(Transport, "/live/song/get/scale_name")
+      scale_name: query_song_string(Transport, "/live/song/get/scale_name"),
+      groove_amount: query_song_float(Transport, "/live/song/get/groove_amount"),
+      # `swing_amount` is fork-only (song.py's properties_rw), so an install
+      # predating that pin never answers and this times out to `nil` — rendered
+      # as a stated unknown, which is the honest signal to re-run
+      # `mix abletonosc.install`. Deliberately the full @query_timeout and *not*
+      # @return_probe_timeout: the extra 5s exists only in the
+      # not-yet-reinstalled state, whereas a 2s probe risks a false "swing
+      # unknown" on a healthy install.
+      swing_amount: query_song_float(Transport, "/live/song/get/swing_amount")
     }
 
     Logger.info(

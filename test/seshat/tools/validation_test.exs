@@ -139,6 +139,49 @@ defmodule Seshat.Tools.ValidationTest do
     end
   end
 
+  # The two amounts look interchangeable and are not: swing tops out at Live's
+  # documented 1.0, groove at 1.3 — because Ableton's own Move script clamps
+  # `groove_amount` to 1.3125 and renders it as `round(min(x, 1.3) * 100)`%, so
+  # the apiref's "0.0 - 1.0" understates the dial rather than bounding it.
+  # Harmonising the two at 1.0 would silently cost the top 30% of the range:
+  # `_set_property` swallows the rejection, so an over-bound value is a no-op,
+  # not an error.
+  describe "swing and groove amounts" do
+    test "set_swing_amount rejects an amount above 1.0" do
+      assert {:error, message} = Validation.validate("set_swing_amount", %{"amount" => 1.5})
+      assert message =~ "- amount: must be at most 1.0 (got 1.5)"
+    end
+
+    test "set_groove_amount rejects an amount above 1.3" do
+      assert {:error, message} = Validation.validate("set_groove_amount", %{"amount" => 1.4})
+      assert message =~ "- amount: must be at most 1.3 (got 1.4)"
+    end
+
+    # The case that fails if someone later "fixes" groove's maximum to 1.0.
+    test "set_groove_amount accepts 1.2, above swing's ceiling" do
+      assert :ok = Validation.validate("set_groove_amount", %{"amount" => 1.2})
+    end
+
+    test "both reject a negative amount" do
+      assert {:error, swing} = Validation.validate("set_swing_amount", %{"amount" => -0.1})
+      assert {:error, groove} = Validation.validate("set_groove_amount", %{"amount" => -0.1})
+      assert swing =~ "- amount: must be at least 0.0 (got -0.1)"
+      assert groove =~ "- amount: must be at least 0.0 (got -0.1)"
+    end
+
+    test "both reject a non-number" do
+      assert {:error, swing} = Validation.validate("set_swing_amount", %{"amount" => "0.2"})
+      assert {:error, groove} = Validation.validate("set_groove_amount", %{"amount" => "0.2"})
+      assert swing =~ "- amount: must be a number"
+      assert groove =~ "- amount: must be a number"
+    end
+
+    test "both accept a value inside their range" do
+      assert :ok = Validation.validate("set_swing_amount", %{"amount" => 0.2})
+      assert :ok = Validation.validate("set_groove_amount", %{"amount" => 0.0})
+    end
+  end
+
   describe "nested structures" do
     test "reports the path into an array of objects" do
       notes = [%{"pitch" => 60, "start_beat" => 0.0, "duration" => 1.0, "velocity" => 0}]

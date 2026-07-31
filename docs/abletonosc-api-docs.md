@@ -99,7 +99,7 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 | `/live/song/get/can_undo` | `can_undo` | Undo available? |
 | `/live/song/get/clip_trigger_quantization` | `clip_trigger_quantization` | Clip trigger quantization level |
 | `/live/song/get/current_song_time` | `current_song_time` | Current song time (beats) |
-| `/live/song/get/groove_amount` | `groove_amount` | Groove amount |
+| `/live/song/get/groove_amount` | `groove_amount` | Groove Pool amount (0.0-1.3; 1.0 = the dial's 100%, 1.3 = its 130% maximum); scales how strongly each clip's *assigned* groove applies — no effect on clips without one |
 | `/live/song/get/is_playing` | `is_playing` | Song playing? |
 | `/live/song/get/loop` | `loop` | Looping? |
 | `/live/song/get/loop_length` | `loop_length` | Loop length |
@@ -118,6 +118,7 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 | `/live/song/get/signature_denominator` | `denominator` | Time signature denominator |
 | `/live/song/get/signature_numerator` | `numerator` | Time signature numerator |
 | `/live/song/get/song_length` | `song_length` | Arrangement length (beats) |
+| `/live/song/get/swing_amount` | `swing_amount` | Global swing amount (0.0-1.0); applied by MIDI record quantization and `/live/clip/quantize` |
 | `/live/song/get/tempo` | `tempo_bpm` | Song tempo |
 
 ### Song Setters
@@ -128,7 +129,7 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 | `/live/song/set/back_to_arranger` | `back_to_arranger` | Set back to arranger (1=on, 0=off) |
 | `/live/song/set/clip_trigger_quantization` | `clip_trigger_quantization` | Set clip trigger quantization |
 | `/live/song/set/current_song_time` | `current_song_time` | Set song time (beats) |
-| `/live/song/set/groove_amount` | `groove_amount` | Set groove amount |
+| `/live/song/set/groove_amount` | `groove_amount` | Set Groove Pool amount (0.0-1.3); 0 = assigned grooves off |
 | `/live/song/set/loop` | `loop` | Set looping (1=on, 0=off) |
 | `/live/song/set/loop_length` | `loop_length` | Set loop length |
 | `/live/song/set/loop_start` | `loop_start` | Set loop start |
@@ -142,6 +143,7 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 | `/live/song/set/session_record` | `session_record` | Set session record (1=on, 0=off) |
 | `/live/song/set/signature_denominator` | `signature_denominator` | Set time sig denominator |
 | `/live/song/set/signature_numerator` | `signature_numerator` | Set time sig numerator |
+| `/live/song/set/swing_amount` | `swing_amount` | Set global swing amount (0.0-1.0) |
 | `/live/song/set/tempo` | `tempo_bpm` | Set tempo |
 
 ### Song: Track/Scene/Cue Queries
@@ -489,8 +491,8 @@ row of it wrong, and the same claim still appears in a comment in the fork's
 
 - **Triplet grids exist** — 1/8T and 1/16T. The old claim that there are none,
   and that swing instead comes from the song's `swing_amount`, is wrong in its
-  first half; the second half is untested here, and the bridge exposes no
-  `swing_amount` address to test it with.
+  first half; the second half is still untested here, though the fork now
+  exposes `/live/song/set/swing_amount` to test it with.
 - **There are no bar-length grids, and no 1/2 grid.** Nothing in the valid
   range is coarser than a 1/4 note.
 - **3 and 4 behave identically, as do 6 and 7.** Reproduced across separate

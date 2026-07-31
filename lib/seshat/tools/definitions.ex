@@ -253,6 +253,55 @@ defmodule Seshat.Tools.Definitions do
       }
     },
     %{
+      name: "set_swing_amount",
+      description:
+        "Set Ableton Live's global swing amount (0.0-1.0; 0 = straight). This " <>
+          "is the \"make it swing\" knob for played or written MIDI — but it is " <>
+          "applied only when notes are quantized: set the swing, then " <>
+          "quantize_clip the clip to hear it (it also shapes record " <>
+          "quantization on future takes). It does not audibly change a clip by " <>
+          "itself. Start subtle (around 0.10-0.20) and adjust by ear; 0.5 is as " <>
+          "far as Ableton's own Push hardware will drive it, so treat the upper " <>
+          "half of the range as extreme. The current value shows in " <>
+          "get_session_state.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "amount" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description: "Swing amount, 0.0 (straight) to 1.0 (maximum)"
+          }
+        },
+        required: ["amount"]
+      }
+    },
+    %{
+      name: "set_groove_amount",
+      description:
+        "Set Ableton Live's global groove amount (0.0-1.3, where 1.0 is 100% " <>
+          "and 1.3 is the dial's 130% maximum) — the Groove Pool's " <>
+          "Amount dial, scaling how strongly every clip's assigned groove is " <>
+          "applied (0 = grooves off). It only affects clips that already have " <>
+          "a groove assigned from Live's Groove Pool, which Seshat cannot do — " <>
+          "if the user hasn't assigned grooves by hand, this changes nothing; " <>
+          "use set_swing_amount plus quantize_clip to swing plain MIDI " <>
+          "instead. The current value shows in get_session_state.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "amount" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.3,
+            description: "Groove amount, 0.0 (off) to 1.3 (the dial's 130% maximum); 1.0 = 100%"
+          }
+        },
+        required: ["amount"]
+      }
+    },
+    %{
       name: "set_time_signature",
       description:
         "Set the song's global time signature in Ableton Live — the one in the " <>
