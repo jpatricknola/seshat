@@ -4011,8 +4011,16 @@ defmodule Seshat.Tools.Handlers do
           confirm_view_hidden(view, true)
         end
 
+      # A deaf transport is the case that makes this branch matter: `send_message/2`
+      # is handled outside the query queue and does not check `deaf`, so the hide
+      # is on the wire even though no reply can ever come back. Pointing at
+      # get_view_state here would be advice that cannot work — it reads through
+      # the same dead socket.
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error,
+         "The hide was sent, but confirming it failed (#{inspect(reason)}), so it is " <>
+           "unknown whether #{view_label(view)} closed. Check Ableton directly: while " <>
+           "this error stands, get_view_state cannot read the panes back either."}
     end
   catch
     :exit, _ ->
