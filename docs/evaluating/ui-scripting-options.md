@@ -1,162 +1,237 @@
-# UI scripting options: keystrokes vs Accessibility elements
+# UI scripting options: LOM, Accessibility elements, and keystrokes
 
-Seshat reaches Ableton through the Live Object Model, over OSC. Some of what a
-user asks for provably isn't in the LOM at all — audio preferences, most menu
-items, whether a dialog is open — and the recurring idea is to reach it by
-scripting the Mac UI instead. This note evaluates that idea so it doesn't get
-re-litigated from scratch, and so the next proposal starts from what has
-already been measured.
+Seshat controls Ableton Live through the Live Object Model (LOM), carried over
+OSC. The LOM does not expose every user-facing setting: audio-device selection
+is the important current example. This note evaluates whether macOS UI
+scripting is worth adding for those gaps.
 
-**Current position: no decision to build.** Blind keystrokes — sent without
-reading UI state before or after — are the wrong shape for reasons intrinsic
-to the mechanism, laid out below. Accessibility element scripting is the
-plausible route, but rests on one unproven assumption about Live's window;
-the next step is the [spike](#the-spike-that-decides-it) below, not a design. No roadmap entry exists yet — per house practice
-([sound-search-options.md](sound-search-options.md)), this doc holds the
-evidence and the roadmap holds the order, and this one doesn't earn a rank
-until the spike says the assumption holds.
+_Evaluation note · 31 Jul 2026 · decides no roadmap priority by itself._
 
-## The prior art: what `create_project`'s removal does and doesn't establish
+## Current position
 
-[archive/create-project-removal.md](../archive/create-project-removal.md)
-(2026-07-28) is the one place Seshat has driven Live's UI before, so it gets
-cited — but read it for what it actually decided. The tool was removed because
-the **feature** was wrong, not as a verdict on keystrokes: the AppleScript
-Cmd+N was *redundant* once the stripped default set meant Live already opens
-into a blank set; the track-clearing half failed for **OSC** reasons
-(fire-and-forget deletes into a post-load settling window — nothing to do with
-the keystroke); and the one hard step, saving and closing a set with real
-work, is a human decision no mechanism performs safely. "Start a new project"
-turned out to be `create_track` calls; the tool had nothing left to do.
+Run one narrow spike against Live's Audio Settings before proposing a feature.
+Live 12 explicitly supports macOS screen readers and documents keyboard access
+to its Settings controls, so a useful Accessibility (AX) tree is more likely
+than an opaque one. What remains unverified is the part Seshat needs: whether a
+small helper can find the audio-output chooser, enumerate its choices, select
+one by name, and read the result back.
 
-What the episode *does* usefully record about the keystroke leg, where it ran
-against a set with unsaved changes:
+Until that succeeds, only the LOM-over-OSC path is validated in Seshat. No AX
+read or synthetic keystroke has yet been observed reaching Live from this
+machine; the attempts on 2026-07-31 stopped at macOS permissions.
 
-- **Blind targeting.** A keystroke goes to whatever has focus, and nothing
-  confirms it landed or did anything.
-- **Modal state is invisible.** Live's "save changes?" dialog swallowed the
-  Cmd+N and blocked everything, undetectably.
+The architectural rule is:
 
-Those are intrinsic properties of a keystroke sent without reading UI state —
-send-and-hope, like a silent OSC setter, but aimed at a target that moves.
-They are reasons to require the *verified* form of UI automation, not a ban:
-**bare keystrokes are out as a mechanism; a keystroke inside a read-verified
-loop** (confirm focus and the absence of a modal first, read the effect back
-after) **is an acceptable actuation detail** where a target has a shortcut but
-no clickable element. The preferred form is still acting on named elements —
-Accessibility scripting — which is what the rest of this note evaluates.
+> **Use UI scripting only for a concrete operation absent from the current
+> LOM. When the LOM exposes an operation, add it to the fork instead.**
 
-## Why AX element scripting is a different thing
+## What is already established
 
-The Accessibility API addresses the UI as a tree of named elements, not as a
-focus target for events. The differences are exactly the three failure modes
-above, inverted:
+### The LOM reaches more UI state than Seshat currently exposes
 
-| | Keystrokes | AX elements |
-|---|---|---|
-| Targeting | whatever has focus | a control found by name/role in the tree |
-| Verification | none | read the element's value/state back after acting |
-| Modal dialogs | invisible; swallow input | visible as elements — a sheet's existence and its button labels can be *read*, and the action refused |
+Do not equate "Seshat has no tool for it" with "the LOM cannot do it." The
+current LOM `Application` object exposes `open_dialog_count`,
+`current_dialog_message`, `current_dialog_button_count`, and
+`press_current_dialog_button`. Seshat's fork does not currently register those
+members, but dialog presence and message text are therefore fork gaps, not AX-
+only capabilities. The same check must happen against the installed Live
+version before classifying any target as a UI-scripting use case.
 
-The dialog that defeated `create_project` is precisely the thing AX can see.
-That doesn't reopen file operations — see the constraint below — but it means
-the mechanism fails safe where the old one failed blind.
+Verified against Live 12.4.3's shipped Python on 2026-07-31, the house
+evidence standard since the apiref understated `groove_amount`'s range:
+`_MxDCore/LomTypes.pyc` lists all four members, and Move's `dialog.pyc`
+drives an `_on_dialog_opened` listener off `open_dialog_count` — dialog
+presence is listenable, not merely readable, so it could join the push
+mirror rather than being polled.
 
-## What it would buy — only where the LOM can't go
+Reference: [Live Object Model — Application](https://docs.cycling74.com/apiref/lom/application/).
 
-The candidate uses, in value order:
+Audio-device selection is different: no current LOM object exposes Live's
+application-wide input or output device preference. That makes "switch my
+output to the headphones" the best candidate for a UI-scripting spike, not
+proof that UI scripting should become a general second control surface.
 
-1. **Audio preferences.** "Switch my audio output to the headphones" is the
-   case `Seshat.Instructions` currently handles by rule: *say so plainly and
-   name where in Live the setting lives*
-   ([lib/seshat/instructions.ex](../../lib/seshat/instructions.ex)). There is
-   no LOM path to Preferences, so this hole can never close through the fork.
-   It is the strongest single argument for the feature existing.
-2. **Menu items with no LOM equivalent.** The long tail of commands Live only
-   exposes as menus. (Not the View menu — see the rot rule below.)
-3. **Reading dialog and window state.** OSC is structurally blind to
-   presentation; the mirror knows session state, never what's on screen. An AX
-   read is cheaper and more exact than the `screenshot_live` roadmap item for
-   the things it can name — the two are complementary, not competing:
-   screenshots answer open-ended "what's wrong with my screen" questions with
-   pixels and a vision round-trip; AX answers "is X open / checked / enabled"
-   with a boolean.
-4. **Self-verifying smoke tests.** The 2026-07-31 `show_view` smoke run needed
-   a human's eyes and hands for pane toggling. (The view-specific half of that
-   is already better served by the fork — "Read and hide Live's panes" in
-   [ROADMAP.md](../ROADMAP.md) — but the general form recurs.)
+### Live 12 has deliberate accessibility support
 
-## What it costs
+Live's interface is custom-drawn, but custom drawing does not imply an opaque
+AX tree. Ableton says most Live 12 views, controls, and devices work with screen
+readers. Its manual specifically says the Audio Settings page can be traversed
+with Tab and its options changed with the keyboard. That is positive evidence
+that the audio controls have semantic accessibility information, although it
+does not prove the exact AX roles, attributes, or actions a helper will see.
 
-**The real risk is rot, not safety.** The day this evaluation was written,
-`hide_view` needed a fork commit — and if a UI-scripting layer had existed,
-the tempting path was to script the View menu instead: fragile,
-version-dependent, locale-dependent, and sitting *outside* the stable seam
-CLAUDE.md defines (the tool contract in `Definitions`, everything below
-`Handlers` reimplementable). A UI backdoor next to a clean LOM path erodes the
-architecture one convenience at a time. The rule that keeps it honest:
+Reference: [Accessibility Options in Live](https://www.ableton.com/en/live-manual/12/accessibility-options-in-live/).
 
-> **If the LOM exposes it, it goes in the fork. UI scripting is only for what
-> the LOM genuinely cannot reach.**
+### `create_project` did not disprove keystrokes
 
-**File open/save stays settled regardless of mechanism.** The
-`create_project` removal record is explicit that saving and Cmd+N "stay with
-the human — the one step Seshat could never do safely anyway." AX seeing the
-save dialog changes the failure mode, not the consequence: discarding unsaved
-work is unrecoverable, so no UI-scripting tool touches open, save, or the
-dialogs that guard them. This doc does not reopen that question.
+[The `create_project` removal record](../archive/create-project-removal.md)
+describes the only previous UI-driving code in Seshat. Its AppleScript Cmd+N
+was removed because the feature was redundant with a stripped default set,
+its track-clearing failure was an OSC/load-settling problem, and handling
+unsaved work was deliberately left to the user.
 
-**Permissions are real friction, measured 2026-07-31 on this machine:**
+It did establish one relevant failure mode: a save-changes dialog intercepted
+the shortcut while the code continued without knowing that the requested
+operation had not happened. That is evidence against blind, focus-routed
+input—not against every possible use of a keystroke.
 
-- macOS splits the capability across at least three separate grants:
-  Accessibility (reading another app's frontmost/window state), sending
-  synthetic input, and Screen Recording — observed as three distinct errors
-  (`-25211` assistive access; `1002` "not allowed to send keystrokes";
-  `-1719`) with Accessibility granted but the others not.
-- Grants attach to the *calling process* and demand an app restart to take
-  effect. For Seshat that means the BEAM (or a shipped helper binary) needs
-  its own grant — a real setup step for every install, of the kind
-  `README.md` currently doesn't have.
-- Elixir has no AX bindings; the implementation route is a small Swift/ObjC
-  helper CLI that Seshat shells out to (the same shape `screenshot_live`
-  plans around `screencapture`).
+## Mechanism ladder
 
-## The unknown that decides it
+Use the highest applicable rung. Only rung 1 is validated in Seshat today.
 
-**Live draws its own interface.** It is not standard AppKit widgetry, and an
-app that custom-draws can expose anything from a full semantic AX tree to a
-single opaque `AXGroup`. The menu bar is native, so menu items are almost
-certainly real elements; the Preferences panel's audio-device dropdown — the
-number-one use case — may expose nothing at all. If it doesn't, the only
-fallback is clicking at coordinates, which has every blindness of a bare
-keystroke and none of the verifiability, and the correct outcome is to decline
-the whole feature and record it here.
+1. **LOM via the AbletonOSC fork.** The default for everything the installed
+   LOM exposes.
+2. **Named AX element with read-back.** For a current LOM gap where the target
+   exposes a stable role/name, an appropriate action, and a readable result.
+3. **Keystroke with checks and read-back.** Only where a concrete target has no
+   usable AX action but its state can be read independently before and after.
+4. **Bare keystroke.** Only where misdelivery is harmless and repetition
+   converges on the same state. This is expected to be rare in Live.
+5. **Screen coordinates.** Unsupported. A missed click acts on a different
+   target, and layout changes with window geometry, localization, and Live
+   versions.
 
-This could not be tested on 2026-07-31: element queries died on the
-permission granularity above before reaching Live's tree.
+Falling back a rung requires evidence about the particular target. The
+existence of a shortcut is not a reason to skip checking the LOM or AX tree.
+
+## Safety model
+
+Neither OSC nor UI scripting is automatically verified.
+
+- **OSC avoids keyboard focus**, and absolute setters such as setting tempo to
+  120 are naturally idempotent. But OSC uses silent UDP setters and often
+  index-addressed objects. A stale index or concurrent human edit can still
+  mutate the wrong Live object. Seshat guards some important operations—for
+  example, `create_track` counts before and after and `delete_device` validates
+  then re-counts—but verification is not yet universal: see "Verify
+  destructive mutations before reporting success" in [ROADMAP.md](../ROADMAP.md).
+- **AX actions target an element rather than the current keyboard focus.** If
+  Live exposes a stable element, Seshat can inspect its role and value, perform
+  a supported action, and read it again. Elements can still disappear or
+  become stale, so every action must handle AX errors and verify the resulting
+  state. AX is preferable because it removes the focus-routing race, not
+  because it is infallible.
+- **Keystrokes remain focus-routed.** Checking the frontmost app and modal
+  state first reduces uncertainty, and reading the intended state afterward
+  detects many failures. It does not make the operation atomic: the user can
+  change focus between the check and delivery, and a successful post-check
+  cannot prove that no other key was misdelivered. Toggle, selection-relative,
+  and plain-character shortcuts therefore remain poor automation targets.
+
+The user and Seshat share the same live session under every mechanism. OSC
+removes focus contention; it does not remove concurrent-state races.
+
+## What UI scripting could buy
+
+Candidate uses, ordered by current value:
+
+1. **Audio Settings.** Select a Live-wide audio input or output device by
+   name. This is the go/no-go case because it is useful, absent from the
+   current LOM, and documented by Ableton as keyboard-accessible.
+2. **Named menu commands with no current LOM equivalent.** Each command still
+   needs an individual value and safety case. The View menu is not an example:
+   `Application.View` already exposes `show_view`, `hide_view`, and
+   `is_view_visible`.
+3. **Exact presentation state not present in the LOM.** AX can answer bounded
+   questions about exposed controls more cheaply than a screenshot and vision
+   round-trip. Dialog count and message text no longer qualify because the LOM
+   already exposes them.
+4. **Self-verifying smoke tests for otherwise visual behavior.** This is a
+   secondary benefit, not enough by itself to justify the implementation.
+
+AX and the roadmap's `screenshot_live` idea are complementary. AX is suitable
+for bounded questions about exposed elements; screenshots are suitable for
+open-ended questions about pixels. A screenshot does not make coordinate
+clicking an acceptable control mechanism.
+
+## Constraints if it is built
+
+### Keep the LOM-first boundary
+
+A UI layer will be easier to extend casually than the fork, but it is more
+dependent on labels, localization, and Live's UI structure. Before adding any
+target, verify that the installed LOM cannot perform the operation. Keep tool
+contracts above the mechanism boundary so a future LOM addition can replace AX
+without changing what the model calls.
+
+### Keep file lifecycle operations with the user
+
+This evaluation does not reopen creating, opening, saving, closing, or
+discarding Live Sets. In particular, Seshat must never choose to discard
+unsaved work. Reading a file-related dialog more reliably does not grant
+authority to act on it.
+
+### Treat macOS permissions as an implementation question
+
+The permissions observed on 2026-07-31 prove setup friction, but the original
+errors did not cleanly identify one grant per mechanism. The relevant macOS
+controls are:
+
+- **Accessibility** for a direct `AXUIElement` client to inspect and control
+  another application's accessible elements.
+- **Automation / Apple Events** in addition when AppleScript drives an app such
+  as System Events. A direct AX helper avoids making Apple Events part of the
+  production design.
+- **Screen & System Audio Recording** for screenshots. It is relevant to
+  `screenshot_live`, not to ordinary AX-tree inspection.
+
+Permission attribution and restart behavior depend on the executable and the
+API involved. The spike must record which process macOS asks the user to trust
+and whether a restart is actually required; do not assume in advance that the
+BEAM, Terminal, and a child helper are interchangeable permission identities.
+
+Seshat has no AX integration or suitable dependency today. A small native
+helper process is the likely implementation, but the spike should establish
+that shape rather than treating the absence of an Elixir binding as proof of
+it.
+
+References: [macOS Privacy & Security settings](https://support.apple.com/guide/mac-help/change-privacy-security-settings-on-mac-mchl211c911f/mac),
+[AXUIElement API](https://developer.apple.com/documentation/applicationservices/axuielement_h).
 
 ## The spike that decides it
 
-A morning, not a plan. Grant Accessibility to a terminal, dump Live's AX tree
-(System Events `entire contents`, or a ~50-line Swift `AXUIElement` walker),
-and answer four questions:
+This is an evidence-gathering spike, not an implementation plan. Prefer a tiny
+direct `AXUIElement` walker over System Events so the result tests AX itself
+without also testing Apple Events. Preserve the tree excerpts, Live version,
+macOS version, permission steps, and errors in this document.
 
-1. **Menu bar:** are menu items enumerable by name, with checkmark state
-   readable? (Expected yes; would have answered the Detail-pane question the
-   smoke test left open.)
-2. **Preferences:** open it by hand, walk the window — is the audio output
-   dropdown a named, stateful element? **This is the go/no-go.**
-3. **Dialogs:** with an unsaved set, trigger the save-changes sheet — can its
-   existence and button labels be read? (Read only; nothing clicks it.)
-4. **Main window:** does the session grid expose anything, or one opaque
-   group? (Expected opaque; fine — OSC owns that surface anyway.)
+Answer these questions:
 
-Outcomes: **prefs addressable** → write a roadmap entry scoped to AX-only,
-named targets, read-back verification, LOM-first rule stated, file operations
-excluded. **Prefs opaque** → decline, record the tree dump's shape here, and
-let `screenshot_live` carry the "see the screen" cases alone.
+1. **Menu bar:** Are menu items enumerable by name and role? Can checked or
+   enabled state be read, and which actions are advertised?
+2. **Audio Settings discovery:** With Settings opened by hand, can the helper
+   identify the Audio page, output-device control, current value, and available
+   choices without relying on coordinates or sibling order alone?
+3. **Audio Settings action—the go/no-go:** With transport stopped and a safe
+   fallback device available, can the helper select a different output by
+   name, read the new selection back, then restore the original device? Record
+   disabled states, device disappearance, and any confirmation dialog. Merely
+   finding a named dropdown is not success.
+4. **Dialogs:** Compare the LOM's dialog count/message with the AX tree for a
+   harmless dialog. This determines which mechanism owns each read; do not
+   press any file-lifecycle button.
+5. **Main window:** Record how much of the session grid and major views is
+   semantic. This is not a go/no-go for Audio Settings, but it prevents future
+   proposals from guessing that the whole window is either rich or opaque.
+6. **Keystrokes, only if a real gap remains:** Test a synthetic shortcut only
+   after identifying a useful operation with readable state but no actionable
+   AX element. Separate direct event injection from AppleScript/System Events,
+   and record the exact permissions each route requests. A browser-visibility
+   toggle is a suitable harmless test once the fork exposes
+   `is_view_visible`.
 
-**Reconsider this doc's position if:** the spike runs (either outcome gets
-recorded here); an Ableton release materially changes Live's AX exposure; or
-Ableton ships an API surface for preferences, which would delete use case #1
-and most of the point.
+Outcomes:
+
+- **Complete audio-device round trip succeeds:** add a roadmap entry scoped to
+  named targets with read-back, the LOM-first rule, explicit permission setup,
+  and file-lifecycle operations excluded.
+- **The control is readable but not safely actionable:** record the failure.
+  Consider a guarded keystroke only if the same state has an independent,
+  reliable read and the focus race is acceptable for this target.
+- **The control is not semantically exposed:** decline audio-device control.
+  Do not replace it with coordinates; keep guiding the user to Live's Audio
+  Settings and let `screenshot_live` cover observation separately.
+
+Reconsider the result when the spike runs, when a Live release materially
+changes its accessibility exposure, or when the LOM gains application-wide
+audio-device preferences.
