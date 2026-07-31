@@ -23,6 +23,8 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ## #1 · Model-readable rejections for invalid tool parameters in MCP mode
 
+**Plan:** [PLAN_mcp_readable_rejections.md](PLAN_mcp_readable_rejections.md)
+
 **Goal:** an out-of-range or wrong-typed parameter comes back to the model as
 `Seshat.Tools.Validation`'s message — naming the parameter, the bound, the value
 it got, and the parameter's own description — in MCP mode as well as API-key
@@ -358,7 +360,7 @@ vocabulary proactively in tool replies — so the model sees the menu before
 ordering, instead of guessing tags and learning only from failures.
 
 **Why:** this is levers №1+№2 of
-[sound-search-options.md](sound-search-options.md) — read that doc before
+[sound-search-options.md](evaluating/sound-search-options.md) — read that doc before
 planning; it grounds every claim in measurements. The top of the search
 funnel leaks first-attempt vocabulary misses ("warm" isn't a tag here, `Soft`
 is), and the axes fix real traps the flat tag list creates (`Distortion` the
@@ -499,7 +501,7 @@ healthy — the tools simply stop existing, with nothing saying why.
 a fixed set of realistic "describe a sound" queries, so every further catalog
 lever gets measured instead of argued.
 
-**Why:** lever №9 of [sound-search-options.md](sound-search-options.md),
+**Why:** lever №9 of [sound-search-options.md](evaluating/sound-search-options.md),
 estimated at a morning's work. It exists to **gate the catalog levers below it**:
 after "Catalog vocabulary" lands, the eval decides whether any of the remaining
 catalog levers are still worth buying. Sequenced after "Catalog vocabulary"
@@ -516,7 +518,7 @@ catalog — no Ableton needed.
 **Gate: the six issues below are catalog levers that wait on "Search eval
 harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
-[sound-search-options.md](sound-search-options.md)'s impact-per-effort ordering.
+[sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
 ## #14 · Widen the search slate at tied score bands
 
@@ -813,7 +815,7 @@ flow, so this is not an active break.
 - **Deployment-gated security work** — HTTP authentication on `/mcp` and the
   LiveView, production binding, rate limiting, and the multi-user design
   question. Not in this queue by design; see
-  [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) for the two triggers that activate
+  [SECURITY_BACKLOG.md](evaluating/SECURITY_BACKLOG.md) for the two triggers that activate
   them. Note that authentication alone does not make Seshat multi-user — one
   transport, one mirror, one Ableton.
 - **The vendored Python test harness reloads AbletonOSC on import.**
@@ -865,7 +867,7 @@ flow, so this is not an active break.
 - Embeddings or a semantic index for the catalog — the LLM is already the
   semantic layer and has the musical context.
 - Replacing AbletonOSC with a Max for Live WebSocket bridge — weighed and
-  declined in [bridge-options.md](bridge-options.md); reopen only if a Remote
+  declined in [bridge-options.md](evaluating/bridge-options.md); reopen only if a Remote
   Script fundamentally can't do something we need.
 - **Machinery around the fork's two known soft spots** (recorded 2026-07-28
   with the fork itself): a pre-push guard for an unpushed `priv/AbletonOSC`

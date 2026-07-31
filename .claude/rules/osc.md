@@ -48,7 +48,7 @@ exist because a typo'd address looks exactly like success.
   allows through. The same applies to Seshat's own 11001 listener. A networked
   controller (TouchOSC and friends) is not a config tweak: it needs an explicit
   opt-in bind *and* the deployment-gated security work in
-  [docs/SECURITY_BACKLOG.md](../../docs/SECURITY_BACKLOG.md) activated and
+  [docs/evaluating/SECURITY_BACKLOG.md](../../docs/evaluating/SECURITY_BACKLOG.md) activated and
   finished first. A regression here is silent — loopback keeps working
   identically — so `vendored_addresses_test` greps the Python for both.
 - **A vendored handler never opens a path a caller sent it.** It runs with Live's

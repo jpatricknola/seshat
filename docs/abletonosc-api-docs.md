@@ -15,7 +15,7 @@
 > pushes, `/live/startup` and `/live/error` go to a fixed `127.0.0.1:11001` that
 > incoming traffic never retargets. Upstream binds `0.0.0.0` and follows the
 > last sender; see `SESHAT.md` in the fork, and don't widen either without
-> `docs/SECURITY_BACKLOG.md`'s deployment-gated work.
+> `docs/evaluating/SECURITY_BACKLOG.md`'s deployment-gated work.
 > Wildcard patterns supported (e.g., `/live/clip/get/* 0 0` queries all properties of track 0, clip 0).
 
 ---
