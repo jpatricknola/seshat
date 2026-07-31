@@ -3,7 +3,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   Tripwire for the addresses upstream AbletonOSC doesn't serve.
 
   `/live/browser/*`, `/live/return_track/*` and `/live/master/*` are ours, as are
-  two addresses under upstream's own `/live/song/` prefix and two under its
+  two addresses under upstream's own `/live/song/` prefix and four under its
   `/live/view/` prefix: they exist only because `browser.py`, `return_track.py`,
   `song_structure.py` and our additions to `view.py` in the `priv/AbletonOSC`
   fork register them. A typo on either side of that seam fails
@@ -63,13 +63,15 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   # `Session.State` still matches on them, so they are documented like any other.
   @push_only_addresses ["/live/song/get/tracks", "/live/song/get/return_tracks"]
 
-  # Two more of ours under a prefix upstream owns, and for the same reason listed
+  # Four more of ours under a prefix upstream owns, and for the same reason listed
   # exactly rather than by prefix — `/live/view/` is upstream's. Unlike
   # song_structure.py these live *inside* an upstream file, so view.py joins
   # @handler_files below and its upstream registrations get checked against the
   # docs alongside them (they are all documented already).
   @vendored_view_addresses [
     "/live/view/show_view",
+    "/live/view/hide_view",
+    "/live/view/get/is_view_visible",
     "/live/view/set/detail_clip"
   ]
 
@@ -110,7 +112,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     # exact match, so a typo on the *Elixir* side excludes itself from that
     # check — `vendored?/1` simply stops recognising it, and `used` quietly
     # shrinks by one (the >= 10 floor above doesn't notice either).
-    # Pinning that all four are still sent is what closes that direction.
+    # Pinning that all six are still sent is what closes that direction.
     test "the exactly-listed song and view addresses are still the ones lib/ sends" do
       sent = Enum.map(used_addresses(), fn {address, _file} -> address end)
 
@@ -199,17 +201,22 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              ]
     end
 
-    # view.py is upstream's file with two of ours added, so unlike the three
+    # view.py is upstream's file with four of ours added, so unlike the three
     # handlers above this list is mostly upstream's. Pinning the whole of it is
-    # what makes an upstream merge that drops our two addresses fail here rather
+    # what makes an upstream merge that drops our four addresses fail here rather
     # than in Live: nothing else notices, because every *other* address still
-    # answers and ours fail the way all OSC fails — silently.
-    test "the view handler registers upstream's twelve addresses plus Seshat's two" do
+    # answers and ours fail the way all OSC fails — silently. `hide_view` fails
+    # that way too despite the tool reading it back: without the address the
+    # read-after reports the pane still visible, which is indistinguishable from
+    # Live simply refusing to hide it.
+    test "the view handler registers upstream's twelve addresses plus Seshat's four" do
       assert Enum.sort(registered_addresses(@view_file)) == [
+               "/live/view/get/is_view_visible",
                "/live/view/get/selected_clip",
                "/live/view/get/selected_device",
                "/live/view/get/selected_scene",
                "/live/view/get/selected_track",
+               "/live/view/hide_view",
                "/live/view/set/detail_clip",
                "/live/view/set/selected_clip",
                "/live/view/set/selected_device",
@@ -221,6 +228,28 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                "/live/view/stop_listen/selected_scene",
                "/live/view/stop_listen/selected_track"
              ]
+    end
+
+    # The registration list above proves the addresses exist; this proves the
+    # fork still *records* that they are ours. SESHAT.md is what the next
+    # upstream merge is read against, and an entry that silently stops naming an
+    # address is how a merge drops it without anyone noticing — the same
+    # reasoning as the osc_server.py assertions further down, applied to the one
+    # divergence that lives inside an upstream file.
+    test "SESHAT.md records the view.py additions by address" do
+      source = File.read!("priv/AbletonOSC/SESHAT.md")
+
+      for address <- @vendored_view_addresses do
+        assert String.contains?(source, address),
+               """
+               priv/AbletonOSC/SESHAT.md no longer names #{address} in its view.py
+               divergence entry.
+
+               That file is the fork's only record of what we changed and why. An
+               address missing from it is an address the next upstream merge has no
+               reason to keep.
+               """
+      end
     end
   end
 

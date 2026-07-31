@@ -75,6 +75,20 @@ defmodule Seshat.Tools.Handlers do
                            "`mix abletonosc.install` and restart Ableton Live, and check Live is " <>
                            "running with AbletonOSC enabled."
 
+  # `/live/view/get/is_view_visible` is Seshat's too, and it answers every query
+  # — including one naming a pane Live doesn't recognise, which comes back as an
+  # error envelope rather than the silence `show_view` produces. So silence here
+  # can only be a missing install, and the enum makes a bad name unreachable
+  # anyway.
+  @view_extension_hint "These addresses come from Seshat's AbletonOSC extension — " <>
+                         "if this times out, the installed copy may predate them: run " <>
+                         "`mix abletonosc.install` and restart Ableton Live."
+
+  # Live's six pane names, in the order `get_view_state` reads them. The full set
+  # is readable even though only two of them can be hidden — `show_view`'s enum
+  # in `Definitions` is the same six, `hide_view`'s is deliberately narrower.
+  @view_names ["Browser", "Arranger", "Session", "Detail", "Detail/Clip", "Detail/DeviceChain"]
+
   # --- Clip properties (get_clip_properties / set_clip_properties) ---
   #
   # Property names are the OSC address suffixes, so one list drives the schema,
@@ -2030,6 +2044,40 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # Unlike `show_view` this one verifies itself. The hide address is silent, and
+  # its accepted set is Live's rather than ours: a name that quietly does nothing
+  # (or that a future Live stops hiding) would be an undetectable no-op forever.
+  # The enum only carries names measured to hide, and the read-after is what
+  # keeps that measurement honest — the `delete_device` / `set_clip_properties`
+  # precedent. Nothing here touches `FollowCam`: hiding a pane is the user's
+  # navigation, not a mutation to steer to.
+  defp do_call("hide_view", %{"view" => view}) do
+    with :ok <- Transport.send_message("/live/view/hide_view", [view]),
+         :ok <- confirm_view_hidden(view) do
+      {:ok, "Hidden #{view_label(view)}. show_view brings it back."}
+    else
+      {:error, reason} when not is_binary(reason) -> {:error, inspect(reason)}
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  # Six sequential reads, ~milliseconds each over loopback. The first failure
+  # ends the call: a summary assembled from a partial read looks exactly as
+  # confident as a complete one, which is the thing this tool exists not to do.
+  defp do_call("get_view_state", _params) do
+    Enum.reduce_while(@view_names, {:ok, %{}}, fn view, {:ok, acc} ->
+      case query_view_visible(view) do
+        {:ok, visible} -> {:cont, {:ok, Map.put(acc, view, visible)}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, visibility} -> {:ok, view_state_summary(visibility)}
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
   defp do_call("select_track", %{"track" => track}) do
     case Transport.send_message("/live/view/set/selected_track", [track]) do
       :ok -> {:ok, "Selected track #{track}"}
@@ -3898,6 +3946,117 @@ defmodule Seshat.Tools.Handlers do
   defp loop_range_summary(%{"start" => start}), do: " — start: #{start}"
   defp loop_range_summary(%{"length" => length}), do: " — length: #{length} beats"
   defp loop_range_summary(_), do: ""
+
+  # --- View state ---
+
+  # The read-only path. `query_echoed/4` fits it exactly: the reply echoes the
+  # view name where every other getter echoes an index, and `==` compares strings
+  # as happily as integers, so the reissue-once stale defence and the timeout hint
+  # come free. The post-*mutation* read in `confirm_view_hidden/1` deliberately
+  # cannot use it — see there.
+  defp query_view_visible(view) do
+    with {:ok, flag} <-
+           query_echoed(
+             "/live/view/get/is_view_visible",
+             [view],
+             "the visibility of #{view}",
+             @view_extension_hint
+           ) do
+      {:ok, truthy?(flag)}
+    end
+  end
+
+  # Raw `Transport.query` rather than `query_echoed/4`, for the same reason as
+  # `confirm_device_count/2` and `confirm_device_enabled/3`: that helper's error
+  # wording ends "nothing further was sent", which is true of a guard and false
+  # here — the hide is already on the wire by the time this runs. Every failure
+  # path below therefore says the hide was sent and its effect is unconfirmed.
+  # The echo check and the reissue-once stale defence are spelled out for the
+  # same reason they are in `query_echoed/4`: Transport correlates replies by
+  # address alone.
+  defp confirm_view_hidden(view, reissued? \\ false) do
+    case Transport.query("/live/view/get/is_view_visible", [view], @guard_timeout) do
+      {:ok, {_addr, [echoed, "ok", flag]}} when echoed == view ->
+        if truthy?(flag) do
+          {:error,
+           "The hide was sent, but Live still reports #{view_label(view)} as visible. " <>
+             "Check Ableton, and re-read the panes with get_view_state."}
+        else
+          :ok
+        end
+
+      {:ok, {_addr, [echoed, "error", message]}} when echoed == view ->
+        {:error,
+         "The hide was sent, but Ableton could not read #{view_label(view)} back: " <>
+           "#{message}. It is unknown whether the pane closed — check get_view_state."}
+
+      {:ok, {_addr, args}} ->
+        if reissued? do
+          {:error,
+           "The replies confirming the hide were not about #{view} (got #{inspect(args)}), " <>
+             "twice in a row — they belong to an earlier query that timed out. The hide was " <>
+             "sent and may well have landed; verify with get_view_state."}
+        else
+          confirm_view_hidden(view, true)
+        end
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "The hide was sent but confirming it timed out, so it is unknown whether " <>
+         "#{view_label(view)} closed — verify with get_view_state. #{@view_extension_hint}"}
+  end
+
+  @doc """
+  Renders `get_view_state`'s reply from the six pane-visibility flags.
+
+  Pure, and the whole of the reporting decision — the handler around it only
+  queries. Takes Live's pane names mapped to booleans and returns one line
+  naming the main view, the browser, and the detail panel with its active tab.
+
+  Live's panes overlap rather than partition, which is what the rules encode:
+  `Session` and `Arranger` share the main-view slot and measured complementary
+  in every reading (2026-07-31, Live 12 Suite), and `Detail/Clip` /
+  `Detail/DeviceChain` mean "the detail panel is open *and* that tab is active",
+  so both read false whenever `Detail` does.
+
+  Where a reading contradicts that, the summary says so rather than picking the
+  likelier half. A guess rendered in the same confident sentence as a real
+  reading is the fabrication the house rule forbids — and this tool exists
+  precisely so the model can stop guessing about the view.
+  """
+  @spec view_state_summary(%{optional(String.t()) => boolean()}) :: String.t()
+  def view_state_summary(visibility) do
+    Enum.join(
+      [
+        main_view_line(visibility["Session"], visibility["Arranger"]),
+        "Live's browser: #{if visibility["Browser"], do: "open", else: "closed"}.",
+        detail_panel_line(visibility)
+      ],
+      " "
+    )
+  end
+
+  defp main_view_line(true, false), do: "Main view: Session."
+  defp main_view_line(false, true), do: "Main view: Arrangement."
+  defp main_view_line(true, true), do: "Live reports both Session and Arrangement visible."
+  defp main_view_line(false, false), do: "Live reports neither Session nor Arrangement visible."
+
+  defp detail_panel_line(%{"Detail" => false}), do: "Detail panel: closed."
+
+  defp detail_panel_line(%{"Detail/Clip" => true, "Detail/DeviceChain" => true}),
+    do: "Detail panel: open, but Live reports both the clip editor and the device chain active."
+
+  defp detail_panel_line(%{"Detail/Clip" => true}),
+    do: "Detail panel: open, showing the clip editor."
+
+  defp detail_panel_line(%{"Detail/DeviceChain" => true}),
+    do: "Detail panel: open, showing the device chain."
+
+  defp detail_panel_line(_visibility), do: "Detail panel: open."
 
   # The reply says what the user is now looking at, in their vocabulary. Live's
   # own `Arranger` spelling is the schema contract because the value goes

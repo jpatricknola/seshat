@@ -106,6 +106,34 @@ defmodule Seshat.Tools.ValidationTest do
     end
   end
 
+  describe "hide_view" do
+    # `hide_view`'s enum is deliberately narrower than `show_view`'s six: only
+    # Browser and Detail measurably hide, and the other four merely swap to a
+    # sibling view. Since `/live/view/hide_view` is silent, the schema is the
+    # only thing standing between a plausible-looking name and a send that does
+    # something other than what was asked — the read-after in the handler would
+    # then report the pane still visible, which is a confusing way to learn the
+    # name was wrong.
+    test "rejects a name show_view accepts but Live cannot truly hide" do
+      for name <- ["Detail/Clip", "Session", "Arranger", "Detail/DeviceChain"] do
+        assert {:error, message} = Validation.validate("hide_view", %{"view" => name})
+
+        assert message =~ ~s|- view: must be one of "Browser", "Detail" (got "#{name}")|,
+               ~s(expected #{name} to be rejected by hide_view's enum)
+      end
+    end
+
+    test "accepts the two names measured to hide" do
+      assert :ok = Validation.validate("hide_view", %{"view" => "Browser"})
+      assert :ok = Validation.validate("hide_view", %{"view" => "Detail"})
+    end
+
+    test "rejects a missing view" do
+      assert {:error, message} = Validation.validate("hide_view", %{})
+      assert message =~ "- view: required but missing"
+    end
+  end
+
   describe "quantize_clip" do
     # "1/2" rather than a triplet value: the triplet grids are real and offered,
     # while a 1/2 grid is both a plausible model guess and a thing Live's

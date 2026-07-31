@@ -66,16 +66,24 @@ exist because a typo'd address looks exactly like success.
   `/live/return_track/select`, because `/live/view/set/selected_track` indexes
   `song.tracks` too. Any new address upstream doesn't provide goes there the
   same way.
-- **Two view addresses of ours live inside upstream's own `view.py`**:
-  `/live/view/show_view` and `/live/view/set/detail_clip`, in
+- **Four view addresses of ours live inside upstream's own `view.py`**:
+  `/live/view/show_view`, `/live/view/hide_view`,
+  `/live/view/get/is_view_visible` and `/live/view/set/detail_clip`, in
   [priv/AbletonOSC/abletonosc/view.py](../../priv/AbletonOSC/abletonosc/view.py).
   Upstream can *select* a track, scene, clip or device but cannot show the pane
-  it lives in — `Application.View.show_view` and `song.view.detail_clip` have no
-  upstream address — which is what `Seshat.Tools.FollowCam` needs. Both are
-  silent: a bad view name or an empty clip slot is logged in Live and nothing
-  goes on the wire. Steering must never fail or delay the tool it follows, so
-  the "a vendored getter always replies" rule below deliberately does not reach
-  them.
+  it lives in, put a pane away, or report which panes are open —
+  `Application.View.show_view`, `.hide_view`, `.is_view_visible` and
+  `song.view.detail_clip` have no upstream address. The first is what
+  `Seshat.Tools.FollowCam` needs; the rest are what the `hide_view` and
+  `get_view_state` tools need. The three **setters are silent**: a bad view name
+  or an empty clip slot is logged in Live and nothing goes on the wire. Steering
+  must never fail or delay the tool it follows, so the "a vendored getter always
+  replies" rule below deliberately does not reach them — but it *does* govern
+  `get/is_view_visible`, which answers every query in the ok/error envelope,
+  echoing the view name where other getters echo an index. `hide_view` is
+  verified from the Elixir side instead, by reading that getter back after the
+  send; its tool enum is only `Browser` and `Detail`, the two names measured to
+  truly hide (the others swap to a sibling view).
 - **Two addresses of ours live under a prefix upstream owns**:
   `/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
   from
