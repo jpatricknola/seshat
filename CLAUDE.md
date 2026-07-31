@@ -210,17 +210,20 @@ on this machine everything still works.
 built yet, written as a priority-ordered issue queue — #1 is the biggest win,
 work top to bottom. The play-and-keep arc (capture MIDI, session record, clip
 cleanup, quantize, groove/swing) is now complete, and so is the follow cam's
-missing half (`show_view`, `hide_view`, `get_view_state`); `start_new_project`
-leads the queue next. Keep it
+missing half (`show_view`, `hide_view`, `get_view_state`); devices on return
+and master tracks lead the queue next. Keep it
 current: when something ships, run the `/ship` skill
 (or by hand: remove its issue there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-31 its top item is `start_new_project`, the setup wizard that would
-catch "let's start a new project" and move the replace-not-append rule off
-the capped instructions budget and into a tool description. `show_view`
+2026-07-31 its top item is devices on return and master tracks, which would
+make `create_return_track` self-serve instead of shipping an empty return the
+user has to fill in by hand in Live. `start_new_project` — the read-only
+setup wizard that would catch "let's start a new project" and move the
+replace-not-append rule off the capped instructions budget and into a tool
+description — now sits a few places below it. `show_view`
 shipped 2026-07-31, closing the gap where the follow cam could only react to
 a mutation, never be asked to look somewhere or show a pane before an
 action: one tool and one Transport-direct handler clause sending
