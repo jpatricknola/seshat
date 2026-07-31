@@ -841,12 +841,16 @@ defmodule Seshat.Tools.HandlersTest do
   describe "format_device_chain/4" do
     # The do_call clauses for the device tools aren't tested here: they go
     # through Transport.query, which needs a live Ableton.
+    # The type ints are Live's own, measured 2026-07-31: an instrument reports 1
+    # and an audio effect reports 2, not the reverse. Reading them the wrong way
+    # round is what made every chain call its instruments audio effects, so this
+    # fixture uses the values Live actually sends for an Analog and a Reverb.
     test "formats one line per device with index, type label, and class" do
       result =
         Handlers.format_device_chain(
           {:track, 0},
           ["Analog", "Reverb"],
-          [2, 1],
+          [1, 2],
           ["InstrumentVector", "Reverb"]
         )
 

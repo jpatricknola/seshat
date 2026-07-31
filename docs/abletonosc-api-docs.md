@@ -619,7 +619,7 @@ Listen for parameter changes via `/live/device/start_listen/parameter/value <tra
 |---|---|---|---|
 | `/live/device/get/name` | `track_id, device_id` | `track_id, device_id, name` | Device name |
 | `/live/device/get/class_name` | `track_id, device_id` | `track_id, device_id, class_name` | Device class name |
-| `/live/device/get/type` | `track_id, device_id` | `track_id, device_id, type` | Device type (1=audio_effect, 2=instrument, 4=midi_effect) |
+| `/live/device/get/type` | `track_id, device_id` | `track_id, device_id, type` | Device type (1=instrument, 2=audio_effect, 4=midi_effect) |
 | `/live/device/get/num_parameters` | `track_id, device_id` | `track_id, device_id, num_parameters` | Number of parameters |
 | `/live/device/get/parameters/name` | `track_id, device_id` | `track_id, device_id, [name, ...]` | Parameter names |
 | `/live/device/get/parameters/value` | `track_id, device_id` | `track_id, device_id, [value, ...]` | Parameter values |
@@ -634,7 +634,10 @@ Listen for parameter changes via `/live/device/start_listen/parameter/value <tra
 ### Device Type Reference
 
 - `name`: human-readable name
-- `type`: 1 = audio_effect, 2 = instrument, 4 = midi_effect
+- `type`: 1 = instrument, 2 = audio_effect, 4 = midi_effect — measured against
+  Live 12.4.3 on 2026-07-31 (an Operator reports 1, a Reverb and an EQ Eight
+  report 2). The first two were documented the other way round until then; if
+  another source disagrees, it is repeating the old guess.
 - `class_name`: Live instrument/effect name (e.g., Operator, Reverb). External plugins: AuPluginDevice, PluginDevice. Racks: InstrumentGroupDevice, etc.
 
 ---

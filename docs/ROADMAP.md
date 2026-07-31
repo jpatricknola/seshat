@@ -71,7 +71,59 @@ went through to Live.
   Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
   handshake.
 
-## #2 · Preserve partial agent results at the tool-iteration limit
+## #2 · Coalesce mirror refreshes — a burst of setters makes state unreadable
+
+**Goal:** several mutations in a row followed by `get_session_state` returns the
+state, not "the session mirror did not answer".
+
+**Why:** every setter handler ends with `State.refresh()`, a cast that queues a
+*full* re-query of the session. Measured against Live 12.4.3 on 2026-07-31, one
+full refresh takes **~3.4s** in a near-empty set (one track, one return). Five
+setters therefore queue ~17s of work in a GenServer that serves reads on the
+same process, and `serve_session_state`'s four `GenServer.call`s use the 5s
+default timeout — so they exit and the tool reports the mirror as unavailable.
+
+Reproduced deterministically twice by `/smoke-test` on 2026-07-31: five
+return/master mixer setters, then `get_session_state`, fails every time. The
+same burst with five *regular-track* setters did not fail, which is why this
+surfaced with the return/master mixer work — that change took the
+`State.refresh()` call sites from 6 to 11 and made each refresh more expensive
+(four queries per return instead of two, three for the master instead of one).
+The shape is general, though: it is the refresh-per-setter pattern meeting a
+refresh that costs seconds, and more setters will keep arriving.
+
+"Set a few things, then show me where we are" is an ordinary sentence, so this
+is reachable in normal use, and the failure names Ableton ("check Ableton is
+running") when Ableton is fine — pointing the user at the wrong thing.
+
+**User stories:**
+- As a producer, when I ask for several mixer changes and then ask what the
+  session looks like, I get the session — not a diagnostic about an
+  unresponsive Ableton that is in fact responding.
+
+**Planner notes:**
+- **The refresh is largely redundant with the push design.** Every value these
+  setters write already has a listener pushing it back
+  ([session/state.ex](../lib/seshat/session/state.ex)); the trailing
+  `State.refresh()` re-reads the whole session to learn what the listener was
+  about to deliver anyway. Ask first whether the setters need it at all —
+  `create_*`/`delete_*`, which change *structure*, are a different case from a
+  setter that moves one fader.
+- If refreshes stay, coalesce them: a pending-refresh flag so N queued casts
+  collapse into one, and/or a targeted refresh that re-reads only the affected
+  object instead of the whole set.
+- Consider whether reads should be served without blocking on a refresh at all —
+  an ETS table or a separate reader would decouple "the mirror is rebuilding"
+  from "the mirror cannot be read". That is the larger change; measure before
+  choosing it.
+- The 5s default on `serve_session_state`'s calls is the proximate trigger and
+  the tempting fix. Raising it only converts a fast wrong answer into a slow
+  one — the queued work is the actual defect.
+- Nothing in `mix test` sees this: it needs a live Ableton for the refresh to
+  take real time. Found by `/smoke-test`, and any fix needs the same check —
+  five setters, then an immediate unrefreshed read.
+
+## #3 · Preserve partial agent results at the tool-iteration limit
 
 **Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
 already executed and the conversation so far, and surface a warning in the UI.
@@ -96,7 +148,7 @@ matters most.
   neither helps.
 - From the 2026-07-29 external review, accepted as written.
 
-## #3 · `start_new_project` — the setup wizard, and prompt budget back
+## #4 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -148,7 +200,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #4 · `undo` can revert far more than the last action
+## #5 · `undo` can revert far more than the last action
 
 **Goal:** either make single scripted actions land as separate Live undo
 steps, or make Seshat's `undo` tool honest about what it is actually about to
@@ -184,7 +236,7 @@ entire track's worth of work instead.
 - Reproduction: `create_track` → `write_midi_notes` (any notes) → `undo` →
   the track is gone, not just the clip's notes. No quantize step needed.
 
-## #5 · Make catalog persistence atomic and report write failures
+## #6 · Make catalog persistence atomic and report write failures
 
 **Goal:** a reindex that cannot be persisted says so, and a crash mid-write
 cannot leave a truncated `catalog.json`.
@@ -210,7 +262,7 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
 - From the 2026-07-29 external review; the durability half accepted, the ETS
   generation swap declined above.
 
-## #6 · Catalog staleness check — reindex without being asked
+## #7 · Catalog staleness check — reindex without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -237,7 +289,7 @@ atomic".
 - Decide the surfacing point: a line in `search_library` replies, a startup
   check, or both.
 
-## #7 · Verify destructive mutations before reporting success
+## #8 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -275,7 +327,7 @@ trigger is a stale model-held index.
   ride along here (or as a drive-by before this item is picked up) rather
   than rank on its own.
 
-## #8 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #9 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -310,7 +362,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #9 · Producer personas — switchable musical taste
+## #10 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* — musical taste, and only taste — onto the base
 session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
@@ -373,7 +425,7 @@ changes what Seshat reaches for, never how it works.
   and the base text's voice section already reads as execute-the-user's-taste,
   which is what a persona slots underneath.
 
-## #10 · `screenshot_live` — let Seshat see the screen
+## #11 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -399,7 +451,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - API-key mode would need image blocks threaded through `Seshat.Agent`'s
   loop — decide whether to support it there or keep this MCP-only.
 
-## #11 · Restart the MCP supervisor after abnormal failure
+## #12 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -418,7 +470,7 @@ healthy — the tools simply stop existing, with nothing saying why.
 - Raised as a speculative risk by the 2026-07-29 external review — the failure
   has not been reproduced, only reasoned from the child spec.
 
-## #12 · Search eval harness — numbers before opinions
+## #13 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -443,7 +495,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](sound-search-options.md)'s impact-per-effort ordering.
 
-## #13 · Widen the search slate at tied score bands
+## #14 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -458,7 +510,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #14 · Accepted-search memory
+## #15 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -476,7 +528,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #15 · Browser preview audition
+## #16 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -497,7 +549,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #16 · Opt-in `samples` index
+## #17 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -515,7 +567,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #17 · LLM enrichment at reindex
+## #18 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an API key or an MCP-client-driven tagging turn.
@@ -534,7 +586,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #18 · User XMP tags
+## #19 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -549,7 +601,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #19 · Cap large tool-result payloads in API-key mode
+## #20 · Cap large tool-result payloads in API-key mode
 
 **Goal:** bound what accumulates in `Seshat.Agent`'s `messages` and the
 LiveView's log for the life of a conversation.
@@ -565,7 +617,7 @@ needed. MCP mode is primary and keeps no history in this process, which is why
 this ranks here. Raised as a speculative risk by the 2026-07-29 external review
 — reasoned from the code, not reproduced.
 
-## #20 · Read-only audio input display — warn before a silent take
+## #21 · Read-only audio input display — warn before a silent take
 
 **Goal:** surface a track's audio input routing, read-only, so `record_clip`
 can warn when an audio take is about to record nothing.
@@ -594,7 +646,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #21 · Device list per track in session state
+## #22 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -613,7 +665,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #22 · Modify a note in place
+## #23 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -626,7 +678,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #23 · Clip grid in session state — only if usage demands it
+## #24 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -640,7 +692,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #24 · Small OSC breadth — grab bag
+## #25 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -661,7 +713,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #25 · MCP mode in the browser UI
+## #26 · MCP mode in the browser UI
 
 **Goal:** give `AssistantLive` a second backend — headless Claude Code
 (`claude -p`) as a subprocess consuming Seshat's own `/mcp` endpoint — so the
@@ -681,7 +733,7 @@ that may have drifted) in
 [archive/PLAN_mcp_browser_ui.md](archive/PLAN_mcp_browser_ui.md) — verify the
 CLI flags against current Claude Code before trusting it.
 
-## #26 · Adopt MCP `2026-07-28` when Anubis supports it
+## #27 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.

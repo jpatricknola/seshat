@@ -1500,8 +1500,14 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp device_type_label(1), do: "audio effect"
-  defp device_type_label(2), do: "instrument"
+  # Live's DeviceType enum, measured against Live 12.4.3 on 2026-07-31 by loading
+  # a known instrument and a known audio effect and reading the type back: an
+  # Operator reports 1, a Reverb and an EQ Eight report 2. These two were the
+  # wrong way round until then — every device chain named its instruments audio
+  # effects and its audio effects instruments — and the docs said so too. Both
+  # were guessed from upstream's naming, never checked against Live.
+  defp device_type_label(1), do: "instrument"
+  defp device_type_label(2), do: "audio effect"
   defp device_type_label(4), do: "MIDI effect"
   defp device_type_label(other), do: "type #{other}"
 
