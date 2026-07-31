@@ -75,17 +75,23 @@ went through to Live.
 
 ## #2 · Coalesce mirror refreshes — one burst of tool calls, one refresh
 
-**Goal:** a single user request that fans out into many mutations produces one
-mirror refresh once the burst settles, not one per mutation — and a read landing
-during the burst still answers.
+**Plan:** [PLAN_coalesce_mirror_refreshes.md](PLAN_coalesce_mirror_refreshes.md)
+
+**Goal:** a burst of mutations cannot build an unbounded queue of full mirror
+refreshes: calls inside one quiet window produce one trailing refresh, later
+calls preserve one final trailing refresh, and a read landing while work is only
+scheduled still answers.
 
 **Why:** `do_refresh/1` re-queries the session serially — five queries per track
-(name, volume, pan, mute, solo), four per return, plus master and song scalars —
+(name, volume, pan, mute, solo), five per return, plus master and song scalars —
 and it runs *inside* the GenServer that also serves reads. While it runs,
 `State.tracks/0`, `song/0`, `return_tracks/0` and `master/0` all block.
 `serve_session_state` makes four such calls at the 5s default, so enough queued
 refreshes make `get_session_state` fail with "the session mirror did not
 answer" — naming an Ableton that is answering perfectly well.
+
+Transport also serializes every OSC query app-wide, so redundant mirror reads
+delay guard queries from unrelated tools, not only `get_session_state`.
 
 Measured against Live 12.4.3 on 2026-07-31: one refresh takes **~1.0–1.8s** on a
 ten-track set. Reproduced deterministically by `/smoke-test`: five return/master
@@ -143,9 +149,10 @@ below the public API rather than on it.
 - The 5s default on `serve_session_state`'s calls is the proximate trigger and
   the tempting fix. Raising it only converts a fast wrong answer into a slow
   one — the queued work is the actual defect.
-- Make the debounce window configurable so tests can drive it to ~0. Otherwise
-  none of this is testable without a live Ableton: the failure itself needs a
-  refresh that takes real time. Reproduce with five mixer setters followed by an
+- Test the timer and reconciliation state transitions without firing the real
+  refresh; driving the window to ~0 only reaches the same live OSC queries
+  sooner and does not make them unit-testable. The end-to-end failure still
+  needs live Ableton: reproduce with five mixer setters followed by an
   unrefreshed `get_session_state`, and with twenty `create_track` calls.
 
 ## #3 · Preserve partial agent results at the tool-iteration limit
