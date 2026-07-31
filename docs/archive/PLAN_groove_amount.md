@@ -1,5 +1,15 @@
 # Plan — Groove amount: "make it swing"
 
+> **Archived 2026-07-31 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `set_swing_amount` and
+> `set_groove_amount` live in `Seshat.Tools.Definitions`/`Handlers`, both
+> mirrored into `Seshat.Session.State` and rendered in `get_session_state`'s
+> song line; `swing_amount` required a one-line fork addition to
+> `priv/AbletonOSC/abletonosc/song.py`. Open follow-ups (assigning a groove to
+> a clip, `midi_recording_quantization`, per-clip `has_groove` surfacing) are
+> recorded under "Out of scope" below and have no roadmap entry yet — pick
+> them up as new items if a workflow needs them.
+
 Roadmap item "Groove amount — \"make it swing\"". Two new tools —
 `set_groove_amount` and `set_swing_amount` — plus both values mirrored into
 `Seshat.Session.State`, so `get_session_state` is the read side the roadmap's
@@ -9,7 +19,7 @@ Roadmap item "Groove amount — \"make it swing\"". Two new tools —
 for `groove_amount` it is, but research showed the item as literally scoped
 cannot deliver its own title (see Context), and the property that *can* —
 `Song.swing_amount` — is not exposed by AbletonOSC. Adding it is one line in
-the fork's [abletonosc/song.py](../priv/AbletonOSC/abletonosc/song.py)
+the fork's [abletonosc/song.py](../../priv/AbletonOSC/abletonosc/song.py)
 (`properties_rw` generates get/set/listen handlers per entry), which lands as
 a submodule commit plus a pin bump here, puts `mix abletonosc.install` and a
 Live restart on the user, and is executed by nothing in `mix test` — its
@@ -28,7 +38,7 @@ humanize/swing leg. Research against the Live Object Model reference
    [Evidence](#evidence-live-12-suites-own-scripts).) A clip with no groove
    assigned is untouched at any amount, and Seshat cannot assign grooves:
    `Clip.groove` is a LOM object AbletonOSC can't serialize (commented out in
-   the fork's [abletonosc/clip.py](../priv/AbletonOSC/abletonosc/clip.py) TODO
+   the fork's [abletonosc/clip.py](../../priv/AbletonOSC/abletonosc/clip.py) TODO
    list — "Infered arg_value type is not supported"). In a session where the
    user hasn't dragged a groove on by hand, the roadmap's single property is a
    knob wired to nothing.
@@ -36,15 +46,15 @@ humanize/swing leg. Research against the Live Object Model reference
    get/set/observe, 0.0–1.0, "affects MIDI Recording Quantization and all
    direct calls to `Clip.quantize`". That is precisely the played-MIDI
    cleanup flow: set the swing, then `quantize_clip`
-   ([archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md), shipped
+   ([archive/PLAN_quantize_clip.md](PLAN_quantize_clip.md), shipped
    2026-07-31, ahead of this plan) —
    and the swing rides record quantization for future takes too. This is a
    LOM claim, not yet a verified one: `quantize_clip`
-   ([archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md)) measured
+   ([archive/PLAN_quantize_clip.md](PLAN_quantize_clip.md)) measured
    the GridQuantization table against a running Live and found the *other*
    half of the old claim — "no triplet grids" — false, so it demoted the
    `swing_amount` half to UNVERIFIED in
-   [abletonosc-api-docs.md](abletonosc-api-docs.md) and the fork's `clip.py`
+   [abletonosc-api-docs.md](../abletonosc-api-docs.md) and the fork's `clip.py`
    rather than carry it forward untested. This plan's own smoke check (below)
    still needs to confirm it before anything here relies on it — and no OSC
    address serves `swing_amount` yet regardless, so today the model would be
@@ -59,9 +69,9 @@ humanize/swing leg. Research against the Live Object Model reference
    mirror").
 4. **Setters are silent and swallow rejection** (`_set_property` logs and
    swallows Live API exceptions; a set never replies). Same posture as
-   [archive/PLAN_set_time_signature.md](archive/PLAN_set_time_signature.md): schema bounds
+   [archive/PLAN_set_time_signature.md](PLAN_set_time_signature.md): schema bounds
    make invalid values unrepresentable, the setter stays fire-and-forget per
-   [.claude/rules/osc.md](../.claude/rules/osc.md), and the listener echo into
+   [.claude/rules/osc.md](../../.claude/rules/osc.md), and the listener echo into
    the mirror is the verification channel.
 
 So the plan delivers both knobs, each honest about what it does: swing for
@@ -113,7 +123,7 @@ Record it in the fork's `SESHAT.md` under **"Additions to upstream's code"**
 "`set_swing_amount`/the session mirror need it; upstream exposes
 `groove_amount` but not `swing_amount`" — and the LOM reference).
 
-This is the two-commit dance from [.claude/rules/osc.md](../.claude/rules/osc.md):
+This is the two-commit dance from [.claude/rules/osc.md](../../.claude/rules/osc.md):
 checkout `master` in the submodule first (worktrees leave it detached),
 commit and push inside `priv/AbletonOSC`, then stage the new pin in the same
 Seshat commit as the Elixir side. The user must run `mix abletonosc.install`
@@ -160,7 +170,7 @@ literal-grep `registered_addresses/1` cannot see the new addresses and
 the docs test falsely) — nor do the addresses join `@vendored_song_addresses`
 (the used→registered test would fail for the same reason). This is exactly
 the `clip.py` `quantize` situation, and the guard is the same shape as
-[archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md) part 4: a grep
+[archive/PLAN_quantize_clip.md](PLAN_quantize_clip.md) part 4: a grep
 test asserting `File.read!("priv/AbletonOSC/abletonosc/song.py")` contains
 `"swing_amount"`
 (one line, appears exactly once), with a failure message pointing at
@@ -245,7 +255,7 @@ Decisions folded in, so they don't reopen during implementation:
   costs real range and would be invisible: the silent `_set_property` makes
   an over-bound value a no-op, not an error.
 - Both descriptions name `quantize_clip`, so this ships **after**
-  [archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md), which has
+  [archive/PLAN_quantize_clip.md](PLAN_quantize_clip.md), which has
   now shipped — the tool exists and the description can name it safely.
 
 ### 5. Handle them — `lib/seshat/tools/handlers.ex`

@@ -235,6 +235,41 @@ of the beat, at least one pair of same-pitch notes close together.
 10. **Follow cam.** The quantized clip is left selected with the note editor
     open — the notes snapping on screen *is* the confirmation.
 
+## If the change touches `set_swing_amount` / `set_groove_amount`
+
+`swing_amount` is fork-only — one `properties_rw` line added to
+`priv/AbletonOSC/abletonosc/song.py` — so a Remote Scripts copy that predates
+the fork pin makes `/live/song/set/swing_amount` silently a no-op, indistinguishable
+from success, same as every other silent setter. `groove_amount` is upstream
+and needs no reinstall. If this branch touched `priv/AbletonOSC` at all, run
+`mix abletonosc.install` and restart Live first (see "First, if the change
+touches the bridge" above) — item 1 below is what catches a skipped reinstall.
+
+1. **First:** `get_session_state` shows numeric groove *and* swing values, not
+   "unknown". Live 12 Suite has `Song.swing_amount`, so "swing unknown" here
+   means the wire, not the property — almost certainly the fork wasn't
+   reinstalled or Live wasn't restarted. Fix that before anything else; every
+   item below depends on it.
+2. `set_swing_amount 0.25`, then `get_session_state` **without** `refresh:
+   true` — the mirror shows 0.25 via the listener echo, not a fresh query.
+3. Set swing, then `quantize_clip` at `"1/8"` on a straight clip — notes land
+   *off* the straight grid on swung positions (the end-to-end "make it
+   swing"; also exercises `quantize_clip`'s own smoke item 4 from the other
+   side). Judge by ear whether 0.10–0.20 reads as "subtle" — if not, the fix
+   is `set_swing_amount`'s description, not the code.
+4. Assign a groove to a clip by hand in Live, then `set_groove_amount 0.0`,
+   then `1.0`, then `1.3` — audible change, and the Groove Pool's Amount dial
+   follows: expect the dial to read **100%** at 1.0 and **130%** at 1.3.
+   Anything else means the mapping moved in this Live version and
+   `set_groove_amount`'s schema max needs revisiting.
+5. `set_groove_amount` with **no** grooves assigned anywhere in the set —
+   nothing changes audibly, and the model's reply (fed by the tool
+   description) says so rather than promising swing.
+
+(Groove and swing already appear in the unknown-state field list in "If the
+change touches `Session.State`'s refresh" below — nothing further to add
+there.)
+
 ## If the change touches the recording tools (`record_clip` / `stop_recording`)
 
 These shipped 2026-07-29 having **never executed against Live** — the only
