@@ -60,9 +60,9 @@ launch settings are now readable and writable), session record (shipped
 fixed-length or open-ended, into a chosen Session slot), `quantize_clip`
 (shipped 2026-07-31 — tightens timing to a grid with a partial-amount knob,
 and corrected the fork's `GridQuantization` table along the way, which was
-wrong in every row), and groove/swing (shipped 2026-07-31 — `set_swing_amount`
-and `set_groove_amount`, the latter a one-line fork addition to `song.py`,
-both mirrored into `get_session_state`; see
+wrong in every row), and groove/swing (shipped 2026-07-31 — `set_swing_amount`, a one-line fork
+addition to `song.py`, and `set_groove_amount`, both mirrored into
+`get_session_state`; see
 [archive/PLAN_groove_amount.md](archive/PLAN_groove_amount.md)) closed out the
 arc: the user plays, Seshat keeps it and cleans it up.
 
