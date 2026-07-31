@@ -271,11 +271,13 @@ are the ones that must pass before anyone trusts the pair.
    audible material in the clip. This is the capability the whole feature
    exists for and the one thing `capture_midi` can never do. A silent take
    means the input isn't set, which Seshat cannot see or fix.
-6. **Non-4/4.** ⚠️ In a 6/8 set, `bars: 2` must give **two bars**, not four.
-   `record_length_beats/3` assumes `record_length` counts quarter-note song
-   beats (so 6/8 × 2 bars = 6.0), which is unverified — the 2026-07-29 check
-   was 4/4, where the two conventions coincide. Wrong ⇒ one line in that
-   function.
+6. **Non-4/4.** Set 6/8 with `set_time_signature` (numerator 6, denominator
+   8), then `get_session_state` **without** `refresh: true` should already
+   show 6/8 — confirms the property listener pushes the change to the mirror
+   without a round-trip. Then `record_clip bars: 2` must give **two bars**,
+   not four: `record_length_beats/3` counts quarter-note song beats
+   regardless of signature (6/8 × 2 bars = 6.0 beats), confirmed against
+   Live 2026-07-31.
 7. **Guards, each producing its own error with nothing fired:** an occupied
    slot (names `delete_clip`), a group track (`can_be_armed` false), and an
    armable track whose `will_record_on_start` stays false (unroute its input).
