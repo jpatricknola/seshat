@@ -3571,13 +3571,13 @@ defmodule Seshat.Tools.Handlers do
   end
 
   @doc """
-  Decides what a return/master load reply means, before anything acts on it.
+  Decides what a device-load reply means, before anything acts on it.
 
-  `asked` is what this call sent — `[return_index, uri]` or `[uri]` — and the
-  reply echoes it back in front of the payload. `Seshat.OSC.Transport` correlates
-  replies by address alone, so a load abandoned by an earlier timeout can still
-  answer the next load on the same address: the echo is the only thing that
-  distinguishes this call's reply from that straggler's.
+  `asked` is what this call sent — `[track_or_return_index, uri]` or `[uri]` —
+  and the reply echoes it back in front of the payload. `Seshat.OSC.Transport`
+  correlates replies by address alone, so a load abandoned by an earlier timeout
+  can still answer the next load on the same address: the echo is the only thing
+  that distinguishes this call's reply from that straggler's.
 
   Getting that wrong is worse here than on a getter. A stale *success* would make
   the tool record the wrong URI as loaded, steer the view using a device index
