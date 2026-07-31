@@ -71,57 +71,80 @@ went through to Live.
   Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
   handshake.
 
-## #2 · Coalesce mirror refreshes — a burst of setters makes state unreadable
+## #2 · Coalesce mirror refreshes — one burst of tool calls, one refresh
 
-**Goal:** several mutations in a row followed by `get_session_state` returns the
-state, not "the session mirror did not answer".
+**Goal:** a single user request that fans out into many mutations produces one
+mirror refresh once the burst settles, not one per mutation — and a read landing
+during the burst still answers.
 
-**Why:** every setter handler ends with `State.refresh()`, a cast that queues a
-*full* re-query of the session. Measured against Live 12.4.3 on 2026-07-31, one
-full refresh takes **~3.4s** in a near-empty set (one track, one return). Five
-setters therefore queue ~17s of work in a GenServer that serves reads on the
-same process, and `serve_session_state`'s four `GenServer.call`s use the 5s
-default timeout — so they exit and the tool reports the mirror as unavailable.
+**Why:** `do_refresh/1` re-queries the session serially — five queries per track
+(name, volume, pan, mute, solo), four per return, plus master and song scalars —
+and it runs *inside* the GenServer that also serves reads. While it runs,
+`State.tracks/0`, `song/0`, `return_tracks/0` and `master/0` all block.
+`serve_session_state` makes four such calls at the 5s default, so enough queued
+refreshes make `get_session_state` fail with "the session mirror did not
+answer" — naming an Ableton that is answering perfectly well.
 
-Reproduced deterministically twice by `/smoke-test` on 2026-07-31: five
-return/master mixer setters, then `get_session_state`, fails every time. The
-same burst with five *regular-track* setters did not fail, which is why this
-surfaced with the return/master mixer work — that change took the
-`State.refresh()` call sites from 6 to 11 and made each refresh more expensive
-(four queries per return instead of two, three for the master instead of one).
-The shape is general, though: it is the refresh-per-setter pattern meeting a
-refresh that costs seconds, and more setters will keep arriving.
+Measured against Live 12.4.3 on 2026-07-31: one refresh takes **~1.0–1.8s** on a
+ten-track set. Reproduced deterministically by `/smoke-test`: five return/master
+mixer setters, then `get_session_state`.
 
-"Set a few things, then show me where we are" is an ordinary sentence, so this
-is reachable in normal use, and the failure names Ableton ("check Ableton is
-running") when Ableton is fine — pointing the user at the wrong thing.
+**Two independent triggers, and the second is the one that matters:**
+
+1. **Seven setters call `State.refresh/0`** — the five new mixer tools plus
+   `set_return_track_volume` and `set_master_volume`. Their regular-track twins
+   (`set_track_volume`, `set_track_pan`, `set_track_mute`, `set_track_solo`) do
+   not; they rely on listener pushes. Every value those seven write now has a
+   listener behind it too, so they are the odd ones out.
+2. **Structure mutations.** Each `create_*`, `delete_*` or `duplicate_*`
+   operation can request an explicit refresh (`create_track` does so through
+   `Registry.execute/1`), while `song_structure.py` also pushes changed track
+   or return lists that may trigger another refresh through `reconcile/4`.
+   Thus "create twenty tracks" can generate at least twenty refresh requests
+   from one user instruction, potentially with additional structure-triggered
+   requests.
+
+Human typing speed never produces this. What does is one request that fans out
+into many tool calls, which is ordinary: "create twenty tracks", "set up a mix",
+"build me a drum bus". Trigger 2 is that case, and it is why the fix has to sit
+below the public API rather than on it.
 
 **User stories:**
-- As a producer, when I ask for several mixer changes and then ask what the
-  session looks like, I get the session — not a diagnostic about an
-  unresponsive Ableton that is in fact responding.
+- As a producer, when I ask for twenty tracks and then ask what the session
+  looks like, I get the session — not a diagnostic about an unresponsive Ableton
+  that is in fact responding.
 
 **Planner notes:**
-- **The refresh is largely redundant with the push design.** Every value these
-  setters write already has a listener pushing it back
-  ([session/state.ex](../lib/seshat/session/state.ex)); the trailing
-  `State.refresh()` re-reads the whole session to learn what the listener was
-  about to deliver anyway. Ask first whether the setters need it at all —
-  `create_*`/`delete_*`, which change *structure*, are a different case from a
-  setter that moves one fader.
-- If refreshes stay, coalesce them: a pending-refresh flag so N queued casts
-  collapse into one, and/or a targeted refresh that re-reads only the affected
-  object instead of the whole set.
-- Consider whether reads should be served without blocking on a refresh at all —
-  an ETS table or a separate reader would decouple "the mirror is rebuilding"
-  from "the mirror cannot be read". That is the larger change; measure before
-  choosing it.
+- **Add a debounced asynchronous refresh path.** Route `refresh/0` and
+  structure-change refresh requests through it; keep initial setup,
+  `/live/startup` and `refresh_sync/0` immediate. On the trailing edge, schedule
+  for ~1s out, reset the timer on each new request, and run once after the quiet
+  period. Requests received while a refresh is running must produce exactly one
+  additional trailing refresh, so the final mutation is never discarded.
+  Leading-edge or "at most once per second" is not enough — a refresh costs more
+  than the window, so work still accumulates.
+- **Take the cheap win first: consider deleting the seven setter refreshes
+  outright.** Listeners already push every value they write, so the refresh
+  re-reads the whole session to learn what was arriving anyway. That removes all
+  seven scalar-setter call sites and leaves the debounce guarding a much smaller
+  surface.
+  Structural ops (`create_*`, `delete_*`, `duplicate_*`) are the different case —
+  they change which objects the listeners are bound to.
+- `refresh_sync/0` stays immediate for `get_session_state(refresh: true)` and
+  should cancel any pending debounced refresh so the work is not done twice.
+- **Decide what an ordinary read does while a refresh is pending.** Making the
+  read force it inline restores accuracy but hands reads an unbounded,
+  Ableton-dependent latency — precisely the property that breaks today. Serving
+  the mirror and accepting ≤1s of lag is the cheaper default, and the mutating
+  tools' replies are already authoritative about their own result (`create_track`
+  counts before and after). `refresh: true` remains the explicit escape hatch.
 - The 5s default on `serve_session_state`'s calls is the proximate trigger and
   the tempting fix. Raising it only converts a fast wrong answer into a slow
   one — the queued work is the actual defect.
-- Nothing in `mix test` sees this: it needs a live Ableton for the refresh to
-  take real time. Found by `/smoke-test`, and any fix needs the same check —
-  five setters, then an immediate unrefreshed read.
+- Make the debounce window configurable so tests can drive it to ~0. Otherwise
+  none of this is testable without a live Ableton: the failure itself needs a
+  refresh that takes real time. Reproduce with five mixer setters followed by an
+  unrefreshed `get_session_state`, and with twenty `create_track` calls.
 
 ## #3 · Preserve partial agent results at the tool-iteration limit
 
