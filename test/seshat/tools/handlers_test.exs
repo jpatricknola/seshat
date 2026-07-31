@@ -309,6 +309,154 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "hide_view's enum" do
+    # The hide_view and get_view_state do_call clauses aren't driven through
+    # Handlers.call/2 anywhere in this file, for the same reason delete_device
+    # and bypass_device aren't: both read Live back over Transport.query, which
+    # needs a live Ableton. The pure halves are covered instead — the enum here,
+    # the summary below.
+
+    # hide_view's enum is narrower than show_view's on purpose (only Browser and
+    # Detail measurably hide), but its replies still go through view_label/1, and
+    # that function is only proved total against show_view's six above. A name
+    # offered by hide_view alone would raise FunctionClauseError at runtime, on a
+    # path no repository test can execute.
+    test "is a subset of show_view's, so view_label/1 covers it" do
+      offered = fn name ->
+        Seshat.Tools.Definitions.all()
+        |> Enum.find(&(&1.name == name))
+        |> get_in([:parameters, :properties, "view", :enum])
+      end
+
+      assert offered.("hide_view") == ["Browser", "Detail"]
+
+      for view <- offered.("hide_view") do
+        assert view in offered.("show_view"),
+               "hide_view offers #{inspect(view)}, which show_view's tested enum doesn't cover"
+      end
+    end
+  end
+
+  describe "get_view_state's queried views" do
+    # @view_names drives which panes get_view_state reads and is a third
+    # hand-maintained copy of the same six names as show_view's enum — with no
+    # tripwire if it drifts. A dropped or renamed entry leaves the visibility
+    # map missing a key, and main_view_line(nil, false) has no clause: a
+    # FunctionClauseError instead of a graceful failure. Same shape as
+    # hide_view's subset test above, but set equality rather than a subset,
+    # since get_view_state means to cover every pane show_view can show.
+    test "matches show_view's enum exactly" do
+      offered =
+        Seshat.Tools.Definitions.all()
+        |> Enum.find(&(&1.name == "show_view"))
+        |> get_in([:parameters, :properties, "view", :enum])
+
+      assert Enum.sort(Handlers.view_names()) == Enum.sort(offered)
+    end
+  end
+
+  describe "view_state_summary/1" do
+    # Live's panes overlap rather than partition, so this formatter is where the
+    # six flags become one honest sentence: the main view is *derived* from the
+    # Session/Arranger pair, and the detail panel's tab from the Detail/* pair.
+    defp visibility(overrides) do
+      Map.merge(
+        %{
+          "Browser" => false,
+          "Arranger" => false,
+          "Session" => true,
+          "Detail" => false,
+          "Detail/Clip" => false,
+          "Detail/DeviceChain" => false
+        },
+        overrides
+      )
+    end
+
+    test "reports Session as the main view" do
+      summary = Handlers.view_state_summary(visibility(%{}))
+      assert summary =~ "Main view: Session."
+    end
+
+    test "reports Arrangement as the main view, in the user's word for it" do
+      summary = Handlers.view_state_summary(visibility(%{"Session" => false, "Arranger" => true}))
+
+      assert summary =~ "Main view: Arrangement."
+      refute summary =~ "Arranger"
+    end
+
+    test "reports the browser open and closed" do
+      assert Handlers.view_state_summary(visibility(%{"Browser" => true})) =~
+               "Live's browser: open."
+
+      assert Handlers.view_state_summary(visibility(%{})) =~ "Live's browser: closed."
+    end
+
+    test "names the detail panel's active tab" do
+      assert Handlers.view_state_summary(visibility(%{"Detail" => true, "Detail/Clip" => true})) =~
+               "Detail panel: open, showing the clip editor."
+
+      assert Handlers.view_state_summary(
+               visibility(%{"Detail" => true, "Detail/DeviceChain" => true})
+             ) =~ "Detail panel: open, showing the device chain."
+    end
+
+    # Detail/Clip and Detail/DeviceChain are measured mutually exclusive (only
+    # one tab active at a time), so this read should be impossible too — same
+    # rule as the Session/Arranger disagreement below: say so rather than pick
+    # a tab that wasn't reported.
+    test "states the uncertainty when Detail/Clip and Detail/DeviceChain both read true" do
+      summary =
+        Handlers.view_state_summary(
+          visibility(%{"Detail" => true, "Detail/Clip" => true, "Detail/DeviceChain" => true})
+        )
+
+      assert summary =~
+               "Detail panel: open, but Live reports both the clip editor and the device chain active."
+    end
+
+    test "reports the detail panel closed, and says nothing about a tab" do
+      summary = Handlers.view_state_summary(visibility(%{}))
+
+      assert summary =~ "Detail panel: closed."
+      refute summary =~ "clip editor"
+      refute summary =~ "device chain"
+    end
+
+    # Measured never to happen (2026-07-31: the panel is open with neither tab
+    # flagged in no reading taken), but the formatter must not invent a tab it
+    # wasn't told about.
+    test "reports the detail panel open without naming a tab when neither flag is set" do
+      assert Handlers.view_state_summary(visibility(%{"Detail" => true})) ==
+               "Main view: Session. Live's browser: closed. Detail panel: open."
+    end
+
+    # Session and Arranger measured strictly complementary, so this read should
+    # be impossible — which is exactly why the formatter must say so rather than
+    # pick the likelier half. A guess rendered in the same confident sentence as
+    # a real reading is the failure this whole tool exists to remove.
+    test "states the uncertainty when Session and Arranger disagree with reality" do
+      both = Handlers.view_state_summary(visibility(%{"Session" => true, "Arranger" => true}))
+      assert both =~ "Live reports both Session and Arrangement visible."
+      refute both =~ "Main view:"
+
+      neither = Handlers.view_state_summary(visibility(%{"Session" => false}))
+      assert neither =~ "Live reports neither Session nor Arrangement visible."
+      refute neither =~ "Main view:"
+    end
+
+    test "renders one line, in main view / browser / detail order" do
+      summary =
+        Handlers.view_state_summary(
+          visibility(%{"Browser" => true, "Detail" => true, "Detail/Clip" => true})
+        )
+
+      assert summary ==
+               "Main view: Session. Live's browser: open. " <>
+                 "Detail panel: open, showing the clip editor."
+    end
+  end
+
   describe "format_browser_items/2" do
     # The do_call clauses for list_browser_items/load_device aren't tested here:
     # they go through Transport.query, which needs a live Ableton.

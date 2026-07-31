@@ -192,6 +192,8 @@ User interface control — selecting tracks, scenes, clips, devices.
 | `/live/view/stop_listen/selected_scene` | | | Stop listening for scene changes |
 | `/live/view/stop_listen/selected_track` | | | Stop listening for track changes |
 | `/live/view/show_view` | `view_name` | | ⚠️ **Seshat extension** — bring a pane into view |
+| `/live/view/hide_view` | `view_name` | | ⚠️ **Seshat extension** — put a pane away |
+| `/live/view/get/is_view_visible` | `view_name` | `view_name, "ok", visible` or `view_name, "error", message` | ⚠️ **Seshat extension** — is a pane visible? `visible` is 1 or 0 |
 | `/live/view/set/detail_clip` | `track_index, scene_index` | | ⚠️ **Seshat extension** — put a clip in the Detail view |
 
 - `/live/view/set/selected_track` resolves its index through `song.tracks`, so
@@ -201,30 +203,69 @@ User interface control — selecting tracks, scenes, clips, devices.
 
 ### View extensions (Seshat — not in upstream AbletonOSC)
 
-⚠️ The last two rows do **not** exist in stock AbletonOSC. They are served by
+⚠️ Four rows above do **not** exist in stock AbletonOSC: `show_view`,
+`hide_view`, `get/is_view_visible` and `set/detail_clip`. They are served by
 `abletonosc/view.py` in Seshat's fork (`priv/AbletonOSC`), installed with
 `mix abletonosc.install` (restart Live afterwards) — the only Seshat addresses
-that live in an *upstream* file. Without that install both are unknown and
-silently do nothing.
+that live in an *upstream* file. Without that install all four are unknown: the
+three setters silently do nothing, and the getter never replies.
 
 Upstream can *select* a track, scene, clip or device, but it cannot show the
-pane those live in: `Application.View.show_view` and `song.view.detail_clip`
-have no upstream address. Seshat's view steering needs both — selecting a clip
-nobody can see is not confirmation that anything happened.
+pane those live in, put one away, or say which panes are open at all:
+`Application.View.show_view`, `.hide_view`, `.is_view_visible` and
+`song.view.detail_clip` have no upstream address. Seshat's view steering needs
+the first — selecting a clip nobody can see is not confirmation that anything
+happened — and its view tools need the rest.
 
 - `show_view` takes one of Live's own pane names: `Browser`, `Arranger`,
   `Session`, `Detail`, `Detail/Clip`, `Detail/DeviceChain`. `FollowCam` sends
   `Session`, `Detail/Clip` and `Detail/DeviceChain` after a mutation; the
   `show_view` tool exposes all six, so `Arranger`, `Browser` and bare `Detail`
   are also model-reachable for direct navigation and pre-action sequencing.
+- `hide_view` takes the same six names — the Python passes the name through
+  verbatim — but only two of them genuinely hide anything. Measured against
+  Live 12 Suite, 2026-07-31, reading all six flags back after every send:
+
+  | Sent | What actually happens |
+  |---|---|
+  | `Browser` | browser closes — a true hide |
+  | `Detail` | detail panel closes, and its active tab flag goes false with it — a true hide |
+  | `Session` | Arranger becomes visible instead — a main-view swap, not a hide |
+  | `Arranger` | Session becomes visible instead — a main-view swap, not a hide |
+  | `Detail/Clip` | detail panel stays open, flips to `Detail/DeviceChain` |
+  | `Detail/DeviceChain` | detail panel stays open, flips to `Detail/Clip` |
+
+  Seshat's `hide_view` **tool** therefore offers only `Browser` and `Detail`:
+  the address is silent, so a name that merely swaps or does nothing would be
+  an undetectable no-op. Switching between Session and Arrangement is
+  `show_view`'s job, and closing the detail panel is bare `Detail`.
+- `get/is_view_visible` takes any of the six and answers for all of them,
+  including the sub-views. `Detail/Clip` and `Detail/DeviceChain` mean "the
+  detail panel is open **and** that tab is active": exactly one of them reads 1
+  while `Detail` reads 1, and both read 0 when the panel is hidden.
+  `Session` and `Arranger` measured strictly complementary — never both 1, never
+  both 0 — so the main view can be derived from the pair, and
+  `focused_document_view` is not needed.
 - `set/detail_clip` puts `song.tracks[track_index].clip_slots[scene_index]`'s
   clip into the Detail view. Pair it with `show_view Detail/Clip` to open the
   note editor on it.
-- **Both are silent**, like upstream's setters — an unknown view name or an
-  empty clip slot is logged to Live's `Log.txt` and nothing goes on the wire.
-  They are view steering that follows an already-successful tool, and steering
-  must never fail or delay the thing it follows, so the ok/error envelope the
-  fork's *getters* use deliberately does not apply.
+- **The three setters are silent**, like upstream's setters — an unknown view
+  name or an empty clip slot is logged to Live's `Log.txt` and nothing goes on
+  the wire. `show_view` and `set/detail_clip` are view steering that follows an
+  already-successful tool, and steering must never fail or delay the thing it
+  follows, so the ok/error envelope the fork's *getters* use deliberately does
+  not apply. `hide_view` is silent for consistency with them, and is verified
+  instead from the Elixir side by reading `get/is_view_visible` back.
+- **`get/is_view_visible` always replies**, in that envelope, echoing the name
+  it was asked about, because a caller waits on it: silence must mean only
+  "the fork isn't installed". An unrecognised name is a fast `"error"` reply
+  ("The specified View Identifier does not exist" — Live raises here, unlike
+  `show_view`, which ignores one), never a guard timeout. The boolean is an int
+  on the wire, 1 or 0, like every other AbletonOSC boolean.
+- **Read-after-write ordering holds.** A `hide_view` immediately followed by a
+  read reflects the hide: AbletonOSC processes datagrams sequentially on Live's
+  timer thread, and roughly thirty send-then-read-six cycles in the 2026-07-31
+  measurement produced zero stale reads. No sleep is needed between them.
 
 ---
 

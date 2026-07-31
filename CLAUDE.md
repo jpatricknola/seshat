@@ -109,7 +109,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
 | [lib/seshat_web/live/assistant_live.ex](lib/seshat_web/live/assistant_live.ex) | Chat UI |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
-| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (two view addresses in `view.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
+| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (four view addresses in `view.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
 | [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies the fork wholesale into Live's Remote Scripts |
 
 ## Adding a tool
@@ -131,7 +131,7 @@ collects the conventions and gotchas the address tables don't show (ports,
 irregular naming, listener pattern, ordering hazards).
 
 Some of those addresses are ours, not upstream's — they exist only in the fork
-at `priv/AbletonOSC`, in three handler modules of our own plus two additions to
+at `priv/AbletonOSC`, in three handler modules of our own plus four additions to
 an upstream file (and one upstream file whose *behaviour* we change, below):
 
 - `/live/browser/*` — `abletonosc/browser.py`. Upstream has no browser API at all.
@@ -144,9 +144,13 @@ an upstream file (and one upstream file whose *behaviour* we change, below):
   `abletonosc/song_structure.py`. Addresses of ours living under a
   prefix upstream otherwise owns; upstream can only listen to *scalar* song
   properties.
-- `/live/view/show_view` and `/live/view/set/detail_clip` — added to upstream's
-  own `abletonosc/view.py`. Upstream can *select* a track, scene, clip or device
-  but cannot show the pane it lives in, which is what the follow cam needs.
+- `/live/view/show_view`, `/live/view/hide_view`,
+  `/live/view/get/is_view_visible` and `/live/view/set/detail_clip` — added to
+  upstream's own `abletonosc/view.py`. Upstream can *select* a track, scene,
+  clip or device but cannot show the pane it lives in (what the follow cam
+  needs), put a pane away, or say which panes are open. The three setters are
+  silent; the getter always replies in the ok/error envelope, because a caller
+  waits on it.
 
 Any future address upstream doesn't provide goes into one of those files the
 same way. `vendored_addresses_test` is the tripwire in both directions: every
@@ -206,7 +210,8 @@ on this machine everything still works.
 built yet, written as a priority-ordered issue queue — #1 is the biggest win,
 work top to bottom. The play-and-keep arc (capture MIDI, session record, clip
 cleanup, quantize, groove/swing) is now complete, and so is the follow cam's
-missing half (`show_view`); `start_new_project` leads the queue next. Keep it
+missing half (`show_view`, `hide_view`, `get_view_state`); `start_new_project`
+leads the queue next. Keep it
 current: when something ships, run the `/ship` skill
 (or by hand: remove its issue there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
@@ -228,7 +233,21 @@ carries both halves: creates, writes and deletes still leave their target
 selected and shown after the fact (the existing follow cam, unchanged), and
 other view-specific actions — a launch, a device tweak, the loop brace —
 call `show_view` first so the user watches the change happen instead of
-being told where to look afterwards. Groove/swing shipped 2026-07-31, closing the play-and-keep
+being told where to look afterwards. `hide_view` and `get_view_state` shipped
+2026-07-31 too, closing the loop `show_view` left open the same day: two more
+additions to the fork's `abletonosc/view.py` (a getter,
+`/live/view/get/is_view_visible`, plus the `hide_view` setter), and two more
+tools. `hide_view`'s enum is deliberately smaller than `show_view`'s six
+names — only `Browser` and `Detail`, the two panes measured against live
+Ableton to actually close (Session and Arranger are a pair with no "closed"
+state, and hiding either `Detail/Clip` or `Detail/DeviceChain` only flips the
+detail panel's tab, not closes it) — and every `hide_view` call reads the
+pane's visibility back afterward and reports honestly if it is still
+showing, rather than trusting a silent setter. `get_view_state` reads all six
+pane names through the new getter and folds them into one prose summary,
+stating uncertainty rather than guessing on the readings Live can report
+incoherently (both `Detail/Clip` and `Detail/DeviceChain` true at once, or
+neither). Groove/swing shipped 2026-07-31, closing the play-and-keep
 arc: `set_swing_amount` and `set_groove_amount`, both mirrored into
 `Seshat.Session.State` and rendered in `get_session_state`'s song line.
 `swing_amount` didn't exist on the wire at all — it required a one-line

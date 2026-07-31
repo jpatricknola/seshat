@@ -271,38 +271,72 @@ touches the bridge" above) — item 1 below is what catches a skipped reinstall.
 change touches `Session.State`'s refresh" below — nothing further to add
 there.)
 
-## If the change touches `show_view`
+## If the change touches the view tools (`show_view` / `hide_view` / `get_view_state`)
 
-`/live/view/show_view` **never replies** — a pane that appears and a name Live
-rejects are both silent on the wire, so nothing in `mix test` can confirm a
-pane actually showed. This is also the first tool to send three of the six
-names at all: the follow cam has only ever sent `Session` and the two
-`Detail` children, never `Arranger`, `Browser`, or bare `Detail`.
+The three setters — `/live/view/show_view`, `/live/view/hide_view`,
+`/live/view/set/detail_clip` — **never reply**, so a pane that appears and a
+name Live rejects are identical on the wire and nothing in `mix test` can
+confirm anything showed. `get_view_state` is what changes that: since
+2026-07-31 `/live/view/get/is_view_visible` reads each pane's real visibility
+back out of Live, so most of this section is now **self-checking** — Seshat
+confirms its own view changes and no human has to watch the screen. Run it with
+Ableton open all the same: the addresses only exist in the fork, so a missing
+`mix abletonosc.install` (or a Live that wasn't restarted) is exactly what
+items 1–3 catch.
 
-1. **All six panes.** Call `show_view` for `Browser`, `Arranger`, `Session`,
-   `Detail`, `Detail/Clip`, and `Detail/DeviceChain` in turn; confirm each one
-   visually appears. This is the plan's open question — a name that doesn't
-   work gets removed from the enum, not hidden behind a fallback.
-2. **Show-first sequencing.** Start in Arrangement, ask naturally to launch a
+1. **Visibility matrix — no human eyes needed.** For each of `Browser`,
+   `Arranger`, `Session`, `Detail`, `Detail/Clip`, `Detail/DeviceChain`: call
+   `show_view(name)`, then `get_view_state`, and confirm the summary reports
+   that pane. This finally covers bare `Detail`, which the 2026-07-31 run had
+   to leave unconfirmed because closing the detail panel needed a keystroke —
+   now `hide_view(Detail)` closes it and the getter proves it closed. Two
+   readings the summary derives rather than reads, worth eyeballing once
+   against the screen: "Main view" comes from the Session/Arranger pair, and
+   the detail panel's named tab comes from the `Detail/*` flags.
+2. **Hide-set tripwire.** For each name in `hide_view`'s enum (`Browser`,
+   `Detail`): `get_view_state`, `hide_view(name)`, `get_view_state` again. The
+   pane must go from present to absent. A name whose visibility doesn't flip
+   means Live's hide set moved in this version and the enum needs revisiting —
+   the same dial-check reasoning as `set_groove_amount`. `hide_view` reads
+   itself back, so a stuck pane comes out as an honest error rather than a
+   false success; if it reports one, that *is* the finding.
+3. **Honest failure, only while the old copy is still installed.** Before
+   reinstalling during implementation, call `hide_view` and `get_view_state`
+   against the still-old AbletonOSC and confirm both come back — after the 2s
+   guard timeout — with the "run `mix abletonosc.install` and restart Ableton
+   Live" hint rather than a bare timeout. If the new copy is already installed,
+   report this check as **not reproduced**; do not downgrade and restart Live
+   just to manufacture it. A raw `Transport.query` is not a substitute: it
+   bypasses the handler wording this check exists to verify.
+4. **Show-first sequencing.** Start in Arrangement, ask naturally to launch a
    named Session clip. Expect `show_view(Session)` before `fire_clip` — the
-   grid appears, then the launch happens on screen.
-3. **No redundant pre-show.** Start in Session, ask to change a clip's loop
+   grid appears, then the launch happens on screen — and expect it sent
+   *directly*, with no `get_view_state` pre-check: six serialized reads to
+   avoid one harmless idempotent send would only delay the action.
+5. **No redundant pre-show.** Start in Session, ask to change a clip's loop
    brace or notes. Expect no `show_view(Detail/Clip)` beforehand — the
    existing follow cam already leaves the edited clip on screen right after
    the write.
-4. **Selected-track pane.** With a *different* track selected, ask to change
+6. **Selected-track pane.** With a *different* track selected, ask to change
    a device parameter on a named track. Expect `select_track` then
    `show_view(Detail/DeviceChain)` before the mutation — `set_device_parameter`
    is the one mutation with no follow cam behind it, so a skipped pre-show
    here shows the wrong track's chain.
-5. **Arrangement pre-show.** Start in Session, ask to set the song loop
+7. **Arrangement pre-show.** Start in Session, ask to set the song loop
    brace. Expect `show_view(Arranger)` before `set_loop`.
-6. **Pure navigation.** Ask only "show me the timeline" and "show me the
+8. **Pure navigation.** Ask only "show me the timeline" and "show me the
    notes again." Expect `show_view` alone — no invented follow-up mutation,
    no keyboard instructions.
-7. **Idempotent re-show.** Repeat a request while its destination is already
-   open. Confirm the duplicate `show_view` call doesn't toggle away or
-   disturb selection.
+9. **Reading before re-showing.** With Live's browser already open, ask "show
+   me the browser." Expect `get_view_state` first and *no* redundant
+   `show_view` — the answer says it is already open. This is the half of the
+   re-show policy that item 4 deliberately excludes; both must hold at once.
+10. **Hiding in words.** Ask "hide the browser, I need the room" and, in a
+    separate turn, "close the detail panel." Expect `hide_view(Browser)` and
+    `hide_view(Detail)` respectively — not a keystroke instruction, and not
+    `show_view` of something else. Then ask "what am I looking at?" and expect
+    `get_view_state` with an answer naming panes in the user's vocabulary
+    ("Session view, browser closed"), never tool names or raw flags.
 
 ## If the change touches the recording tools (`record_clip` / `stop_recording`)
 
@@ -537,8 +571,8 @@ Then the behaviours, each tied to a rule and to where that rule now lives:
    whether or not this rule survives. Pre-action: while Live shows Arrangement,
    ask to launch a named Session clip. Expect `show_view(Session)` called
    before `fire_clip`, so the launch happens visibly instead of off screen
-   (see "If the change touches `show_view`" above for the full sequencing
-   check).
+   (see "If the change touches the view tools" above for the full sequencing
+   check, including when the model should read `get_view_state` first instead).
 4. **Speak music, not plumbing** (instructions + `get_session_state`) — any
    multi-track exchange. Expect track names or 1-based numbers throughout,
    and no tool names, raw indices, tags, or catalog internals leaking into

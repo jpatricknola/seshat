@@ -790,9 +790,13 @@ defmodule Seshat.Tools.Definitions do
           "user sees the action happen: Session = Session view / clip or scene " <>
           "grid; Arranger = Arrangement view / timeline; Detail/Clip = clip or " <>
           "note editor; Detail/DeviceChain = device chain; Browser = Live's " <>
-          "browser; Detail = the bottom detail panel. Seshat cannot read the " <>
-          "currently visible pane, so call this even if the requested pane may " <>
-          "already be open; showing it again is harmless. Typical sequences: " <>
+          "browser; Detail = the bottom detail panel. For an explicit " <>
+          "navigation request, use get_view_state first when the pane may " <>
+          "already be visible and do not re-show it if it is; for " <>
+          "time-sensitive pre-action steering, show the pane directly — " <>
+          "showing an already-open pane is harmless. get_view_state reads what " <>
+          "is visible from Live, and hide_view puts a pane away. " <>
+          "Typical sequences: " <>
           "show Session then launch/stop a clip or scene; show Arranger then " <>
           "change the song loop brace; select the target track (select_track) " <>
           "then show Detail/DeviceChain then change a device parameter — the " <>
@@ -820,6 +824,43 @@ defmodule Seshat.Tools.Definitions do
         },
         required: ["view"]
       }
+    },
+    %{
+      name: "hide_view",
+      description:
+        "Hide a pane in Ableton Live — 'hide the browser, I need the room', " <>
+          "'close the detail panel'. Only panes Live can truly put away are " <>
+          "accepted: Browser = Live's browser; Detail = the bottom detail panel, " <>
+          "whichever editor it is showing. Session and Arranger are the main " <>
+          "view and cannot be hidden — switching between them is show_view's " <>
+          "job — and hiding Detail/Clip or Detail/DeviceChain would only flip " <>
+          "the detail panel to its other tab, so to close the panel hide " <>
+          "Detail. After hiding, Seshat reads the pane's visibility back from " <>
+          "Live and reports honestly if it is still showing. Bring a pane back " <>
+          "with show_view.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "view" => %{
+            type: "string",
+            enum: ["Browser", "Detail"],
+            description: "Live's exact pane name"
+          }
+        },
+        required: ["view"]
+      }
+    },
+    %{
+      name: "get_view_state",
+      description:
+        "Report which of Live's panes are visible right now, read directly from " <>
+          "Live: the main view (Session or Arrangement), whether Live's browser " <>
+          "is open, and whether the bottom detail panel is open and which " <>
+          "editor it shows (clip editor or device chain). Use it to answer " <>
+          "'what am I looking at?', to decide whether a pane needs showing or " <>
+          "hiding, and to confirm a view change actually happened. Reads live " <>
+          "state on every call; nothing is cached.",
+      parameters: %{type: "object", properties: %{}, required: []}
     },
     %{
       name: "select_track",
