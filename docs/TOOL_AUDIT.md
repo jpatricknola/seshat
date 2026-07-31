@@ -64,10 +64,10 @@ _Living doc · MCP design review · one verdict per tool · 25 Jul 2026 — upda
 > three new vendored OSC addresses. See
 > [archive/PLAN_follow_cam.md](archive/PLAN_follow_cam.md).
 
-> **Superseded in part, 2026-07-30 — an external review found correctness
-> defects this audit missed.** See
-> [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md), the active correctness
-> backlog. Three verdicts below were wrong and are corrected inline: the
+> **Superseded in part, 2026-07-30 — a 2026-07-29 external review found
+> correctness defects this audit missed.** Its surviving items are ranked in
+> [ROADMAP.md](ROADMAP.md). Three verdicts below were wrong and are corrected
+> inline: the
 > "0 correctness fixes outstanding" line, §03's "Indexing is clean — strong",
 > and the `create_track` inventory row. The audit's scope explains the gap
 > rather than excusing it — it reviewed the tool surface as *designed*
@@ -126,7 +126,7 @@ Conventions are strong overall. A few small drifts worth aligning as you grow th
 
 **Minor param drift — Low.** `create_scene` names the position `index`, while every other scene tool uses `scene`. Scalar setters use a generic `value` while booleans use property names (`muted`/`soloed`/`armed`). Both defensible; noting for consistency as the surface grows.
 
-**~~Indexing is clean — strong.~~ ~~CORRECTED 30 Jul — the convention is clean; the *schemas* are not.~~ FIXED 30 Jul — the schemas enforce it now too.** This verdict asked whether the 0-based convention was applied consistently and never asked whether the schemas enforced it. They didn't: `minimum: 0` was present on the newer tools and missing on the older ones (`set_track_pan`, `set_track_volume`, `delete_track`, `duplicate_track`, `set_track_name`), and Python indexes Live's collections directly — so `track: -1` silently operated on the *last* track while the reply echoed "track -1". Finding #3 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md); closed by `Seshat.Tools.Validation`, a schema-driven validator called from `Handlers.call/2` before every dispatch, plus the missing `minimum`/`maximum` bounds added across `Definitions` and the `MCP.Schema` number branch now carrying its ranges through the wire (finding #4). See [archive/PLAN_enforce_tool_ranges.md](archive/PLAN_enforce_tool_ranges.md). The original observation below still holds for the convention itself. 0-based everywhere, consistently documented, with the "'track 1' = index 0" reminder repeated across tools. The user-facing guidance ("refer to tracks by name or 1-based UI number") only appears in `get_session_state` — consider echoing it in the other read tools so the 1-based-to-user rule is never missed.
+**~~Indexing is clean — strong.~~ ~~CORRECTED 30 Jul — the convention is clean; the *schemas* are not.~~ FIXED 30 Jul — the schemas enforce it now too.** This verdict asked whether the 0-based convention was applied consistently and never asked whether the schemas enforced it. They didn't: `minimum: 0` was present on the newer tools and missing on the older ones (`set_track_pan`, `set_track_volume`, `delete_track`, `duplicate_track`, `set_track_name`), and Python indexes Live's collections directly — so `track: -1` silently operated on the *last* track while the reply echoed "track -1". Raised by the 2026-07-29 external review; closed by `Seshat.Tools.Validation`, a schema-driven validator called from `Handlers.call/2` before every dispatch, plus the missing `minimum`/`maximum` bounds added across `Definitions` and the `MCP.Schema` number branch now carrying its ranges through the wire. See [archive/PLAN_enforce_tool_ranges.md](archive/PLAN_enforce_tool_ranges.md). The original observation below still holds for the convention itself. 0-based everywhere, consistently documented, with the "'track 1' = index 0" reminder repeated across tools. The user-facing guidance ("refer to tracks by name or 1-based UI number") only appears in `get_session_state` — consider echoing it in the other read tools so the 1-based-to-user rule is never missed.
 
 ---
 

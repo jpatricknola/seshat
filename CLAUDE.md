@@ -266,21 +266,16 @@ unknown rather than a guess (shipped 2026-07-30). The OSC network boundary
 itself is now fully hardened — AbletonOSC's loopback bind, the browser-export
 path restriction, and the Elixir listener/decoder hardening (loopback bind,
 source validation, a strict non-crashing decoder in `Seshat.OSC.Message`) all
-shipped 2026-07-30. Two sibling docs hold the *evidence* behind the remaining
-items, not a competing queue:
+shipped 2026-07-30. One sibling doc holds the *evidence* behind the remaining
+security items, not a competing queue:
 
-- [REPOSITORY_REVIEW.md](REPOSITORY_REVIEW.md) — the 2026-07-29 external review.
-  Each confirmed defect with file:line evidence and a **Reviewer response**
-  recording what we accepted, narrowed, or rejected, plus a declined section.
-  **Read the response before planning a roadmap item that links here** — several
-  of the review's recommendations were rejected for conflicting with settled
-  decisions (structured setter acknowledgements, Python bounds checks, protocol
-  request IDs).
-- [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure, split
-  into **Fix now** (all three items resolved 2026-07-30) and **Deployment-gated**
-  (HTTP auth, production binding, rate limiting — deliberately absent from the
-  queue until something binds beyond loopback or a second user is invited).
-  Check it before loosening a bind or adding an entry point.
+- [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure. Its
+  three open items (HTTP auth, production binding, rate limiting) are all
+  dormant behind one gate and deliberately absent from the queue until
+  something binds beyond loopback or a second user is invited; the OSC-layer
+  work that was reachable before any deployment shipped 2026-07-30 and is
+  summarised there under Resolved. Check it before loosening a bind or adding
+  an entry point.
 
 [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) is a standing design review of the
 whole tool surface — one verdict per tool, plus the coverage gaps that feed

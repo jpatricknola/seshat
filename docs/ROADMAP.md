@@ -10,38 +10,29 @@ detailed plan doc, move that doc to [archive/](archive/) with a status banner.
 
 **So cite an item by its title, never by its rank — including inside this file.**
 A rank is correct only until the next ship, and a stale one doesn't look stale —
-it silently points at a different item. Every cross-reference written by rank has
-already gone wrong at least once ("roadmap #5 and #12" in the smoke-test skill
-meant quantize and browser preview when written; three ships later those ranks
-were two unrelated defects). In-file references used to be exempt on the grounds
-that they renumber together — they don't: inserting one issue on 2026-07-30
-turned up two in-file pointers that were *already* off by one, silently pointing
-at the wrong neighbour. The heading numbers are the ranking and renumber
-wholesale; every reference to an issue is by title. Dated historical records
-([archive/](archive/), validation-run findings) keep whatever rank was true when
-written; they are history, not pointers.
-[archive/](archive/) holds point-in-time plans and decision records — never treat
-those as current.
+it silently points at a different item. Any cross-reference written by rank will quickly become wrong.
 
 Each issue gives the goal, why it's worth building, and the context a plan author
 needs — it is **not** an implementation plan. Plans get written per issue (the
 `/plan` skill) when the work is picked up.
 
-**Two sibling docs hold the evidence, not the queue.** Ranked items that came
-from the 2026-07-29 external review link into them; read the linked section
-before planning one, because several of the review's recommendations were
-verified and then deliberately narrowed or rejected:
+Several items below came from a 2026-07-29 external review. Where its
+recommendation was verified and then deliberately narrowed or rejected, the
+item's planner notes carry that decision — read them before re-proposing the
+original. Findings the review raised that we are **not** acting on are in
+[Deliberately not planned](#deliberately-not-planned), with their
+reconsider-if conditions.
 
-- [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md) — the review itself: each
-  confirmed defect with file:line evidence, a response recording what we accepted
-  and what we declined, and a declined section for findings we are not acting on.
-- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) — security work. Its **Fix now**
-  section is fully resolved as of 2026-07-30: the AbletonOSC loopback bind,
-  the browser export path restriction, and the Elixir listener/decoder
-  hardening all shipped. Its **Deployment-gated** items are *not* in this
-  queue: HTTP authentication, production binding, rate limiting and the
-  multi-user design activate only when something binds beyond loopback or a
-  second person is invited.
+**One sibling doc holds evidence rather than queue:**
+
+- [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) — security work. Everything it
+  still lists is dormant behind a gate and *not* in this queue: HTTP
+  authentication, production binding, rate limiting and the multi-user design
+  activate only when something binds beyond loopback or a second person is
+  invited. The OSC-layer exposure that *was* reachable — the AbletonOSC
+  loopback bind, the browser export path restriction, the Elixir
+  listener/decoder hardening — all shipped 2026-07-30 and is recorded there
+  under Resolved.
 
 The canonical OSC address reference is
 [abletonosc-api-docs.md](abletonosc-api-docs.md). Check it before using any
@@ -238,7 +229,7 @@ matters most.
   combination worth clearing.
 - The LiveView error branch leaves history unchanged; both halves need doing or
   neither helps.
-- Finding #9 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- From the 2026-07-29 external review, accepted as written.
 
 ## #5 · `undo` can revert far more than the last action
 
@@ -289,7 +280,8 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
   milliseconds of empty results inside that window is not observable.
 - **Do this in one pass with "Catalog staleness check"** — same writer, and that
   issue needs a built-at timestamp written there anyway.
-- Finding #8 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- From the 2026-07-29 external review; the durability half accepted, the ETS
+  generation swap declined above.
 
 ## #7 · Catalog staleness check — reindex without being asked
 
@@ -337,7 +329,8 @@ trigger is a stale model-held index.
   the remaining destructive operations and stop.
 - Ranked here rather than higher because the surface is broad — this is the
   slog of the correctness items.
-- Finding #5 in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- From the 2026-07-29 external review; the verify-before-mutate half accepted,
+  structured setter acknowledgements rejected above.
 
 ## #9 · Catalog vocabulary — read tag axes, teach the menu proactively
 
@@ -459,7 +452,8 @@ healthy — the tools simply stop existing, with nothing saying why.
   restarts on abnormal exit only, which is exactly the case described.
 - One line. Do it in passing while touching `application.ex` rather than
   scheduling it.
-- Speculative risk in [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+- Raised as a speculative risk by the 2026-07-29 external review — the failure
+  has not been reproduced, only reasoned from the child spec.
 
 ## #13 · Search eval harness — numbers before opinions
 
@@ -576,8 +570,8 @@ and LiveView process memory grows with it.
 **Planner notes:** capping large tool-result payloads before they enter
 `messages` is the cheap majority of the fix; skip summarising old turns until
 needed. MCP mode is primary and keeps no history in this process, which is why
-this ranks here. Speculative risk in
-[../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md).
+this ranks here. Raised as a speculative risk by the 2026-07-29 external review
+— reasoned from the code, not reproduced.
 
 ## #21 · Device list per track in session state
 
@@ -721,12 +715,45 @@ flow, so this is not an active break.
   [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) for the two triggers that activate
   them. Note that authentication alone does not make Seshat multi-user — one
   transport, one mirror, one Ableton.
-- **Three findings from the 2026-07-29 review were declined** — the vendored
-  Python test harness's import-time reload, the `pythonosc` invalid escape
-  sequence, and `:rest_for_one` for PubSub recovery. Reasons and
-  reconsider-if conditions are in
-  [../REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md)'s declined section; don't
-  re-derive them.
+- **The vendored Python test harness reloads AbletonOSC on import.**
+  `priv/AbletonOSC/tests/__init__.py` sends `/live/api/reload` at module level,
+  outside any fixture, so even `pytest --collect-only` reloads the Remote Script
+  in a live session. Declined 2026-07-30: it is upstream's harness and we never
+  run it — `mix test` only *greps* the vendored Python
+  (`vendored_addresses_test`), and nothing here invokes `pytest`. Fixing it
+  means carrying a divergence in a file we do not execute through every upstream
+  merge. Instead: don't run `pytest` against a Live session that matters.
+  **Reconsider if** we ever adopt the Python suite as part of our own
+  verification.
+- **`pythonosc`'s dispatcher has an invalid escape sequence.**
+  `priv/AbletonOSC/pythonosc/dispatcher.py` uses `'[\w|\+]*'`, which emits a
+  `SyntaxWarning` and treats `|` as a literal class member. Declined 2026-07-30:
+  this is `pythonosc` vendored inside AbletonOSC vendored inside our fork — two
+  levels from code we own — and editing it buys one silenced warning for a
+  `SESHAT.md` divergence entry and a merge conflict surface. **Reconsider if**
+  an Ableton release bumps the bundled Python to a version where this is an
+  error, or if the file needs changing for another reason — then fix it in
+  passing. Upstream `pythonosc` is the right owner.
+- **A PubSub restart would leave `Session.State` permanently unsubscribed.**
+  State subscribes only in `init/1`, and it is a `:one_for_one` sibling of
+  `Phoenix.PubSub`, so a PubSub restart leaves it registered in a dead registry
+  and deaf to OSC broadcasts. The mechanism is real. Declined 2026-07-30 because
+  the offered fix is worse than the disease: `:rest_for_one` at
+  [application.ex:39](../lib/seshat/application.ex#L39) would, given the current
+  child order, restart Transport, Session.State, Catalog, the MCP supervisor
+  **and the Phoenix endpoint** on any PubSub blip — a guaranteed heavy failure
+  traded for a hypothetical one. `Phoenix.PubSub` crashing is close to unheard
+  of. **Reconsider if it is ever actually observed**, and then take the targeted
+  option: monitor PubSub and re-subscribe after replacement.
+  `get_session_state`'s `refresh: true` is already a manual backstop for a
+  mirror that has gone stale for any reason.
+- **The monitored refresh worker for `Session.State`** — an overall deadline
+  plus freshness/connection/last-error metadata, the larger half of the
+  2026-07-29 review's session-refresh finding. Only the fabricated-defaults half
+  shipped (2026-07-30); refresh still runs sequential synchronous OSC calls
+  inside the GenServer. Deferred, not declined: the blocking window is short and
+  has never been observed, and the OSC query queue changed the contention
+  picture anyway. **Reconsider if the blocking window is ever actually seen.**
 - **Arrangement view** — everything Seshat does is Session view. Upstream has
   arrangement addresses (`/live/track/get/arrangement_clips/*`, arrangement
   overdub, song position) — revisit if a real workflow needs the timeline.

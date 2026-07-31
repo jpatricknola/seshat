@@ -1,218 +1,48 @@
-# Security — active work and the deployment gate
+# Security backlog
 
-This doc holds two different things, and the distinction is the whole point:
+Three open items. **All three are dormant** — they describe the HTTP surface,
+which today binds loopback only and is reachable by nobody but this machine's
+user. None of them is worth building until [the gate](#the-gate) fires, and
+when it fires they all activate together.
 
-- **[Fix now](#fix-now)** — the OSC surface was *already* exposed beyond
-  loopback. AbletonOSC bound `0.0.0.0` every time Live ran with the Remote
-  Script installed, and Seshat's own reply socket bound the wildcard address
-  too. **All three items below are resolved as of 2026-07-30** — see the
-  resolved notes on each. This section is now history, not queue.
-- **[Deployment-gated](#deployment-gated)** — the HTTP surface genuinely is
-  dormant. It requires an act of deployment to become reachable, and until then
-  fixing it buys nothing.
+**Scheduling lives in [ROADMAP.md](ROADMAP.md), not here.** The gated items are
+deliberately absent from that queue — putting them there would rank work that
+cannot pay off yet against work that can. This doc holds the evidence, the
+triggers, and the reasoning; the roadmap holds the order.
 
-**Scheduling lives in [ROADMAP.md](ROADMAP.md), not here.** #1 and #2 shipped
-together as one submodule commit and one `mix abletonosc.install`
-(2026-07-30); #3 (Elixir listener and decoder) shipped the same day, entirely
-in `lib/`. The gated items are deliberately absent from that queue. This doc is
-the evidence and the reasoning.
-
-> **Corrected 2026-07-30.** The first version of this doc gated *everything*
-> behind "anything binds beyond loopback", while simultaneously recording that
-> AbletonOSC already binds `0.0.0.0` — a self-refuting gate that deferred three
-> cheap fixes which are reachable right now. The split above is the correction,
-> raised by the original reviewer. The error came from filing the OSC items with
-> the HTTP items because both were "security"; they are not the same shape.
-> **Exposure that already exists is not a deployment concern.**
+The one principle that keeps this honest: **exposure that already exists is not
+a deployment concern.** Anything reachable *right now* belongs in ROADMAP.md as
+ordinary work, not behind a gate. The gate is for surface that requires an act
+of deployment to exist at all. When in doubt, ask whether an attacker could
+reach it today; if yes, it is not gated.
 
 ## The gate
 
-The second section activates when either of these becomes true:
+The queue below activates when **either** of these becomes true:
 
 - **The HTTP endpoint binds beyond loopback** — `MIX_ENV=prod`, a tunnel, a
   reverse proxy, or `ip: {0,0,0,0}` in dev "just to test from my phone".
 - **A second human gets an address to point a client at** — an invited user, a
   collaborator, a demo.
 
-Either trigger activates all of the gated items, not the subset that looks
-relevant. They compose: the missing auth is only reachable because of the public
-bind, and rate limiting is meaningless without either.
-
-Source: the 2026-07-29 external review
-([REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md)), re-verified against the code,
-plus that reviewer's 2026-07-30 response. Ranked by impact-per-effort, matching
-[ROADMAP.md](ROADMAP.md)'s convention.
-
-## What this doc is not
-
-**Correctness bugs with no security dimension do not belong here** — they live in
-[REPOSITORY_REVIEW.md](../REPOSITORY_REVIEW.md), which is the active correctness
-backlog. Several are easy to mistake for security items because they touch the
-same files:
-
-| Finding | Why it isn't a security item |
-|---|---|
-| `mix test` sends real mutations to an open Live set | Damages your own unsaved work. No attacker involved. |
-| Single `pending` slot in `OSC.Transport` corrupts concurrent query/reply | A structure-listener re-read racing a tool call is a same-machine bug. |
-| Missing `minimum: 0` on track/clip/scene indices | The realistic caller is a model hallucinating Python's `-1 == last`. |
-| Numeric bounds dropped in `MCP.Schema` | Bad values come from the model, and API-key mode has no validation layer at all. |
-| `create_track` returns an unverified index | Correctness. |
-| Agent iteration limit discards executed commands | Correctness. |
-| Unbounded LiveView conversation growth | A single local user can exhaust the context window on catalog output alone. |
-
-Malformed-datagram decoding used to appear in this table. It doesn't any more:
-it is one finding with the source-validation work, and that whole finding is now
-item #3 below.
+Either trigger activates **all** of the gated items, not the subset that looks
+relevant. They compose: the missing auth is only reachable because of the
+public bind, and rate limiting is meaningless without either. Shipping #4
+alone past the gate leaves a working attack; shipping #5 alone leaves the
+surface open to anyone already inside the network.
 
 ---
 
-# Fix now
+# The queue
 
-Reachable on any networked machine at the time these were filed. All three are
-resolved (2026-07-30): #1 and #2 in the fork, #3 in `lib/` with no fork
-round-trip.
-
-## #1 · AbletonOSC listens on `0.0.0.0` and retargets replies to the last sender
-
-> **Resolved 2026-07-30.** Shipped alongside #2 in the fork commit that binds
-> `OSCServer`'s default `local_addr` to `127.0.0.1` and stops `process()` from
-> reassigning `self._remote_addr` from the last datagram's source
-> ([priv/AbletonOSC/abletonosc/osc_server.py](../priv/AbletonOSC/abletonosc/osc_server.py)).
-> Plan: [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md)
-> (archived). The finding below is left as written at the time it was filed.
-
-**What's wrong:** [osc_server.py:15](../priv/AbletonOSC/abletonosc/osc_server.py#L15)
-binds the wildcard address, and [osc_server.py:189](../priv/AbletonOSC/abletonosc/osc_server.py#L189)
-reassigns `self._remote_addr` to whoever most recently sent a packet, so any
-sender can redirect the listener push stream to itself. There is no
-authentication at this layer at all — the Live API is directly exposed to
-anything that can reach UDP 11000.
-
-**Why it is first:** it is the exposure that makes #2 remotely reachable, and
-it is one line. Do not count on the macOS application firewall as a mitigation —
-relying on it is the same reasoning this correction exists to remove.
-
-**This is upstream's deliberate design, not a bug.** It is how people drive Live
-from a TouchOSC iPad; upstream's own comment acknowledges the trade
-("prevents registering listeners from different IPs"). Seshat needs none of it —
-confirmed 2026-07-30 that nothing else here speaks OSC to Live. (A Maschine MK3,
-planned as a controller, is USB MIDI end to end and is unaffected.)
-
-**Fix:** bind `127.0.0.1` and drop the reply-address retargeting; Seshat's reply
-port is fixed at 11001 on localhost, so the dynamic behaviour is pure liability.
-
-**Cost to carry:** this *changes* upstream behaviour rather than extending it, so
-unlike our other divergences it will conflict on merges. Record it in the fork's
-`SESHAT.md`. Needs the two-commit fork sequence plus `mix abletonosc.install`
-and a Live restart — see [.claude/rules/osc.md](../.claude/rules/osc.md).
-
-**If a networked OSC controller is ever wanted**, make the bind address a
-constant in the fork rather than reverting to the wildcard.
-
-**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md)
-(archived) — shared with the browser-export restriction so both fork changes
-landed in one install.
-
-**Effort:** Low to write, ongoing to carry.
-
-## #2 · `/live/browser/export` writes to any caller-supplied path
-
-> **Resolved 2026-07-30.** Shipped alongside #1. `/live/browser/export` now
-> takes no arguments; Python creates a uniquely named file under
-> `~/.seshat/browser-exports/` (`tempfile.mkstemp`, owner-only directory) and
-> returns the resolved absolute path, and
-> [`Catalog.validated_export_path/2`](../lib/seshat/library/catalog.ex) checks
-> that path is a regular file directly under that root before Elixir reads or
-> deletes it. Plan:
-> [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md)
-> (archived). The finding below is left as written at the time it was filed.
-
-**What's wrong:** [browser.py:228-279](../priv/AbletonOSC/abletonosc/browser.py#L228-L279)
-takes `dest_path` straight off the wire, runs `os.makedirs` on its directory,
-and opens it `"w"`. Arbitrary file overwrite with Ableton Live's privileges.
-
-**Why it stays active even after #1:** #1 makes it unreachable from the network,
-but it remains reachable from any local process, and this is **our** code, not
-upstream's — the fix carries no merge cost. Defence in depth on the one item
-here we fully own.
-
-**Fix:** stop accepting a caller-selected location at all. Python creates a
-unique file under `~/.seshat/browser-exports/` and echoes its resolved absolute
-path; Elixir validates that the returned path is a regular file directly under
-that root before reading or deleting it.
-
-**The scope is two-sided — Elixir changes too.**
-[`Catalog.reindex/1`](../lib/seshat/library/catalog.ex#L240-L255) builds a full
-path under `System.tmp_dir!()`, passes it to
-[`export_browser/1`](../lib/seshat/library/catalog.ex#L879-L893), reads that
-exact path back, and `File.rm`s it in an `after` block. All four steps have to
-move to the new contract. The path validation is load-bearing until the Elixir
-listener/source-hardening item ships: a forged reply must never turn into an
-arbitrary Elixir read or delete.
-
-**Plan:** [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md)
-(archived) — shared with the loopback bind so both fork changes landed in one
-install.
-
-**Effort:** Low, but touches two languages and needs the fork round-trip plus
-`mix abletonosc.install`.
-
-## #3 · The Elixir OSC listener trusts any source and crashes on malformed input
-
-> **Resolved 2026-07-30.** `@socket_opts` in
-> [transport.ex](../lib/seshat/osc/transport.ex) now carries `ip: {127,0,0,1}`,
-> so both the reply-port bind and the deaf-mode ephemeral bind are loopback-only;
-> `handle_info/2` accepts a datagram only from `@host:send_port` — the one
-> endpoint the fork's single `OSCServer` socket can send from — and logs and
-> drops everything else before it can satisfy a pending query or reach the
-> `"osc:in"` topic. [`Message.decode/1`](../lib/seshat/osc/message.ex) returns
-> `{:ok, {address, args}} | {:error, reason}` and validates string terminators,
-> padding length and pad-byte zeroing, the leading `/` on the address (which
-> also rejects bundles), the `,` on the type-tag string, every type tag against
-> the supported six, payload exhaustion, and trailing bytes — so a malformed
-> datagram is a logged drop rather than a transport crash. Plan:
-> [PLAN_harden_osc_listener.md](PLAN_harden_osc_listener.md). The finding below
-> is left as written at the time it was filed.
-
-Originally finding #7 of the review, kept whole — its two halves are one fix in
-one module.
-
-**What's wrong:** [transport.ex:56](../lib/seshat/osc/transport.ex#L56) opens
-11001 with no `ip:` option, so it binds the wildcard, and nothing checks the
-source of an inbound datagram before
-[dispatch/3](../lib/seshat/osc/transport.ex#L133-L143) uses it to satisfy a
-pending query or broadcast it into `Session.State`. Separately,
-[message.ex](../lib/seshat/osc/message.ex) decodes with no safe error return:
-`find_null/2` recurses until `:binary.at` raises, `decode_arg/2` has no
-catch-all clause (no `b`, `d`, `h` type tags), and `decode/1` returns a bare
-tuple. Any datagram it can't parse crashes `Transport` and orphans the pending
-caller.
-
-**The crash half needs no attacker.** A music machine is full of OSC-speaking
-software, and a stray broadcast to 11001 is an ordinary accident. That is why
-this is active work rather than gated hardening — the security framing is the
-smaller half of the reason to fix it.
-
-**Fix:** `ip: {127,0,0,1}` in `@socket_opts`; match `_ip`/`_port` in
-`handle_info` against the known AbletonOSC endpoint instead of discarding them;
-make `Message.decode/1` return `{:ok, message}` / `{:error, reason}` and
-validate lengths, type tags, padding and trailing data, logging and dropping
-malformed packets instead of raising.
-
-**Note:** the loopback bind does most of the security work here; source
-validation is belt-and-braces against local processes. The decode hardening is
-the part with independent value.
-
-**Effort:** Low. All in `lib/`, no fork round-trip, and testable without Ableton
-— which none of the other items are.
-
----
-
-# Deployment-gated
-
-Dormant until one of the two triggers above fires. Do not pre-build these.
+Ranked by impact-per-effort, matching [ROADMAP.md](ROADMAP.md)'s convention.
+Numbering starts at #4 because #1–#3 were the pre-gate items, now
+[resolved](#resolved) — the gap is deliberate, so that references in the
+archived plans still point at what they meant.
 
 ## #4 · Nothing authenticates `/mcp` or the assistant UI
+
+**Severity past the gate: critical.** This is the item the gate exists for.
 
 **What's wrong:** [router.ex:13-33](../lib/seshat_web/router.ex#L13-L33) puts
 `live "/", AssistantLive` behind the plain `:browser` pipeline and forwards
@@ -222,38 +52,46 @@ specifically to tell probing MCP clients that there is no OAuth here — the
 absence is deliberate and documented, which is correct for a loopback tool and
 indefensible past the gate.
 
-**Reachable consequences:** `/mcp` is the full destructive tool surface — create,
-delete, rename, overwrite clips, load devices, transport. `/` is worse per
-request: an anonymous visitor drives Live *and* spends the configured Anthropic
-key.
+**Reachable consequences:** `/mcp` is the full destructive tool surface —
+create, delete, rename, overwrite clips, load devices, transport. `/` is worse
+per request: an anonymous visitor drives Live *and* spends the configured
+Anthropic key.
 
 **Fix:** a shared-secret bearer token checked in a plug ahead of both scopes is
-enough for a first version — this is not a product with accounts. The MCP spec's
-OAuth flow is the heavier option and probably premature.
+enough for a first version — this is not a product with accounts. The MCP
+spec's OAuth flow is the heavier option and probably premature.
 
-**Blocked on:** the multi-user decision below.
+**Blocked on:** [the multi-user decision](#the-non-security-blocker-in-the-same-gate)
+below — it determines whether auth guards *access* or *identity*, which changes
+the shape of the fix.
 
 **Effort:** Medium.
 
 ## #5 · Production binds every interface, and starting that way is silent
 
+**Severity past the gate: high** — and it is the most likely way the gate fires
+*by accident*, since it needs no decision from anyone, just a first deploy.
+
 **What's wrong:** [runtime.exs:52-61](../config/runtime.exs#L52-L61) is the
 untouched `phx.new` default — `ip: {0,0,0,0,0,0,0,0}`, all IPv6 interfaces,
-generator comment still attached. Combined with #4 that is the whole tool surface
-open to the network, and nothing warns.
+generator comment still attached. Combined with #4 that is the whole tool
+surface open to the network, and nothing warns.
 
-**Why this one really is dormant:** it applies only under `MIX_ENV=prod`, which
-this project has never run. Dev binds loopback
+**Why it is still dormant:** it applies only under `MIX_ENV=prod`, which this
+project has never run. Dev binds loopback
 ([dev.exs:12](../config/dev.exs#L12)).
 
 **Fix:** default prod to loopback, and **refuse to boot** when a non-loopback
-bind is configured without an auth secret present. Fail-closed is the point — the
-failure mode being guarded against is someone deploying without reading this
-file.
+bind is configured without an auth secret present. Fail-closed is the point —
+the failure mode being guarded against is someone deploying without reading
+this file.
 
 **Effort:** Low.
 
 ## #6 · No rate limiting or request-size caps
+
+**Severity past the gate: medium.** Denial of service against a single-user
+music tool, not data loss — but the expensive calls are unusually expensive.
 
 **What's wrong:** nothing bounds request rate or body size on `/mcp` or the
 LiveView. A single expensive call is enough to matter here: `reindex_library`
@@ -261,8 +99,8 @@ walks Live's whole browser on the UI thread and freezes it for up to a minute,
 and `search_library` full-scans ETS per query.
 
 **Fix:** body-size limit in the endpoint, and a per-token rate limit on `/mcp`.
-Give the genuinely expensive tools (`reindex_library`, browser export) a stricter
-bucket than the rest.
+Give the genuinely expensive tools (`reindex_library`, browser export) a
+stricter bucket than the rest.
 
 **Effort:** Low-Medium.
 
@@ -278,10 +116,24 @@ whose track is whose.
 
 Whatever "inviting other users" turns out to mean — one host with guest
 observers, or per-user Ableton instances — that shape has to be decided before
-#4 can be specced, because it determines whether auth guards *access* or
-*identity*.
+#4 can be specced.
 
 ---
+
+## What belongs here, and what doesn't
+
+**Correctness bugs with no security dimension do not belong here** — they live
+in [ROADMAP.md](ROADMAP.md), which ranks them alongside everything else. Several
+are easy to mistake for security items because they touch the same files:
+
+| Finding | Why it isn't a security item |
+|---|---|
+| Agent iteration limit discards executed commands | Correctness. |
+| Unbounded LiveView conversation growth | A single local user can exhaust the context window on catalog output alone. |
+
+The general shape: a bad value reaching a tool comes from **the model**, not an
+attacker, so bounds and index validation are correctness work no matter how
+much they read like input sanitisation.
 
 ## Already in place
 
@@ -296,14 +148,36 @@ Not to be re-litigated when this queue is picked up:
   [dev.exs:59](../config/dev.exs#L59).
 - **`Handlers` is the single dispatch point** for both entry modes, so an auth
   or validation layer has exactly one seam to cover rather than two.
+- **The OSC layer is loopback-only end to end** — see [Resolved](#resolved).
 
 ## Deliberately not planned
 
 - **Auth on the OSC layer itself.** OSC has no authentication story worth
   building on. If Seshat ever needs remote control, it goes behind the
-  authenticated HTTP gateway (#4) with OSC staying loopback-only (#1, #3) — not
-  a homegrown token in a UDP packet.
+  authenticated HTTP gateway (#4) with OSC staying loopback-only — not a
+  homegrown token in a UDP packet.
 - **Sandboxing the Remote Script.** It runs inside Live's process by definition;
   there is nothing to sandbox it from.
 - **Signing or verifying the catalog file.** `~/.seshat/catalog.json` is
   local-user data with the same trust level as the rest of the home directory.
+
+---
+
+## Resolved
+
+Kept short on purpose — the reasoning lives in the archived plans linked on each
+row. All three came from the 2026-07-29 external review, and all three were
+reachable *before* any deployment, which is why they were never gated.
+
+| # | Finding | Resolved | Where |
+|---|---|---|---|
+| #1 | AbletonOSC bound `0.0.0.0:11000` and retargeted its reply stream to whichever host last sent a datagram | 2026-07-30 | Fork: [osc_server.py](../priv/AbletonOSC/abletonosc/osc_server.py) binds `127.0.0.1` and `process()` no longer reassigns `_remote_addr`. Plan: [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md) |
+| #2 | `/live/browser/export` opened any caller-supplied path with Live's privileges | 2026-07-30 | Fork: the address now takes no arguments and writes under `~/.seshat/browser-exports/`; `Catalog.validated_export_path/2` checks the returned path. Same plan as #1 |
+| #3 | The Elixir listener bound the wildcard, trusted any source, and crashed on a malformed datagram | 2026-07-30 | [transport.ex](../lib/seshat/osc/transport.ex) binds loopback and accepts datagrams only from the fork's endpoint; [message.ex](../lib/seshat/osc/message.ex) is a strict non-crashing decoder. Plan: [PLAN_harden_osc_listener.md](archive/PLAN_harden_osc_listener.md) |
+
+Two of these carry ongoing cost worth remembering. #1 **changes** upstream
+behaviour rather than extending it, so it will conflict on an AbletonOSC merge
+— `vendored_addresses_test` greps for it because losing it would be completely
+invisible. And if a networked OSC controller is ever genuinely wanted, the move
+is to make the bind address a constant in the fork, never to revert to the
+wildcard.
