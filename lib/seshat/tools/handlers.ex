@@ -1194,10 +1194,19 @@ defmodule Seshat.Tools.Handlers do
         do: "key unknown",
         else: "key: #{Pitch.pitch_class_name(song.root_note)} #{song.scale_name}"
 
-    unknown? =
-      is_nil(song.tempo) or signature_unknown? or is_nil(song.is_playing) or key_unknown?
+    # Raw floats, not percentages: the house rendering for volume/pan/sends, and
+    # it keeps the number the model reads equal to the number set_groove_amount
+    # and set_swing_amount accept.
+    groove =
+      if is_nil(song.groove_amount), do: "groove unknown", else: "groove #{song.groove_amount}"
 
-    {Enum.join([tempo, signature, playing, key], ", "), unknown?}
+    swing = if is_nil(song.swing_amount), do: "swing unknown", else: "swing #{song.swing_amount}"
+
+    unknown? =
+      is_nil(song.tempo) or signature_unknown? or is_nil(song.is_playing) or key_unknown? or
+        is_nil(song.groove_amount) or is_nil(song.swing_amount)
+
+    {Enum.join([tempo, signature, playing, key, groove, swing], ", "), unknown?}
   end
 
   @doc """
@@ -1491,6 +1500,38 @@ defmodule Seshat.Tools.Handlers do
     case Transport.send_message("/live/song/set/tempo", [bpm / 1.0]) do
       :ok -> {:ok, "Set tempo to #{bpm} BPM"}
       {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  # `/live/song/set/swing_amount` is fork-only and, like every setter, silent —
+  # a Remote Scripts copy that predates the fork pin drops it on the floor
+  # indistinguishably from success. There is no no-change branch to hang the
+  # hint on, so it rides the success reply; `get_session_state` showing "swing
+  # unknown" is the corroborating symptom, since the getter is equally absent.
+  defp do_call("set_swing_amount", %{"amount" => amount}) do
+    case Transport.send_message("/live/song/set/swing_amount", [amount / 1.0]) do
+      :ok ->
+        {:ok,
+         "Set the global swing amount to #{amount}. Swing is applied when notes " <>
+           "are quantized — quantize the clip to hear it. If nothing changes even " <>
+           "after quantizing, the installed AbletonOSC may predate swing support: " <>
+           "run mix abletonosc.install and restart Live."}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
+  end
+
+  defp do_call("set_groove_amount", %{"amount" => amount}) do
+    case Transport.send_message("/live/song/set/groove_amount", [amount / 1.0]) do
+      :ok ->
+        {:ok,
+         "Set the global groove amount to #{amount}. This scales grooves already " <>
+           "assigned to clips from the Groove Pool — clips without a groove are " <>
+           "unaffected."}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 

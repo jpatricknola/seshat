@@ -15,7 +15,9 @@ defmodule Seshat.Session.StateTest do
           time_sig_denominator: 4,
           is_playing: false,
           root_note: 0,
-          scale_name: "Major"
+          scale_name: "Major",
+          groove_amount: nil,
+          swing_amount: nil
         },
         tracks: [],
         return_tracks: [],
@@ -61,6 +63,33 @@ defmodule Seshat.Session.StateTest do
       assert state.song.scale_name == "Dorian"
       assert state.song.tempo == 120.0
       assert state.song.time_sig_numerator == 4
+    end
+
+    # The listener echo is the only verification channel these two setters have:
+    # /live/song/set/* never replies, so a push landing here is what proves the
+    # value took. `swing_amount` additionally comes from the fork's song.py.
+    test "records a new swing amount" do
+      state = push(state(), "/live/song/get/swing_amount", [0.25])
+
+      assert state.song.swing_amount == 0.25
+    end
+
+    test "records a new groove amount" do
+      state = push(state(), "/live/song/get/groove_amount", [1.3])
+
+      assert state.song.groove_amount == 1.3
+    end
+
+    test "swing and groove changes leave the rest of the song state alone" do
+      state =
+        state()
+        |> push("/live/song/get/swing_amount", [0.16])
+        |> push("/live/song/get/groove_amount", [+0.0])
+
+      assert state.song.swing_amount == 0.16
+      assert state.song.groove_amount == +0.0
+      assert state.song.tempo == 120.0
+      assert state.song.scale_name == "Major"
     end
 
     test "still handles the properties that were already listened to" do

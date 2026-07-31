@@ -235,6 +235,41 @@ of the beat, at least one pair of same-pitch notes close together.
 10. **Follow cam.** The quantized clip is left selected with the note editor
     open — the notes snapping on screen *is* the confirmation.
 
+## If the change touches `set_swing_amount` / `set_groove_amount`
+
+`swing_amount` is fork-only — one `properties_rw` line added to
+`priv/AbletonOSC/abletonosc/song.py` — so a Remote Scripts copy that predates
+the fork pin makes `/live/song/set/swing_amount` silently a no-op, indistinguishable
+from success, same as every other silent setter. `groove_amount` is upstream
+and needs no reinstall. If this branch touched `priv/AbletonOSC` at all, run
+`mix abletonosc.install` and restart Live first (see "First, if the change
+touches the bridge" above) — item 1 below is what catches a skipped reinstall.
+
+1. **First:** `get_session_state` shows numeric groove *and* swing values, not
+   "unknown". Live 12 Suite has `Song.swing_amount`, so "swing unknown" here
+   means the wire, not the property — almost certainly the fork wasn't
+   reinstalled or Live wasn't restarted. Fix that before anything else; every
+   item below depends on it.
+2. `set_swing_amount 0.25`, then `get_session_state` **without** `refresh:
+   true` — the mirror shows 0.25 via the listener echo, not a fresh query.
+3. Set swing, then `quantize_clip` at `"1/8"` on a straight clip — notes land
+   *off* the straight grid on swung positions (the end-to-end "make it
+   swing"; also exercises `quantize_clip`'s own smoke item 4 from the other
+   side). Judge by ear whether 0.10–0.20 reads as "subtle" — if not, the fix
+   is `set_swing_amount`'s description, not the code.
+4. Assign a groove to a clip by hand in Live, then `set_groove_amount 0.0`,
+   then `1.0`, then `1.3` — audible change, and the Groove Pool's Amount dial
+   follows: expect the dial to read **100%** at 1.0 and **130%** at 1.3.
+   Anything else means the mapping moved in this Live version and
+   `set_groove_amount`'s schema max needs revisiting.
+5. `set_groove_amount` with **no** grooves assigned anywhere in the set —
+   nothing changes audibly, and the model's reply (fed by the tool
+   description) says so rather than promising swing.
+
+(Groove and swing already appear in the unknown-state field list in "If the
+change touches `Session.State`'s refresh" below — nothing further to add
+there.)
+
 ## If the change touches the recording tools (`record_clip` / `stop_recording`)
 
 These shipped 2026-07-29 having **never executed against Live** — the only
@@ -402,10 +437,10 @@ so read both before starting:
 1. **Force a failed refresh.** `get_session_state` with `refresh: true`, once →
    the timeout error from `maybe_refresh/1` ("Refreshing from Ableton timed
    out"). The GenServer is **still refreshing** when that error arrives: against
-   a dead Ableton `do_refresh/1` takes roughly 37s (six song queries at 5s each,
-   the 5s `num_tracks` probe, the 2s returns probe) while the caller gives up at
-   30s, so about 7s of it remain.
-2. **Read again immediately** (inside those ~7s), plain, **no** refresh → the
+   a dead Ableton `do_refresh/1` takes roughly 47s (eight song queries at 5s
+   each, the 5s `num_tracks` probe, the 2s returns probe) while the caller
+   gives up at 30s, so about 17s of it remain.
+2. **Read again immediately** (inside those ~17s), plain, **no** refresh → the
    mid-refresh error: "The session mirror did not answer — it may be mid-refresh
    against an unresponsive Ableton. Try again shortly". The call queues behind
    the running refresh and exits its own 5s call timeout. **This is a required
@@ -414,8 +449,9 @@ so read both before starting:
    window the call simply succeeds; retry from step 1 rather than treating that
    success as a failure.
 3. **Wait ≥10s, then read again**, plain, no refresh → the unknown-state reply.
-   Expect tempo, time signature, key and playing state all reported unknown, the
-   track list reported unknown-**not**-empty, and the trailing explanation
+   Expect tempo, time signature, key, playing state, groove amount and swing
+   amount all reported unknown, the track list reported unknown-**not**-empty,
+   and the trailing explanation
    sentence ("Unknown values mean Ableton did not answer…") present **exactly
    once**. **It must not say 120 BPM, 4/4, C Major, or list the previous set's
    tracks** — those four are the fabrications this behaviour exists to remove,

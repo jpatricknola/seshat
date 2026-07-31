@@ -310,6 +310,42 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     end
   end
 
+  # `swing_amount` is the same shape of blind spot one file over: song.py builds
+  # its addresses in a loop (`"/live/song/set/%s" % prop`), so the literal-grep
+  # `registered_addresses/1` can't see them, and `/live/song/` is a prefix
+  # upstream owns, so the Elixir-side literals aren't swept into
+  # `used_addresses` either. song.py therefore deliberately does *not* join
+  # @handler_files, and these addresses deliberately do *not* join
+  # @vendored_song_addresses — either would make the checks above under-report
+  # and fail falsely.
+  describe "the swing_amount property on the song handler" do
+    @song_file "priv/AbletonOSC/abletonosc/song.py"
+
+    test "song.py still lists swing_amount among its read/write properties" do
+      contents = File.read!(@song_file)
+
+      assert contents =~ ~s("swing_amount"),
+             """
+             #{@song_file} no longer lists "swing_amount" in properties_rw.
+
+             That single list entry is the whole of /live/song/get/swing_amount,
+             /live/song/set/swing_amount and their listeners — a fork addition
+             upstream does not have (it exposes groove_amount only), so nothing
+             else in this suite can see it. Without it, Seshat's set_swing_amount
+             tool reports success forever while nothing swings, and
+             get_session_state's swing value goes permanently unknown.
+
+             Reinstate it and check SESHAT.md's "Additions to upstream's code".
+             """
+
+      # One entry, not two: the property is registered by a single line in
+      # properties_rw, and a duplicate would mean an upstream merge re-added it
+      # somewhere else — worth looking at rather than silently tolerating.
+      assert length(String.split(contents, ~s("swing_amount"))) == 2,
+             ~s(#{@song_file} mentions "swing_amount" more than once; expected the single properties_rw entry.)
+    end
+  end
+
   # Two deliberate departures from upstream's *behaviour*, neither of which any
   # address-level check can see: upstream's OSC socket binds every interface and
   # retargets its default reply address to whoever spoke last, which handed full,

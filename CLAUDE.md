@@ -204,15 +204,31 @@ on this machine everything still works.
 
 [docs/ROADMAP.md](docs/ROADMAP.md) is the single living list of what's not
 built yet, written as a priority-ordered issue queue — #1 is the biggest win,
-work top to bottom; the play-and-keep arc (capture MIDI, session record, clip
-cleanup) leads. Keep it current: when something ships, run the `/ship` skill
+work top to bottom. The play-and-keep arc (capture MIDI, session record, clip
+cleanup, quantize, groove/swing) is now complete; `show_view` leads the queue
+next. Keep it current: when something ships, run the `/ship` skill
 (or by hand: remove its issue there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-31 its top item is groove/swing, the last step of the play-and-keep
-arc. `set_time_signature` shipped 2026-07-31: one tool sending upstream's
+2026-07-31 its top item is `show_view`, closing the gap where the follow cam
+can only react to a mutation, never be asked to look somewhere or show a pane
+before an action. Groove/swing shipped 2026-07-31, closing the play-and-keep
+arc: `set_swing_amount` and `set_groove_amount`, both mirrored into
+`Seshat.Session.State` and rendered in `get_session_state`'s song line.
+`swing_amount` didn't exist on the wire at all — it required a one-line
+addition to the fork's `song.py` (`properties_rw` generates all four
+get/set/listen handlers from one entry), while `groove_amount` was already
+upstream but re-bounded to 0.0–1.3 against evidence read out of Live 12
+Suite's own shipped Python (Move's transport script clamps and renders it as
+a percentage), correcting the LOM apiref's understated 0.0–1.0. The two tools
+stay deliberately separate rather than merging into one: `groove_amount` only
+scales a groove already assigned to a clip from Live's Groove Pool, which
+Seshat cannot assign (`Clip.groove` is an unserializable LOM object), so its
+description routes the model to `set_swing_amount` plus `quantize_clip`
+instead of promising an effect that groove alone can't deliver on plain MIDI.
+`set_time_signature` shipped 2026-07-31: one tool sending upstream's
 `/live/song/set/signature_numerator` and `_denominator` directly (no fork
 change), with a numerator bounded 1–99 and a denominator restricted to the
 integer enum `{1, 2, 4, 8, 16}` because AbletonOSC's `_set_property` swallows
