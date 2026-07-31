@@ -96,11 +96,13 @@ mixer setters, then `get_session_state`.
    (`set_track_volume`, `set_track_pan`, `set_track_mute`, `set_track_solo`) do
    not; they rely on listener pushes. Every value those seven write now has a
    listener behind it too, so they are the odd ones out.
-2. **Structure pushes.** `song_structure.py` pushes the track and return name
-   list on every add, delete, duplicate or reorder; `reconcile/4` sees the list
-   differ and calls `do_refresh/1`. So "create twenty tracks" queues ~20 full
-   refreshes **without any handler calling `State.refresh/0` at all** —
-   `create_track` is not one of the call sites.
+2. **Structure mutations.** Each `create_*`, `delete_*` or `duplicate_*`
+   operation can request an explicit refresh (`create_track` does so through
+   `Registry.execute/1`), while `song_structure.py` also pushes changed track
+   or return lists that may trigger another refresh through `reconcile/4`.
+   Thus "create twenty tracks" can generate at least twenty refresh requests
+   from one user instruction, potentially with additional structure-triggered
+   requests.
 
 Human typing speed never produces this. What does is one request that fans out
 into many tool calls, which is ordinary: "create twenty tracks", "set up a mix",
@@ -113,15 +115,19 @@ below the public API rather than on it.
   that is in fact responding.
 
 **Planner notes:**
-- **Debounce `do_refresh/1`, not `refresh/0`.** Trailing edge: schedule for ~1s
-  out, reset the timer on each new request, run once after the quiet period.
+- **Add a debounced asynchronous refresh path.** Route `refresh/0` and
+  structure-change refresh requests through it; keep initial setup,
+  `/live/startup` and `refresh_sync/0` immediate. On the trailing edge, schedule
+  for ~1s out, reset the timer on each new request, and run once after the quiet
+  period. Requests received while a refresh is running must produce exactly one
+  additional trailing refresh, so the final mutation is never discarded.
   Leading-edge or "at most once per second" is not enough — a refresh costs more
-  than the window, so work still accumulates. Debouncing the public `refresh/0`
-  would fix trigger 1 and leave trigger 2, which is the case worth fixing.
+  than the window, so work still accumulates.
 - **Take the cheap win first: consider deleting the seven setter refreshes
   outright.** Listeners already push every value they write, so the refresh
-  re-reads the whole session to learn what was arriving anyway. That removes 7
-  of 11 call sites and leaves the debounce guarding a much smaller surface.
+  re-reads the whole session to learn what was arriving anyway. That removes all
+  seven scalar-setter call sites and leaves the debounce guarding a much smaller
+  surface.
   Structural ops (`create_*`, `delete_*`, `duplicate_*`) are the different case —
   they change which objects the listeners are bound to.
 - `refresh_sync/0` stays immediate for `get_session_state(refresh: true)` and
