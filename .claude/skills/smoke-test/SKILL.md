@@ -271,6 +271,39 @@ touches the bridge" above) — item 1 below is what catches a skipped reinstall.
 change touches `Session.State`'s refresh" below — nothing further to add
 there.)
 
+## If the change touches `show_view`
+
+`/live/view/show_view` **never replies** — a pane that appears and a name Live
+rejects are both silent on the wire, so nothing in `mix test` can confirm a
+pane actually showed. This is also the first tool to send three of the six
+names at all: the follow cam has only ever sent `Session` and the two
+`Detail` children, never `Arranger`, `Browser`, or bare `Detail`.
+
+1. **All six panes.** Call `show_view` for `Browser`, `Arranger`, `Session`,
+   `Detail`, `Detail/Clip`, and `Detail/DeviceChain` in turn; confirm each one
+   visually appears. This is the plan's open question — a name that doesn't
+   work gets removed from the enum, not hidden behind a fallback.
+2. **Show-first sequencing.** Start in Arrangement, ask naturally to launch a
+   named Session clip. Expect `show_view(Session)` before `fire_clip` — the
+   grid appears, then the launch happens on screen.
+3. **No redundant pre-show.** Start in Session, ask to change a clip's loop
+   brace or notes. Expect no `show_view(Detail/Clip)` beforehand — the
+   existing follow cam already leaves the edited clip on screen right after
+   the write.
+4. **Selected-track pane.** With a *different* track selected, ask to change
+   a device parameter on a named track. Expect `select_track` then
+   `show_view(Detail/DeviceChain)` before the mutation — `set_device_parameter`
+   is the one mutation with no follow cam behind it, so a skipped pre-show
+   here shows the wrong track's chain.
+5. **Arrangement pre-show.** Start in Session, ask to set the song loop
+   brace. Expect `show_view(Arranger)` before `set_loop`.
+6. **Pure navigation.** Ask only "show me the timeline" and "show me the
+   notes again." Expect `show_view` alone — no invented follow-up mutation,
+   no keyboard instructions.
+7. **Idempotent re-show.** Repeat a request while its destination is already
+   open. Confirm the duplicate `show_view` call doesn't toggle away or
+   disturb selection.
+
 ## If the change touches the recording tools (`record_clip` / `stop_recording`)
 
 These shipped 2026-07-29 having **never executed against Live** — the only
@@ -497,11 +530,15 @@ Then the behaviours, each tied to a rule and to where that rule now lives:
    the shortest complete path, keys located physically ("press Tab, above the
    Caps Lock key"), each step confirmed by what appears on screen. Not a
    lecture, and not an assumption of Live fluency.
-3. **The view follows you** (instructions) — after a `write_midi_notes`, ask
-   "where is it?" Expect a description of what is *already* on screen, not
-   navigation directions. This one is pure instruction: the follow cam moves
+3. **The view follows you** (instructions) — two halves. Post-action: after a
+   `write_midi_notes`, ask "where is it?" Expect a description of what is
+   *already* on screen, not navigation directions — the follow cam moves
    Live's view but tells the model nothing, so its own smoke test passes
-   whether or not this rule survives.
+   whether or not this rule survives. Pre-action: while Live shows Arrangement,
+   ask to launch a named Session clip. Expect `show_view(Session)` called
+   before `fire_clip`, so the launch happens visibly instead of off screen
+   (see "If the change touches `show_view`" above for the full sequencing
+   check).
 4. **Speak music, not plumbing** (instructions + `get_session_state`) — any
    multi-track exchange. Expect track names or 1-based numbers throughout,
    and no tool names, raw indices, tags, or catalog internals leaking into

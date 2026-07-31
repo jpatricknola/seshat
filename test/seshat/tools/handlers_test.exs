@@ -287,6 +287,26 @@ defmodule Seshat.Tools.HandlersTest do
       assert message =~ "Invalid parameters for show_view"
       refute_receive {:osc_out, _, _}
     end
+
+    # @views above is hand-maintained; this tripwire is derived straight from
+    # the schema so a seventh enum value (Open question 1 coming back "Live
+    # renamed a pane") can't add a `Definitions` enum entry without a matching
+    # `view_label/1` clause. Without this, the gap is invisible until runtime:
+    # validation passes the new value through and `do_call/2` raises
+    # FunctionClauseError inside `view_label/1`. Same pattern as
+    # `grid_quantization/1`'s "covers exactly the grids the tool schema
+    # offers" test.
+    test "covers exactly the views the tool schema offers" do
+      offered =
+        Seshat.Tools.Definitions.all()
+        |> Enum.find(&(&1.name == "show_view"))
+        |> get_in([:parameters, :properties, "view", :enum])
+
+      for view <- offered do
+        assert {:ok, _msg} = Handlers.call("show_view", %{"view" => view}),
+               "show_view offers #{inspect(view)} but view_label/1 has no clause"
+      end
+    end
   end
 
   describe "format_browser_items/2" do

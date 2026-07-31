@@ -213,8 +213,10 @@ have no upstream address. Seshat's view steering needs both — selecting a clip
 nobody can see is not confirmation that anything happened.
 
 - `show_view` takes one of Live's own pane names: `Browser`, `Arranger`,
-  `Session`, `Detail`, `Detail/Clip`, `Detail/DeviceChain`. Seshat sends
-  `Session`, `Detail/Clip` and `Detail/DeviceChain`.
+  `Session`, `Detail`, `Detail/Clip`, `Detail/DeviceChain`. `FollowCam` sends
+  `Session`, `Detail/Clip` and `Detail/DeviceChain` after a mutation; the
+  `show_view` tool exposes all six, so `Arranger`, `Browser` and bare `Detail`
+  are also model-reachable for direct navigation and pre-action sequencing.
 - `set/detail_clip` puts `song.tracks[track_index].clip_slots[scene_index]`'s
   clip into the Detail view. Pair it with `show_view Detail/Clip` to open the
   note editor on it.
