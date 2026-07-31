@@ -10,9 +10,8 @@ An issue must state its goal and why it's worth building. Where the value is use
 Ranking criteria is **impact-per-effort**, mission impact weighed against cost. A medium-impact quick win outranks a high-impact slog.  Place the new issue in the appropriate order for its priority.  
 
 **Removing an issue from the roadmap**
-Issue numbers are ranks, not stable identifiers - when something ships, delete all trace of it from the roadmap and let the rest renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan doc, move that doc to [archive/](archive/) with a status banner. Nothing else about a ship stays here — this file documents future work only, and ship history lives in git, CLAUDE.md's Current focus, and [archive/](archive/). A shipped thing is mentioned below only where an *open* item needs it as context.  **Cite an issue by its title, never by its rank**
-A rank is correct only until the next ship, and a stale one doesn't look stale —
-it silently points at a different item. Any cross-reference written by rank will quickly become wrong, trust me, its happened a lot.
+Issue numbers are ranks, not stable identifiers - when something ships, delete all trace of it from the roadmap and let the rest renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan doc, move that doc to [archive/](archive/) with a status banner. Nothing else about a ship stays here — this file documents future work only, and ship history lives in git, CLAUDE.md's Current focus, and [archive/](archive/). A shipped issue is mentioned below only where an *open* item needs it as context.  **Cite an issue by its title, never by its rank**
+A rank is correct only until the next ship, and a stale one doesn't look stale — it silently points at a different item. Any cross-reference written by rank will quickly become wrong, trust me, its happened a lot.
 
 **[Deliberately not planned](#deliberately-not-planned)**
 The section at the end of this file records ideas that were weighed and
@@ -22,76 +21,111 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · `show_view` — the follow cam can't be asked to look anywhere
+## #1 · Read and hide Live's panes — close the view loop
 
-**Goal:** a tool that shows a named pane in Live — Session, Arrangement, the
-clip's note editor, the device chain, the browser. Use it for explicit
-navigation ("show me the arrangement"), but primarily **before a
-view-specific action**: show Session, then launch the clip; show the device
-chain, then change the device; show Arrangement, then move the song loop
-brace. The user should see the action happen in its visual context, not be
-told where to look afterwards.
+**Goal:** wrap two Live Object Model methods the fork doesn't expose yet —
+`Application.View.is_view_visible(name)` as a *replying* getter, and
+`Application.View.hide_view(name)` as a setter — then surface both in the tool
+layer, so Seshat can tell which panes are open and can put one away.
 
-**Why:** it closes a hole in a principle we already committed to. The follow
-cam's contract is that the view follows the work and the user is told *what to
-look at, never how to navigate there*
-([lib/seshat/tools/follow_cam.ex](../lib/seshat/tools/follow_cam.ex),
-`Seshat.Instructions`). But that steering happens **after** a limited set of
-creates, writes and deletes. Many actions already work without changing panes:
-from Arrangement, Seshat can launch a Session clip; from Session, it can change
-a device or the Arrangement loop brace. The mutation lands, but the user
-cannot watch it. There is also no way to move the view on an explicit request,
-so "show me the notes again" falls back to keyboard instructions. Both violate
-the same principle: if Live exposes the navigation, Seshat should put the work
-on screen itself. Hit on 2026-07-31 while checking a plan's open question: the
-Arrangement loop brace was needed and the assistant had to talk the user
-through switching views by hand.
+**Why:** `show_view` shipped 2026-07-31 able to show a pane and nothing else.
+Its own description has to admit the blind spot in as many words — "Seshat
+cannot read the currently visible pane, so call this even if the requested pane
+may already be open" — and there is no way to hide anything, so "hide the
+browser, I need the room" still means reaching for the mouse. That is precisely
+the thing this project exists to remove.
+
+The blindness is worse than an inefficiency. `/live/view/show_view` never
+replies, and — measured during the 2026-07-31 smoke test — Live does **not**
+raise on a pane name it doesn't recognise: pushing `"NoSuchPane"` past the
+schema produced no exception, so the fork's `try/except` never fired and
+nothing reached `Log.txt` (positive control: an unknown *address* did log). The
+schema enum is the only guard, with no second line of defence and no diagnostic
+if a name is ever wrong. A visibility read is the only thing that could confirm
+a pane actually showed.
+
+It also costs verification. The `show_view` smoke section cannot be run without
+a human looking at the screen and toggling panels by hand: the 2026-07-31 run
+confirmed five of six names by eye, and bare `Detail` went unconfirmed because
+hiding the detail panel needed a keystroke. A visibility getter turns that whole
+section into something Seshat checks itself.
 
 **User stories:**
-- As a producer looking at Arrangement, when I ask Seshat to launch a clip,
-  the Session grid comes up first — I watch the clip fire instead of hearing
-  a change I can't see.
-- As a producer, when I say "show me the notes again," the clip editor just
-  opens; nobody talks me through Tab and keyboard shortcuts.
-- As a producer, when Seshat changes a device, the device chain is on screen
-  — so I can see, and grab, the knob it just moved.
+- As a producer, "hide the browser, I need the room" just happens — I don't
+  reach for the mouse to do a thing Seshat is supposed to do for me.
+- As a producer asking "what am I looking at?", Seshat answers from what Live
+  reports, not from a guess about where it last pointed the view.
+- As a producer, Seshat stops re-showing a pane that is already open just
+  because it cannot tell.
 
 **Planner notes:**
-- **The address already ships** — `/live/view/show_view [view_name]`, our own
-  extension in the fork's `abletonosc/view.py`, documented at
-  [abletonosc-api-docs.md](abletonosc-api-docs.md). **No Python half, no
-  install step.** It takes Live's own pane names: `Browser`, `Arranger`,
-  `Session`, `Detail`, `Detail/Clip`, `Detail/DeviceChain`. `FollowCam` today
-  sends only three of the six; `Arranger` and `Browser` have never been sent
-  by anything.
-- So this is one definition plus one handler clause — an enum parameter over
-  those six names, and the description's real job is mapping how people
-  actually say them ("arrangement", "the timeline", "session", "the grid",
-  "the note editor", "the browser") onto Live's spelling, `Arranger`
-  included, which nobody says out loud.
-- **Show first, act second is the primary contract.** Teach the model to call
-  `show_view` immediately before an action with a natural visual home. Seshat
-  cannot read the currently visible pane, so make the call unconditionally;
-  re-showing an open pane is assumed harmless and is a smoke-test item. This
-  is model-driven sequencing in the tool description plus shared instructions,
-  not pre-steering copied into every action handler.
-- **Keep the existing follow cam.** It remains deterministic post-action
-  confirmation and recovery for the mutations it already covers; this tool
-  fills the pre-action and explicit-navigation gaps rather than replacing it.
-- **Silent, like every view address** — an unknown pane name does nothing and
-  replies nothing. The enum is what makes that unreachable; same reasoning as
-  `set_time_signature`'s denominator.
-- The reply should name the pane in the user's language ("Arrangement view",
-  "clip editor"), not echo Live's internal spelling; the silent address cannot
-  verify the screen, and `screenshot_live` remains the separate seeing feature.
-- Sequenced here because it is nearly free and repairs a stated principle,
-  where the items behind it add new capability. It is **not** a substitute for
-  `screenshot_live` — that one lets Seshat *see*; this one lets Seshat
-  *point*.
-- **Plan:** [PLAN_show_view.md](PLAN_show_view.md) (2026-07-31) — one Elixir
-  tool over the address that already ships; use it both for explicit navigation
-  and immediately before view-specific actions so the user sees the change
-  happen, with the existing follow cam retained as post-action confirmation.
+- **The LOM methods are confirmed present**, on the same evidence standard as
+  the swing/groove work — read out of Live 12 Suite's own shipped Python:
+  `ableton/v3/live/detail_view_controller.pyc` calls `is_view_visible`,
+  `show_view` and `hide_view` on the application view, and
+  `ableton/v3/control_surface/components/view_toggle.pyc` calls
+  `is_view_visible` alongside a `_show_or_hide_view` helper.
+- **Do not assume `hide_view` takes the same six names as `show_view`** — the
+  evidence says it doesn't. Live's own `ViewToggleComponent` toggles exactly
+  four: `Session`, `Detail`, `Detail/Clip`, `Browser`; `DetailViewController`
+  hides `Detail`. `Arranger` and `Detail/DeviceChain` appear nowhere as hide
+  targets, and "hide `Session`" needs defining at all — Session and Arranger
+  are a pair, so hiding one presumably just shows the other. **Establish the
+  real hide set against live Ableton before writing the enum**, the same way
+  the `quantize_clip` grid table was measured rather than trusted. A name that
+  does nothing must not be offered: `hide_view` will be silent like every other
+  setter, so a bad value is undetectable at runtime.
+- **`is_view_visible` does accept the sub-view names** — `DetailViewController`
+  reads it for both bare `Detail` and `Detail/{Clip,DeviceChain}`, so the
+  getter's enum can be the full six even if `hide_view`'s is smaller.
+- Both are additions to the fork's `abletonosc/view.py`, beside the existing
+  `show_view` — so this is the **two-commit fork workflow** (submodule commit,
+  then pin bump here), plus `mix abletonosc.install` and a Live restart.
+- **Address naming needs deciding, not guessing** (CLAUDE.md's standing rule —
+  AbletonOSC's naming is not regular). Note the precedent in the same file:
+  `show_view` sits at `/live/view/show_view`, *not* under `set/`, while the
+  selection getters are `/live/view/get/*`. So the natural pair is
+  `/live/view/hide_view` and a getter under `/live/view/get/`; pick the getter's
+  leaf and record it in the address docs.
+- **The getter must reply**, unlike `show_view`/`hide_view`, which stay silent
+  like every other setter. Follow `return_track.py`'s always-reply-even-on-bad-
+  input envelope so an unknown pane name errors immediately instead of costing a
+  timeout — the same distinction the smoke skill already leans on. Booleans on
+  this wire are ints (`/live/track/get/mute` documents "1=on, 0=off"); echo the
+  view name back alongside the flag, as every other getter echoes its index.
+- Tool-surface decisions for the plan: a separate `hide_view` tool versus a
+  `visible: false` parameter on `show_view`; and whether visibility is a
+  standalone read or a line in `get_session_state`.
+- **Open question — is view visibility observable, or only pollable?**
+  `ViewToggleComponent` registers a slot to keep its buttons in sync, so
+  *something* changes observably, but the event name is not recoverable from
+  the compiled bytecode and no `add_*_view_*_listener` name turned up in a
+  scan of Live's shipped scripts. Resolve it before choosing: a listener means
+  view state can join the push-based mirror in `Session.State`; no listener
+  means query-on-demand, which is the safe default anyway (the clip-grid
+  precedent applies).
+- **Update `show_view`'s description when this lands** — it currently states the
+  limitation this issue removes.
+- Related to but not covered by "`screenshot_live` — let Seshat see the
+  screen": that answers open-ended UI questions with pixels and needs a vision
+  round-trip; this is a cheap, exact boolean for the panes Seshat already
+  drives. Neither replaces the other.
+- New addresses go in [abletonosc-api-docs.md](abletonosc-api-docs.md) —
+  `vendored_addresses_test` fails in both directions otherwise. The View
+  extensions prose there also states "**Both are silent**" of the two existing
+  Seshat view addresses; a replying getter in that group needs that sentence
+  reworded rather than left to contradict the new row.
+- **Verification is the point of the feature, so plan it explicitly**:
+  `mix test` cannot reach any of this (it greps the vendored Python and never
+  runs Live), and the getter is what finally makes the `show_view` smoke
+  section self-checking. Expect to rewrite that section in
+  `.claude/skills/smoke-test/SKILL.md` as part of the work — including bare
+  `Detail`, which the 2026-07-31 run left unconfirmed.
+- Sequenced first (Patrick, 2026-07-31): it finishes a feature that shipped
+  the same day with half its loop missing, it is one fork file and two
+  handlers against methods already confirmed present, and it is the item that
+  makes a whole smoke section self-verifying instead of needing a person at
+  the keyboard.
 
 ## #2 · `start_new_project` — the setup wizard, and prompt budget back
 

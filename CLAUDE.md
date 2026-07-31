@@ -205,16 +205,30 @@ on this machine everything still works.
 [docs/ROADMAP.md](docs/ROADMAP.md) is the single living list of what's not
 built yet, written as a priority-ordered issue queue — #1 is the biggest win,
 work top to bottom. The play-and-keep arc (capture MIDI, session record, clip
-cleanup, quantize, groove/swing) is now complete; `show_view` leads the queue
-next. Keep it current: when something ships, run the `/ship` skill
+cleanup, quantize, groove/swing) is now complete, and so is the follow cam's
+missing half (`show_view`); `start_new_project` leads the queue next. Keep it
+current: when something ships, run the `/ship` skill
 (or by hand: remove its issue there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-31 its top item is `show_view`, closing the gap where the follow cam
-can only react to a mutation, never be asked to look somewhere or show a pane
-before an action. Groove/swing shipped 2026-07-31, closing the play-and-keep
+2026-07-31 its top item is `start_new_project`, the setup wizard that would
+catch "let's start a new project" and move the replace-not-append rule off
+the capped instructions budget and into a tool description. `show_view`
+shipped 2026-07-31, closing the gap where the follow cam could only react to
+a mutation, never be asked to look somewhere or show a pane before an
+action: one tool and one Transport-direct handler clause sending
+`/live/view/show_view` over an enum of Live's six exact pane names
+(`Browser`, `Arranger`, `Session`, `Detail`, `Detail/Clip`,
+`Detail/DeviceChain`) — the address already shipped in the fork's
+`abletonosc/view.py`, so no Python change, submodule commit, or Live
+restart. The shared "view follows you" bullet in `Seshat.Instructions` now
+carries both halves: creates, writes and deletes still leave their target
+selected and shown after the fact (the existing follow cam, unchanged), and
+other view-specific actions — a launch, a device tweak, the loop brace —
+call `show_view` first so the user watches the change happen instead of
+being told where to look afterwards. Groove/swing shipped 2026-07-31, closing the play-and-keep
 arc: `set_swing_amount` and `set_groove_amount`, both mirrored into
 `Seshat.Session.State` and rendered in `get_session_state`'s song line.
 `swing_amount` didn't exist on the wire at all — it required a one-line

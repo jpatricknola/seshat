@@ -251,6 +251,64 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "show_view" do
+    setup :osc_sink
+
+    # /live/view/show_view never replies and a name Live rejects is only logged
+    # inside Live, so the wire is the only place these can be checked at all.
+    # All six are exercised because three of them (Arranger, Browser, bare
+    # Detail) have never been sent by Seshat before — the follow cam only ever
+    # used Session and the two Detail children.
+    @views [
+      {"Browser", "Live's browser"},
+      {"Arranger", "Arrangement view"},
+      {"Session", "Session view"},
+      {"Detail", "the detail panel"},
+      {"Detail/Clip", "the clip editor"},
+      {"Detail/DeviceChain", "the device chain"}
+    ]
+
+    for {view, label} <- @views do
+      test "sends #{view} and reports it as #{label}" do
+        view = unquote(view)
+        label = unquote(label)
+
+        assert {:ok, msg} = Handlers.call("show_view", %{"view" => view})
+        assert msg =~ label
+        assert_receive {:osc_out, "/live/view/show_view", [^view]}
+      end
+    end
+
+    # The enum is the only thing standing between a misspelled pane and a silent
+    # no-op inside Live, so the "nothing was sent" half is proved here, where a
+    # transport exists. "Arrangement" is the name a user would say.
+    test "an unknown view never reaches the wire" do
+      assert {:error, message} = Handlers.call("show_view", %{"view" => "Arrangement"})
+      assert message =~ "Invalid parameters for show_view"
+      refute_receive {:osc_out, _, _}
+    end
+
+    # @views above is hand-maintained; this tripwire is derived straight from
+    # the schema so a seventh enum value (Open question 1 coming back "Live
+    # renamed a pane") can't add a `Definitions` enum entry without a matching
+    # `view_label/1` clause. Without this, the gap is invisible until runtime:
+    # validation passes the new value through and `do_call/2` raises
+    # FunctionClauseError inside `view_label/1`. Same pattern as
+    # `grid_quantization/1`'s "covers exactly the grids the tool schema
+    # offers" test.
+    test "covers exactly the views the tool schema offers" do
+      offered =
+        Seshat.Tools.Definitions.all()
+        |> Enum.find(&(&1.name == "show_view"))
+        |> get_in([:parameters, :properties, "view", :enum])
+
+      for view <- offered do
+        assert {:ok, _msg} = Handlers.call("show_view", %{"view" => view}),
+               "show_view offers #{inspect(view)} but view_label/1 has no clause"
+      end
+    end
+  end
+
   describe "format_browser_items/2" do
     # The do_call clauses for list_browser_items/load_device aren't tested here:
     # they go through Transport.query, which needs a live Ableton.

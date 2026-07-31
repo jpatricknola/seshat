@@ -1,13 +1,24 @@
 # Plan — `show_view`: show the work before it happens
 
+> **Archived 2026-07-31 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `show_view` lives in
+> `Seshat.Tools.Definitions`/`Handlers`, sending `/live/view/show_view` for
+> all six of Live's named panes, and the shared "view follows you" bullet in
+> `Seshat.Instructions` now carries both the pre-action and post-action
+> halves. No Python or fork change — the address already shipped. Open
+> question 1 (whether all six pane names work in the installed Live version,
+> and whether re-showing an open pane is a true no-op) was carried forward
+> unresolved into `/smoke-test`, which now has a dedicated `show_view`
+> section for it.
+
 Roadmap item "`show_view` — the follow cam can't be asked to look anywhere".
 One new tool — `show_view` — that brings one of Live's six named panes into
 view through the fork's existing `/live/view/show_view` address.
 
 **No Python half.** The address already ships in
-[priv/AbletonOSC/abletonosc/view.py](../priv/AbletonOSC/abletonosc/view.py),
+[priv/AbletonOSC/abletonosc/view.py](../../priv/AbletonOSC/abletonosc/view.py),
 is documented in
-[abletonosc-api-docs.md](abletonosc-api-docs.md), and is already exercised by
+[abletonosc-api-docs.md](../abletonosc-api-docs.md), and is already exercised by
 `Seshat.Tools.FollowCam`. No submodule commit, pin bump,
 `mix abletonosc.install`, or Live restart is introduced by this feature.
 
