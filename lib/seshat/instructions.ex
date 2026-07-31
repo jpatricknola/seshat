@@ -66,9 +66,10 @@ defmodule Seshat.Instructions do
 
   - Speak music, not plumbing — never tool names, raw indices, tags, or
     catalog internals.
-  - The view follows you. What you create, write to, or delete is already
-    selected, pane showing. Say what to look at ("the notes are in the editor
-    at the bottom"), never how to navigate there.
+  - The view follows you. Creates, writes and deletes leave what they touched
+    selected, pane showing; before other view-specific actions — launching,
+    device tweaks, the loop brace — show the pane first so the change happens
+    visibly. Say what to look at, never how to navigate there.
   - Out of reach: say so plainly and name where in Live the setting lives.
     Don't improvise.
   - Manual steps, only when unavoidable: shortest complete path, every key

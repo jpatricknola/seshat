@@ -86,6 +86,26 @@ defmodule Seshat.Tools.ValidationTest do
     end
   end
 
+  describe "show_view" do
+    # The enum is Live's own spelling, and the one irregularity worth pinning is
+    # that users say "Arrangement" while Live calls it "Arranger". No translation
+    # layer sits in front of validation, so the refusal is what teaches the model
+    # the right value — and the address is silent, so an unvalidated bad name
+    # would be an undetectable no-op.
+    test "rejects the natural-language name for Live's Arranger" do
+      assert {:error, message} = Validation.validate("show_view", %{"view" => "Arrangement"})
+
+      assert message =~
+               ~s|- view: must be one of "Browser", "Arranger", "Session", "Detail", | <>
+                 ~s|"Detail/Clip", "Detail/DeviceChain" (got "Arrangement")|
+    end
+
+    test "rejects a missing view" do
+      assert {:error, message} = Validation.validate("show_view", %{})
+      assert message =~ "- view: required but missing"
+    end
+  end
+
   describe "quantize_clip" do
     # "1/2" rather than a triplet value: the triplet grids are real and offered,
     # while a 1/2 grid is both a plausible model guess and a thing Live's

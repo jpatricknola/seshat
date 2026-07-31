@@ -2018,6 +2018,18 @@ defmodule Seshat.Tools.Handlers do
 
   # --- View selection ---
 
+  # One message, no %Command{} and no FollowCam: this *is* the primitive the
+  # follow cam sends. Like every other silent setter, `:ok` means the local
+  # transport accepted the datagram — the address never replies, and Seshat
+  # cannot see what is on screen. Nothing waits between this and the next tool
+  # call either: loopback datagrams reach AbletonOSC in send order.
+  defp do_call("show_view", %{"view" => view}) do
+    case Transport.send_message("/live/view/show_view", [view]) do
+      :ok -> {:ok, "Showing #{view_label(view)}"}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
   defp do_call("select_track", %{"track" => track}) do
     case Transport.send_message("/live/view/set/selected_track", [track]) do
       :ok -> {:ok, "Selected track #{track}"}
@@ -3886,4 +3898,14 @@ defmodule Seshat.Tools.Handlers do
   defp loop_range_summary(%{"start" => start}), do: " — start: #{start}"
   defp loop_range_summary(%{"length" => length}), do: " — length: #{length} beats"
   defp loop_range_summary(_), do: ""
+
+  # The reply says what the user is now looking at, in their vocabulary. Live's
+  # own `Arranger` spelling is the schema contract because the value goes
+  # straight onto the wire, but nobody calls it that out loud.
+  defp view_label("Browser"), do: "Live's browser"
+  defp view_label("Arranger"), do: "Arrangement view"
+  defp view_label("Session"), do: "Session view"
+  defp view_label("Detail"), do: "the detail panel"
+  defp view_label("Detail/Clip"), do: "the clip editor"
+  defp view_label("Detail/DeviceChain"), do: "the device chain"
 end

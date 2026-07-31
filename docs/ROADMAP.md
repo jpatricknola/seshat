@@ -10,9 +10,8 @@ An issue must state its goal and why it's worth building. Where the value is use
 Ranking criteria is **impact-per-effort**, mission impact weighed against cost. A medium-impact quick win outranks a high-impact slog.  Place the new issue in the appropriate order for its priority.  
 
 **Removing an issue from the roadmap**
-Issue numbers are ranks, not stable identifiers - when something ships, delete all trace of it from the roadmap and let the rest renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan doc, move that doc to [archive/](archive/) with a status banner. Nothing else about a ship stays here — this file documents future work only, and ship history lives in git, CLAUDE.md's Current focus, and [archive/](archive/). A shipped thing is mentioned below only where an *open* item needs it as context.  **Cite an issue by its title, never by its rank**
-A rank is correct only until the next ship, and a stale one doesn't look stale —
-it silently points at a different item. Any cross-reference written by rank will quickly become wrong, trust me, its happened a lot.
+Issue numbers are ranks, not stable identifiers - when something ships, delete all trace of it from the roadmap and let the rest renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan doc, move that doc to [archive/](archive/) with a status banner. Nothing else about a ship stays here — this file documents future work only, and ship history lives in git, CLAUDE.md's Current focus, and [archive/](archive/). A shipped issue is mentioned below only where an *open* item needs it as context.  **Cite an issue by its title, never by its rank**
+A rank is correct only until the next ship, and a stale one doesn't look stale — it silently points at a different item. Any cross-reference written by rank will quickly become wrong, trust me, its happened a lot.
 
 **[Deliberately not planned](#deliberately-not-planned)**
 The section at the end of this file records ideas that were weighed and

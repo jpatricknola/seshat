@@ -783,6 +783,45 @@ defmodule Seshat.Tools.Definitions do
     },
     # --- View selection ---
     %{
+      name: "show_view",
+      description:
+        "Show a pane in Ableton Live. Use this for explicit navigation requests " <>
+          "and BEFORE an action whose result lives in a particular pane, so the " <>
+          "user sees the action happen: Session = Session view / clip or scene " <>
+          "grid; Arranger = Arrangement view / timeline; Detail/Clip = clip or " <>
+          "note editor; Detail/DeviceChain = device chain; Browser = Live's " <>
+          "browser; Detail = the bottom detail panel. Seshat cannot read the " <>
+          "currently visible pane, so call this even if the requested pane may " <>
+          "already be open; showing it again is harmless. Typical sequences: " <>
+          "show Session then launch/stop a clip or scene; show Arranger then " <>
+          "change the song loop brace; select the target track (select_track) " <>
+          "then show Detail/DeviceChain then change a device parameter — the " <>
+          "pane shows the SELECTED track's chain. Skip the pre-show before " <>
+          "creates, writes and deletes: those already move the view to their " <>
+          "result. Detail/Clip shows whichever clip was last opened there, so " <>
+          "use it to re-show recent work, not to aim at a different clip. This " <>
+          "only points Live at a pane — it does not select a clip or device and " <>
+          "cannot see or verify the screen.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "view" => %{
+            type: "string",
+            enum: [
+              "Browser",
+              "Arranger",
+              "Session",
+              "Detail",
+              "Detail/Clip",
+              "Detail/DeviceChain"
+            ],
+            description: "Live's exact pane name"
+          }
+        },
+        required: ["view"]
+      }
+    },
+    %{
       name: "select_track",
       description: "Select a track in Ableton Live's UI. Track indices are 0-based.",
       parameters: %{
