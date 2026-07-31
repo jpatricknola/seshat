@@ -5,9 +5,12 @@
 > `Seshat.Tools.Definitions`/`Seshat.Tools.Handlers`, sending upstream's
 > `/live/song/set/signature_numerator` and `_denominator` directly — no fork
 > change. The one open question (Live's accepted numerator/denominator range)
-> closed by smoke measurement, recorded in the "Open questions" section below.
-> The next step in the play-and-keep arc — groove/swing — is "Groove amount"
-> on [../ROADMAP.md](../ROADMAP.md).
+> is **partially closed** by smoke measurement: 6/8, 3/4 and 7/8 are confirmed
+> accepted and a denominator of 3 is confirmed refused pre-flight, recorded in
+> the "Open questions" section below — but whether Live's `setattr` would
+> accept a value *outside* the UI-safe enum stays genuinely untestable, since
+> the tool never sends one. The next step in the play-and-keep arc —
+> groove/swing — is "Groove amount" on [../ROADMAP.md](../ROADMAP.md).
 
 Roadmap item "`set_time_signature`". One new tool — `set_time_signature` —
 that sets the song's global time signature via
@@ -288,25 +291,24 @@ Live API):
 
 ## Open questions
 
-1. **⚠️ The bounds are taken from Live's UI, not from LOM documentation.**
-   The Live Object Model docs don't state the accepted range for
+1. **◐ PARTIALLY RESOLVED 2026-07-31 — accepted cases confirmed, the wider
+   range still isn't and can't be from this tool.** The Live Object Model
+   docs don't state the accepted range for
    `signature_numerator`/`signature_denominator` — verified 2026-07-30
    against [the LOM Song apiref](https://docs.cycling74.com/apiref/lom/song/),
    which gives both as bare `int`, get/set/observe, with no range where
    sibling properties like `swing_amount` do carry one ("Range: 0.0 - 1.0").
-   So there is nothing further to look up, and nothing to probe either: what
-   `setattr` accepts can only be tested through a setter, which is the thing
-   this plan builds. **This question cannot close before implementation** —
-   it closes at smoke time or not at all. Live's transport-bar
-   control offers numerator 1–99 and denominator {1, 2, 4, 8, 16}, and the
-   schema mirrors that. Couldn't be resolved now: confirming what `setattr`
-   actually accepts needs live Ableton, and `_set_property`'s
-   swallow-everything makes probing from the wire uninformative. Assumed
-   meanwhile: the UI range is the safe subset — if the LOM secretly accepts
-   more (a denominator of 32, say), the schema refuses a value that would
-   have worked, which is a loud, correctable error rather than a silent
-   no-op, and widening an enum later is a one-line change. Smoke items 1 and
-   5 confirm the accepted cases.
+   Smoke items 1 and 5 confirmed the schema's accepted values actually land
+   in Live (6/8, 3/4, 7/8 all set correctly), and the denominator-3 refusal
+   was confirmed to happen pre-flight, in `Validation`, with nothing sent to
+   Live. What remains genuinely untested — and untestable through this
+   tool by design — is whether Live's `setattr` would accept a value
+   *outside* the UI-safe enum (a denominator of 32, say): the schema never
+   sends one, and `_set_property`'s swallow-everything makes probing from
+   the wire uninformative regardless. Assumed meanwhile: the UI range is the
+   safe subset — if the LOM secretly accepts more, the schema refuses a
+   value that would have worked, which is a loud, correctable error rather
+   than a silent no-op, and widening an enum later is a one-line change.
 2. **✅ RESOLVED 2026-07-31 — push-on-set confirmed.** The signature was
    changed by hand in Live's transport bar (4/4 → 6/8) and
    `get_session_state` **without** `refresh: true` immediately reported 6/8.
