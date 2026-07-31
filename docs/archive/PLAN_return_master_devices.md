@@ -1,5 +1,12 @@
 # Plan — Devices on return and master tracks
 
+> **Archived 2026-07-31 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The feature lives in
+> `Seshat.Tools.Definitions`/`Handlers`/`FollowCam`, `Seshat.Session.State`,
+> and the fork's `abletonosc/return_track.py` and `abletonosc/browser.py`
+> (see `priv/AbletonOSC/SESHAT.md`). No follow-ups from this plan are open on
+> the roadmap.
+
 Roadmap: "Devices on return and master tracks — make the sends system
 self-serve." Extends the six existing device tools (`load_device`,
 `get_track_devices`, `get_device_parameters`, `set_device_parameter`,
@@ -18,9 +25,9 @@ to end without the user touching Live.
 it: "Seshat cannot load a device onto a return track, so ask the user to drag
 one on in Live." Every send into an empty return is silent, so the sends
 system — otherwise complete since the send-levels work
-([archive/PLAN_send_levels.md](archive/PLAN_send_levels.md)) — still has a
+([archive/PLAN_send_levels.md](PLAN_send_levels.md)) — still has a
 human step in the middle of its headline workflow. The 2026-07-31 external
-tool audit ([archive/TOOL_AUDIT_V2.md](archive/TOOL_AUDIT_V2.md)) made
+tool audit ([archive/TOOL_AUDIT_V2.md](TOOL_AUDIT_V2.md)) made
 "let devices reach return & master tracks" its top recommendation, which is
 exactly the revisit condition the Deliberately-not-planned entry was waiting
 on. The same audit marked `get_track_devices`, `load_device`, `delete_device`,
@@ -75,7 +82,7 @@ What research confirmed and changed:
 
 ### Existing addresses used unchanged
 
-Verified in [abletonosc-api-docs.md](abletonosc-api-docs.md):
+Verified in [abletonosc-api-docs.md](../abletonosc-api-docs.md):
 
 | Address | Request | Reply | Use here |
 |---|---|---|---|
@@ -211,7 +218,7 @@ device name, in the exact order declared in the contract. Update the
 shapes.
 Parts 1–3 are one submodule commit,
 pushed, with the pin bump landing in the same Seshat commit as Parts 4–9
-(two-commit fork workflow per [.claude/rules/osc.md](../.claude/rules/osc.md)).
+(two-commit fork workflow per [.claude/rules/osc.md](../../.claude/rules/osc.md)).
 
 ### 4. Docs — `abletonosc-api-docs.md`
 
@@ -232,7 +239,7 @@ is not optional.
 
 ### 5. `Session.State` — mirror the new mixer state
 
-[lib/seshat/session/state.ex](../lib/seshat/session/state.ex):
+[lib/seshat/session/state.ex](../../lib/seshat/session/state.ex):
 
 - Return entries grow to `%{index, name, volume, pan, mute, solo}`; `master`
   grows to `%{volume, pan, cue_volume}`. Failed reads stay `nil` (the
@@ -286,7 +293,7 @@ getters (the `master_volume/0` helper pattern); the return tools guard with
 
 ### 7. Extend the six device tools with `target`
 
-[lib/seshat/tools/definitions.ex](../lib/seshat/tools/definitions.ex): each of
+[lib/seshat/tools/definitions.ex](../../lib/seshat/tools/definitions.ex): each of
 `load_device`, `get_track_devices`, `get_device_parameters`,
 `set_device_parameter`, `delete_device`, `bypass_device` gains one optional
 parameter (identical across all six):
@@ -313,7 +320,7 @@ too — pass target: 'return' (with the return index in track) or target:
 'master'."; `load_device` additionally: "On returns and the master, load
 audio effects only — that is all Live allows there."
 
-[lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex): each clause
+[lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex): each clause
 dispatches on `params["target"]` (`nil` → existing flow, untouched):
 
 - `load_device` — `"return"` → query `/live/browser/load_item_on_return
@@ -364,7 +371,7 @@ All new addresses appear as **string literals** in these clauses (the
 
 ### 8. Follow cam — steer on return/master chains
 
-[lib/seshat/tools/follow_cam.ex](../lib/seshat/tools/follow_cam.ex), new
+[lib/seshat/tools/follow_cam.ex](../../lib/seshat/tools/follow_cam.ex), new
 `calls/2` clauses mirroring the regular-track device clauses:
 
 - `load_device`/`bypass_device` with `%{return: i, device: d}`, `d >= 0` →
