@@ -65,18 +65,44 @@ section into something Seshat checks itself.
   `show_view` and `hide_view` on the application view, and
   `ableton/v3/control_surface/components/view_toggle.pyc` calls
   `is_view_visible` alongside a `_show_or_hide_view` helper.
+- **Do not assume `hide_view` takes the same six names as `show_view`** — the
+  evidence says it doesn't. Live's own `ViewToggleComponent` toggles exactly
+  four: `Session`, `Detail`, `Detail/Clip`, `Browser`; `DetailViewController`
+  hides `Detail`. `Arranger` and `Detail/DeviceChain` appear nowhere as hide
+  targets, and "hide `Session`" needs defining at all — Session and Arranger
+  are a pair, so hiding one presumably just shows the other. **Establish the
+  real hide set against live Ableton before writing the enum**, the same way
+  the `quantize_clip` grid table was measured rather than trusted. A name that
+  does nothing must not be offered: `hide_view` will be silent like every other
+  setter, so a bad value is undetectable at runtime.
+- **`is_view_visible` does accept the sub-view names** — `DetailViewController`
+  reads it for both bare `Detail` and `Detail/{Clip,DeviceChain}`, so the
+  getter's enum can be the full six even if `hide_view`'s is smaller.
 - Both are additions to the fork's `abletonosc/view.py`, beside the existing
   `show_view` — so this is the **two-commit fork workflow** (submodule commit,
   then pin bump here), plus `mix abletonosc.install` and a Live restart.
+- **Address naming needs deciding, not guessing** (CLAUDE.md's standing rule —
+  AbletonOSC's naming is not regular). Note the precedent in the same file:
+  `show_view` sits at `/live/view/show_view`, *not* under `set/`, while the
+  selection getters are `/live/view/get/*`. So the natural pair is
+  `/live/view/hide_view` and a getter under `/live/view/get/`; pick the getter's
+  leaf and record it in the address docs.
 - **The getter must reply**, unlike `show_view`/`hide_view`, which stay silent
   like every other setter. Follow `return_track.py`'s always-reply-even-on-bad-
   input envelope so an unknown pane name errors immediately instead of costing a
-  timeout — the same distinction the smoke skill already leans on.
+  timeout — the same distinction the smoke skill already leans on. Booleans on
+  this wire are ints (`/live/track/get/mute` documents "1=on, 0=off"); echo the
+  view name back alongside the flag, as every other getter echoes its index.
 - Tool-surface decisions for the plan: a separate `hide_view` tool versus a
   `visible: false` parameter on `show_view`; and whether visibility is a
-  standalone read or a line in `get_session_state`. Note the mirror is
-  push-based — view state would need a listener, and the LOM may not offer one
-  for visibility, so query-on-demand is the safe default (the clip-grid
+  standalone read or a line in `get_session_state`.
+- **Open question — is view visibility observable, or only pollable?**
+  `ViewToggleComponent` registers a slot to keep its buttons in sync, so
+  *something* changes observably, but the event name is not recoverable from
+  the compiled bytecode and no `add_*_view_*_listener` name turned up in a
+  scan of Live's shipped scripts. Resolve it before choosing: a listener means
+  view state can join the push-based mirror in `Session.State`; no listener
+  means query-on-demand, which is the safe default anyway (the clip-grid
   precedent applies).
 - **Update `show_view`'s description when this lands** — it currently states the
   limitation this issue removes.
@@ -85,7 +111,16 @@ section into something Seshat checks itself.
   round-trip; this is a cheap, exact boolean for the panes Seshat already
   drives. Neither replaces the other.
 - New addresses go in [abletonosc-api-docs.md](abletonosc-api-docs.md) —
-  `vendored_addresses_test` fails in both directions otherwise.
+  `vendored_addresses_test` fails in both directions otherwise. The View
+  extensions prose there also states "**Both are silent**" of the two existing
+  Seshat view addresses; a replying getter in that group needs that sentence
+  reworded rather than left to contradict the new row.
+- **Verification is the point of the feature, so plan it explicitly**:
+  `mix test` cannot reach any of this (it greps the vendored Python and never
+  runs Live), and the getter is what finally makes the `show_view` smoke
+  section self-checking. Expect to rewrite that section in
+  `.claude/skills/smoke-test/SKILL.md` as part of the work — including bare
+  `Detail`, which the 2026-07-31 run left unconfirmed.
 - Sequenced first (Patrick, 2026-07-31): it finishes a feature that shipped
   the same day with half its loop missing, it is one fork file and two
   handlers against methods already confirmed present, and it is the item that
