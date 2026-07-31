@@ -2537,20 +2537,26 @@ defmodule Seshat.Tools.Handlers do
     query = Transport.query("/live/browser/load_item_on_return", [track, uri], @load_timeout)
 
     case query do
-      {:ok, {_address, [_return, _uri, "ok", return_name, device_name, device]}} ->
-        Catalog.record_load(uri)
-        FollowCam.steer("load_device", %{return: track, device: device})
-
-        {:ok,
-         ~s{Loaded '#{device_name}' onto return track #{track} "#{return_name}"} <>
-           "#{loaded_device_note(device)}. Every track's send #{send_letter(track)} now feeds " <>
-           "it."}
-
-      {:ok, {_address, [_return, _uri, "error", message]}} ->
-        {:error, message}
-
       {:ok, {_address, args}} ->
-        {:error, unexpected_chain_reply("return track #{track}", args)}
+        case load_outcome(args, [track, uri]) do
+          {:loaded, [return_name, device_name, device]} ->
+            Catalog.record_load(uri)
+            FollowCam.steer("load_device", %{return: track, device: device})
+
+            {:ok,
+             ~s{Loaded '#{device_name}' onto return track #{track} "#{return_name}"} <>
+               "#{loaded_device_note(device)}. Every track's send #{send_letter(track)} now " <>
+               "feeds it."}
+
+          {:remote_error, message} ->
+            {:error, message}
+
+          :stale ->
+            {:error, stale_load_error("return track #{track}", uri)}
+
+          _other ->
+            {:error, unexpected_chain_reply("return track #{track}", args)}
+        end
 
       {:error, reason} ->
         {:error, inspect(reason)}
@@ -2566,19 +2572,25 @@ defmodule Seshat.Tools.Handlers do
 
   defp do_call("load_device", %{"uri" => uri, "target" => "master"}) do
     case Transport.query("/live/browser/load_item_on_master", [uri], @load_timeout) do
-      {:ok, {_address, [_uri, "ok", device_name, device]}} ->
-        Catalog.record_load(uri)
-        FollowCam.steer("load_device", %{master: true, device: device})
-
-        {:ok,
-         "Loaded '#{device_name}' onto #{chain_label(:master)}" <>
-           "#{loaded_device_note(device)} — it now processes the whole mix."}
-
-      {:ok, {_address, [_uri, "error", message]}} ->
-        {:error, message}
-
       {:ok, {_address, args}} ->
-        {:error, unexpected_chain_reply(chain_label(:master), args)}
+        case load_outcome(args, [uri]) do
+          {:loaded, [device_name, device]} ->
+            Catalog.record_load(uri)
+            FollowCam.steer("load_device", %{master: true, device: device})
+
+            {:ok,
+             "Loaded '#{device_name}' onto #{chain_label(:master)}" <>
+               "#{loaded_device_note(device)} — it now processes the whole mix."}
+
+          {:remote_error, message} ->
+            {:error, message}
+
+          :stale ->
+            {:error, stale_load_error(chain_label(:master), uri)}
+
+          _other ->
+            {:error, unexpected_chain_reply(chain_label(:master), args)}
+        end
 
       {:error, reason} ->
         {:error, inspect(reason)}
@@ -3550,6 +3562,49 @@ defmodule Seshat.Tools.Handlers do
     "Unexpected reply from Live when loading onto #{target}: #{inspect(args)}. The installed " <>
       "copy of Seshat's AbletonOSC extension may predate this address — run " <>
       "`mix abletonosc.install` and restart Ableton Live."
+  end
+
+  @doc """
+  Decides what a return/master load reply means, before anything acts on it.
+
+  `asked` is what this call sent — `[return_index, uri]` or `[uri]` — and the
+  reply echoes it back in front of the payload. `Seshat.OSC.Transport` correlates
+  replies by address alone, so a load abandoned by an earlier timeout can still
+  answer the next load on the same address: the echo is the only thing that
+  distinguishes this call's reply from that straggler's.
+
+  Getting that wrong is worse here than on a getter. A stale *success* would make
+  the tool record the wrong URI as loaded, steer the view using a device index
+  from a different chain, and tell the user a device landed somewhere it did not
+  — all while the load actually asked for may still be in flight.
+
+  Hence `:stale` rather than the reissue `query_echoed/5` performs on a mismatched
+  getter: a load is a mutation, and reissuing one could load a second device.
+  There is nothing safe to do but report the outcome as unknown.
+  """
+  @spec load_outcome(list(), list()) ::
+          {:loaded, list()} | {:remote_error, String.t()} | :stale | :unexpected
+  def load_outcome(reply_args, asked) do
+    {echoed, payload} = Enum.split(reply_args, length(asked))
+
+    cond do
+      length(echoed) < length(asked) -> :unexpected
+      not indices_match?(echoed, asked) -> :stale
+      true -> load_payload(payload)
+    end
+  end
+
+  defp load_payload(["ok" | rest]), do: {:loaded, rest}
+  defp load_payload(["error", message]) when is_binary(message), do: {:remote_error, message}
+  defp load_payload(_other), do: :unexpected
+
+  # Deliberately does not tell the user to just try again: the load this reply
+  # belongs to may have landed, and a blind retry is how one device becomes two.
+  defp stale_load_error(target, uri) do
+    "Ableton's reply when loading '#{uri}' onto #{target} was about a different load — it " <>
+      "belongs to an earlier request that timed out. Nothing further was sent, and whether " <>
+      "anything was loaded is unknown: check with get_track_devices before retrying, since " <>
+      "retrying blind could load a second copy."
   end
 
   # One name query per return plus one send query per return. Tiny replies, and

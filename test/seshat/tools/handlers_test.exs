@@ -838,6 +838,66 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  describe "load_outcome/2" do
+    # Transport correlates replies by address alone, so a load abandoned by an
+    # earlier timeout can answer the next load on the same address. On a getter
+    # that costs a wrong reading; on a load it would record the wrong URI, steer
+    # by another chain's device index, and claim a device landed where it didn't.
+    test "accepts a reply that echoes the return index and uri it was sent" do
+      reply = [1, "query:AudioFx#Reverb", "ok", "B-Reverb", "Reverb", 0]
+
+      assert Handlers.load_outcome(reply, [1, "query:AudioFx#Reverb"]) ==
+               {:loaded, ["B-Reverb", "Reverb", 0]}
+    end
+
+    test "rejects a reply carrying another return's index as stale" do
+      reply = [0, "query:AudioFx#Reverb", "ok", "A-Reverb", "Reverb", 0]
+
+      assert Handlers.load_outcome(reply, [1, "query:AudioFx#Reverb"]) == :stale
+    end
+
+    test "rejects a reply carrying another uri as stale" do
+      reply = [1, "query:AudioFx#Delay", "ok", "B-Delay", "Delay", 0]
+
+      assert Handlers.load_outcome(reply, [1, "query:AudioFx#Reverb"]) == :stale
+    end
+
+    # The error envelope is as forgeable by a straggler as the success one, and a
+    # stale error would report a failure that never happened to this call.
+    test "rejects a mismatched error envelope as stale rather than reporting it" do
+      reply = [0, "query:AudioFx#Reverb", "error", "Return track 0 does not exist"]
+
+      assert Handlers.load_outcome(reply, [1, "query:AudioFx#Reverb"]) == :stale
+    end
+
+    test "reports a matched error envelope as a remote error" do
+      reply = [1, "query:AudioFx#Reverb", "error", "Return track 1 does not exist"]
+
+      assert Handlers.load_outcome(reply, [1, "query:AudioFx#Reverb"]) ==
+               {:remote_error, "Return track 1 does not exist"}
+    end
+
+    test "matches the master reply, which echoes only the uri" do
+      assert Handlers.load_outcome(["query:AudioFx#EQ", "ok", "EQ Eight", 0], ["query:AudioFx#EQ"]) ==
+               {:loaded, ["EQ Eight", 0]}
+
+      assert Handlers.load_outcome(["query:AudioFx#Other", "ok", "EQ Eight", 0], [
+               "query:AudioFx#EQ"
+             ]) == :stale
+    end
+
+    test "treats a reply too short to carry the echo as unexpected, not a match" do
+      assert Handlers.load_outcome(["query:AudioFx#EQ"], [1, "query:AudioFx#EQ"]) == :unexpected
+      assert Handlers.load_outcome([], ["query:AudioFx#EQ"]) == :unexpected
+    end
+
+    test "treats an unreadable payload as unexpected" do
+      reply = [1, "query:AudioFx#Reverb", "maybe", "Reverb"]
+
+      assert Handlers.load_outcome(reply, [1, "query:AudioFx#Reverb"]) == :unexpected
+    end
+  end
+
   describe "format_device_chain/4" do
     # The do_call clauses for the device tools aren't tested here: they go
     # through Transport.query, which needs a live Ableton.
