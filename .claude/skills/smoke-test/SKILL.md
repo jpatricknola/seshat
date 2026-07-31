@@ -198,7 +198,21 @@ and a send from the track into it.
 5. **Error paths must be errors, not timeouts.** A bad device index on either
    chain comes back **immediately** with an error envelope naming the chain —
    these getters always reply. A ≈2s stall instead means the installed copy
-   predates this work.
+   predates this work. Try a bad index at every depth, not just the device:
+   a bad *parameter* index on a real device (`set_device_parameter` or
+   `get_device_parameters` with `parameter` past the device's count) must
+   error the same way — this is the case that used to come back as a false
+   "try again" timeout because the reply's deeper index was echoed as `-1`
+   instead of the index actually asked for.
+6. **A slow-loading effect, not just the stray-track guard.** If a
+   third-party VST3/AU effect is installed, load it (not an instrument) with
+   `target: "return"`. Some plugins instantiate asynchronously, which can
+   leave `_verify_landed` seeing no change yet and reporting an error for a
+   load that in fact succeeds a moment later — item 3 above only exercises
+   the synchronous Operator case. If this happens, confirm with
+   `get_track_devices` whether the device actually landed; either way this is
+   a known limitation of the guard (see the plan's review notes), not a new
+   regression to chase.
 
 ## If the change touches the return/master mixer tools (`set_return_track_pan` / `set_return_track_mute` / `set_return_track_solo` / `set_master_pan` / `set_cue_volume`)
 
