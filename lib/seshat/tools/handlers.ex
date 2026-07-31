@@ -3769,13 +3769,21 @@ defmodule Seshat.Tools.Handlers do
     :exit, _ -> :unconfirmed
   end
 
-  defp delete_vendored_device(chain, list_address, list_indices, delete_address, device, args) do
+  defp delete_vendored_device(
+         chain,
+         list_address,
+         list_indices,
+         delete_address,
+         device,
+         build_args
+       ) do
     subject = "the devices on #{chain_label(chain)}"
 
     with {:ok, flat} <- query_vendored_list(list_address, list_indices, subject),
          {:ok, {names, _types, _classes}} <- parse_device_chain(flat),
          {:ok, device} <- ensure_device_index(chain, device, names),
-         {:ok, remaining} <- query_vendored_delete(delete_address, args.(device), chain, device),
+         {:ok, remaining} <-
+           query_vendored_delete(delete_address, build_args.(device), chain, device),
          :ok <- ensure_remaining(chain, device, remaining, length(names) - 1) do
       FollowCam.steer(
         "delete_device",

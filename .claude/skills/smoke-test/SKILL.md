@@ -199,11 +199,11 @@ and a send from the track into it.
    chain comes back **immediately** with an error envelope naming the chain —
    these getters always reply. A ≈2s stall instead means the installed copy
    predates this work. Try a bad index at every depth, not just the device:
-   a bad *parameter* index on a real device (`set_device_parameter` or
-   `get_device_parameters` with `parameter` past the device's count) must
-   error the same way — this is the case that used to come back as a false
-   "try again" timeout because the reply's deeper index was echoed as `-1`
-   instead of the index actually asked for.
+   a bad **device** index on `set_device_parameter` or `bypass_device` (valid
+   return, out-of-range device) must error the same way — this is the case
+   that used to come back as a false "try again" timeout, because the
+   parameter index in the reply was echoed as `-1` instead of the value
+   actually asked for.
 6. **A slow-loading effect, not just the stray-track guard.** If a
    third-party VST3/AU effect is installed, load it (not an instrument) with
    `target: "return"`. Some plugins instantiate asynchronously, which can

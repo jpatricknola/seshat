@@ -436,4 +436,9 @@ defmodule Seshat.Session.StateTest do
   # `/live/startup` and the stale branches of the two structure pushes all call
   # do_refresh/1, which queries Ableton — untestable here by design
   # (testing.md: never reach Transport.query/3), and covered by /smoke-test.
+  # That includes subscribe_return_listeners/1's five start_listen sends: the
+  # plan asked for a unit test of "subscription sends for all new listeners",
+  # but the function is private and reachable only through do_refresh/1, so
+  # there is no pure entry point to call it through. New mixer smoke item 3
+  # ("Push, not poll") is the actual coverage.
 end

@@ -371,6 +371,69 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     end
   end
 
+  # The device/parameter lookups on a return or the master track echo every
+  # index they were asked about, including on a failure two levels up — a bad
+  # return index still has to report the parameter index the caller sent, or
+  # the caller's own echo check treats the reply as desynced and retries into
+  # a timeout that reads exactly like "Ableton isn't running". `_echo_index`
+  # is what makes that work by parsing the deeper index instead of assuming
+  # -1; losing it back to a literal -1 passes every other test in this file,
+  # since the address still answers and the getters this affects are already
+  # exercised by other tests through their happy path.
+  describe "the echoed index on a failed outer device/parameter lookup" do
+    test "_echo_index parses the position instead of assuming -1" do
+      source = File.read!(@return_track_file)
+
+      assert source =~ "def _echo_index(params: Tuple[Any], position: int) -> int:",
+             "#{@return_track_file} no longer defines _echo_index."
+
+      assert source =~ "return int(params[position])",
+             """
+             #{@return_track_file}'s _echo_index no longer parses params[position].
+
+             Without it, a bad return or device index makes the deeper
+             device/parameter index in the error reply come back as a hardcoded -1
+             instead of the value the caller actually asked about. The caller's
+             echo check then sees a reply that doesn't correlate with its query,
+             retries, and eventually times out — the false "try again" this
+             function exists to prevent.
+             """
+    end
+
+    # The three call sites that need the deeper echo when an outer lookup
+    # already failed. Any one of them reverting to a literal -1 (as they used
+    # to be) is invisible to every other check here: the address still
+    # answers, and a *good* index at every depth is already covered elsewhere.
+    test "every outer-failure echo of a deeper index calls _echo_index" do
+      source = File.read!(@return_track_file)
+
+      for call <- [
+            ~s|_echo_index(params, 1)|,
+            ~s|_echo_index(params, 2)|
+          ] do
+        assert String.contains?(source, call),
+               """
+               #{@return_track_file} no longer calls #{call}.
+
+               This is one of the sites that echoes a deeper index (device or
+               parameter) back to the caller after an outer lookup (return track or
+               device) already failed. A literal -1 there desyncs the reply from
+               the query that asked about it — see _echo_index's docstring.
+               """
+      end
+
+      assert length(String.split(source, "_echo_index(params,")) == 4,
+             """
+             #{@return_track_file} calls _echo_index(params, ...) a different
+             number of times than expected (3 call sites: _return_device,
+             _return_device_parameter, _master_device_parameter).
+
+             If this changed on purpose, update the count here; if not, a call
+             site regressed back to a literal -1.
+             """
+    end
+  end
+
   # `/live/clip/quantize` is invisible to both checks above by construction:
   # clip.py registers its addresses in a loop (`"/live/clip/%s" % method`), so
   # the literal-grep `registered_addresses/1` can't see it, and `/live/clip/` is
