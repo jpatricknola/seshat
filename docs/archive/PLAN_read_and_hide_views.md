@@ -1,3 +1,10 @@
+> **Archived 2026-07-31 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `hide_view` and
+> `get_view_state` live in `Seshat.Tools.Definitions` / `Handlers`, alongside
+> the fork's `/live/view/hide_view` and `/live/view/get/is_view_visible`
+> addresses in `priv/AbletonOSC`'s `abletonosc/view.py`. No follow-up from
+> this plan is open on [ROADMAP.md](../ROADMAP.md).
+
 # Plan — Read and hide Live's panes: close the view loop
 
 Roadmap item "Read and hide Live's panes — close the view loop". Two new fork
@@ -8,7 +15,7 @@ a silent `hide_view` setter — and two new tools, `hide_view` and
 **This plan has a Python half.** Both Live Object Model methods
 (`Application.View.is_view_visible(name)`, `Application.View.hide_view(name)`)
 are confirmed present in Live 12's own shipped Python (see the roadmap entry
-and [evaluating/lom-to-fork-gap-audit.md](evaluating/lom-to-fork-gap-audit.md))
+and [evaluating/lom-to-fork-gap-audit.md](../evaluating/lom-to-fork-gap-audit.md))
 but have no OSC address in the fork. That means the two-commit fork workflow —
 a commit in `priv/AbletonOSC`, then a pin bump here — plus
 `mix abletonosc.install` and a Live restart, and **no test in this repo
@@ -80,7 +87,7 @@ Key constraints research surfaced:
 ## OSC contract
 
 Both new addresses are Seshat extensions added to the fork's
-[abletonosc/view.py](../priv/AbletonOSC/abletonosc/view.py), beside
+[abletonosc/view.py](../../priv/AbletonOSC/abletonosc/view.py), beside
 `/live/view/show_view` — upstream has no view-visibility surface at all.
 
 | Address | Request args | Reply | Provenance |
@@ -186,7 +193,7 @@ Also in this commit:
 
 Commit and push **inside** `priv/AbletonOSC` (on `master`, not the detached
 HEAD `git submodule update --init` leaves — see
-[.claude/rules/osc.md](../.claude/rules/osc.md)). The pin bump in this repo
+[.claude/rules/osc.md](../../.claude/rules/osc.md)). The pin bump in this repo
 rides the Part 3–6 commit so the pin and the code depending on it move
 together.
 
@@ -539,7 +546,7 @@ the new Python or can see Live's UI:
   the tool it follows. `get_view_state` gives the model an explicit check
   when it wants one.
 - **Hiding via keystrokes or AX.** The LOM covers this, which per
-  [evaluating/ui-scripting-options.md](evaluating/ui-scripting-options.md)
+  [evaluating/ui-scripting-options.md](../evaluating/ui-scripting-options.md)
   settles the mechanism ("when the LOM exposes an operation, add it to the
   fork instead"). That doc's browser-toggle spike idea can *use* this
   getter later; nothing here depends on it.
