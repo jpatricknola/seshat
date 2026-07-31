@@ -62,8 +62,7 @@ step 5, change nothing in the doc.
      recurring axes here: query-on-demand vs. promoting a field into
      `Session.State` (new field + listener + broadcast, touched by
      everything); extending an existing tool's params vs. adding a tool (tool
-     surface growth is a standing cost in
-     [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md)); a clause in
+     surface growth is a standing cost); a clause in
      `Handlers` vs. a new module; a single Transport call vs. `%Command{}` +
      Registry; Elixir-side vs. a vendored Python handler — that last one puts
      a `mix abletonosc.install` re-run on the user and breaks on AbletonOSC

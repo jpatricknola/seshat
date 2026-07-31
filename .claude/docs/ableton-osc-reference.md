@@ -146,8 +146,8 @@ Two gotchas that don't show in the address tables:
   `looping` is off, `loop_start`/`loop_end` alias `start_marker`/`end_marker`
   per the Live Object Model, so write `looping` *before* the loop points when
   both are set in the same call — get the toggle's real effect before
-  computing the pair ordering above, not just before sending it (a review
-  finding on `set_clip_properties`; see `TOOL_AUDIT.md` §05).
+  computing the pair ordering above, not just before sending it (a 07/2026
+  review finding on `set_clip_properties`).
 
 ## Queries that raise instead of replying
 

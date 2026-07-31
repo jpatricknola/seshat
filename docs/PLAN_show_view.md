@@ -284,11 +284,6 @@ the same behavior, and `Instructions` is their shared source.
 
 ### 5. Bookkeeping
 
-- **`docs/TOOL_AUDIT.md`** — add `show_view` to the inventory beside
-  `select_track` and `select_scene`, category `Selection`, verdict `Keep`,
-  noting that it is explicit navigation plus pre-action visibility and uses
-  the already-vendored silent view address. Do not rewrite the dated
-  follow-cam history; "No new tools" remains true of that 2026-07-28 change.
 - **No change to `abletonosc-api-docs.md`** — the exact address, six values,
   silent behavior, and fork provenance are already documented.
 - **No change to `Seshat.Tools.FollowCam` or its tests** — its existing

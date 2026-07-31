@@ -192,8 +192,8 @@ Staying lossless means making the two varying fields plural: `categories:
 
 ## Option 3 — leave it, document it
 
-Record the wart in [TOOL_AUDIT.md](TOOL_AUDIT.md) with the numbers above and
-keep the test that pins current behaviour.
+Record the wart with the numbers above and keep the test that pins current
+behaviour.
 
 - **For:** costs nothing, loses nothing — the analysis is captured either way.
   Duplicate results may simply not annoy anyone in practice; the LLM reads all

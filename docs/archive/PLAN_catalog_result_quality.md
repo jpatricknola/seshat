@@ -214,7 +214,7 @@ one-preset-one-entry explanation survive unchanged):
 > goes straight to load_device. If the catalog is empty, say so and offer to
 > run reindex_library.
 
-At ship time, touch [TOOL_AUDIT.md](../TOOL_AUDIT.md)'s `search_library` row —
+At ship time, touch [TOOL_AUDIT.md](TOOL_AUDIT.md)'s `search_library` row —
 the strict-AND filtering and the wrong advertised vocabulary are exactly the
 kind of wart that table exists to track, and both stop being true here.
 

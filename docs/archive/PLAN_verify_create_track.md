@@ -241,7 +241,7 @@ No new test files; no test touches Transport.
 
 ## Part 4 — Docs that record the wart
 
-1. [docs/TOOL_AUDIT.md](../TOOL_AUDIT.md), `create_track` inventory row
+1. [docs/TOOL_AUDIT.md](TOOL_AUDIT.md), `create_track` inventory row
    (line ~166): replace the **Known wart** note with a fixed record in the
    style of the `create_return_track` row, e.g. `Verifies the count rose
    before naming and reporting the index (finding #6, fixed 07/2026); an

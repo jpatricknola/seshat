@@ -104,4 +104,4 @@ No debounce: a burst of pushes queues; the first triggers `do_refresh`, the rest
 ## Follow-ups (not this session)
 
 - `create_project` fix: AppleScript targets "Ableton Live 12" but the app is "Ableton Live 12 Suite" (process name is always `"Live"`); plus `can_undo` unsaved-set guard and create-before-delete ordering. Root cause at [registry.ex:236](lib/seshat/commands/registry.ex#L236).
-- Update the `get_session_state` row in [docs/TOOL_AUDIT.md](docs/TOOL_AUDIT.md) once this lands.
+- Update the `get_session_state` row in [docs/TOOL_AUDIT.md](TOOL_AUDIT.md) once this lands.

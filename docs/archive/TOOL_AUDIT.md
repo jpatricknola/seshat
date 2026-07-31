@@ -1,9 +1,15 @@
 # Seshat MCP — Tool Audit
 
-_Living doc · MCP design review · one verdict per tool · 25 Jul 2026 — update as tools change._
+> **Archived 2026-07-31 — retired.** The audits existed to feed the roadmap,
+> and that purpose is served: every open finding from this audit and its v2
+> successor ([TOOL_AUDIT_V2.md](TOOL_AUDIT_V2.md)) lives as a ROADMAP.md item
+> or was deliberately declined there. The per-tool inventory is no longer
+> maintained — treat this as a point-in-time record, not current documentation.
+
+_MCP design review · one verdict per tool · 25 Jul 2026._
 
 > **The tool count lives in one place:** the assertion in
-> [test/seshat/tools/definitions_test.exs](../test/seshat/tools/definitions_test.exs),
+> [test/seshat/tools/definitions_test.exs](../../test/seshat/tools/definitions_test.exs),
 > which fails until it is bumped deliberately. Don't restate it in prose here or
 > anywhere else — the inventory table below is the list, and a number copied into
 > a sentence goes stale silently.
@@ -12,16 +18,16 @@ _Living doc · MCP design review · one verdict per tool · 25 Jul 2026 — upda
 > (`write_midi_notes` and `fire_clip` now error instead of failing silently;
 > `set_track_volume` states the real scale and echoes dB, as does
 > `set_track_pan` in L/R) — see
-> [archive/PLAN_audit_fixes.md](archive/PLAN_audit_fixes.md).
+> [archive/PLAN_audit_fixes.md](PLAN_audit_fixes.md).
 > The `search_library` ⟷ `list_browser_items` routing note turned out to be
 > already present on both sides. The optional merges were declined on purpose.
 > What remains from this audit is §02, now tracked on
-> [ROADMAP.md](ROADMAP.md).
+> [ROADMAP.md](../ROADMAP.md).
 >
 > Both new guards query Ableton, so neither is unit-testable (see
-> [.claude/rules/testing.md](../.claude/rules/testing.md)) — the **Keep**
+> [.claude/rules/testing.md](../../.claude/rules/testing.md)) — the **Keep**
 > verdicts below record the intended behavior and are pending confirmation by
-> the Part 8 traps in [validation-script.md](validation-script.md).
+> the Part 8 traps in [validation-script.md](../validation-scripts/validation-script.md).
 
 > **Sends, return tracks and master shipped 26 Jul 2026** — six new tools
 > (`set_track_send`, `get_track_sends`, `create_return_track`,
@@ -29,7 +35,7 @@ _Living doc · MCP design review · one verdict per tool · 25 Jul 2026 — upda
 > closing §02's top gap and the master/return level gap with it. Returns and the
 > master needed a second vendored AbletonOSC handler
 > (`priv/AbletonOSC/abletonosc/return_track.py`) because upstream reaches `song.tracks`
-> only — see [archive/PLAN_send_levels.md](archive/PLAN_send_levels.md).
+> only — see [archive/PLAN_send_levels.md](PLAN_send_levels.md).
 
 > **`search_library` result quality shipped 27 Jul 2026.** Two things §04
 > praised as exemplary description work were in fact false: the `tags`
@@ -40,14 +46,14 @@ _Living doc · MCP design review · one verdict per tool · 25 Jul 2026 — upda
 > round-robins across device roots, and the zero-result, truncated and
 > `reindex_library` replies report the machine's real vocabulary instead of a
 > hardcoded list. See
-> [archive/PLAN_catalog_result_quality.md](archive/PLAN_catalog_result_quality.md).
+> [archive/PLAN_catalog_result_quality.md](PLAN_catalog_result_quality.md).
 
 > **`create_project` removed 28 Jul 2026.** The 25 Jul "Keep" verdict didn't
 > survive the validation run: the tool's AppleScript Cmd+N step only worked
 > when redundant, and its default-track cleanup was both racy and impossible
 > to complete (Live keeps a set's last track). Replaced by a stripped Default
 > Live Set plus ordinary `create_track` calls — see
-> [archive/create-project-removal.md](archive/create-project-removal.md).
+> [archive/create-project-removal.md](create-project-removal.md).
 
 > **Follow cam shipped 28 Jul 2026.** No new tools: sixteen existing ones
 > (`create_track`, `duplicate_track`, `create_return_track`, `create_scene`,
@@ -62,11 +68,11 @@ _Living doc · MCP design review · one verdict per tool · 25 Jul 2026 — upda
 > no auto-generated fallback. The decision lives in
 > `Seshat.Tools.FollowCam.calls/2` (pure, fully unit-tested); the panes needed
 > three new vendored OSC addresses. See
-> [archive/PLAN_follow_cam.md](archive/PLAN_follow_cam.md).
+> [archive/PLAN_follow_cam.md](PLAN_follow_cam.md).
 
 > **Superseded in part, 2026-07-30 — a 2026-07-29 external review found
 > correctness defects this audit missed.** Its surviving items are ranked in
-> [ROADMAP.md](ROADMAP.md). Three verdicts below were wrong and are corrected
+> [ROADMAP.md](../ROADMAP.md). Three verdicts below were wrong and are corrected
 > inline: the
 > "0 correctness fixes outstanding" line, §03's "Indexing is clean — strong",
 > and the `create_track` inventory row. The audit's scope explains the gap
@@ -126,7 +132,7 @@ Conventions are strong overall. A few small drifts worth aligning as you grow th
 
 **Minor param drift — Low.** `create_scene` names the position `index`, while every other scene tool uses `scene`. Scalar setters use a generic `value` while booleans use property names (`muted`/`soloed`/`armed`). Both defensible; noting for consistency as the surface grows.
 
-**~~Indexing is clean — strong.~~ ~~CORRECTED 30 Jul — the convention is clean; the *schemas* are not.~~ FIXED 30 Jul — the schemas enforce it now too.** This verdict asked whether the 0-based convention was applied consistently and never asked whether the schemas enforced it. They didn't: `minimum: 0` was present on the newer tools and missing on the older ones (`set_track_pan`, `set_track_volume`, `delete_track`, `duplicate_track`, `set_track_name`), and Python indexes Live's collections directly — so `track: -1` silently operated on the *last* track while the reply echoed "track -1". Raised by the 2026-07-29 external review; closed by `Seshat.Tools.Validation`, a schema-driven validator called from `Handlers.call/2` before every dispatch, plus the missing `minimum`/`maximum` bounds added across `Definitions` and the `MCP.Schema` number branch now carrying its ranges through the wire. See [archive/PLAN_enforce_tool_ranges.md](archive/PLAN_enforce_tool_ranges.md). The original observation below still holds for the convention itself. 0-based everywhere, consistently documented, with the "'track 1' = index 0" reminder repeated across tools. The user-facing guidance ("refer to tracks by name or 1-based UI number") only appears in `get_session_state` — consider echoing it in the other read tools so the 1-based-to-user rule is never missed.
+**~~Indexing is clean — strong.~~ ~~CORRECTED 30 Jul — the convention is clean; the *schemas* are not.~~ FIXED 30 Jul — the schemas enforce it now too.** This verdict asked whether the 0-based convention was applied consistently and never asked whether the schemas enforced it. They didn't: `minimum: 0` was present on the newer tools and missing on the older ones (`set_track_pan`, `set_track_volume`, `delete_track`, `duplicate_track`, `set_track_name`), and Python indexes Live's collections directly — so `track: -1` silently operated on the *last* track while the reply echoed "track -1". Raised by the 2026-07-29 external review; closed by `Seshat.Tools.Validation`, a schema-driven validator called from `Handlers.call/2` before every dispatch, plus the missing `minimum`/`maximum` bounds added across `Definitions` and the `MCP.Schema` number branch now carrying its ranges through the wire. See [archive/PLAN_enforce_tool_ranges.md](PLAN_enforce_tool_ranges.md). The original observation below still holds for the convention itself. 0-based everywhere, consistently documented, with the "'track 1' = index 0" reminder repeated across tools. The user-facing guidance ("refer to tracks by name or 1-based UI number") only appears in `get_session_state` — consider echoing it in the other read tools so the 1-based-to-user rule is never missed.
 
 ---
 

@@ -12,7 +12,7 @@
 > toggle in the same call, which can see stale (pre-toggle) values on a
 > clip whose stored loop brace differs from its play markers — recorded as
 > a known wart on `set_clip_properties` in
-> [TOOL_AUDIT.md](../TOOL_AUDIT.md) §05, to confirm and fix alongside smoke
+> [TOOL_AUDIT.md](TOOL_AUDIT.md) §05, to confirm and fix alongside smoke
 > item 2. The roadmap issue this shipped is gone from
 > [ROADMAP.md](../ROADMAP.md); its former follow-on, session record, is now
 > #1.
