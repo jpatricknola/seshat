@@ -1,5 +1,14 @@
 # Plan — `set_time_signature`: the missing half of the tempo pair
 
+> **Archived 2026-07-31 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. `set_time_signature` lives in
+> `Seshat.Tools.Definitions`/`Seshat.Tools.Handlers`, sending upstream's
+> `/live/song/set/signature_numerator` and `_denominator` directly — no fork
+> change. The one open question (Live's accepted numerator/denominator range)
+> closed by smoke measurement, recorded in the "Open questions" section below.
+> The next step in the play-and-keep arc — groove/swing — is "Groove amount"
+> on [../ROADMAP.md](../ROADMAP.md).
+
 Roadmap item "`set_time_signature`". One new tool — `set_time_signature` —
 that sets the song's global time signature via
 `/live/song/set/signature_numerator` and
@@ -7,7 +16,7 @@ that sets the song's global time signature via
 
 **No Python half.** Both addresses are upstream AbletonOSC: `signature_numerator`
 and `signature_denominator` sit in `properties_rw` in the fork's
-[abletonosc/song.py](../priv/AbletonOSC/abletonosc/song.py), which generates
+[abletonosc/song.py](../../priv/AbletonOSC/abletonosc/song.py), which generates
 `get`/`set`/`start_listen`/`stop_listen` handlers for each. No submodule
 commit, no pin bump, no `mix abletonosc.install`, no Live restart.
 
@@ -23,7 +32,7 @@ bar math, the model's clip-length arithmetic) already exists.
 Research confirmed the roadmap entry's claims and surfaced one hazard:
 
 1. **Setting an invalid value is a silent no-op.** `AbletonOSCHandler._set_property`
-   ([abletonosc/handler.py](../priv/AbletonOSC/abletonosc/handler.py)) wraps
+   ([abletonosc/handler.py](../../priv/AbletonOSC/abletonosc/handler.py)) wraps
    `setattr` in a try/except that logs and swallows every exception, and
    setters never reply. A numerator of 0 or a denominator of 3 — values Live's
    own UI cannot express — would be rejected by the Live API, logged in Live,
@@ -35,7 +44,7 @@ Research confirmed the roadmap entry's claims and surfaced one hazard:
    both to the wire (`{:integer, {:range, ...}}`, `{:enum, values}`).
 2. **The mirror updates itself — no new Session.State code.**
    `@listened_song_properties` in
-   [lib/seshat/session/state.ex](../lib/seshat/session/state.ex) already
+   [lib/seshat/session/state.ex](../../lib/seshat/session/state.ex) already
    includes `signature_numerator` and `signature_denominator`, and the
    `handle_info` clauses for `/live/song/get/signature_numerator|denominator`
    pushes already exist. Setting the property fires Live's property listener,
@@ -45,7 +54,7 @@ Research confirmed the roadmap entry's claims and surfaced one hazard:
    needed), not by a read-back inside the handler.
 3. **No verification round-trip in the handler.** This is an ordinary
    parameter setter, and the settled rule
-   ([.claude/rules/osc.md](../.claude/rules/osc.md), reaffirmed in the
+   ([.claude/rules/osc.md](../../.claude/rules/osc.md), reaffirmed in the
    roadmap's "Verify destructive mutations" planner notes) keeps those
    fire-and-forget — `set_tempo` is the exact precedent. With the schema
    closing the invalid-value hole, the only remaining failure is a dropped
@@ -61,7 +70,7 @@ Research confirmed the roadmap entry's claims and surfaced one hazard:
    separately too.
 5. **Live still counts quarter-note beats regardless of the signature.**
    `record_length_beats/3` in
-   [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex) exists
+   [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex) exists
    precisely because `record_length` and clip lengths are measured in
    quarter-note song-time beats, not signature beats — one bar of 6/8 is 3.0
    beats. The tool's reply computes and states this so the model's next
@@ -184,7 +193,7 @@ end
 
 - **`test/seshat/tools/definitions_test.exs`** — two edits, not one. Bump the
   count assertion: `53 → 54` if this lands before
-  [archive/PLAN_quantize_clip.md](archive/PLAN_quantize_clip.md)'s
+  [PLAN_quantize_clip.md](PLAN_quantize_clip.md)'s
   `quantize_clip`, `54 → 55` after it — that plan has since shipped, taking
   the count to 54, so this now lands as `54 → 55`. **And add
   `set_time_signature` beside `set_tempo` in the
@@ -218,7 +227,7 @@ end
 - No change to `Session.State` (both listeners and both `handle_info` clauses
   exist), no change to `Seshat.Instructions` (the beat-math guidance rides in
   the description), no change to
-  [abletonosc-api-docs.md](abletonosc-api-docs.md) (both addresses already
+  [abletonosc-api-docs.md](../abletonosc-api-docs.md) (both addresses already
   documented), no change to `FollowCam`.
 
 ### 5. Retire the beat-unit warning — `lib/seshat/tools/handlers.ex`
@@ -313,7 +322,7 @@ Live API):
    is 3.0 song-time beats, `bars × numerator × 4 / denominator` is right, and
    `record_length_beats/3` has been correct all along. This also closes the
    assumption the archived session-record plan left open
-   ([archive/PLAN_session_record.md](archive/PLAN_session_record.md)), whose
+   ([PLAN_session_record.md](PLAN_session_record.md)), whose
    2026-07-29 verification ran only in 4/4 where the two readings coincide —
    see part 5 for making that durable in code. Neither the LOM Song page nor
    the Clip page defines the beat unit anywhere, so measurement was the only

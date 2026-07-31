@@ -211,8 +211,13 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-31 its top item is `set_time_signature`, with the rest of the
-play-and-keep arc (groove/swing) behind it. `quantize_clip` shipped
+2026-07-31 its top item is groove/swing, the last step of the play-and-keep
+arc. `set_time_signature` shipped 2026-07-31: one tool sending upstream's
+`/live/song/set/signature_numerator` and `_denominator` directly (no fork
+change), with a numerator bounded 1–99 and a denominator restricted to the
+integer enum `{1, 2, 4, 8, 16}` because AbletonOSC's `_set_property` swallows
+a Live API rejection silently — the schema is what keeps an invalid value
+from being an undetectable no-op. `quantize_clip` shipped
 2026-07-31: it snaps a MIDI clip's notes to a grid with a partial-strength
 amount via the Live Object Model's `Clip.quantize`, using a string grid enum
 (`"1/16"`, `"1/8T"`, …) that hides a `GridQuantization` integer table
