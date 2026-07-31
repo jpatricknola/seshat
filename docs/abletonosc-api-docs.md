@@ -600,7 +600,11 @@ Instruments and effects. Query/set parameters.
 
 Every `/live/device/*` address resolves its track through `song.tracks`
 (`device.py`, `create_device_callback`) — **regular tracks only**. Devices on
-return tracks and the master are unreachable through this API.
+return tracks and the master are unreachable through this API; they have their
+own addresses under `/live/return_track/device/*` and `/live/master/device/*`
+in the Return Track & Master API below, which is also where
+`/live/track/delete_device`'s and `/live/view/set/selected_device`'s equivalents
+live (both resolve through `song.tracks` too).
 
 Parameter 0 of every device is its "Device On" switch — the power button in the
 device's corner — so `/live/device/set/parameter/value <track> <device> 0 0.0`
@@ -637,10 +641,10 @@ Listen for parameter changes via `/live/device/start_listen/parameter/value <tra
 
 ## Browser API (Seshat extension — not in upstream AbletonOSC)
 
-⚠️ These five addresses do **not** exist in stock AbletonOSC. They are served by
+⚠️ These seven addresses do **not** exist in stock AbletonOSC. They are served by
 `abletonosc/browser.py` in Seshat's fork (`priv/AbletonOSC`), installed with
 `mix abletonosc.install` (restart Live afterwards). Without that install all
-five addresses are unknown and queries time out.
+seven addresses are unknown and queries time out.
 
 Unlike the rest of AbletonOSC, these always reply — including on every error
 path — so a query resolves instead of hanging.
@@ -651,6 +655,10 @@ path — so a query resolves instead of hanging.
 | `/live/browser/get/items` | | `category, filter, 'error', message` | Unknown category, or indexing failed |
 | `/live/browser/load_item` | `track_id, uri` | `track_id, uri, 'ok', device_name, device_index` | Load a browser item onto a track |
 | `/live/browser/load_item` | | `track_id, uri, 'error', message` | Bad track index, unknown uri, or load failed |
+| `/live/browser/load_item_on_return` | `return_index, uri` | `return_index, uri, 'ok', return_name, device_name, device_index` | Load a browser item onto a return track's chain |
+| `/live/browser/load_item_on_return` | | `return_index, uri, 'error', message` | Bad return index, unknown uri, load failed, or the load didn't land on the return |
+| `/live/browser/load_item_on_master` | `uri` | `uri, 'ok', device_name, device_index` | Load a browser item onto the master track's chain |
+| `/live/browser/load_item_on_master` | | `uri, 'error', message` | Missing/unknown uri, load failed, or the load didn't land on the master |
 | `/live/browser/export` | | `export_path, 'ok', total_items` | Walk every category and write the whole index to a JSON file the handler names |
 | `/live/browser/export` | | `'', 'error', message` | Arguments supplied, no category indexable, or the write failed |
 | `/live/browser/preview_item` | `uri` | `uri, 'ok', name` | Audition a browser item without loading it — nothing in the set changes |
@@ -697,8 +705,24 @@ path — so a query resolves instead of hanging.
   existing audio effects), so the index is found by diffing the chain against
   what it held immediately before the load — the device that's new — falling
   back to a name match, then the last device, when diffing doesn't resolve it.
-- Regular tracks only (`song.tracks`) — return and master tracks aren't
-  addressable here.
+- `load_item` is regular tracks only (`song.tracks`). Return tracks and the
+  master are reached with `load_item_on_return` / `load_item_on_master`
+  instead — separate addresses rather than a widened `load_item`, so the
+  original keeps its exact reply shape and the arity itself says which index
+  space was targeted. All three share one implementation: `browser.load_item`
+  loads onto `song.view.selected_track`, which accepts a return or the master
+  perfectly well.
+- `load_item_on_return`'s reply carries the **return's name read back after the
+  load**, not the one it had before: Live renames an empty return the moment its
+  first device lands (`A-Return` → `A-Reverb`, measured 2026-07-31), so the
+  post-load name is the only correct one to report.
+- ⚠️ **A non-effect load on a return or the master does not fail — it creates a
+  stray MIDI track.** Measured 2026-07-31 on both: `browser.load_item` with an
+  instrument selected loads it onto a *new* track and leaves the target chain
+  untouched. So both new endpoints verify the load twice — the set's track count
+  must be unchanged, and the target's chain must have gained a device — and
+  return `'error'` naming the stray track if not. The stray track is **not**
+  deleted; the reply names it and leaves removing it to the caller.
 
 ### `/live/browser/export`
 
@@ -747,10 +771,10 @@ still be reading one.
 
 ## Return Track & Master API (Seshat extension — not in upstream AbletonOSC)
 
-⚠️ These fourteen addresses do **not** exist in stock AbletonOSC. They are served
+⚠️ These fifty-one addresses do **not** exist in stock AbletonOSC. They are served
 by `abletonosc/return_track.py` in Seshat's fork (`priv/AbletonOSC`), installed
 with `mix abletonosc.install` (restart Live afterwards). Without that install all
-fourteen addresses are unknown and queries time out.
+fifty-one addresses are unknown and queries time out.
 
 They exist because upstream reaches regular tracks only: every `/live/track/*`
 handler resolves its index through `song.tracks`. Return tracks live in
@@ -758,7 +782,16 @@ handler resolves its index through `song.tracks`. Return tracks live in
 create and delete a return track but can neither name one nor touch its level,
 and the master fader is unreachable entirely. `/live/view/set/selected_track`
 indexes `song.tracks` too, which is why selecting a return needs an address of
-ours as well.
+ours as well — and so do `/live/device/*`, `/live/track/delete_device` and
+`/live/view/set/selected_device`, which is why the whole device surface is
+repeated here.
+
+⚠️ **The master has no `mute`, `solo` or `arm` at all.** Reading one raises
+`RuntimeError("Main track has no 'mute' property!")` rather than returning
+something falsy (measured 2026-07-31, Live 12.4.3), so those addresses simply do
+not exist here — and `hasattr` is not a safe feature test on a LOM object.
+Return tracks have no `arm` either. Live 12 also calls the master track **Main**
+in its UI and in those error strings; `song.master_track.name` is `'Main'`.
 
 Return-track indices are 0-based **within `song.return_tracks`** — a separate
 index space from regular tracks. Return N is the target of send N on every
@@ -774,15 +807,75 @@ track needs no index at all.
 | `/live/return_track/get/volume` | `return_index` | `return_index, "ok", volume` | Return fader, 0.0 to 1.0 |
 | | | `return_index, "error", message` | Index out of range |
 | `/live/return_track/set/volume` | `return_index, volume` | | Set the return fader |
+| `/live/return_track/get/panning` | `return_index` | `return_index, "ok", pan` | Return pan, -1.0 to 1.0 |
+| | | `return_index, "error", message` | Index out of range |
+| `/live/return_track/set/panning` | `return_index, pan` | | Set the return pan |
+| `/live/return_track/get/mute` | `return_index` | `return_index, "ok", 0\|1` | Return muted? |
+| | | `return_index, "error", message` | Index out of range |
+| `/live/return_track/set/mute` | `return_index, 0\|1` | | Mute/unmute the return |
+| `/live/return_track/get/solo` | `return_index` | `return_index, "ok", 0\|1` | Return soloed? |
+| | | `return_index, "error", message` | Index out of range |
+| `/live/return_track/set/solo` | `return_index, 0\|1` | | Solo/unsolo the return |
 | `/live/return_track/select` | `return_index` | | Select a return track in Live's UI |
 | `/live/master/get/volume` | | `volume` | Master fader, 0.0 to 1.0 |
 | `/live/master/set/volume` | `volume` | | Set the master fader |
+| `/live/master/get/panning` | | `pan` | Master pan, -1.0 to 1.0 |
+| `/live/master/set/panning` | `pan` | | Set the master pan |
+| `/live/master/get/cue_volume` | | `value` | Cue (preview/headphone) level, 0.0 to 1.0 |
+| `/live/master/set/cue_volume` | `value` | | Set the cue level |
+| `/live/master/select` | | | Select the master track in Live's UI |
 | `/live/return_track/start_listen/name` | `return_index` | | Push `/live/return_track/get/name [return_index, name]` on every change |
 | `/live/return_track/stop_listen/name` | `return_index` | | |
 | `/live/return_track/start_listen/volume` | `return_index` | | Push `/live/return_track/get/volume [return_index, volume]` on every change |
 | `/live/return_track/stop_listen/volume` | `return_index` | | |
+| `/live/return_track/start_listen/panning` | `return_index` | | Push `/live/return_track/get/panning [return_index, pan]` on every change |
+| `/live/return_track/stop_listen/panning` | `return_index` | | |
+| `/live/return_track/start_listen/mute` | `return_index` | | Push `/live/return_track/get/mute [return_index, muted]` on every change |
+| `/live/return_track/stop_listen/mute` | `return_index` | | |
+| `/live/return_track/start_listen/solo` | `return_index` | | Push `/live/return_track/get/solo [return_index, soloed]` on every change |
+| `/live/return_track/stop_listen/solo` | `return_index` | | |
 | `/live/master/start_listen/volume` | | | Push `/live/master/get/volume [volume]` on every change |
 | `/live/master/stop_listen/volume` | | | |
+| `/live/master/start_listen/panning` | | | Push `/live/master/get/panning [pan]` on every change |
+| `/live/master/stop_listen/panning` | | | |
+| `/live/master/start_listen/cue_volume` | | | Push `/live/master/get/cue_volume [value]` on every change |
+| `/live/master/stop_listen/cue_volume` | | | |
+
+### Return Track & Master: Device Chains
+
+Upstream's `/live/device/*`, `/live/track/delete_device` and
+`/live/view/set/selected_device` all resolve through `song.tracks`, so the whole
+device surface is repeated here — once indexed by return, once for the master.
+
+| Address | Query Params | Response Params | Description |
+|---|---|---|---|
+| `/live/return_track/get/devices` | `return_index` | `return_index, "ok", count, [name, type, class_name] × count` | The return's whole device chain in one reply |
+| | | `return_index, "error", message` | Index out of range |
+| `/live/master/get/devices` | | `count, [name, type, class_name] × count` | The master's device chain (no index → no failure path) |
+| `/live/return_track/device/get/name` | `return_index, device_index` | `return_index, device_index, "ok", name` | Device name |
+| | | `return_index, device_index, "error", message` | Either index out of range |
+| `/live/master/device/get/name` | `device_index` | `device_index, "ok", name` | Device name |
+| | | `device_index, "error", message` | Index out of range |
+| `/live/return_track/device/get/parameters` | `return_index, device_index` | `return_index, device_index, "ok", device_name, count, [name, value, min, max] × count` | Every parameter in one reply |
+| | | `return_index, device_index, "error", message` | Either index out of range |
+| `/live/master/device/get/parameters` | `device_index` | `device_index, "ok", device_name, count, [name, value, min, max] × count` | Every parameter in one reply |
+| | | `device_index, "error", message` | Index out of range |
+| `/live/return_track/device/get/parameter/value` | `return_index, device_index, parameter_index` | `return_index, device_index, parameter_index, "ok", value` | One parameter's numeric value |
+| | | `return_index, device_index, parameter_index, "error", message` | Any index out of range |
+| `/live/master/device/get/parameter/value` | `device_index, parameter_index` | `device_index, parameter_index, "ok", value` | One parameter's numeric value |
+| | | `device_index, parameter_index, "error", message` | Either index out of range |
+| `/live/return_track/device/get/parameter/value_string` | `return_index, device_index, parameter_index` | `return_index, device_index, parameter_index, "ok", string` | Live's display value ("2.5 kHz") |
+| | | `return_index, device_index, parameter_index, "error", message` | Any index out of range |
+| `/live/master/device/get/parameter/value_string` | `device_index, parameter_index` | `device_index, parameter_index, "ok", string` | Live's display value |
+| | | `device_index, parameter_index, "error", message` | Either index out of range |
+| `/live/return_track/device/set/parameter/value` | `return_index, device_index, parameter_index, value` | | Set one parameter (silent) |
+| `/live/master/device/set/parameter/value` | `device_index, parameter_index, value` | | Set one parameter (silent) |
+| `/live/return_track/delete_device` | `return_index, device_index` | `return_index, device_index, "ok", remaining` | Delete a device; `remaining` is the chain length re-read afterwards |
+| | | `return_index, device_index, "error", message` | Either index out of range, or the delete raised |
+| `/live/master/delete_device` | `device_index` | `device_index, "ok", remaining` | Delete a device from the master chain |
+| | | `device_index, "error", message` | Index out of range, or the delete raised |
+| `/live/return_track/select_device` | `return_index, device_index` | | Select a device on a return, in Live's UI |
+| `/live/master/select_device` | `device_index` | | Select a device on the master, in Live's UI |
 
 - **Getters always reply**, on the address they were called on, including on
   every error path — the same rule as the Browser API above, and the opposite of
@@ -791,16 +884,48 @@ track needs no index at all.
   from an install that never happened, and would cost a full guard timeout to
   learn nothing either way. With the envelope, **an error reply means a bad
   index and silence means the extension isn't loaded.**
-- `get/count` and `/live/master/get/volume` take no index, so they have no
-  failure to report and reply with the bare value.
+- **The index-less master getters reply with the bare value**, no envelope:
+  `get/count`, `/live/master/get/volume`, `/live/master/get/panning`,
+  `/live/master/get/cue_volume` and `/live/master/get/devices` take nothing to
+  look up, so they have no failure to report.
+- **`delete_device` is the one setter-shaped address that replies.** It is a
+  *method* with a real failure path — the same class as `load_item` — and the
+  alternative is sandwiching it between two count reads to learn whether it
+  landed. Its `remaining` is the chain length re-read from Live afterwards, not
+  a number computed from the request.
+- **The two list getters combine what upstream splits.** `get/devices` carries
+  `count` then `count` × `(name, type, class_name)`;
+  `device/get/parameters` carries `device_name`, `count`, then `count` ×
+  `(name, value, min, max)`. Upstream needs three and five separate round trips
+  respectively, and on a protocol with no request ids, assembling parallel lists
+  from separate replies risks describing two different devices. `count` comes
+  first so the flat tail stays parseable — a tail that isn't a whole number of
+  triples (or quadruples), or whose group count disagrees with `count`, is a
+  shape error the caller must reject rather than truncate. A large device
+  (Operator, ~130 parameters) makes a ~5–6 KB datagram; `Transport`'s receive
+  buffer is 64 KB, and upstream's own list getters already ship multi-KB
+  replies.
 - **Setters are silent**, like upstream's. Every caller guards with the matching
   getter immediately beforehand, so a bad index has already been reported by the
   time a setter goes out, and nothing waits on one.
-- `select` is silent too, for a stronger reason: it is view steering that follows
-  a tool which has already succeeded, and steering must never fail — or delay —
-  the thing it follows. A bad index is logged in Live and nothing happens.
+- `select`, `select_device` and `/live/master/select` are silent too, for a
+  stronger reason: they are view steering that follows a tool which has already
+  succeeded, and steering must never fail — or delay — the thing it follows. A
+  bad index is logged in Live and nothing happens. `song.view.select_device`
+  also opens `Detail/DeviceChain` on its own (measured 2026-07-31), so the
+  follow cam needs no separate pane call after one.
 - Volume is `mixer_device.volume.value` on Live's fader scale, the same property
-  and scale as `/live/track/get|set/volume`.
+  and scale as `/live/track/get|set/volume`. Panning is
+  `mixer_device.panning.value`, -1.0 to 1.0, displayed by Live in its L/C/R form
+  (`-1.0` → `50L`, `0.0` → `C`, `1.0` → `50R`) — not degrees or a percentage.
+  Cue volume is `mixer_device.cue_volume.value`, 0.0 to 1.0, parameter name
+  **`Preview Volume`**, and shares the *identical* dB curve with track volume
+  (`0.0` → `-inf dB`, `0.5` → `-14.0 dB`, `0.85` → `0.0 dB`, `1.0` → `6.0 dB`).
+  All three measured against Live 12.4.3, 2026-07-31.
+- Mute and solo are plain `Track` properties, not DeviceParameters — so their
+  listeners use the base class's `_start_listen` while the three mixer
+  parameters need the hand-rolled one below. The getters report `0`/`1`; Live's
+  own push carries a bool.
 - Creating and deleting return tracks is upstream's job:
   `/live/song/create_return_track` (no arguments, appends after the existing
   returns) and `/live/song/delete_return_track [return_index]`. A newly created
@@ -817,10 +942,16 @@ track needs no index at all.
 - A `get/*` address therefore carries both query replies and listener pushes.
   Live's own track listeners upstream already work this way, and a push landing
   on a pending query is harmless: it carries a current value.
-- Return-track volume is listened to on `mixer_device.volume`, a
-  `DeviceParameter` with `add_value_listener` rather than a Track property — so
-  that one listener is hand-rolled instead of using the base class's
-  `_start_listen`, which would derive `/live/return_track/get/value`.
+- Return-track volume, pan and the master's cue level are listened to on
+  `mixer_device.*`, which are `DeviceParameter`s with `add_value_listener`
+  rather than Track properties — so those listeners are hand-rolled instead of
+  using the base class's `_start_listen`, which would derive
+  `/live/return_track/get/value`. Because the base class's bookkeeping key is
+  `(prop, params)` and `prop` is forced to `"value"` for all of them, the
+  property has to be discriminated in the *params* half:
+  `(index, "volume")`, `(index, "panning")`, `("master", "cue_volume")` and so
+  on. Without that, subscribing a return's pan would silently evict its volume
+  listener. The tuple never reaches the wire.
 - **Re-subscribing an index unbinds the object it used to mean.** These
   listeners are keyed by return index but bound to a return-track object, and
   deleting a return renumbers everything after it. Upstream's `_stop_listen`

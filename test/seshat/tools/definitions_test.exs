@@ -7,7 +7,7 @@ defmodule Seshat.Tools.DefinitionsTest do
     test "returns a list of tool definitions" do
       tools = Definitions.all()
       assert is_list(tools)
-      assert length(tools) == 60
+      assert length(tools) == 65
     end
 
     test "each tool has required fields" do
@@ -38,7 +38,9 @@ defmodule Seshat.Tools.DefinitionsTest do
         get_session_state get_clip_slots
         set_track_send get_track_sends
         create_return_track delete_return_track
-        set_return_track_volume set_master_volume
+        set_return_track_volume set_return_track_pan
+        set_return_track_mute set_return_track_solo
+        set_master_volume set_master_pan set_cue_volume
         record_clip stop_recording capture_midi
         get_clip_properties set_clip_properties quantize_clip
       )

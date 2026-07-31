@@ -163,33 +163,101 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       end
     end
 
-    test "the browser handler registers exactly the five documented addresses" do
+    test "the browser handler registers exactly the seven documented addresses" do
       assert Enum.sort(registered_addresses(@browser_file)) == [
                "/live/browser/export",
                "/live/browser/get/items",
                "/live/browser/load_item",
+               "/live/browser/load_item_on_master",
+               "/live/browser/load_item_on_return",
                "/live/browser/preview_item",
                "/live/browser/stop_preview"
              ]
     end
 
-    test "the return/master handler registers exactly the fourteen documented addresses" do
+    test "the return/master handler registers exactly the fifty-one documented addresses" do
       assert Enum.sort(registered_addresses(@return_track_file)) == [
+               "/live/master/delete_device",
+               "/live/master/device/get/name",
+               "/live/master/device/get/parameter/value",
+               "/live/master/device/get/parameter/value_string",
+               "/live/master/device/get/parameters",
+               "/live/master/device/set/parameter/value",
+               "/live/master/get/cue_volume",
+               "/live/master/get/devices",
+               "/live/master/get/panning",
                "/live/master/get/volume",
+               "/live/master/select",
+               "/live/master/select_device",
+               "/live/master/set/cue_volume",
+               "/live/master/set/panning",
                "/live/master/set/volume",
+               "/live/master/start_listen/cue_volume",
+               "/live/master/start_listen/panning",
                "/live/master/start_listen/volume",
+               "/live/master/stop_listen/cue_volume",
+               "/live/master/stop_listen/panning",
                "/live/master/stop_listen/volume",
+               "/live/return_track/delete_device",
+               "/live/return_track/device/get/name",
+               "/live/return_track/device/get/parameter/value",
+               "/live/return_track/device/get/parameter/value_string",
+               "/live/return_track/device/get/parameters",
+               "/live/return_track/device/set/parameter/value",
                "/live/return_track/get/count",
+               "/live/return_track/get/devices",
+               "/live/return_track/get/mute",
                "/live/return_track/get/name",
+               "/live/return_track/get/panning",
+               "/live/return_track/get/solo",
                "/live/return_track/get/volume",
                "/live/return_track/select",
+               "/live/return_track/select_device",
+               "/live/return_track/set/mute",
                "/live/return_track/set/name",
+               "/live/return_track/set/panning",
+               "/live/return_track/set/solo",
                "/live/return_track/set/volume",
+               "/live/return_track/start_listen/mute",
                "/live/return_track/start_listen/name",
+               "/live/return_track/start_listen/panning",
+               "/live/return_track/start_listen/solo",
                "/live/return_track/start_listen/volume",
+               "/live/return_track/stop_listen/mute",
                "/live/return_track/stop_listen/name",
+               "/live/return_track/stop_listen/panning",
+               "/live/return_track/stop_listen/solo",
                "/live/return_track/stop_listen/volume"
              ]
+    end
+
+    # The mixer listeners are keyed ("value", (index, prop)) rather than
+    # ("value", (index,)): the base class derives remove_value_listener from the
+    # *prop* half, which forces every DeviceParameter listener to register under
+    # "value", so the discriminator has to live in the params half. Lose it and
+    # subscribing a return's pan silently evicts its volume listener — every
+    # address still answers, and the mirror just stops following one fader.
+    test "the mixer listeners discriminate their keys by property, not by index alone" do
+      source = File.read!(@return_track_file)
+
+      for key <- [
+            ~s|listener_params=(index, "volume")|,
+            ~s|listener_params=(index, "panning")|,
+            ~s|listener_params=("master", "volume")|,
+            ~s|listener_params=("master", "panning")|,
+            ~s|listener_params=("master", "cue_volume")|
+          ] do
+        assert String.contains?(source, key),
+               """
+               #{@return_track_file} no longer registers a mixer listener with #{key}.
+
+               All of them register under the prop "value" (the base class derives
+               remove_value_listener from it), so two mixer parameters sharing an
+               index would share a listener key — and the second subscribe would
+               silently unbind the first. Nothing on the wire changes; the mirror
+               just stops following one of them.
+               """
+      end
     end
 
     test "the song structure handler registers exactly the four documented addresses" do

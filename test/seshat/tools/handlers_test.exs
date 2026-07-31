@@ -823,13 +823,28 @@ defmodule Seshat.Tools.HandlersTest do
     }
   end
 
+  describe "chain_label/1" do
+    # The whole reason the device formatters take a chain descriptor instead of
+    # a bare integer: return 0 and track 0 are different objects, and rendering
+    # one as the other would be a *wrong* reply rather than a vague one.
+    test "the three index spaces never collide" do
+      assert Handlers.chain_label({:track, 0}) == "track 0"
+      assert Handlers.chain_label({:return, 0}) == "return track 0"
+      assert Handlers.chain_label(:master) =~ "master track"
+    end
+
+    test "the master names itself the way Live 12 labels it on screen" do
+      assert Handlers.chain_label(:master) =~ "Main in Live 12"
+    end
+  end
+
   describe "format_device_chain/4" do
     # The do_call clauses for the device tools aren't tested here: they go
     # through Transport.query, which needs a live Ableton.
     test "formats one line per device with index, type label, and class" do
       result =
         Handlers.format_device_chain(
-          0,
+          {:track, 0},
           ["Analog", "Reverb"],
           [2, 1],
           ["InstrumentVector", "Reverb"]
@@ -841,17 +856,125 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "labels MIDI effects and unknown types" do
-      result = Handlers.format_device_chain(1, ["Arpeggiator", "Weird"], [4, 9], ["Arp", "X"])
+      result =
+        Handlers.format_device_chain({:track, 1}, ["Arpeggiator", "Weird"], [4, 9], ["Arp", "X"])
 
       assert result =~ "MIDI effect"
       assert result =~ "type 9"
     end
 
     test "explains an empty chain and points at load_device" do
-      result = Handlers.format_device_chain(2, [], [], [])
+      result = Handlers.format_device_chain({:track, 2}, [], [], [])
 
       assert result =~ "No devices on track 2"
       assert result =~ "load_device"
+    end
+
+    test "a return chain says return track, never track" do
+      result = Handlers.format_device_chain({:return, 0}, ["Reverb"], [1], ["Reverb"])
+
+      assert result =~ "1 device(s) on return track 0"
+      refute result =~ "on track 0"
+    end
+
+    test "an empty return chain explains that its sends are silent" do
+      result = Handlers.format_device_chain({:return, 1}, [], [], [])
+
+      assert result =~ "No devices on return track 1"
+      assert result =~ "every send into it is silent"
+      assert result =~ "target: 'return'"
+    end
+
+    test "the master chain names the master, not a numbered track" do
+      result = Handlers.format_device_chain(:master, ["EQ Eight"], [1], ["Eq8"])
+
+      assert result =~ "1 device(s) on the master track"
+      refute result =~ "track 0"
+    end
+
+    test "an empty master chain says the mix passes through untouched" do
+      assert Handlers.format_device_chain(:master, [], [], []) =~ "passes through untouched"
+    end
+  end
+
+  describe "parse_device_chain/1" do
+    test "splits the flat tail into parallel name/type/class lists" do
+      assert {:ok, {names, types, classes}} =
+               Handlers.parse_device_chain([2, "Reverb", 1, "Reverb", "Delay", 1, "Delay"])
+
+      assert names == ["Reverb", "Delay"]
+      assert types == [1, 1]
+      assert classes == ["Reverb", "Delay"]
+    end
+
+    test "an empty chain is a legitimate answer, not an error" do
+      assert {:ok, {[], [], []}} = Handlers.parse_device_chain([0])
+    end
+
+    test "rejects a tail that isn't a whole number of triples" do
+      assert {:error, message} = Handlers.parse_device_chain([1, "Reverb", 1])
+
+      assert message =~ "declared 1 device(s) but sent 2 value(s)"
+      assert message =~ "mix abletonosc.install"
+    end
+
+    # The count and the tail length can disagree while the tail is still a
+    # whole number of triples — a truncated datagram is exactly that shape.
+    test "rejects a triple count that disagrees with the declared count" do
+      assert {:error, message} =
+               Handlers.parse_device_chain([2, "Reverb", 1, "Reverb"])
+
+      assert message =~ "declared 2 device(s) but sent 3 value(s)"
+    end
+
+    test "rejects a reply that doesn't start with a count" do
+      assert {:error, message} = Handlers.parse_device_chain(["Reverb", 1, "Reverb"])
+
+      assert message =~ "does not start with a device count"
+    end
+  end
+
+  describe "parse_device_parameters/1" do
+    test "splits the flat tail into parallel name/value/min/max lists" do
+      assert {:ok, {device_name, names, values, mins, maxes}} =
+               Handlers.parse_device_parameters([
+                 "Reverb",
+                 2,
+                 "Device On",
+                 1.0,
+                 0.0,
+                 1.0,
+                 "Dry/Wet",
+                 0.3,
+                 0.0,
+                 1.0
+               ])
+
+      assert device_name == "Reverb"
+      assert names == ["Device On", "Dry/Wet"]
+      assert values == [1.0, 0.3]
+      assert mins == [0.0, 0.0]
+      assert maxes == [1.0, 1.0]
+    end
+
+    test "rejects a tail that isn't a whole number of quadruples" do
+      assert {:error, message} =
+               Handlers.parse_device_parameters(["Reverb", 1, "Device On", 1.0, 0.0])
+
+      assert message =~ "declared 1 parameter(s) but sent 3 value(s)"
+    end
+
+    test "rejects a quadruple count that disagrees with the declared count" do
+      assert {:error, message} =
+               Handlers.parse_device_parameters(["Reverb", 2, "Device On", 1.0, 0.0, 1.0])
+
+      assert message =~ "declared 2 parameter(s) but sent 4 value(s)"
+    end
+
+    test "rejects a reply missing its device name and count" do
+      assert {:error, message} = Handlers.parse_device_parameters([1.0, 0.0, 1.0])
+
+      assert message =~ "does not start with a device name"
     end
   end
 
@@ -859,25 +982,37 @@ defmodule Seshat.Tools.HandlersTest do
     # The delete_device / bypass_device do_call clauses aren't tested here: both
     # lead with a guarded Transport read, which needs a live Ableton.
     test "names the real index range and prints the chain" do
-      result = Handlers.device_out_of_range_error(2, 3, ["Operator", "Reverb"])
+      result = Handlers.device_out_of_range_error({:track, 2}, 3, ["Operator", "Reverb"])
 
-      assert result =~ "Track 2 has 2 device(s) (indices 0–1)"
+      assert result =~ "2 device(s) on track 2 (indices 0–1)"
       assert result =~ "there is no device 3"
       assert result =~ "Chain: 0: Operator, 1: Reverb."
     end
 
     test "an empty chain gets its own message" do
-      result = Handlers.device_out_of_range_error(0, 0, [])
+      result = Handlers.device_out_of_range_error({:track, 0}, 0, [])
 
-      assert result =~ "Track 0 has no devices"
+      assert result =~ "no devices on track 0"
       assert result =~ "nothing to delete (asked for device 0)"
       assert result =~ "get_track_devices"
+    end
+
+    test "a return chain is never reported as a regular track" do
+      result = Handlers.device_out_of_range_error({:return, 0}, 2, ["Reverb"])
+
+      assert result =~ "on return track 0"
+      refute result =~ "on track 0"
+    end
+
+    test "the master is never reported as a numbered track" do
+      assert Handlers.device_out_of_range_error(:master, 1, []) =~ "on the master track"
     end
   end
 
   describe "deleted_device_reply/3" do
     test "names the deleted device and re-indexes what is left" do
-      result = Handlers.deleted_device_reply(2, 1, ["Operator", "Compressor", "Reverb"])
+      result =
+        Handlers.deleted_device_reply({:track, 2}, 1, ["Operator", "Compressor", "Reverb"])
 
       assert result =~ "Deleted 'Compressor' (device 1) from track 2"
       assert result =~ "Remaining chain: 0: Operator, 1: Reverb"
@@ -885,11 +1020,22 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "says so when the last device is gone" do
-      result = Handlers.deleted_device_reply(0, 0, ["Reverb"])
+      result = Handlers.deleted_device_reply({:track, 0}, 0, ["Reverb"])
 
       assert result =~ "Deleted 'Reverb' (device 0) from track 0"
       assert result =~ "device chain is now empty"
       refute result =~ "Remaining chain"
+    end
+
+    test "a return delete says return track" do
+      result = Handlers.deleted_device_reply({:return, 0}, 0, ["Reverb"])
+
+      assert result =~ "from return track 0"
+      refute result =~ "from track 0"
+    end
+
+    test "a master delete names the master" do
+      assert Handlers.deleted_device_reply(:master, 0, ["EQ Eight"]) =~ "from the master track"
     end
   end
 
@@ -911,21 +1057,32 @@ defmodule Seshat.Tools.HandlersTest do
 
   describe "bypass_device replies" do
     test "the off reply says bypassed with settings kept" do
-      result = Handlers.bypass_reply("Compressor", 2, 1, false)
+      result = Handlers.bypass_reply("Compressor", {:track, 2}, 1, false)
 
       assert result == "'Compressor' (device 1 on track 2) is now Off — bypassed, settings kept."
     end
 
     test "the on reply" do
-      assert Handlers.bypass_reply("Compressor", 2, 1, true) ==
+      assert Handlers.bypass_reply("Compressor", {:track, 2}, 1, true) ==
                "'Compressor' (device 1 on track 2) is now On."
     end
 
     test "the no-op reply names the unchanged state and claims no change" do
-      result = Handlers.bypass_noop_reply("Compressor", 2, 1, false)
+      result = Handlers.bypass_noop_reply("Compressor", {:track, 2}, 1, false)
 
       assert result =~ "was already Off — nothing to do"
       refute result =~ "is now"
+    end
+
+    test "a return's device is never reported as being on a regular track" do
+      assert Handlers.bypass_reply("Reverb", {:return, 0}, 0, false) =~
+               "(device 0 on return track 0)"
+
+      assert Handlers.bypass_noop_reply("Reverb", {:return, 0}, 0, true) =~ "on return track 0"
+    end
+
+    test "the master's device names the master" do
+      assert Handlers.bypass_reply("EQ Eight", :master, 0, true) =~ "on the master track"
     end
   end
 
@@ -933,7 +1090,7 @@ defmodule Seshat.Tools.HandlersTest do
     test "formats one line per parameter with value and range" do
       result =
         Handlers.format_device_parameters(
-          0,
+          {:track, 0},
           1,
           "Analog",
           ["Device On", "Filter Freq"],
@@ -948,9 +1105,26 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "leaves integer values untouched" do
-      result = Handlers.format_device_parameters(0, 0, "Op", ["Mode"], [3], [0], [7])
+      result = Handlers.format_device_parameters({:track, 0}, 0, "Op", ["Mode"], [3], [0], [7])
 
       assert result =~ "0. Mode = 3 (range 0–7)"
+    end
+
+    test "a return's device is located on the return, not on track N" do
+      result =
+        Handlers.format_device_parameters({:return, 1}, 0, "Reverb", ["Dry/Wet"], [0.3], [0.0], [
+          1.0
+        ])
+
+      assert result =~ ~s{Device 0 "Reverb" on return track 1}
+      refute result =~ "on track 1"
+    end
+
+    test "the master's device is located on the master" do
+      result =
+        Handlers.format_device_parameters(:master, 0, "EQ Eight", ["Gain"], [0.5], [0.0], [1.0])
+
+      assert result =~ "on the master track"
     end
   end
 
@@ -1619,17 +1793,37 @@ defmodule Seshat.Tools.HandlersTest do
   end
 
   describe "format_return_tracks/2" do
+    defp return(overrides \\ %{}) do
+      Map.merge(
+        %{index: 0, name: "A-Reverb", volume: 0.85, pan: 0.0, mute: false, solo: false},
+        overrides
+      )
+    end
+
+    defp master(overrides \\ %{}) do
+      Map.merge(%{volume: 0.85, pan: 0.0, cue_volume: 0.85}, overrides)
+    end
+
     test "one line per return in send order, then the master" do
       returns = [
-        %{index: 0, name: "A-Reverb", volume: 0.85},
-        %{index: 1, name: "B-Delay", volume: 0.7}
+        return(),
+        return(%{index: 1, name: "B-Delay", volume: 0.7, pan: -0.5})
       ]
 
-      result = Handlers.format_return_tracks(returns, %{volume: 0.85})
+      result = Handlers.format_return_tracks(returns, master())
 
-      assert result =~ ~s{Return 0 "A-Reverb" (send A): volume=0.85}
-      assert result =~ ~s{Return 1 "B-Delay" (send B): volume=0.7}
-      assert result =~ "Master: volume=0.85"
+      assert result =~ ~s{Return 0 "A-Reverb" (send A): volume=0.85, pan=0.0}
+      assert result =~ ~s{Return 1 "B-Delay" (send B): volume=0.7, pan=-0.5}
+      assert result =~ "Master (shown as Main in Live 12): volume=0.85, pan=0.0, cue volume=0.85"
+    end
+
+    test "a muted or soloed return is flagged the way a regular track line is" do
+      returns = [return(%{mute: true}), return(%{index: 1, name: "B-Delay", solo: true})]
+
+      result = Handlers.format_return_tracks(returns, master())
+
+      assert result =~ ~s{"A-Reverb" (send A): volume=0.85, pan=0.0 [muted]}
+      assert result =~ ~s{"B-Delay" (send B): volume=0.85, pan=0.0 [solo]}
     end
 
     # nil master means the extension never answered, which looks identical to a
@@ -1643,34 +1837,54 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "an answering extension with no returns still reports the master" do
-      result = Handlers.format_return_tracks([], %{volume: 0.6})
+      result = Handlers.format_return_tracks([], master(%{volume: 0.6}))
 
       assert result =~ "No return tracks"
       assert result =~ "create_return_track"
-      assert result =~ "Master: volume=0.6"
+      assert result =~ "Master (shown as Main in Live 12): volume=0.6"
     end
 
     # A guessed fader position reads as real, and the model does relative moves
     # off it — "turn the delay down a bit" from a fictional 0.85 is an increase.
     test "a return whose volume query went unanswered says so instead of guessing" do
-      returns = [
-        %{index: 0, name: "A-Reverb", volume: 0.85},
-        %{index: 1, name: "B-Delay", volume: nil}
-      ]
+      returns = [return(), return(%{index: 1, name: "B-Delay", volume: nil})]
 
-      result = Handlers.format_return_tracks(returns, %{volume: 0.85})
+      result = Handlers.format_return_tracks(returns, master())
 
       assert result =~ ~s{Return 0 "A-Reverb" (send A): volume=0.85}
       assert result =~ ~s{Return 1 "B-Delay" (send B): volume unknown}
       refute result =~ ~s{"B-Delay" (send B): volume=}
     end
 
+    test "an unanswered return pan is stated, not centred" do
+      result = Handlers.format_return_tracks([return(%{pan: nil})], master())
+
+      assert result =~ ~s{"A-Reverb" (send A): volume=0.85, pan unknown}
+      refute result =~ ~s{"A-Reverb" (send A): volume=0.85, pan=}
+    end
+
+    # One marker for the pair, matching format_track_line/1: two unanswered flag
+    # queries are one lost refresh, not two facts worth reporting separately.
+    test "unanswered mute/solo gets one shared marker, never a silent false" do
+      result = Handlers.format_return_tracks([return(%{mute: nil, solo: nil})], master())
+
+      assert result =~ "[mute/solo unknown]"
+      refute result =~ "[muted]"
+    end
+
+    test "an unanswered master pan or cue level is stated, not guessed" do
+      result = Handlers.format_return_tracks([], master(%{pan: nil, cue_volume: nil}))
+
+      assert result =~ "pan unknown"
+      assert result =~ "cue unknown"
+    end
+
     # A fabricated "Return 1" is worse than a guessed number: the user may try
     # to address the return by that name.
     test "a return whose name query went unanswered says so instead of guessing" do
-      returns = [%{index: 1, name: nil, volume: 0.7}]
+      returns = [return(%{index: 1, name: nil, volume: 0.7})]
 
-      result = Handlers.format_return_tracks(returns, %{volume: 0.85})
+      result = Handlers.format_return_tracks(returns, master())
 
       assert result =~ "Return 1 (name unknown) (send B): volume=0.7"
     end
@@ -1851,7 +2065,7 @@ defmodule Seshat.Tools.HandlersTest do
   describe "format_session_state/4" do
     @explanation "Unknown values mean Ableton did not answer"
 
-    defp known_returns, do: [%{index: 0, name: "A-Reverb", volume: 0.7}]
+    defp known_returns, do: [return(%{volume: 0.7})]
 
     defp compose(overrides \\ %{}) do
       args =
@@ -1860,7 +2074,7 @@ defmodule Seshat.Tools.HandlersTest do
             song: song(),
             tracks: [mirrored_track()],
             return_tracks: known_returns(),
-            master: %{volume: 0.85}
+            master: master()
           },
           overrides
         )
@@ -1874,7 +2088,7 @@ defmodule Seshat.Tools.HandlersTest do
       assert reply =~ "120.0 BPM, 4/4, stopped, key: C Major"
       assert reply =~ ~s{Track 0 "Drums"}
       assert reply =~ ~s{Return 0 "A-Reverb"}
-      assert reply =~ "Master: volume=0.85"
+      assert reply =~ "Master (shown as Main in Live 12): volume=0.85"
       refute reply =~ @explanation
     end
 
@@ -1895,12 +2109,25 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "an unknown return name triggers the explanation" do
-      assert compose(%{return_tracks: [%{index: 0, name: nil, volume: 0.7}]}) =~ @explanation
+      assert compose(%{return_tracks: [return(%{name: nil})]}) =~ @explanation
     end
 
     test "an unknown return volume triggers the explanation" do
-      assert compose(%{return_tracks: [%{index: 0, name: "A-Reverb", volume: nil}]}) =~
-               @explanation
+      assert compose(%{return_tracks: [return(%{volume: nil})]}) =~ @explanation
+    end
+
+    test "an unknown return pan or mute/solo triggers the explanation" do
+      assert compose(%{return_tracks: [return(%{pan: nil})]}) =~ @explanation
+      assert compose(%{return_tracks: [return(%{mute: nil})]}) =~ @explanation
+      assert compose(%{return_tracks: [return(%{solo: nil})]}) =~ @explanation
+    end
+
+    # A master whose volume answered but whose pan didn't is *not* the
+    # extension-missing case, so it has to be flagged the same way any other
+    # lost field is rather than passing as fully known.
+    test "an unknown master pan or cue level triggers the explanation" do
+      assert compose(%{master: master(%{pan: nil})}) =~ @explanation
+      assert compose(%{master: master(%{cue_volume: nil})}) =~ @explanation
     end
 
     # A reply that says "return/master state unavailable" and explains nothing
@@ -1918,7 +2145,7 @@ defmodule Seshat.Tools.HandlersTest do
         compose(%{
           song: song(%{tempo: nil, scale_name: nil}),
           tracks: [mirrored_track(%{volume: nil, mute: nil})],
-          return_tracks: [%{index: 0, name: nil, volume: nil}],
+          return_tracks: [return(%{name: nil, volume: nil})],
           master: nil
         })
 

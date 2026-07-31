@@ -6,6 +6,29 @@ defmodule Seshat.Tools.Definitions do
   to either MCP or Anthropic API format as needed.
   """
 
+  # The one optional parameter that widens all six device tools from regular
+  # tracks to return and master chains. Written once and spliced into each of
+  # them: six hand-copied descriptions would drift, and the model reads this
+  # sentence six times — it has to say the same thing every time.
+  #
+  # `track` stays required and unchanged even though the master ignores it. The
+  # "pass 0" wart costs one sentence here; making it optional would change the
+  # wire contract for the overwhelmingly common regular-track case.
+  @device_target %{
+    type: "string",
+    enum: ["return", "master"],
+    description:
+      "Aim this call at a return track's device chain ('return') or the master track's " <>
+        "('master') instead of a regular track's. With 'return', track is the 0-based " <>
+        "return-track index (return 0 = send A — see get_session_state). With 'master', " <>
+        "track is ignored — pass 0. Omit for regular tracks."
+  }
+
+  # Appended to all six for the same reason — one sentence, one wording.
+  @device_target_note "Return and master chains are reachable too — pass target: 'return' " <>
+                        "(with the return index in track) or target: 'master' (the master is " <>
+                        "shown as Main in Live 12). "
+
   @tools [
     %{
       name: "set_track_pan",
@@ -1146,6 +1169,10 @@ defmodule Seshat.Tools.Definitions do
           "you asked for before telling the user it worked. " <>
           "A wrong or unwanted load is not permanent: delete_device removes it, which is how to " <>
           "audition candidates in place (load, listen, delete, load the next). " <>
+          @device_target_note <>
+          "On returns and the master, load audio effects only — that is all Live allows there, " <>
+          "and asking for an instrument makes Live create a stray track instead, which this " <>
+          "tool reports as an error. " <>
           "The view follows the load automatically — the new device is selected with its panel " <>
           "open.",
       parameters: %{
@@ -1159,7 +1186,8 @@ defmodule Seshat.Tools.Definitions do
           "uri" => %{
             type: "string",
             description: "Browser item uri, exactly as returned by list_browser_items"
-          }
+          },
+          "target" => @device_target
         },
         required: ["track", "uri"]
       }
@@ -1175,12 +1203,14 @@ defmodule Seshat.Tools.Definitions do
           "('the reverb') to the device index that get_device_parameters, " <>
           "set_device_parameter, delete_device and bypass_device all need, or to check whether " <>
           "a track has an instrument at all. " <>
+          @device_target_note <>
           "Racks (e.g. an Instrument Rack preset) appear as a single device — their inner " <>
           "chain is not listed.",
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"}
+          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
+          "target" => @device_target
         },
         required: ["track"]
       }
@@ -1196,6 +1226,7 @@ defmodule Seshat.Tools.Definitions do
           "cutoff') to its index and to learn the legal value range. " <>
           "Values are Ableton's internal units — often normalized 0.0–1.0, but not always; " <>
           "trust the min/max in the output, not an assumption. " <>
+          @device_target_note <>
           "When talking to the user, refer to tracks and devices by name or 1-based UI number, " <>
           "never raw index.",
       parameters: %{
@@ -1206,7 +1237,8 @@ defmodule Seshat.Tools.Definitions do
             type: "integer",
             minimum: 0,
             description: "0-indexed device on the track, as returned by get_track_devices"
-          }
+          },
+          "target" => @device_target
         },
         required: ["track", "device"]
       }
@@ -1222,6 +1254,7 @@ defmodule Seshat.Tools.Definitions do
           "'-12 dB') — check it against what the user asked for. " <>
           "For relative changes ('a bit brighter'), read the current value first and move it " <>
           "a small fraction of the range. " <>
+          @device_target_note <>
           "To switch a whole device on or off (bypass), use bypass_device instead of setting " <>
           "parameter 0 by hand.",
       parameters: %{
@@ -1241,7 +1274,8 @@ defmodule Seshat.Tools.Definitions do
           "value" => %{
             type: "number",
             description: "New value, within the min–max range reported by get_device_parameters"
-          }
+          },
+          "target" => @device_target
         },
         required: ["track", "device", "parameter", "value"]
       }
@@ -1257,7 +1291,7 @@ defmodule Seshat.Tools.Definitions do
           "Deleting a device shifts every later device's index down by one, so indices noted " <>
           "before the delete are stale; the reply lists the remaining chain with its fresh " <>
           "indices. " <>
-          "Regular tracks only — devices on return or master tracks are out of reach. " <>
+          @device_target_note <>
           "To compare with/without a device instead of removing it, use bypass_device.",
       parameters: %{
         type: "object",
@@ -1267,7 +1301,8 @@ defmodule Seshat.Tools.Definitions do
             type: "integer",
             minimum: 0,
             description: "0-indexed device on the track, as returned by get_track_devices"
-          }
+          },
+          "target" => @device_target
         },
         required: ["track", "device"]
       }
@@ -1283,7 +1318,8 @@ defmodule Seshat.Tools.Definitions do
           "device index. " <>
           "This toggles the device's own power switch (its parameter 0, 'Device On'), exactly " <>
           "like clicking the device's on/off button in Live. " <>
-          "Bypassing an instrument silences its track. Regular tracks only. " <>
+          "Bypassing an instrument silences its track. " <>
+          @device_target_note <>
           "To remove the device from the chain entirely, use delete_device.",
       parameters: %{
         type: "object",
@@ -1297,7 +1333,8 @@ defmodule Seshat.Tools.Definitions do
           "enabled" => %{
             type: "boolean",
             description: "false bypasses the device, true re-enables it"
-          }
+          },
+          "target" => @device_target
         },
         required: ["track", "device", "enabled"]
       }
@@ -1307,8 +1344,9 @@ defmodule Seshat.Tools.Definitions do
       description:
         "Get the current state of all tracks in the Ableton Live session. " <>
           "Returns tempo, time signature, the song's key and scale, track names, indices, " <>
-          "volume, pan, mute, and solo status, plus the return tracks (name and volume, in " <>
-          "send order: return 0 = send A) and the master volume. " <>
+          "volume, pan, mute, and solo status, plus the return tracks (name, volume, pan, " <>
+          "mute/solo, in send order: return 0 = send A) and the master's volume, pan and cue " <>
+          "volume (the master is shown as Main in Live 12). " <>
           "Return-track indices are their own 0-based space, separate from regular tracks — " <>
           "this is how you resolve 'the reverb send' to the send index set_track_send needs. " <>
           "The key is whatever Live's scale controls are set to — a strong hint about what to " <>
@@ -1373,7 +1411,8 @@ defmodule Seshat.Tools.Definitions do
           "send index, and get_track_sends to read current levels before relative changes. " <>
           "Value is 0.0 (off) to 1.0 (maximum). For 'a little reverb' start around 0.25–0.4; " <>
           "0.6+ is a drenched, obvious effect. " <>
-          "The send is only audible if its return track has an effect loaded. " <>
+          "The send is only audible if its return track has an effect loaded — load one with " <>
+          "load_device (target: 'return'). " <>
           "Regular tracks only — for a return track's own level use set_return_track_volume.",
       parameters: %{
         type: "object",
@@ -1428,8 +1467,8 @@ defmodule Seshat.Tools.Definitions do
           "automatically gains the matching send (new return's index = new send's index; " <>
           "return 0 = send A). " <>
           "Live allows at most 12 return tracks; the tool errors at the cap. " <>
-          "The new return is empty — Seshat cannot yet load a device onto a return track, so " <>
-          "ask the user to drop the effect onto it in Live. " <>
+          "The new return is empty — load its effect immediately with load_device " <>
+          "(target: 'return') so the sends into it are audible. " <>
           "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
       parameters: %{
         type: "object",
@@ -1494,9 +1533,88 @@ defmodule Seshat.Tools.Definitions do
       }
     },
     %{
+      name: "set_return_track_pan",
+      description:
+        "Set the pan of a return track — where the shared effect sits in the stereo field. " <>
+          "Return-track indices are 0-based and separate from regular tracks: return 0 = send " <>
+          "A's return (see get_session_state). " <>
+          "-1.0 = hard left, 0.0 = center, 1.0 = hard right. " <>
+          "For a regular track's pan use set_track_pan. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "return_track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed return track: 0 = the first return = send A"
+          },
+          "value" => %{
+            type: "number",
+            minimum: -1.0,
+            maximum: 1.0,
+            description: "Pan position. -1.0 = hard left, 0.0 = center, 1.0 = hard right"
+          }
+        },
+        required: ["return_track", "value"]
+      }
+    },
+    %{
+      name: "set_return_track_mute",
+      description:
+        "Mute or unmute a return track — silences the shared effect (reverb, delay) for every " <>
+          "track feeding it, without touching the sends. " <>
+          "muted: true silences, false brings it back. " <>
+          "Return-track indices are 0-based and separate from regular tracks: return 0 = send " <>
+          "A (see get_session_state). " <>
+          "For a regular track use set_track_mute. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "return_track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed return track: 0 = the first return = send A"
+          },
+          "muted" => %{
+            type: "boolean",
+            description: "true silences the return track, false brings it back"
+          }
+        },
+        required: ["return_track", "muted"]
+      }
+    },
+    %{
+      name: "set_return_track_solo",
+      description:
+        "Solo or unsolo a return track — hear the effect channel alone, which is how you dial " <>
+          "in a reverb or delay without the dry signal masking it. " <>
+          "soloed: true silences everything else, false brings the rest back. " <>
+          "Return-track indices are 0-based and separate from regular tracks: return 0 = send " <>
+          "A (see get_session_state). " <>
+          "For a regular track use set_track_solo. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "return_track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed return track: 0 = the first return = send A"
+          },
+          "soloed" => %{
+            type: "boolean",
+            description: "true hears this return alone, false brings the rest back"
+          }
+        },
+        required: ["return_track", "soloed"]
+      }
+    },
+    %{
       name: "set_master_volume",
       description:
-        "Set the master track's output volume in Ableton Live. " <>
+        "Set the master track's output volume in Ableton Live (shown as Main in Live 12). " <>
           "Same fader scale as set_track_volume: 0.0 = silence, 0.85 = unity gain (0 dB, where " <>
           "a new set sits), 1.0 = +6 dB. " <>
           "Lower this if the master is clipping; prefer track volumes and sends for balance " <>
@@ -1511,6 +1629,51 @@ defmodule Seshat.Tools.Definitions do
             maximum: 1.0,
             description:
               "Fader position. 0.0 = silence, 0.85 = unity gain (0 dB), 1.0 = +6 dB (maximum boost)"
+          }
+        },
+        required: ["value"]
+      }
+    },
+    %{
+      name: "set_master_pan",
+      description:
+        "Set the master track's stereo pan in Ableton Live (the master is shown as Main in " <>
+          "Live 12). " <>
+          "-1.0 = hard left, 0.0 = center (where nearly every mix should stay), 1.0 = hard " <>
+          "right. " <>
+          "Prefer track pans for placement; this tilts the entire mix. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "value" => %{
+            type: "number",
+            minimum: -1.0,
+            maximum: 1.0,
+            description: "Pan position. -1.0 = hard left, 0.0 = center, 1.0 = hard right"
+          }
+        },
+        required: ["value"]
+      }
+    },
+    %{
+      name: "set_cue_volume",
+      description:
+        "Set the cue (preview/headphone) volume on Ableton Live's master track — the level of " <>
+          "browser previews and of anything cued, separate from the master output the audience " <>
+          "hears. " <>
+          "0.0 = silent, 1.0 = maximum; it uses the same fader curve as track volume, so 0.85 " <>
+          "is unity gain. " <>
+          "If a browser preview (preview_item) is inaudible, this dial is the likely reason. " <>
+          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "value" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description: "Cue fader position. 0.0 = silent, 0.85 = unity gain (0 dB), 1.0 = +6 dB"
           }
         },
         required: ["value"]
