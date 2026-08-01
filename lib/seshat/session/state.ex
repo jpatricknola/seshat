@@ -264,8 +264,11 @@ defmodule Seshat.Session.State do
   end
 
   # Reads answer from the mirror as it stands, even with a rebuild scheduled:
-  # they neither force the timer nor cancel it. The cost is at most the debounce
-  # window of structural staleness, which is the trade the coalescing buys.
+  # they neither force the timer nor cancel it. The cost is structural
+  # staleness — and on a sustained burst that is not one debounce window but
+  # the whole burst (every request restarts the timer), plus the window past
+  # the last request, plus the rebuild itself. That is the trade the coalescing
+  # buys; `refresh_sync/0` is the way out of it.
   @impl true
   def handle_call(:tracks, _from, state), do: {:reply, state.tracks, state}
   def handle_call(:song, _from, state), do: {:reply, state.song, state}

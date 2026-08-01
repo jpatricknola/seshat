@@ -437,9 +437,10 @@ defmodule Seshat.Session.StateTest do
     end
 
     # Reads answer from the push-updated mirror and neither force nor cancel the
-    # pending rebuild. Structural staleness for at most the debounce window is
-    # the trade; blocking every read on a scheduled refresh would reintroduce the
-    # queuing this change removes.
+    # pending rebuild. The trade is structural staleness lasting the burst that
+    # keeps restarting the timer, plus the window past its last request, plus
+    # the rebuild; blocking every read on a scheduled refresh would reintroduce
+    # the queuing this change removes.
     test "a snapshot leaves a pending timer alone" do
       scheduled = cast_refresh(state(%{tracks: [track(0, "Drums")]}))
 
