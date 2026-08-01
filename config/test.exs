@@ -13,14 +13,6 @@ config :logger, level: :warning
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 
-# Enable helpful, but potentially expensive runtime checks
-config :phoenix_live_view,
-  enable_expensive_runtime_checks: true
-
-# Sort query params output of verified routes for robust url comparisons
-config :phoenix,
-  sort_verified_routes_query_params: true
-
 # Don't start OSC transport, session state, MCP server, or the library catalog
 # in tests — catalog tests start their own with an isolated table and path.
 config :seshat, :start_osc, false
@@ -34,7 +26,3 @@ config :seshat, :start_catalog, false
 # test/seshat/osc/transport_test.exs.
 config :seshat, :osc_send_port, 31000
 config :seshat, :osc_reply_port, 31001
-
-# Stub Anthropic API calls in tests
-config :seshat, :anthropic_api_key, "test-key"
-config :seshat, :agent_req_options, plug: {Req.Test, Seshat.Agent}

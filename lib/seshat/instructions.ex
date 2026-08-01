@@ -1,11 +1,7 @@
 defmodule Seshat.Instructions do
   @moduledoc """
-  Session-level guidance, shared by both entry points.
-
-  MCP mode sends this as the `instructions` field of the `initialize` result
-  (`Seshat.MCP.Server.server_instructions/0`); API-key mode prepends it to
-  `Seshat.Agent`'s system prompt. One source, so the two modes can't drift into
-  separate personalities.
+  Session-level guidance sent as the `instructions` field of the MCP
+  `initialize` result (`Seshat.MCP.Server.server_instructions/0`).
 
   ## What belongs here
 
@@ -37,8 +33,8 @@ defmodule Seshat.Instructions do
       same rule that keeps them out of tool descriptions.
 
   This file is edited as prose, and no test asserts on its wording — only that
-  it exists, stays under the cap, and reaches both modes. Rewriting the text is
-  a one-file change.
+  it exists, stays under the cap, and reaches MCP initialization. Rewriting the
+  text is a one-file change.
   """
 
   # Edited as prose, continually — this is the living prompt, dialed in from

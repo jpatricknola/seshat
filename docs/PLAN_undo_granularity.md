@@ -1,6 +1,6 @@
 # Plan: one Seshat action, one undo step
 
-Roadmap #4 — `undo` can revert far more than the last action.
+Roadmap — `undo` can revert far more than the last action.
 
 ## Context
 
@@ -44,8 +44,8 @@ All of the load-bearing behaviour was **measured against the running Live
    arrives. This is why the Elixir side must send `end` in an `after` block,
    and why `undo`/`redo` send a defensive lone `end` first.
 
-The wrap lives in `Seshat.Tools.Handlers.call/2` — the one funnel both entry
-modes share — so MCP mode and API-key mode get it identically, and a
+The wrap lives in `Seshat.Tools.Handlers.call/2` — the single MCP dispatch
+funnel — so a
 multi-message tool (`write_midi_notes` is a create-clip + add-notes + name
 sequence through `Registry`) reverts as a unit because the wrap encloses the
 whole dispatch, not each datagram.

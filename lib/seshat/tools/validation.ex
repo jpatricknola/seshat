@@ -2,18 +2,16 @@ defmodule Seshat.Tools.Validation do
   @moduledoc """
   Enforces the JSON Schema each tool declares in `Seshat.Tools.Definitions`.
 
-  The schemas were advisory until this module existed. The Anthropic API does
-  not enforce tool schemas at all, so API-key mode had no validation layer
-  whatsoever; MCP mode had Peri, which checks bounds without re-checking the
-  base type (a `{:integer, {:gte, 0}}` guards on `is_numeric/1`), so a bounded
-  integer param accepted `1.5`. Both leaks mattered because AbletonOSC's Python
+  Peri checks bounds without re-checking the base type (a
+  `{:integer, {:gte, 0}}` guards on `is_numeric/1`), so a bounded integer param
+  can accept `1.5`. That leak matters because AbletonOSC's Python
   indexes Live's collections directly — `song.tracks[-1]` is the *last* track,
   so `delete_track` with `track: -1` used to delete a real track and echo
   "track -1" as if that were the target.
 
   So this is the authoritative check, called from `Seshat.Tools.Handlers.call/2`
-  — the single dispatch point both entry modes funnel through — before anything
-  reaches `Seshat.OSC.Transport`. Because it reads the schemas rather than
+  — the single tool dispatch point — before anything reaches
+  `Seshat.OSC.Transport`. Because it reads the schemas rather than
   hand-listing rules, every tool added later is covered by construction.
 
   Pure: no process, no OSC, no side effects.
@@ -33,8 +31,7 @@ defmodule Seshat.Tools.Validation do
   Validates `params` against the named tool's declared schema.
 
   `params` must already be string-keyed — `Handlers.stringify_keys/1` runs
-  first, so the MCP mode's atom keys and the Anthropic API's string keys are
-  validated identically.
+  first, so atom- and string-keyed direct calls are validated identically.
 
   Returns `:ok` for an unknown tool name: `do_call/2`'s catch-all owns the
   "Unknown tool" reply, and duplicating it here would only make the two

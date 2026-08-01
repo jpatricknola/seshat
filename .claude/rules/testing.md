@@ -28,7 +28,6 @@ paths:
     rule's rationale, "needs a live Ableton", doesn't apply, and the query
     queue can't be tested at all without calling `query/3`. Everything above
     the transport keeps the rule as written.
-- `Seshat.Agent` is tested with `Req.Test` — no real Anthropic calls.
 - MCP components are tested for **parity with `Seshat.Tools.Definitions`**
   (`Seshat.MCP.ToolsTest`); adding a tool means bumping the tool count in
   [test/seshat/tools/definitions_test.exs](../../test/seshat/tools/definitions_test.exs).

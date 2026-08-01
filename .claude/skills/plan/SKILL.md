@@ -41,8 +41,8 @@ be able to say yes/no to each one.
      implying the suite covers them.
    - Grep the codebase for every touchpoint: which `Handlers` clauses,
      whether it's single-message (Transport direct) or multi-step
-     (`%Command{}` + Registry), whether `Session.State` needs a new field
-     and listener, whether the LiveView UI shows anything affected.
+     (`%Command{}` + Registry), whether `Session.State` needs a new field and
+     listener, and whether the streamable HTTP MCP surface is affected.
    - Read any related archived plan or decision doc for constraints already
      discovered — don't rediscover what
      [docs/evaluating/bridge-options.md](docs/evaluating/bridge-options.md) already settled.
@@ -84,7 +84,7 @@ be able to say yes/no to each one.
      time.
 
 4. **Link it from the roadmap.** Add a pointer to the plan doc in the item's
-   ROADMAP.md entry (the "MCP mode in the browser UI" entry shows the style).
+   ROADMAP.md entry (existing linked entries show the style).
    Do **not** remove or shrink the entry — that happens at `/ship` time.
 
 5. **Address open questions — by experiment, not by reasoning, wherever
@@ -127,5 +127,4 @@ be able to say yes/no to each one.
    rival plan and adjudicates. Self-review is no substitute: the address
    check in particular is worthless performed by the agent that transcribed
    the addresses. `/lifecycle` runs it automatically as its own phase.
-
 

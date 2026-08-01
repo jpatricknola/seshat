@@ -1,5 +1,5 @@
 defmodule SeshatWeb.ErrorJSONTest do
-  use SeshatWeb.ConnCase, async: true
+  use ExUnit.Case, async: true
 
   test "renders 404" do
     assert SeshatWeb.ErrorJSON.render("404.json", %{}) == %{errors: %{detail: "Not Found"}}

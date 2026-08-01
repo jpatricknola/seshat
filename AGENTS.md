@@ -1,4 +1,5 @@
-This is a web application written using the Phoenix web framework.
+Seshat is an MCP server written in Elixir. Phoenix hosts its streamable HTTP
+transport; there is no browser application.
 
 > **Read [CLAUDE.md](CLAUDE.md) first** — it covers what this project actually
 > is and how it's put together. This file keeps the framework-level guidance
@@ -9,9 +10,8 @@ This is a web application written using the Phoenix web framework.
 >
 > Path-scoped rulesets live in [.claude/rules/](.claude/rules/) and load
 > automatically when the matching files are touched:
-> - [phoenix-web.md](.claude/rules/phoenix-web.md) — Phoenix v1.8, HEEx,
->   LiveView, JS/CSS, and form-handling rules (`lib/seshat_web/**`,
->   `assets/**`)
+> - [phoenix-web.md](.claude/rules/phoenix-web.md) — Phoenix HTTP endpoint
+>   rules (`lib/seshat_web/**`)
 > - [osc.md](.claude/rules/osc.md) — OSC address safety and Seshat
 >   conventions (`lib/**`)
 > - [testing.md](.claude/rules/testing.md) — ExUnit and Seshat testing rules
@@ -23,7 +23,8 @@ This is a web application written using the Phoenix web framework.
 ## Project guidelines
 
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
-- Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
+- Use the already included `:req` (`Req`) library for HTTP requests; **avoid**
+  `:httpoison`, `:tesla`, and `:httpc`. Req is Seshat's preferred HTTP client.
 
 ## Elixir guidelines
 

@@ -129,9 +129,9 @@ exist because a typo'd address looks exactly like success.
   index 0. Send IDs likewise (send A = 0).
 - **Ranges**: pan is -1.0 (left) to 1.0 (right); volume and send levels are
   0.0–1.0 (Ableton maps to dB internally).
-- **Handler params are string-keyed.** `Handlers.call/2` normalises
-  (Anthropic sends strings, MCP sends atoms); `do_call/2` clauses only ever
-  see string keys.
+- **Handler params are string-keyed.** `Handlers.call/2` normalises MCP's atom
+  keys and any string-keyed direct calls; `do_call/2` clauses only ever see
+  string keys.
 - **`%Command{}` structs are for multi-step sequences only** (via
   `Seshat.Commands.Registry`). Single-message tools call `Transport` directly
   from their handler clause.

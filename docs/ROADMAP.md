@@ -21,32 +21,7 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Preserve partial agent results at the tool-iteration limit
-
-**Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
-already executed and the conversation so far, and surface a warning in the UI.
-
-**Why:** [agent.ex:83-86](../lib/seshat/agent.ex#L83-L86) discards both
-`executed` and `messages` and returns a generic error. Nine or ten rounds of
-real mutations land, the UI reports an error with no record of them, the
-conversation isn't kept, and the obvious user response — retry — repeats
-everything. Partial side effects go invisible exactly when recovery information
-matters most.
-
-**User stories:**
-- As a producer in the browser UI, when a long exchange dies at the iteration
-  limit, I can still see which changes already landed in my set — so hitting
-  retry doesn't blindly repeat nine rounds of mutations.
-
-**Planner notes:**
-- Scoped to API-key mode, which is the dev/fallback path — that is why it ranks
-  here and not higher. The fix is small and the failure is silent, which is the
-  combination worth clearing.
-- The LiveView error branch leaves history unchanged; both halves need doing or
-  neither helps.
-- From the 2026-07-29 external review, accepted as written.
-
-## #2 · `start_new_project` — the setup wizard, and prompt budget back
+## #1 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -98,7 +73,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #3 · `undo` can revert far more than the last action
+## #2 · `undo` can revert far more than the last action
 
 **Goal:** either make single scripted actions land as separate Live undo
 steps, or make Seshat's `undo` tool honest about what it is actually about to
@@ -139,7 +114,7 @@ entire track's worth of work instead.
 - Reproduction: `create_track` → `write_midi_notes` (any notes) → `undo` →
   the track is gone, not just the clip's notes. No quantize step needed.
 
-## #4 · Make catalog persistence atomic and report write failures
+## #3 · Make catalog persistence atomic and report write failures
 
 **Goal:** a reindex that cannot be persisted says so, and a crash mid-write
 cannot leave a truncated `catalog.json`.
@@ -165,7 +140,7 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
 - From the 2026-07-29 external review; the durability half accepted, the ETS
   generation swap declined above.
 
-## #5 · Catalog staleness check — reindex without being asked
+## #4 · Catalog staleness check — reindex without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -192,7 +167,7 @@ atomic".
 - Decide the surfacing point: a line in `search_library` replies, a startup
   check, or both.
 
-## #6 · Verify destructive mutations before reporting success
+## #5 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -230,7 +205,7 @@ trigger is a stale model-held index.
   ride along here (or as a drive-by before this item is picked up) rather
   than rank on its own.
 
-## #7 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #6 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -265,13 +240,12 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #8 · Producer personas — switchable musical taste
+## #7 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* — musical taste, and only taste — onto the base
 session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
-(five stubs exist; `mona_dust.md` is the default); the default composes onto
-`Seshat.Instructions` at the same seam `Seshat.Agent.system_prompt/0` already
-uses, and a `load_producer` tool (plus `list_producers`) switches mid-session:
+(five stubs exist; `mona_dust.md` is the default); a `load_producer` tool (plus
+`list_producers`) loads one into the conversation mid-session:
 "load me Volt Kessler" changes the session's whole aesthetic.
 
 **Why:** taste as a feature instead of a wording debate: different producer,
@@ -294,9 +268,7 @@ changes what Seshat reaches for, never how it works.
 - **MCP `instructions` are delivered once, at initialize** — mid-session
   switching cannot go through that channel. It must be a tool whose *reply*
   carries the new persona into context and states that it supersedes the
-  previous one; that reaches the model identically in both modes. API-key
-  mode can additionally swap for real, since `system_prompt/0` composes per
-  call.
+  previous one.
 - Personas are musically expressed, never machine-specific — "warm and
   dusty," not tag names; the model maps taste onto this machine's library via
   `search_library`'s replies. Same rule that governs tool descriptions.
@@ -321,14 +293,13 @@ changes what Seshat reaches for, never how it works.
   under `~/.seshat/`, still not a database) or reset to the default each
   session?
 - The groundwork is already in place, from the session-instructions work
-  (shipped 2026-07-29): the composition seam is
-  `Seshat.Agent.system_prompt/0`, the 2,048-character delivery ceiling and its
-  proof are recorded in
+  (shipped 2026-07-29): the 2,048-character delivery ceiling and its proof are
+  recorded in
   [archive/PLAN_mcp_server_instructions.md](archive/PLAN_mcp_server_instructions.md),
   and the base text's voice section already reads as execute-the-user's-taste,
   which is what a persona slots underneath.
 
-## #9 · `screenshot_live` — let Seshat see the screen
+## #8 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -351,10 +322,8 @@ the follow cam (shipped 2026-07-29) covers that.
 - Downscale before returning — full-res screenshots are token-expensive.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
-- API-key mode would need image blocks threaded through `Seshat.Agent`'s
-  loop — decide whether to support it there or keep this MCP-only.
 
-## #10 · Restart the MCP supervisor after abnormal failure
+## #9 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -373,7 +342,7 @@ healthy — the tools simply stop existing, with nothing saying why.
 - Raised as a speculative risk by the 2026-07-29 external review — the failure
   has not been reproduced, only reasoned from the child spec.
 
-## #11 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
+## #10 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
 
 **Goal:** a `tools/call` whose `"arguments"` is JSON `null` gets a
 model-readable rejection — same channel as any other invalid call — instead
@@ -398,13 +367,11 @@ the interception entirely: an absent `"arguments"` key and a non-map value
   [archive/PLAN_mcp_readable_rejections.md](archive/PLAN_mcp_readable_rejections.md)). Decide
   whether that belongs in `Seshat.MCP.Server`'s `handle_request/2` clause or
   in `Handlers.call/2` itself.
-- Confirm whether API-key mode (`Seshat.Agent`) can ever produce `nil`
-  params; if not, this may be MCP-only and the fix stays in `server.ex`.
 - Small effort — pair it with a case in
   [test/seshat/mcp/server_test.exs](../test/seshat/mcp/server_test.exs)
   alongside the existing non-map-`arguments` (array) case.
 
-## #12 · Search eval harness — numbers before opinions
+## #11 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -429,7 +396,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
-## #13 · Widen the search slate at tied score bands
+## #12 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -444,7 +411,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #14 · Accepted-search memory
+## #13 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -462,7 +429,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #15 · Browser preview audition
+## #14 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -483,7 +450,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #16 · Opt-in `samples` index
+## #15 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -501,10 +468,11 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #17 · LLM enrichment at reindex
+## #16 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
-reindex time, using an API key or an MCP-client-driven tagging turn.
+reindex time, using an external model service or an MCP-client-driven tagging
+turn.
 
 **Why:** lever №5 — highest ceiling (it attacks the thin-signal problem
 directly: ~200 of 5,795 entries say anything real about their sound) and
@@ -520,7 +488,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #18 · User XMP tags
+## #17 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -535,23 +503,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #19 · Cap large tool-result payloads in API-key mode
-
-**Goal:** bound what accumulates in `Seshat.Agent`'s `messages` and the
-LiveView's log for the life of a conversation.
-
-**Why:** full tool inputs and outputs accumulate unbounded, and catalog and
-device results are exactly the payloads large enough to matter — a single local
-user can exhaust the Anthropic context window on `search_library` output alone,
-and LiveView process memory grows with it.
-
-**Planner notes:** capping large tool-result payloads before they enter
-`messages` is the cheap majority of the fix; skip summarising old turns until
-needed. MCP mode is primary and keeps no history in this process, which is why
-this ranks here. Raised as a speculative risk by the 2026-07-29 external review
-— reasoned from the code, not reproduced.
-
-## #20 · Read-only audio input display — warn before a silent take
+## #18 · Read-only audio input display — warn before a silent take
 
 **Goal:** surface a track's audio input routing, read-only, so `record_clip`
 can warn when an audio take is about to record nothing.
@@ -580,7 +532,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #21 · Device list per track in session state
+## #19 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -599,7 +551,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #22 · Modify a note in place
+## #20 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -612,7 +564,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #23 · Clip grid in session state — only if usage demands it
+## #21 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -626,7 +578,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #24 · Small OSC breadth — grab bag
+## #22 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -647,27 +599,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #25 · MCP mode in the browser UI
-
-**Goal:** give `AssistantLive` a second backend — headless Claude Code
-(`claude -p`) as a subprocess consuming Seshat's own `/mcp` endpoint — so the
-browser UI runs off a Claude subscription instead of an API key, with a
-per-conversation toggle.
-
-**Why:** removes the API-key requirement from the only mode that needs one.
-Designed but never built; ranked low because MCP mode already serves the
-project's one user.
-
-**User stories:**
-- As a producer using the browser UI, my Claude subscription covers the
-  conversation — no API key to provision just to chat with my own set.
-
-**Planner notes:** full design (milestones, streaming UI, tested CLI flags
-that may have drifted) in
-[archive/PLAN_mcp_browser_ui.md](archive/PLAN_mcp_browser_ui.md) — verify the
-CLI flags against current Claude Code before trusting it.
-
-## #26 · Adopt MCP `2026-07-28` when Anubis supports it
+## #23 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
@@ -716,7 +648,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #27 · Unit coverage for the mirror-refresh cross-key loop brake
+## #24 · Unit coverage for the mirror-refresh cross-key loop brake
 
 **Goal:** make `Seshat.Session.State`'s `finalize_reconciliations/3` (and the
 `carried_over` computation in `run_refresh/2`) callable from `mix test`, so the
@@ -755,8 +687,8 @@ a latent gap like this is worth closing.
 
 ## Deliberately not planned
 
-- **Deployment-gated security work** — HTTP authentication on `/mcp` and the
-  LiveView, production binding, rate limiting, and the multi-user design
+- **Deployment-gated security work** — HTTP authentication on `/mcp`,
+  production binding, rate limiting, and the multi-user design
   question. Not in this queue by design; see
   [SECURITY_BACKLOG.md](evaluating/SECURITY_BACKLOG.md) for the two triggers that activate
   them. Note that authentication alone does not make Seshat multi-user — one

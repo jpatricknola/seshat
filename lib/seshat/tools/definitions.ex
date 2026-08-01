@@ -1,9 +1,9 @@
 defmodule Seshat.Tools.Definitions do
   @moduledoc """
-  Tool schemas shared by both MCP and API key modes.
+  The single source of truth for every tool exposed over MCP.
 
-  Each tool is defined once in a format-agnostic structure, then serialized
-  to either MCP or Anthropic API format as needed.
+  Each tool is defined as a format-agnostic map; `Seshat.MCP.Schema` converts
+  its parameter schema to the form Anubis expects.
   """
 
   # The one optional parameter that widens all six device tools from regular
@@ -1729,15 +1729,4 @@ defmodule Seshat.Tools.Definitions do
 
   @doc "Returns all tool definitions as format-agnostic maps."
   def all, do: @tools
-
-  @doc "Returns tool definitions in Anthropic API tool use format."
-  def to_anthropic_tools do
-    Enum.map(@tools, fn tool ->
-      %{
-        name: tool.name,
-        description: tool.description,
-        input_schema: tool.parameters
-      }
-    end)
-  end
 end

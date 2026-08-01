@@ -13,7 +13,6 @@ defmodule Seshat.Application do
     # with Ableton closed, and only needs Live running to reindex.
     children =
       [
-        SeshatWeb.Telemetry,
         {DNSCluster, query: Application.get_env(:seshat, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Seshat.PubSub}
       ] ++

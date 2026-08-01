@@ -33,7 +33,7 @@ via `"/live/`. A bridge swap would keep the tool contract in
   convenience.
 
 Only one process can hold 11001, so **only one Seshat can read from Ableton at a
-time** — an MCP server and `mix phx.server` running together means the second
+time** — `mix mcp` and `mix phx.server` running together means the second
 one to start is deaf. If 11001 is already bound, `Transport` falls back to an
 ephemeral port, logs an error naming the conflict, and marks itself `deaf`:
 sends still go out, and every query returns `{:error, :reply_port_unavailable}`

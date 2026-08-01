@@ -1,12 +1,11 @@
 defmodule Seshat.MCP.Tools do
   @moduledoc """
   Generates one `Anubis.Server.Component` module per entry in
-  `Seshat.Tools.Definitions`, so MCP mode exposes exactly the same tools as
-  the API-key mode agent loop.
+  `Seshat.Tools.Definitions`.
 
   `"set_track_pan"` becomes `Seshat.MCP.Tools.SetTrackPan`. Anubis derives the
   wire name back from the module name (`Macro.underscore/1` of the last
-  segment), so that round trip is what keeps the two modes in sync.
+  segment), so that round trip keeps definitions and wire names in sync.
   `Seshat.MCP.ToolsTest` asserts it.
 
   **Do not add modules here by hand.** Add the tool to `Definitions` and a

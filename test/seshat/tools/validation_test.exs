@@ -1,10 +1,9 @@
 defmodule Seshat.Tools.ValidationTest do
   @moduledoc """
-  The declared schemas were advisory before `Seshat.Tools.Validation` existed:
-  the Anthropic API enforces nothing, and Peri's bound clauses guard on
-  `is_numeric/1` rather than the base type. The hand-written cases below pin the
-  behaviours that mattered; the boundary sweep at the bottom is the part that
-  keeps covering tools nobody has written yet.
+  Peri's bound clauses guard on `is_numeric/1` rather than the base type. The
+  hand-written cases below pin the behaviours that mattered; the boundary
+  sweep at the bottom is the part that keeps covering tools nobody has written
+  yet.
   """
 
   use ExUnit.Case, async: true

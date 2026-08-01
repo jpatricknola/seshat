@@ -10,7 +10,6 @@ defmodule Seshat.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
-      compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader]
     ]
   end
@@ -41,16 +40,9 @@ defmodule Seshat.MixProject do
   defp deps do
     [
       {:phoenix, "~> 1.8.5"},
-      {:phoenix_html, "~> 4.1"},
-      {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 1.1.0"},
-      {:phoenix_live_dashboard, "~> 0.8.3"},
-      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
+      # General-purpose HTTP client for current and future service integrations.
       {:req, "~> 0.5"},
       {:anubis_mcp, "~> 1.10"},
-      {:telemetry_metrics, "~> 1.0"},
-      {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
       # Bare SQLite3 NIF — used read-only to read Ableton's own browser
       # database for preset tags. Not Ecto, not a database for Seshat itself.
@@ -68,14 +60,7 @@ defmodule Seshat.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "assets.setup", "assets.build"],
-      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind seshat", "esbuild seshat"],
-      "assets.deploy": [
-        "tailwind seshat --minify",
-        "esbuild seshat --minify",
-        "phx.digest"
-      ],
+      setup: ["deps.get"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end
