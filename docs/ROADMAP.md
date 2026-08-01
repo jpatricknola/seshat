@@ -77,27 +77,72 @@ Three causes compound, and no single one of them is the whole bug:
   twice gives different answers.
 
 **Planner notes:**
-- Three candidate levers; the second is the smallest thing that would have
-  made this run self-heal, and is probably the place to start:
-  - **Bound the retry instead of braking immediately.** A rebuild that yielded
-    `nil` for *every* track name is degraded, not disagreeing — let it schedule
-    exactly one retry before recording the brake. One bounded retry is not the
-    spin the brake exists to prevent.
-  - **Reconcile the count against the push.** When the queried `num_tracks`
-    disagrees with a name list pushed a moment ago, the count is the suspect
-    reading. Prefer the pushed length, or mark the track list unknown outright,
-    rather than serving a mixture of live and stale rows.
-  - **Revisit the window.** Raising `@refresh_debounce_ms` past the ~2.1s
-    inter-round floor would make bursts actually coalesce — but it also widens
-    the interval during which reads are served from a stale mirror, so it
-    trades one symptom for another. Weigh it, don't assume it.
-- **Do not "fix" this by having `undo`/`redo` call `State.refresh/0`.** They
-  don't today, which is why the mirror only learned via `song_structure.py`'s
-  push — but adding it papers over one trigger. The same race reproduces from
-  hand-edits in Live with no tool call involved.
-- Consider folding in **"Unit coverage for the mirror-refresh cross-key loop
-  brake"** (further down this queue): the brake is precisely the mechanism
-  under-tested here, and a fix wants that coverage anyway.
+
+Three changes, ranked. The first is the one that makes the mirror honest, the
+second is what makes it recover, and the third prevents the race but wants
+measurement before it is taken.
+
+1. **A degraded rebuild must never become the mirror.** *(the must-do)*
+   `do_refresh/1` already states this rule and argues for it — when
+   `num_tracks` fails it sets `tracks: nil` rather than keeping the old list,
+   because *"keeping the old list serves the previous set's tracks as this
+   set's. Unknown, not stale-but-plausible."* That rule simply does not cover
+   the case measured here: when the count *answers* but the per-track reads
+   fail, the half-`nil` list is merged in wholesale. Every query helper returns
+   a bare `nil` on an echo mismatch or a timeout, so a rebuild that resolved
+   nothing is indistinguishable from one that resolved everything — which is
+   how "Bass, present" ended up beside a row of unknowns. Fix: if a rebuild
+   could not name tracks it should have named, treat the track read as failed
+   and set `tracks: nil`. This applies a rule the file already argues for to
+   the case it doesn't reach, and it converts a confidently wrong answer into
+   an honest one.
+
+2. **Distinguish "disagreed" from "degraded"; allow exactly one retry.**
+   *(makes it self-heal)* The brake in `finalize_reconciliations/3` is right to
+   exist — without it the unbounded refresh → re-subscribe → push → refresh
+   spin its comment describes is real. But it currently treats "Live says X,
+   the mirror says Y" and "the rebuild resolved nothing at all" as the same
+   outcome, and only the first is a genuine disagreement. A rebuild that
+   yielded `nil` for everything has not disagreed with the push, it has
+   *failed*. Give that case one re-schedule and record the brake only if the
+   second attempt also fails. One retry is bounded; it is not the spin. This is
+   the smallest change that would have let the measured run recover without
+   the user knowing `refresh: true` exists.
+
+3. **Stop re-deriving a count that was just handed to us.** *(prevents it —
+   measure first)* This is what made the first read error, and the arithmetic
+   is stark: `@query_timeout` is 5,000ms and `read_tracks/2` issues **five**
+   queries per index, so a single over-reported track is **25 seconds** of dead
+   waiting. Upstream's `/live/track/get/name` is silent on a bad index — no
+   error, no reply, just the full timeout, five times over. Meanwhile
+   `song_structure.py` has already pushed the authoritative name list,
+   atomically, from Live's own callback, and `reconcile/4` receives it as
+   `names` before discarding it to re-derive the count via `num_tracks`. Using
+   `length(names)` when the refresh was triggered by a structure push removes
+   the dead-index queries in the common case. Ranked third because it narrows
+   the race rather than closing it — another change landing mid-read still
+   skews it — and because it alters the refresh's shape rather than its failure
+   handling.
+
+**Two fixes that look obvious and should not be taken:**
+
+- **Do not raise `@refresh_debounce_ms` past the ~2.1s inter-round floor.** It
+  would make bursts genuinely coalesce, but it widens the interval in which
+  every read is served from a stale mirror. That trades this symptom for a
+  quieter one, and the quieter one is harder to notice.
+- **Do not have `undo`/`redo` call `State.refresh/0`.** They don't today, which
+  is why the mirror only learned via `song_structure.py`'s push — but adding it
+  papers over the one trigger that happened to be measured. The identical race
+  reproduces from hand-edits in Live with no tool call involved.
+
+**Scope and coverage:**
+- Changes 1 and 2 together are roughly 30 lines in one file
+  ([lib/seshat/session/state.ex](../lib/seshat/session/state.ex)), and are what
+  convert this from silently wrong to honest and self-correcting.
+- Fold in **"Unit coverage for the mirror-refresh cross-key loop brake"**
+  (further down this queue): the brake is precisely the mechanism under-tested
+  here, and changes 1 and 2 both land inside it, so a fix wants that coverage
+  anyway.
 - Full evidence, including the wire-level reasoning, is in PR #54's body under
   "Live verification".
 
