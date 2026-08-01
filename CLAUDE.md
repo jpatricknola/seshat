@@ -288,11 +288,7 @@ return/master mixer tools) were deleted outright rather than debounced —
 their listeners already push every value they write, so the refresh was
 re-reading state that was already arriving. Plan archived at
 [docs/archive/PLAN_coalesce_mirror_refreshes.md](docs/archive/PLAN_coalesce_mirror_refreshes.md).
-Preserve partial agent results at the tool-iteration limit is now the
-queue's top item; `start_new_project` — the read-only
-setup wizard that would catch "let's start a new project" and move the
-replace-not-append rule off the capped instructions budget and into a tool
-description — sits just below it. Devices on return and master
+Devices on return and master
 tracks shipped 2026-07-31, closing what had led the queue: `create_return_track`
 no longer ships an empty return the user has to fill in by hand in Live — the
 six device tools (`load_device`, `get_track_devices`, `get_device_parameters`,
