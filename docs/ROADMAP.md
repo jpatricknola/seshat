@@ -186,6 +186,11 @@ asserting a cleanup unconditionally and hoping the model checks.
 steps, or make Seshat's `undo` tool honest about what it is actually about to
 revert.
 
+**Plan:** [PLAN_undo_granularity.md](PLAN_undo_granularity.md) — measured
+against live Ableton 12.4.3 on 2026-08-01: the repro holds, and wrapping each
+tool call in `Song.begin_undo_step()`/`end_undo_step()` (two fork method-list
+entries + a wrap in `Handlers.call/2`) gives exactly one undo step per action.
+
 **Why:** smoke-testing `quantize_clip` on 2026-07-31 found that a single
 `undo` call after `create_track` → `write_midi_notes` reverted the *entire
 track*, not just the last write — reproduced three times, including with
