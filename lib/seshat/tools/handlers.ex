@@ -278,8 +278,7 @@ defmodule Seshat.Tools.Handlers do
   # creates. The lone `end` first is defensive: a `begin` leaked by a BEAM death
   # mid-call would otherwise fold the user's next undo into stale grouping.
   # An unmatched `end` is measured harmless (Live logs it as an ordinary method
-  # call and the history is untouched), and wrapped calls self-heal the same leak
-  # via their own `end` — `begin` does not refcount, so the first `end` closes.
+  # call and the history is untouched).
   defp undo_stepped(name, params) when name in ["undo", "redo"] do
     _ = Transport.send_message("/live/song/end_undo_step", [])
     do_call(name, params)
@@ -289,7 +288,20 @@ defmodule Seshat.Tools.Handlers do
   # measured to leave the undo history untouched, whereas a hand-maintained
   # list of mutating tools would fail silently the first time a new tool forgot
   # to join it.
+  #
+  # The lone `end` before the `begin` is the same defence `undo`/`redo` make,
+  # and it is load-bearing for a sharper reason than closing a leak. `begin` does
+  # not refcount, so a step left open by a BEAM death or by the failed `end` send
+  # below is *still open* when this call's `begin` arrives — that `begin` is a
+  # no-op, and the `end` in the `after` then closes a single step holding both
+  # the leaked partial work and this call's mutation, which one `undo` would
+  # revert together. Closing first gives the leak its own step and this call a
+  # clean boundary, which is the whole guarantee. An unmatched `end` is measured
+  # harmless, and the global lock means no other Seshat caller can hold a step
+  # open for this to close out from under.
   defp undo_stepped(name, params) do
+    _ = Transport.send_message("/live/song/end_undo_step", [])
+
     case Transport.send_message("/live/song/begin_undo_step", []) do
       :ok ->
         try do
@@ -299,7 +311,8 @@ defmodule Seshat.Tools.Handlers do
           # is logged rather than swallowed: it means a step was left open, and
           # the only other trace would be the user's next undo behaving
           # strangely. No error is manufactured for a tool whose own work
-          # succeeded — the leak self-heals at the next wrapped call's `end`.
+          # succeeded — the next call closes the leak before opening its own
+          # step, so the damage is bounded to this call's own boundary.
           case Transport.send_message("/live/song/end_undo_step", []) do
             :ok ->
               :ok

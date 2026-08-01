@@ -287,10 +287,43 @@ defmodule Seshat.Tools.HandlersTest do
       assert {:ok, _msg} = Handlers.call("set_tempo", %{"bpm" => 120.0})
 
       assert [
+               {"/live/song/end_undo_step", []},
                {"/live/song/begin_undo_step", []},
                {"/live/song/set/tempo", [120.0]},
                {"/live/song/end_undo_step", []}
              ] = osc_trace()
+    end
+
+    # The leading `end` is not decoration. `begin` does not refcount, so a step
+    # leaked by a BEAM death or a failed `end` send is still open when the next
+    # call runs: without closing first, that call's `begin` is a no-op and its
+    # own `end` closes one step holding both the leak's partial work and this
+    # call's mutation — one `undo` would revert two tool calls, which is exactly
+    # the guarantee the wrap exists to make. Nothing here can open a real step in
+    # Live, so what this pins is the wire shape that keeps the boundary correct:
+    # every wrapped call closes before it opens, on every path.
+    test "every wrapped call closes any leaked step before opening its own" do
+      assert {:ok, _msg} = Handlers.call("set_tempo", %{"bpm" => 120.0})
+      assert {:error, _msg} = Handlers.call("search_library", %{"query" => "bass"})
+      assert {:ok, _msg} = Handlers.call("set_track_volume", %{"track" => 0, "value" => 0.5})
+
+      trace = osc_trace()
+
+      # Each wrapped dispatch begins with `end` and never sends `begin` first.
+      assert {"/live/song/end_undo_step", []} == hd(trace)
+
+      refute Enum.any?(Enum.chunk_every(trace, 2, 1, :discard), fn
+               [{"/live/song/begin_undo_step", []}, {"/live/song/begin_undo_step", []}] -> true
+               _ -> false
+             end),
+             "a begin followed by another begin means a step was opened without closing the " <>
+               "previous one: #{inspect(trace)}"
+
+      # And every `begin` is immediately preceded by the defensive `end`.
+      for {{"/live/song/begin_undo_step", []}, i} <- Enum.with_index(trace) do
+        assert {"/live/song/end_undo_step", []} == Enum.at(trace, i - 1),
+               "begin at #{i} was not preceded by a defensive end: #{inspect(trace)}"
+      end
     end
 
     # The `end` lives in an `after` block precisely so a failing tool still
@@ -302,6 +335,7 @@ defmodule Seshat.Tools.HandlersTest do
       assert msg =~ "reindex_library"
 
       assert [
+               {"/live/song/end_undo_step", []},
                {"/live/song/begin_undo_step", []},
                {"/live/song/end_undo_step", []}
              ] = osc_trace()
@@ -347,6 +381,7 @@ defmodule Seshat.Tools.HandlersTest do
     test "a second caller cannot enter an open undo step", %{sink: sink} do
       first = Task.async(fn -> Handlers.call("hide_view", %{"view" => "Browser"}) end)
 
+      assert_receive {:osc_out, "/live/song/end_undo_step", []}
       assert_receive {:osc_out, "/live/song/begin_undo_step", []}
       assert_receive {:osc_out, "/live/view/hide_view", ["Browser"]}
       assert_receive {:osc_out, "/live/view/get/is_view_visible", ["Browser"]}
@@ -354,8 +389,10 @@ defmodule Seshat.Tools.HandlersTest do
       second = Task.async(fn -> Handlers.call("set_tempo", %{"bpm" => 140.0}) end)
 
       # Nothing from the second caller reaches Ableton while the step is open —
-      # not its mutation, and not even its own `begin`.
+      # not its mutation, not its own `begin`, and not even its defensive `end`,
+      # which is what stops it closing the first caller's step from outside.
       refute_receive {:osc_out, "/live/song/begin_undo_step", []}, 300
+      refute_receive {:osc_out, "/live/song/end_undo_step", []}, 0
       refute_receive {:osc_out, "/live/song/set/tempo", _}, 0
 
       # Play AbletonOSC and release the first call.
@@ -369,8 +406,11 @@ defmodule Seshat.Tools.HandlersTest do
       assert {:ok, _msg} = Task.await(first)
       assert {:ok, _msg} = Task.await(second)
 
-      # And once it is closed, the second caller runs its own complete step.
+      # And once it is closed, the second caller runs its own complete step —
+      # the first `end` here is the first caller's, the second is the second
+      # caller's own defensive close.
       assert [
+               {"/live/song/end_undo_step", []},
                {"/live/song/end_undo_step", []},
                {"/live/song/begin_undo_step", []},
                {"/live/song/set/tempo", [140.0]},
@@ -2828,6 +2868,7 @@ defmodule Seshat.Tools.HandlersTest do
       assert message =~ "try 0.5"
 
       assert [
+               {"/live/song/end_undo_step", []},
                {"/live/song/begin_undo_step", []},
                {"/live/song/end_undo_step", []}
              ] = osc_trace()
