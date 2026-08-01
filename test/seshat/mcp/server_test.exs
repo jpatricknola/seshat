@@ -143,6 +143,14 @@ defmodule Seshat.MCP.ServerTest do
                Server.handle_request(%{"method" => "tools/list", "params" => %{}}, %Frame{})
 
       assert length(tools) == length(Seshat.Tools.Definitions.all())
+
+      pan = Enum.find(tools, &(&1.name == "set_track_pan"))
+      value = pan.input_schema["properties"]["value"]
+
+      assert value["type"] == "number"
+      assert value["minimum"] == -1.0
+      assert value["maximum"] == 1.0
+      refute Map.has_key?(value, "oneOf")
     end
   end
 end

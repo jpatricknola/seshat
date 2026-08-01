@@ -1,11 +1,22 @@
 defmodule Seshat.MCP.Schema do
   @moduledoc """
-  Converts the JSON Schema stored in `Seshat.Tools.Definitions` into the raw
-  schema format Anubis components expect (native Peri types, with descriptions
-  carried in `{:meta, type, opts}` wrappers, which Peri turns back into JSON
-  Schema for the MCP wire).
+  Converts the JSON Schema stored in `Seshat.Tools.Definitions` into the two
+  forms the MCP layer needs, both derived from that one source.
 
-  This runs at compile time from `Seshat.MCP.Tools`, keeping the MCP wire schema
+  `to_anubis/1` builds what Anubis *validates* against — native Peri types, with
+  descriptions carried in `{:meta, type, opts}` wrappers. `to_json_schema/1`
+  builds what the server *publishes* — the definition itself, string-keyed.
+
+  They are deliberately separate, and the wire no longer comes from Peri's own
+  encoder. That encoder renders an `integer | float` union as a `oneOf`, which
+  carries no top-level `type`. Some MCP clients rely on that discriminator to
+  decide how to serialise an argument: in the reported 2026-08-01 failure, a
+  pan value shown as numeric in the model's call reached `Handlers` as the
+  string `"-0.9"` and was rejected. The transformation was not independently
+  observed on the wire, but publishing the definition verbatim avoids the
+  ambiguous shape and keeps validator internals off the wire.
+
+  Both run at compile time from `Seshat.MCP.Tools`, keeping the MCP surface
   derived from the format-agnostic definitions rather than hand-maintained.
   """
 
@@ -30,6 +41,16 @@ defmodule Seshat.MCP.Schema do
 
   def to_anubis(_schema), do: %{}
 
+  @doc """
+  Returns the definition schema in the string-keyed form MCP publishes.
+
+  This stays separate from `to_anubis/1`: Peri needs an `integer | float`
+  union to accept integer-shaped values for an unbounded JSON Schema number,
+  but publishing that implementation detail as `oneOf` drops the top-level
+  `type` discriminator some MCP clients rely on.
+  """
+  def to_json_schema(schema), do: stringify_keys(schema)
+
   # Enum first: an enum spec also carries a `:type`, and the enum is the
   # tighter constraint.
   defp peri_type(%{enum: values}), do: {:enum, values}
@@ -38,17 +59,18 @@ defmodule Seshat.MCP.Schema do
   defp peri_type(%{type: "boolean"}), do: :boolean
   defp peri_type(%{type: "integer"} = spec), do: with_range(:integer, spec)
 
-  # Peri's `:float` rejects integers, and models routinely emit `1` where the
-  # schema says number. Accept both rather than failing a well-formed call;
-  # the handlers coerce with `value / 1.0` anyway. Both branches carry the
-  # declared range, so an in-range integer still satisfies the float branch
-  # (Peri's bound clauses guard on `is_numeric/1`) while an out-of-range value
-  # fails both and is rejected at the wire. The bounds also survive into the
-  # advertised `input_schema`, as `minimum`/`maximum` inside each `oneOf`
-  # branch — that advertisement is the point of carrying them here; the
-  # authoritative check is `Seshat.Tools.Validation`.
-  defp peri_type(%{type: "number"} = spec),
-    do: {:either, {with_range(:float, spec), with_range(:integer, spec)}}
+  # Peri's numeric bound clauses accept both integers and floats, so a bounded
+  # float already implements JSON Schema's `number` semantics. Bare `:float`
+  # rejects integers, though, so the one deliberately unbounded number keeps
+  # the union internally. `to_json_schema/1` prevents that validator detail
+  # from leaking onto the MCP wire as a typeless `oneOf`.
+  defp peri_type(%{type: "number"} = spec) do
+    if Map.has_key?(spec, :minimum) or Map.has_key?(spec, :maximum) do
+      with_range(:float, spec)
+    else
+      {:either, {:float, :integer}}
+    end
+  end
 
   defp peri_type(%{type: "array", items: items}), do: {:list, peri_type(items)}
   defp peri_type(%{type: "object"} = spec), do: to_anubis(spec)
@@ -66,4 +88,14 @@ defmodule Seshat.MCP.Schema do
   # (`{:required, {:meta, type, opts}}`).
   defp maybe_required(type, true), do: {:required, type}
   defp maybe_required(type, false), do: type
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {stringify_key(key), stringify_keys(value)} end)
+  end
+
+  defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
+  defp stringify_keys(value), do: value
+
+  defp stringify_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp stringify_key(key), do: key
 end

@@ -9,6 +9,7 @@ defmodule Seshat.MCP.ToolsTest do
   use ExUnit.Case, async: true
 
   alias Seshat.MCP.Tools
+  alias Seshat.MCP.Schema
   alias Seshat.Tools.Definitions
 
   describe "generated components" do
@@ -65,7 +66,43 @@ defmodule Seshat.MCP.ToolsTest do
         assert actual == expected, "properties mismatch for #{component.name}"
       end
     end
+
+    test "published schemas exactly match the definitions" do
+      by_name = Map.new(Definitions.all(), &{&1.name, &1})
+
+      for component <- Seshat.MCP.Server.__components__(:tool) do
+        expected = Schema.to_json_schema(by_name[component.name].parameters)
+
+        assert component.input_schema == expected,
+               "published schema drift for #{component.name}"
+      end
+    end
+
+    # The drift test above pins the published schema against `Definitions`;
+    # this pins `Definitions` against being under-specified in the first place.
+    # A property declaring only a description publishes typeless, Peri falls
+    # back to `:any`, and clients that rely on a top-level discriminator may
+    # serialise the value incorrectly. Nested properties are walked because
+    # numeric note fields inside write_midi_notes' array had the same typeless
+    # `oneOf` shape as pan.
+    test "every published property declares a type, nested ones included" do
+      for component <- Seshat.MCP.Server.__components__(:tool),
+          {path, spec} <- published_properties(component.input_schema, component.name) do
+        assert Map.has_key?(spec, "type"), "#{path} publishes no type"
+      end
+    end
   end
+
+  defp published_properties(%{"properties" => properties}, path) do
+    Enum.flat_map(properties, fn {name, spec} ->
+      [{"#{path}.#{name}", spec} | published_properties(spec, "#{path}.#{name}")]
+    end)
+  end
+
+  defp published_properties(%{"items" => items}, path),
+    do: published_properties(items, path <> "[]")
+
+  defp published_properties(_spec, _path), do: []
 
   describe "input validation" do
     defp validate(tool_name, params) do
@@ -79,6 +116,14 @@ defmodule Seshat.MCP.ToolsTest do
       # would reject it.
       assert {:ok, _} = validate("set_track_pan", %{"track" => 0, "value" => 1})
       assert {:ok, _} = validate("set_track_pan", %{"track" => 0, "value" => -0.5})
+
+      assert {:ok, _} =
+               validate("set_device_parameter", %{
+                 "track" => 0,
+                 "device" => 0,
+                 "parameter" => 1,
+                 "value" => 1
+               })
     end
 
     test "rejects missing required params" do
@@ -149,18 +194,17 @@ defmodule Seshat.MCP.ToolsTest do
     # they are separate code paths in Peri, and the wire advertisement is the
     # whole deliverable: a client that never sees `minimum`/`maximum` cannot
     # steer the model away from an out-of-range call in the first place.
-    test "a bounded number carries its range into both oneOf branches" do
+    test "a bounded number has a top-level type and range" do
       component =
         Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_track_pan"))
 
       value = component.input_schema["properties"]["value"]
 
-      assert %{"oneOf" => branches} = value
-      assert %{"type" => "number", "minimum" => -1.0, "maximum" => 1.0} in branches
-      assert %{"type" => "integer", "minimum" => -1.0, "maximum" => 1.0} in branches
-
-      # The description stays at property level, outside the oneOf.
+      assert value["type"] == "number"
+      assert value["minimum"] == -1.0
+      assert value["maximum"] == 1.0
       assert value["description"] =~ "Pan position"
+      refute Map.has_key?(value, "oneOf")
     end
 
     test "a bounded integer carries its minimum" do
@@ -171,15 +215,18 @@ defmodule Seshat.MCP.ToolsTest do
                Map.take(component.input_schema["properties"]["track"], ["type", "minimum"])
     end
 
-    test "an unbounded number keeps its bare oneOf shape" do
+    test "an unbounded number still has a top-level type" do
       component =
         Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_device_parameter"))
 
       # set_device_parameter.value is deliberately unbounded — its legal range
       # is per-parameter, reported by get_device_parameters.
-      assert %{"oneOf" => branches} = component.input_schema["properties"]["value"]
-      assert %{"type" => "number"} in branches
-      assert %{"type" => "integer"} in branches
+      value = component.input_schema["properties"]["value"]
+
+      assert value["type"] == "number"
+      refute Map.has_key?(value, "minimum")
+      refute Map.has_key?(value, "maximum")
+      refute Map.has_key?(value, "oneOf")
     end
   end
 end
