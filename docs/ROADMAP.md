@@ -120,7 +120,7 @@ entire track's worth of work instead.
 cannot leave a truncated `catalog.json`.
 
 **Why:** [catalog.ex:831-838](../lib/seshat/library/catalog.ex#L831-L838) logs a
-write failure and then returns `{:ok, summary}` — the UI reports success while
+write failure and then returns `{:ok, summary}` — the tool reports success while
 the next start restores an old or empty catalog. `File.write/2` is not atomic.
 
 **User stories:**
@@ -140,23 +140,26 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
 - From the 2026-07-29 external review; the durability half accepted, the ETS
   generation swap declined above.
 
-## #4 · Catalog staleness check — reindex without being asked
+## #4 · Catalog staleness check — notice without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
-at server startup and/or on `search_library` calls; when the catalog is
-missing or stale, tell the user a reindex is needed and will take up to a
-minute (Live's UI freezes), then run it.
+when the user initiates a catalog operation such as `search_library`. When the
+catalog is missing or stale, the tool result says that a reindex is needed,
+that it can take up to a minute, and that Live's UI will freeze while it runs.
+The model can then warn the user and offer to invoke `reindex_library`.
 
 **Why:** 2026-07-28 validation run: the script literally has the *user*
 asking whether an index exists yet — backwards. The user shouldn't need to
-know indexing exists. The check costs two file stats; the expensive rebuild
-stays announced and cause-driven instead of manual or unprompted.
+know when the freshness check is needed. The check costs two file stats and is
+naturally triggered by the operation that depends on the catalog. The expensive
+rebuild remains announced and explicit because a tool cannot both warn the user
+and complete the rebuild before returning its result.
 
 **User stories:**
-- As a producer who just installed a new Pack, Seshat notices its index is
-  stale, tells me a one-minute refresh is coming, and runs it — I never have
-  to know indexing exists.
+- As a producer who just installed a new Pack, my next library search notices
+  that its catalog is stale and offers to refresh it — I do not have to know
+  when or how to check the index myself, and I am warned before Live freezes.
 
 **Planner notes:**
 - `catalog.json` needs a built-at timestamp if the merge writer doesn't
@@ -164,8 +167,14 @@ stays announced and cause-driven instead of manual or unprompted.
 atomic".
 - The Ableton DB path comes from `Seshat.Library.AbletonDB` (per-machine;
   the Windows caveat stays with "Deliberately not planned", not this issue).
-- Decide the surfacing point: a line in `search_library` replies, a startup
-  check, or both.
+- Put the check at the start of `search_library`, and share the same helper
+  with any future catalog operation that depends on freshness.
+- If a stale catalog is still readable, `search_library` may return its results
+  with the warning rather than turning staleness into a hard failure. A missing
+  catalog must return the reindex guidance instead of pretending that an empty
+  search found nothing.
+- A startup check may log or cache the stale status, but it must not start a
+  reindex: no MCP conversation may be connected to receive the warning.
 
 ## #5 · Verify destructive mutations before reporting success
 
@@ -242,18 +251,19 @@ is why they ship together.
 
 ## #7 · Producer personas — switchable musical taste
 
-**Goal:** layer a *persona* — musical taste, and only taste — onto the base
-session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
-(five stubs exist; `mona_dust.md` is the default); a `load_producer` tool (plus
+**Goal:** layer a *persona* onto the base session instructions. 
+Personas live one per file in [priv/producers/](../priv/producers/)
+(five placeholder stubs exist; `mona_dust.md` is the default); a `load_producer` tool (plus
 `list_producers`) loads one into the conversation mid-session:
 "load me Volt Kessler" changes the session's whole aesthetic.
 
-**Why:** taste as a feature instead of a wording debate: different producer,
-different palette, same tools. The split is strict (Patrick, 2026-07-29):
-personas carry *only* aesthetic taste — sonic palette, genre instincts.
-Everything behavioral — slate style, opinionatedness, register, the
-"my gut for an 86 BPM lo-fi track…" voice from the 2026-07-28 run — lives in
-the base text ([lib/seshat/instructions.ex](../lib/seshat/instructions.ex),
+**Why:** The feel of colloborating with different styles of producer is valuable to the user.
+Also different songs might benefit from a different producer. Personas should carry aesthetic taste: sonic palette, genre instincts. Maybe other fun details like stylistic language differences in the responses.
+
+ 
+
+
+
 shipped 2026-07-29) and stays consistent across personas. Swapping producers
 changes what Seshat reaches for, never how it works.
 
@@ -265,39 +275,19 @@ changes what Seshat reaches for, never how it works.
   persona only fills in where I haven't said anything yet.
 
 **Planner notes:**
-- **MCP `instructions` are delivered once, at initialize** — mid-session
-  switching cannot go through that channel. It must be a tool whose *reply*
-  carries the new persona into context and states that it supersedes the
-  previous one.
-- Personas are musically expressed, never machine-specific — "warm and
-  dusty," not tag names; the model maps taste onto this machine's library via
-  `search_library`'s replies. Same rule that governs tool descriptions.
-- **The taste hierarchy (Patrick, 2026-07-29): the user's communicated taste
+- the base text([lib/seshat/instructions.ex](../lib/seshat/instructions.ex) 
+  is delivered via the instrucions.  We could put the persona here but there are 2 VERY BAD limitations. 
+  Its only loaded at the start of the session, which precedes the first user command, so a user has no way to select the producer being loaded. 
+  Also there is a strict 2048 character limit on this field, and the base text needs to use most of it, not much room for the producer persona. 
+- Because of these limitations, the planner should explore out of the box creative solutions to loading a producer. 
+  Even resorting to asking a user to manual input a file or text somewhere in the desktop. 
+  Consider all possible avenues and angles for getting the mcp user to respond with a desired persona. 
+  so we are unfortunately quite limited with the space that can be given to a persona if using this delivery method. 
+- **The taste hierarchy:  the user's communicated taste
   always leads; the persona is the *default* — the prior that fills in when
-  the user hasn't said yet.** The base text's voice section is already
-  written as read-and-execute-the-user's-taste, so a persona slots in
-  underneath it; add one line to the base stating the hierarchy when this
-  ships.
-- Flesh the five stubs out from one sentence to a real (but short) voice each
-  — a persona rides on top of the base text in every session's context.
-- **Constant iteration is the expected mode** (Patrick, 2026-07-29): personas
-  will be dialed in mid-work based on responses, so `load_producer` must read
-  the persona file from disk at call time — edit the file, re-invoke the
-  tool, and the new text lands in context with no recompile, restart, or
-  reconnect. Do not compile personas in. (The base text will be iterated
-  even more, but its loop is connect-bound regardless — instructions are
-  delivered at initialize. If the recompile step in that loop grates,
-  `Seshat.Instructions.text/0` can trivially become a runtime file read;
-  decide when the friction is actually felt.)
-- Decide persistence: does a chosen producer survive reconnect (a small file
-  under `~/.seshat/`, still not a database) or reset to the default each
-  session?
-- The groundwork is already in place, from the session-instructions work
-  (shipped 2026-07-29): the 2,048-character delivery ceiling and its proof are
-  recorded in
-  [archive/PLAN_mcp_server_instructions.md](archive/PLAN_mcp_server_instructions.md),
-  and the base text's voice section already reads as execute-the-user's-taste,
-  which is what a persona slots underneath.
+  the user hasn't said yet.** 
+- The stubbed out personas are placeholders and need to be edited manually,
+  continuous iteration is expected as we can only guess and check while using.
 
 ## #8 · `screenshot_live` — let Seshat see the screen
 
