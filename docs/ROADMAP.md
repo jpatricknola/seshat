@@ -200,26 +200,29 @@ notices when it breaks.
 - As a producer, "undo that" that only partly worked is a sentence I hear about,
   not something I discover later.
 
+**Already done — do not rebuild it.** The batch-verification half of this has
+shipped: `get_session_state`'s description now says to call it once after a
+batch of actions *including several undo calls*, never after each one, and to
+report what could not be verified rather than silently retrying. That covers
+the "one read per batch" half; what remains below is the reply itself.
+
 **Planner notes:**
-- Both verification addresses already exist upstream and are already documented
-  (`/live/song/get/can_undo`, `/live/song/get/can_redo` in
-  [docs/abletonosc-api-docs.md](abletonosc-api-docs.md)). **No fork change, no
-  `mix abletonosc.install`, no Live restart.** The plan for the undo-granularity
-  work deliberately deferred exposing them — *"nothing needs it yet; stays off
-  the roadmap until something does"* — and this is the something.
+- **`undo`/`redo` must stop asserting.** `"Undone"` should say the request was
+  sent, not that history moved. This is the substance of the item and a
+  one-string change — the honest floor regardless of what else is built on top.
+- **Optional, one query:** guard the first undo of a batch with `can_undo` so
+  hitting the bottom of the history is an honest error rather than a cheerful
+  `"Undone"`. Worth it only if the wall proves common in practice.
+  `/live/song/get/can_undo` and `/live/song/get/can_redo` already exist
+  upstream and are already documented
+  ([docs/abletonosc-api-docs.md](abletonosc-api-docs.md)) — **no fork change,
+  no `mix abletonosc.install`, no Live restart.** The undo-granularity plan
+  deferred exposing them — *"nothing needs it yet; stays off the roadmap until
+  something does"* — and this is the something.
 - **Do not add a state read per `undo` call, and do not add a retry chain.**
-  That is ruled out by the user story on the stale-mirror item above: a batch
-  undo should cost one verification read *after the batch*. The cheap shape:
-  1. **`undo`/`redo` stop asserting.** `"Undone"` should say the request was
-     sent, not that history moved. A one-string change, and the honest floor
-     regardless of what else is built.
-  2. **Put the verification in the description, once per batch.** After undoing
-     N calls, one `get_session_state`, and an explicit report when the expected
-     things did not all revert. One read per batch, which is what the story
-     above asks for.
-  3. **Optional, one query:** guard the first undo of a batch with `can_undo`
-     so hitting the bottom of the history is an honest error rather than a
-     cheerful `"Undone"`. Worth it only if the wall proves common in practice.
+  Ruled out by the user story on the stale-mirror item above, and now also by
+  the shipped description: a batch undo costs one verification read *after the
+  batch*.
 - Related, and worth reading together: **"Verify destructive mutations before
   reporting success"** further down this queue is the same family — a mutation
   reporting success as soon as `:gen_udp.send/4` returns. This entry is ranked

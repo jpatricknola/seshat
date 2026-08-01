@@ -1348,8 +1348,9 @@ defmodule Seshat.Tools.Handlers do
   # the *explanation* — why a value is missing and what to do — is worth saying
   # exactly once.
   @unknown_explanation "Unknown values mean Ableton did not answer when the mirror was last " <>
-                         "read — pass refresh: true to re-read, and check Ableton is running " <>
-                         "with AbletonOSC enabled."
+                         "read. Do not call get_session_state again automatically; tell the " <>
+                         "user what could not be verified, and check Ableton is running with " <>
+                         "AbletonOSC enabled."
 
   @doc """
   The whole `get_session_state` reply, from the four mirrored values.
@@ -1448,8 +1449,7 @@ defmodule Seshat.Tools.Handlers do
   """
   @spec format_track_summary([map()] | nil) :: {String.t(), boolean()}
   def format_track_summary(nil) do
-    {"The track list could not be read from Ableton — it is unknown, not empty. " <>
-       "Pass refresh: true to re-read.", true}
+    {"The track list could not be read from Ableton — it is unknown, not empty.", true}
   end
 
   def format_track_summary([]) do
@@ -1537,7 +1537,7 @@ defmodule Seshat.Tools.Handlers do
   # A guessed fader position reads as real and the model does relative moves off
   # it ("turn the delay down a bit" from a fictional 0.85 is an increase), so an
   # unanswered volume query says so instead.
-  defp volume_field(nil), do: "volume unknown (a reply was lost — try get_session_state again)"
+  defp volume_field(nil), do: "volume unknown"
   defp volume_field(value), do: "volume=#{round_volume(value)}"
 
   defp pan_field(nil), do: "pan unknown"
@@ -3103,7 +3103,8 @@ defmodule Seshat.Tools.Handlers do
     :exit, _ ->
       {:error,
        "The session mirror did not answer — it may be mid-refresh against an unresponsive " <>
-         "Ableton. Try again shortly, and check Ableton is running with AbletonOSC enabled."}
+         "Ableton. Do not retry automatically; tell the user that session verification was " <>
+         "unavailable and check Ableton is running with AbletonOSC enabled."}
   end
 
   defp to_track_type("midi"), do: :midi

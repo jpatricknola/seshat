@@ -32,10 +32,14 @@ defmodule Seshat.MCP.Tools do
         @moduledoc unquote(tool.description)
 
         use Anubis.Server.Component, type: :tool
+        defoverridable input_schema: 0
 
         alias Anubis.Server.Response
 
         schema(do: unquote(Macro.escape(Schema.to_anubis(tool.parameters))))
+
+        @impl true
+        def input_schema, do: unquote(Macro.escape(Schema.to_json_schema(tool.parameters)))
 
         @impl true
         def execute(params, frame) do

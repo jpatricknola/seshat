@@ -51,6 +51,16 @@ defmodule Seshat.Tools.DefinitionsTest do
         assert tool in names, "missing tool: #{tool}"
       end
     end
+
+    test "get_session_state is one verification read after a batch, not a retry loop" do
+      tool = Enum.find(Definitions.all(), &(&1.name == "get_session_state"))
+
+      assert tool.description =~ "call this once after the whole batch"
+      assert tool.description =~ "Do not automatically retry"
+
+      assert tool.parameters.properties["refresh"].description =~
+               "never as an automatic follow-up"
+    end
   end
 
   describe "declared bounds" do

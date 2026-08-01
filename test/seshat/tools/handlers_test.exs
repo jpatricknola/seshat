@@ -2277,7 +2277,7 @@ defmodule Seshat.Tools.HandlersTest do
       assert {empty_text, false} = Handlers.format_track_summary([])
 
       assert unknown_text =~ "unknown, not empty"
-      assert unknown_text =~ "refresh: true"
+      refute unknown_text =~ "refresh: true"
       assert empty_text =~ "No tracks in current session"
       assert unknown_text != empty_text
     end
@@ -2415,10 +2415,11 @@ defmodule Seshat.Tools.HandlersTest do
       assert length(String.split(reply, @explanation)) == 2
     end
 
-    test "the explanation tells the model how to recover" do
+    test "the explanation prevents automatic retry loops" do
       reply = compose(%{tracks: nil})
 
-      assert reply =~ "refresh: true"
+      assert reply =~ "Do not call get_session_state again automatically"
+      refute reply =~ "refresh: true"
       assert reply =~ "AbletonOSC"
     end
   end
