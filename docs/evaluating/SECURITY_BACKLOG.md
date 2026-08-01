@@ -5,7 +5,7 @@ which today binds loopback only and is reachable by nobody but this machine's
 user. None of them is worth building until [the gate](#the-gate) fires, and
 when it fires they all activate together.
 
-**Scheduling lives in [ROADMAP.md](ROADMAP.md), not here.** The gated items are
+**Scheduling lives in [ROADMAP.md](../ROADMAP.md), not here.** The gated items are
 deliberately absent from that queue — putting them there would rank work that
 cannot pay off yet against work that can. This doc holds the evidence, the
 triggers, and the reasoning; the roadmap holds the order.
@@ -35,7 +35,7 @@ surface open to anyone already inside the network.
 
 # The queue
 
-Ranked by impact-per-effort, matching [ROADMAP.md](ROADMAP.md)'s convention.
+Ranked by impact-per-effort, matching [ROADMAP.md](../ROADMAP.md)'s convention.
 Numbering starts at #4 because #1–#3 were the pre-gate items, now
 [resolved](#resolved) — the gap is deliberate, so that references in the
 archived plans still point at what they meant.
@@ -44,10 +44,10 @@ archived plans still point at what they meant.
 
 **Severity past the gate: critical.** This is the item the gate exists for.
 
-**What's wrong:** [router.ex:13-33](../lib/seshat_web/router.ex#L13-L33) puts
+**What's wrong:** [router.ex:13-33](../../lib/seshat_web/router.ex#L13-L33) puts
 `live "/", AssistantLive` behind the plain `:browser` pipeline and forwards
 `/mcp` to Anubis with no auth plug in front of either.
-[no_auth_discovery.ex](../lib/seshat_web/plugs/no_auth_discovery.ex) exists
+[no_auth_discovery.ex](../../lib/seshat_web/plugs/no_auth_discovery.ex) exists
 specifically to tell probing MCP clients that there is no OAuth here — the
 absence is deliberate and documented, which is correct for a loopback tool and
 indefensible past the gate.
@@ -72,14 +72,14 @@ the shape of the fix.
 **Severity past the gate: high** — and it is the most likely way the gate fires
 *by accident*, since it needs no decision from anyone, just a first deploy.
 
-**What's wrong:** [runtime.exs:52-61](../config/runtime.exs#L52-L61) is the
+**What's wrong:** [runtime.exs:52-61](../../config/runtime.exs#L52-L61) is the
 untouched `phx.new` default — `ip: {0,0,0,0,0,0,0,0}`, all IPv6 interfaces,
 generator comment still attached. Combined with #4 that is the whole tool
 surface open to the network, and nothing warns.
 
 **Why it is still dormant:** it applies only under `MIX_ENV=prod`, which this
 project has never run. Dev binds loopback
-([dev.exs:12](../config/dev.exs#L12)).
+([dev.exs:12](../../config/dev.exs#L12)).
 
 **Fix:** default prod to loopback, and **refuse to boot** when a non-loopback
 bind is configured without an auth secret present. Fail-closed is the point —
@@ -123,7 +123,7 @@ observers, or per-user Ableton instances — that shape has to be decided before
 ## What belongs here, and what doesn't
 
 **Correctness bugs with no security dimension do not belong here** — they live
-in [ROADMAP.md](ROADMAP.md), which ranks them alongside everything else. Several
+in [ROADMAP.md](../ROADMAP.md), which ranks them alongside everything else. Several
 are easy to mistake for security items because they touch the same files:
 
 | Finding | Why it isn't a security item |
@@ -139,13 +139,13 @@ much they read like input sanitisation.
 
 Not to be re-litigated when this queue is picked up:
 
-- **Dev binds loopback** — [dev.exs:12](../config/dev.exs#L12).
-- **`force_ssl` with HSTS is configured for prod** — [prod.exs:13-20](../config/prod.exs#L13-L20).
-- **Prod refuses to boot without `SECRET_KEY_BASE`** — [runtime.exs:41-46](../config/runtime.exs#L41-L46).
+- **Dev binds loopback** — [dev.exs:12](../../config/dev.exs#L12).
+- **`force_ssl` with HSTS is configured for prod** — [prod.exs:13-20](../../config/prod.exs#L13-L20).
+- **Prod refuses to boot without `SECRET_KEY_BASE`** — [runtime.exs:41-46](../../config/runtime.exs#L41-L46).
   The checked-in dev/test secrets are public in git, which is fine *because* dev
   is loopback-only; that stops being true if #5 is ever loosened by hand.
 - **LiveDashboard is dev-only** — gated on `dev_routes`, set solely in
-  [dev.exs:59](../config/dev.exs#L59).
+  [dev.exs:59](../../config/dev.exs#L59).
 - **`Handlers` is the single dispatch point** for both entry modes, so an auth
   or validation layer has exactly one seam to cover rather than two.
 - **The OSC layer is loopback-only end to end** — see [Resolved](#resolved).
@@ -171,9 +171,9 @@ reachable *before* any deployment, which is why they were never gated.
 
 | # | Finding | Resolved | Where |
 |---|---|---|---|
-| #1 | AbletonOSC bound `0.0.0.0:11000` and retargeted its reply stream to whichever host last sent a datagram | 2026-07-30 | Fork: [osc_server.py](../priv/AbletonOSC/abletonosc/osc_server.py) binds `127.0.0.1` and `process()` no longer reassigns `_remote_addr`. Plan: [PLAN_abletonosc_loopback_and_safe_exports.md](archive/PLAN_abletonosc_loopback_and_safe_exports.md) |
+| #1 | AbletonOSC bound `0.0.0.0:11000` and retargeted its reply stream to whichever host last sent a datagram | 2026-07-30 | Fork: [osc_server.py](../../priv/AbletonOSC/abletonosc/osc_server.py) binds `127.0.0.1` and `process()` no longer reassigns `_remote_addr`. Plan: [PLAN_abletonosc_loopback_and_safe_exports.md](../archive/PLAN_abletonosc_loopback_and_safe_exports.md) |
 | #2 | `/live/browser/export` opened any caller-supplied path with Live's privileges | 2026-07-30 | Fork: the address now takes no arguments and writes under `~/.seshat/browser-exports/`; `Catalog.validated_export_path/2` checks the returned path. Same plan as #1 |
-| #3 | The Elixir listener bound the wildcard, trusted any source, and crashed on a malformed datagram | 2026-07-30 | [transport.ex](../lib/seshat/osc/transport.ex) binds loopback and accepts datagrams only from the fork's endpoint; [message.ex](../lib/seshat/osc/message.ex) is a strict non-crashing decoder. Plan: [PLAN_harden_osc_listener.md](archive/PLAN_harden_osc_listener.md) |
+| #3 | The Elixir listener bound the wildcard, trusted any source, and crashed on a malformed datagram | 2026-07-30 | [transport.ex](../../lib/seshat/osc/transport.ex) binds loopback and accepts datagrams only from the fork's endpoint; [message.ex](../../lib/seshat/osc/message.ex) is a strict non-crashing decoder. Plan: [PLAN_harden_osc_listener.md](../archive/PLAN_harden_osc_listener.md) |
 
 Two of these carry ongoing cost worth remembering. #1 **changes** upstream
 behaviour rather than extending it, so it will conflict on an AbletonOSC merge

@@ -1,5 +1,5 @@
 SESHAT VALIDATION SCRIPT — copy-paste version
-Source: docs/validation-script.md. Say each prompt to Seshat, check Live, move on.
+Source: docs/validation-scripts/validation-script.md. Say each prompt to Seshat, check Live, move on.
 Remember: OSC is UDP with no reply — "nothing happened" is a failure, write it down.
 Before starting: save your work; step 1 opens a fresh set and deletes default tracks.
 

@@ -556,7 +556,7 @@ The surface has grown since; this table is a record of what the 2026-07-27 scrip
 covers, not a current inventory. (`create_project` was removed after that run, so
 Part 1's "new project" prompt now resolves to `create_track` calls against the
 blank Default Set — see
-[archive/create-project-removal.md](archive/create-project-removal.md).)
+[archive/create-project-removal.md](../archive/create-project-removal.md).)
 
 | Part | Tools exercised |
 |---|---|
@@ -610,7 +610,7 @@ Then split the results three ways:
 
 - **Broken** — Seshat claimed success, Live didn't change. Almost always a
   wrong OSC address or wrong argument order. Check the address against
-  [abletonosc-api-docs.md](abletonosc-api-docs.md) first.
+  [abletonosc-api-docs.md](../abletonosc-api-docs.md) first.
 - **Wrong** — something happened, but not what you asked for. Usually a tool
   description or prompting problem, not a wiring problem.
 - **Judgement** — it worked, but the musical result was poor (dull chords, a

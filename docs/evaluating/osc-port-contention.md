@@ -173,7 +173,7 @@ rule that tests must not reach `Transport.query/3`. That rule exists because
 queries need a live Ableton; the deaf path is the one query that resolves
 without one, and is therefore the one worth testing. The setup occupies the
 configured reply port itself (31001 in `config/test.exs`, not AbletonOSC's
-11001 — see [PLAN_test_isolation.md](archive/PLAN_test_isolation.md)), and
+11001 — see [PLAN_test_isolation.md](../archive/PLAN_test_isolation.md)), and
 tolerates the port already being held — either way the precondition holds.
 The query assertion uses a 200 ms timeout on purpose: if the
 short-circuit ever regresses, the call exits and the test fails, rather than

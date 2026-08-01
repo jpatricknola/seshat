@@ -39,8 +39,9 @@ step 5, change nothing in the doc.
    it hangs together internally; the plan's own framing becomes the objective,
    and a plan that solves an adjacent problem immaculately will pass.
 
-2. **Read what is already settled.** [docs/bridge-options.md](docs/bridge-options.md)
-   and any related doc in [docs/archive/](docs/archive/). Staying on
+2. **Read what is already settled.** [docs/evaluating/](docs/evaluating/) — the
+   standing decision records, [bridge-options.md](docs/evaluating/bridge-options.md)
+   above all — and any related doc in [docs/archive/](docs/archive/). Staying on
    AbletonOSC is a decision, not an accident — a reviewer that relitigates a
    settled decision every run is worse than no reviewer.
 

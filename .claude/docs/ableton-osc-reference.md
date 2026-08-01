@@ -10,7 +10,7 @@
 
 [ableton-lom.md](ableton-lom.md) describes *what* Ableton exposes; AbletonOSC
 is one way to reach it, and the deliberate choice — see
-[docs/bridge-options.md](../../docs/bridge-options.md) for the trade-off
+[docs/evaluating/bridge-options.md](../../docs/evaluating/bridge-options.md) for the trade-off
 against the Max for Live WebSocket alternative. `Seshat.OSC.Transport`
 isolates the wire mechanics (UDP, encoding, reply correlation); the
 `/live/...` address strings themselves live inline in the handler clauses,
@@ -29,7 +29,7 @@ via `"/live/`. A bridge swap would keep the tool contract in
   only be loopback. Upstream does neither (wildcard bind, reply follows the last
   sender); both are recorded as deliberate divergences in the fork's `SESHAT.md`
   and grepped by `vendored_addresses_test`. Widening either is security work
-  gated in [docs/SECURITY_BACKLOG.md](../../docs/SECURITY_BACKLOG.md), not a
+  gated in [docs/evaluating/SECURITY_BACKLOG.md](../../docs/evaluating/SECURITY_BACKLOG.md), not a
   convenience.
 
 Only one process can hold 11001, so **only one Seshat can read from Ableton at a

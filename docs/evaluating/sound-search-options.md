@@ -1,13 +1,13 @@
 # Sound search — from a described sound to the right loaded sound
 
-_Research & options doc · 27 Jul 2026 · feeds [ROADMAP.md](ROADMAP.md), decides
+_Research & options doc · 27 Jul 2026 · feeds [ROADMAP.md](../ROADMAP.md), decides
 nothing by itself._
 
 The mission-critical flow: **a user describes a sound in natural language —
 "a dusty lo-fi electric piano", "a big warm analog bass" — and Seshat surfaces
 and loads the best candidates this library actually has.** The catalog
 result-quality work
-([archive/PLAN_catalog_result_quality.md](archive/PLAN_catalog_result_quality.md))
+([archive/PLAN_catalog_result_quality.md](../archive/PLAN_catalog_result_quality.md))
 fixed the mechanical failures (strict-AND tags, alphabetical ranking, dead-end
 replies). This doc asks what would move the needle *from here*, ranks each
 lever by expected impact, and grounds every claim in measurements of the real
@@ -111,7 +111,7 @@ work.
 ### 2 · Read what Ableton already wrote: tag axes and preset→device — High impact, low-medium effort
 
 The data for №1 comes from one schema addition to
-[`AbletonDB.read_tags/1`](../lib/seshat/library/ableton_db.ex): join each tag
+[`AbletonDB.read_tags/1`](../../lib/seshat/library/ableton_db.ex): join each tag
 row to its parent (`files.parent_id`) and keep the axis name. Store tags as
 `{axis, name}` (catalog format v3). Beyond feeding №1, axes let the scorer
 weight a Character match differently from a device-category match, let
@@ -121,7 +121,7 @@ that isn't raw frequency.
 `file_devices` (4,535 rows) is the same trip: it answers "which synth does
 this preset actually run on", enabling "an Operator bass" as a real filter
 and folding the AUv2/VST3 plugin-format duplicates recorded in
-[archive/catalog-aliasing-options.md](archive/catalog-aliasing-options.md).
+[archive/catalog-aliasing-options.md](../archive/catalog-aliasing-options.md).
 
 *Risk:* the schema is undocumented; keep the existing wrap-everything error
 posture (axis becomes `nil`, search degrades to today's behaviour).
@@ -129,7 +129,7 @@ posture (axis becomes `nil`, search degrades to today's behaviour).
 ### 3 · Close the loop: delete_device + bypass + hot-swap — High impact on the outcome, not on search
 
 **Shipped 2026-07-28** — see
-[archive/PLAN_audition_loop.md](archive/PLAN_audition_loop.md). Restated here
+[archive/PLAN_audition_loop.md](../archive/PLAN_audition_loop.md). Restated here
 because the thesis holds beyond this one feature: forgiveness beats
 precision. If trying a candidate costs one sentence ("next"), a slate that's
 merely *good* still ends with the right sound loaded — the user's ear does
@@ -183,7 +183,7 @@ biggest hammer and the easiest to over-credit.
 Live's Python API has `Browser.preview_item(item)` / `stop_preview()`
 (confirmed in the [Live API stub](https://github.com/cylab/AbletonLive-API-Stub/blob/master/Live.xml);
 it's what Push uses to audition the browser). Two additions to the vendored
-[browser.py](../priv/AbletonOSC/abletonosc/browser.py) (`/live/browser/preview_item`,
+[browser.py](../../priv/AbletonOSC/abletonosc/browser.py) (`/live/browser/preview_item`,
 `/live/browser/stop_preview`) plus `preview_sound` / `stop_preview` tools
 give the flow: present five candidates → preview each for the user → load the
 one they name. No track mutation, no cleanup, works for samples too (where

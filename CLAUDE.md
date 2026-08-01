@@ -183,7 +183,7 @@ on this machine everything still works.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed — the `/smoke-test` skill is the checklist for that. See [README.md](README.md).
 - `/full-smoke` runs every section of that checklist in one sweep, scoped to what needs no human: no Live restart, no server restart, no ears, no second client. It defers to `/smoke-test` for what each check *is* and only decides what runs, what gets an automated stand-in, and what is skipped — so its report always carries a named Uncovered list. Use it as the routine sweep; use `/smoke-test` itself when a specific change needs the hands-and-ears checks too.
-- [docs/validation-script.md](docs/validation-script.md) is the human-run version: a guided lo-fi session a person reads to Seshat, building a real sketch while touching the tool surface as it stood on 2026-07-27; the doc lists exactly which tools that was. Tools added since aren't in it — `/smoke-test` covers those. Use it when a batch of features needs validating by ear and eye rather than by agent. [docs/validation-script.txt](docs/validation-script.txt) is its copy-paste companion — the same script stripped of prose, with the 2026-07-27 run's findings written inline under the first few prompts (those produced the push-based session state work and the removal of `create_project` — see [docs/archive/create-project-removal.md](docs/archive/create-project-removal.md)).
+- [docs/validation-scripts/validation-script.md](docs/validation-scripts/validation-script.md) is the human-run version: a guided lo-fi session a person reads to Seshat, building a real sketch while touching the tool surface as it stood on 2026-07-27; the doc lists exactly which tools that was. Tools added since aren't in it — `/smoke-test` covers those. Use it when a batch of features needs validating by ear and eye rather than by agent. [docs/validation-scripts/validation-script.txt](docs/validation-scripts/validation-script.txt) is its copy-paste companion — the same script stripped of prose, with the 2026-07-27 run's findings written inline under the first few prompts (those produced the push-based session state work and the removal of `create_project` — see [docs/archive/create-project-removal.md](docs/archive/create-project-removal.md)).
 - The `audit-osc` workflow ([.claude/workflows/audit-osc.js](.claude/workflows/audit-osc.js)) fans out agents to verify every `/live/` address in `lib/` against the canonical docs — worth running after an AbletonOSC upgrade or a batch of new tools.
 
 ## Conventions
@@ -198,10 +198,10 @@ on this machine everything still works.
 
 ## Design decisions worth knowing
 
-- **AbletonOSC is one bridge, not the architecture.** `OSC.Transport` isolates the wire mechanics (UDP, OSC encoding, reply correlation); the `/live/...` address strings deliberately live inline in `Handlers`, `Registry`, and `Session.State` — no abstraction layer, all sites greppable via `"/live/`. If the bridge ever changed, the stable seam is the tool contract in `Definitions`: the tool names and schemas stay, everything below `Handlers` gets reimplemented. Alternatives were weighed in [docs/bridge-options.md](docs/bridge-options.md) — staying on AbletonOSC is a decision, not an accident.
+- **AbletonOSC is one bridge, not the architecture.** `OSC.Transport` isolates the wire mechanics (UDP, OSC encoding, reply correlation); the `/live/...` address strings deliberately live inline in `Handlers`, `Registry`, and `Session.State` — no abstraction layer, all sites greppable via `"/live/`. If the bridge ever changed, the stable seam is the tool contract in `Definitions`: the tool names and schemas stay, everything below `Handlers` gets reimplemented. Alternatives were weighed in [docs/evaluating/bridge-options.md](docs/evaluating/bridge-options.md) — staying on AbletonOSC is a decision, not an accident.
 - **We maintain the bridge.** Seshat runs [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), a fork of `ideoforms/AbletonOSC`, as a submodule at `priv/AbletonOSC`; `mix abletonosc.install` copies it wholesale into Live's Remote Scripts. Forked 2026-07-28 because two things could no longer be done by patching: a second dict-assignment override, and edits to upstream files with no `add_handler` seam at all ([docs/archive/fork-options.md](docs/archive/fork-options.md) records the reasoning; the fork's own `SESHAT.md` lists every divergence and the merge hazards). Two consequences worth internalising: **editing bridge Python is two commits** — one in the submodule, one bumping the pin here — and **git worktrees don't populate submodules**, so a fresh worktree needs `git submodule update --init` or the Python-grepping tests fail.
 - **MCP mode is primary.** It needs no API key — the user's Claude subscription covers the reasoning. API-key mode exists for dev and for users without an MCP client.
-- **Only one Seshat can read Ableton at a time.** AbletonOSC replies to a fixed port (11001), so the second instance to start is deaf — it can send but never receives. `.mcp.json` therefore points MCP clients at the running server's HTTP endpoint rather than spawning `mix mcp`, which means the server must be running for the tools to exist. Reasoning and rejected alternatives in [docs/osc-port-contention.md](docs/osc-port-contention.md).
+- **Only one Seshat can read Ableton at a time.** AbletonOSC replies to a fixed port (11001), so the second instance to start is deaf — it can send but never receives. `.mcp.json` therefore points MCP clients at the running server's HTTP endpoint rather than spawning `mix mcp`, which means the server must be running for the tools to exist. Reasoning and rejected alternatives in [docs/evaluating/osc-port-contention.md](docs/evaluating/osc-port-contention.md).
 - **The LLM does the resolving.** Track names → indices, "the reverb" → device index, note names → MIDI numbers. Tools stay dumb and mechanical; the prompt in `Seshat.Agent` carries the music theory.
 
 ## Current focus
@@ -217,14 +217,23 @@ it current: when something ships, run the `/ship` skill
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
-**ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-31 its top item is model-readable rejections for invalid tool
-parameters in MCP mode: a Peri validation failure surfaces to the model as a
-bare JSON-RPC error today, hiding `Seshat.Tools.Validation`'s own message.
-`start_new_project` — the read-only
+**ROADMAP.md ranks features, defects and security work in one queue.**
+Model-readable rejections for invalid tool parameters in MCP mode shipped
+2026-08-01, closing what had been the queue's top item: a Peri validation
+failure used to surface to the model as a bare JSON-RPC error, hiding
+`Seshat.Tools.Validation`'s own message. The fix is one `handle_request/2`
+override on `Seshat.MCP.Server` — the seam Anubis deliberately leaves
+`defoverridable`, since a Peri rejection never reaches the generated
+component at all — that rewrites a known tool's `-32602` into a tool result
+carrying `Validation`'s message, while an unknown tool name keeps its
+protocol error untouched. Plan archived at
+[docs/archive/PLAN_mcp_readable_rejections.md](docs/archive/PLAN_mcp_readable_rejections.md).
+Coalesce mirror refreshes — a burst of tool calls collapsing into one
+trailing mirror refresh instead of queuing one per call — is now the
+queue's top item. `start_new_project` — the read-only
 setup wizard that would catch "let's start a new project" and move the
 replace-not-append rule off the capped instructions budget and into a tool
-description — now sits a few places below it. Devices on return and master
+description — sits a couple of places below it. Devices on return and master
 tracks shipped 2026-07-31, closing what had led the queue: `create_return_track`
 no longer ships an empty return the user has to fill in by hand in Live — the
 six device tools (`load_device`, `get_track_devices`, `get_device_parameters`,
@@ -322,7 +331,7 @@ source validation, a strict non-crashing decoder in `Seshat.OSC.Message`) all
 shipped 2026-07-30. One sibling doc holds the *evidence* behind the remaining
 security items, not a competing queue:
 
-- [docs/SECURITY_BACKLOG.md](docs/SECURITY_BACKLOG.md) — network exposure. Its
+- [docs/evaluating/SECURITY_BACKLOG.md](docs/evaluating/SECURITY_BACKLOG.md) — network exposure. Its
   three open items (HTTP auth, production binding, rate limiting) are all
   dormant behind one gate and deliberately absent from the queue until
   something binds beyond loopback or a second user is invited; the OSC-layer

@@ -21,69 +21,25 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Model-readable rejections for invalid tool parameters in MCP mode
+## #1 · Coalesce mirror refreshes — one burst of tool calls, one refresh
 
-**Goal:** an out-of-range or wrong-typed parameter comes back to the model as
-`Seshat.Tools.Validation`'s message — naming the parameter, the bound, the value
-it got, and the parameter's own description — in MCP mode as well as API-key
-mode.
+**Plan:** [PLAN_coalesce_mirror_refreshes.md](PLAN_coalesce_mirror_refreshes.md)
 
-**Why:** bounds are enforced in both modes now ("Enforce tool ranges and
-non-negative indices centrally", shipped 2026-07-30), but in MCP mode Peri
-rejects at the wire first, and a Peri rejection is a JSON-RPC error rather than
-a tool result. Measured against the running server on 2026-07-30:
-
-- Claude Code surfaced `set_track_pan value: 2.0` to the model as nothing but
-  `MCP error -32602: Invalid params` — the explanatory `data.message` never
-  reached it.
-- That detail is Elixir internals anyway: `expected either {:float, {:range,
-  ...}} or {:integer, {:range, ...}}, got: 2.0`, and `should be greater then or
-  equal to 0` (Peri's own typo).
-- For a nested array it is **empty**: a bad note velocity produces `"notes: "` —
-  no note index, no field, no reason.
-
-The designed message reaches the model only in the narrow band where Peri passes
-and the central validator catches, such as a non-integer index (`track: 1.5`). A
-model that cannot read why its call was refused cannot fix it, and this feature
-made refusals far more common than they used to be — previously the bad value
-went through to Live.
-
-**User stories:**
-- As a producer, when Seshat reaches for an out-of-range value, it reads the
-  refusal, corrects the value, and quietly retries — instead of surfacing a
-  cryptic "invalid params" failure I'm left to interpret.
-
-**Planner notes:**
-- The seam is the generated component in
-  [mcp/tools.ex](../lib/seshat/mcp/tools.ex): when Peri's `validate_input`
-  fails, run `Seshat.Tools.Validation.validate/2` against the raw params and
-  return its message as a tool result instead of letting the protocol error
-  through.
-- **Keep the bounds in the advertised schema.** That half shipped and is the
-  client's only machine-readable contract. This item is about which layer
-  *speaks*, not which layer knows.
-- Decide the fallback for a violation the central validator does not model (an
-  unknown property, a malformed array), where Peri refuses but `validate/2`
-  returns `:ok`. Falling back to Peri's text is acceptable; falling through to
-  the handler is not.
-- Nothing in `mix test` sees this: the suite exercises `Handlers.call/2` and the
-  components' `validate_input` separately, never a client's view of a refusal.
-  Found by `/smoke-test` on 2026-07-30 and reproducible with a raw MCP
-  handshake.
-
-## #2 · Coalesce mirror refreshes — one burst of tool calls, one refresh
-
-**Goal:** a single user request that fans out into many mutations produces one
-mirror refresh once the burst settles, not one per mutation — and a read landing
-during the burst still answers.
+**Goal:** a burst of mutations cannot build an unbounded queue of full mirror
+refreshes: calls inside one quiet window produce one trailing refresh, later
+calls preserve one final trailing refresh, and a read landing while work is only
+scheduled still answers.
 
 **Why:** `do_refresh/1` re-queries the session serially — five queries per track
-(name, volume, pan, mute, solo), four per return, plus master and song scalars —
+(name, volume, pan, mute, solo), five per return, plus master and song scalars —
 and it runs *inside* the GenServer that also serves reads. While it runs,
 `State.tracks/0`, `song/0`, `return_tracks/0` and `master/0` all block.
 `serve_session_state` makes four such calls at the 5s default, so enough queued
 refreshes make `get_session_state` fail with "the session mirror did not
 answer" — naming an Ableton that is answering perfectly well.
+
+Transport also serializes every OSC query app-wide, so redundant mirror reads
+delay guard queries from unrelated tools, not only `get_session_state`.
 
 Measured against Live 12.4.3 on 2026-07-31: one refresh takes **~1.0–1.8s** on a
 ten-track set. Reproduced deterministically by `/smoke-test`: five return/master
@@ -141,12 +97,13 @@ below the public API rather than on it.
 - The 5s default on `serve_session_state`'s calls is the proximate trigger and
   the tempting fix. Raising it only converts a fast wrong answer into a slow
   one — the queued work is the actual defect.
-- Make the debounce window configurable so tests can drive it to ~0. Otherwise
-  none of this is testable without a live Ableton: the failure itself needs a
-  refresh that takes real time. Reproduce with five mixer setters followed by an
+- Test the timer and reconciliation state transitions without firing the real
+  refresh; driving the window to ~0 only reaches the same live OSC queries
+  sooner and does not make them unit-testable. The end-to-end failure still
+  needs live Ableton: reproduce with five mixer setters followed by an
   unrefreshed `get_session_state`, and with twenty `create_track` calls.
 
-## #3 · Preserve partial agent results at the tool-iteration limit
+## #2 · Preserve partial agent results at the tool-iteration limit
 
 **Goal:** when `Seshat.Agent` hits `@max_iterations`, return the commands it
 already executed and the conversation so far, and surface a warning in the UI.
@@ -171,7 +128,7 @@ matters most.
   neither helps.
 - From the 2026-07-29 external review, accepted as written.
 
-## #4 · `start_new_project` — the setup wizard, and prompt budget back
+## #3 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -223,7 +180,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #5 · `undo` can revert far more than the last action
+## #4 · `undo` can revert far more than the last action
 
 **Goal:** either make single scripted actions land as separate Live undo
 steps, or make Seshat's `undo` tool honest about what it is actually about to
@@ -259,7 +216,7 @@ entire track's worth of work instead.
 - Reproduction: `create_track` → `write_midi_notes` (any notes) → `undo` →
   the track is gone, not just the clip's notes. No quantize step needed.
 
-## #6 · Make catalog persistence atomic and report write failures
+## #5 · Make catalog persistence atomic and report write failures
 
 **Goal:** a reindex that cannot be persisted says so, and a crash mid-write
 cannot leave a truncated `catalog.json`.
@@ -285,7 +242,7 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
 - From the 2026-07-29 external review; the durability half accepted, the ETS
   generation swap declined above.
 
-## #7 · Catalog staleness check — reindex without being asked
+## #6 · Catalog staleness check — reindex without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -312,7 +269,7 @@ atomic".
 - Decide the surfacing point: a line in `search_library` replies, a startup
   check, or both.
 
-## #8 · Verify destructive mutations before reporting success
+## #7 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -350,7 +307,7 @@ trigger is a stale model-held index.
   ride along here (or as a drive-by before this item is picked up) rather
   than rank on its own.
 
-## #9 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #8 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -358,7 +315,7 @@ vocabulary proactively in tool replies — so the model sees the menu before
 ordering, instead of guessing tags and learning only from failures.
 
 **Why:** this is levers №1+№2 of
-[sound-search-options.md](sound-search-options.md) — read that doc before
+[sound-search-options.md](evaluating/sound-search-options.md) — read that doc before
 planning; it grounds every claim in measurements. The top of the search
 funnel leaks first-attempt vocabulary misses ("warm" isn't a tag here, `Soft`
 is), and the axes fix real traps the flat tag list creates (`Distortion` the
@@ -385,7 +342,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #10 · Producer personas — switchable musical taste
+## #9 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* — musical taste, and only taste — onto the base
 session instructions. Personas live one per file in [priv/producers/](../priv/producers/)
@@ -448,7 +405,7 @@ changes what Seshat reaches for, never how it works.
   and the base text's voice section already reads as execute-the-user's-taste,
   which is what a persona slots underneath.
 
-## #11 · `screenshot_live` — let Seshat see the screen
+## #10 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -474,7 +431,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - API-key mode would need image blocks threaded through `Seshat.Agent`'s
   loop — decide whether to support it there or keep this MCP-only.
 
-## #12 · Restart the MCP supervisor after abnormal failure
+## #11 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -493,13 +450,44 @@ healthy — the tools simply stop existing, with nothing saying why.
 - Raised as a speculative risk by the 2026-07-29 external review — the failure
   has not been reproduced, only reasoned from the child spec.
 
+## #12 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
+
+**Goal:** a `tools/call` whose `"arguments"` is JSON `null` gets a
+model-readable rejection — same channel as any other invalid call — instead
+of an unhandled crash.
+
+**Why:** found during pr-review of "Model-readable rejections for invalid
+tool parameters in MCP mode" (2026-07-31). Peri accepts `arguments: null` and
+passes it straight through, so `Seshat.MCP.Server`'s new interception (see
+that item, now shipped) never sees it: `Seshat.Tools.Handlers.call/2` is
+guarded `when is_binary(name) and is_map(params)`
+([handlers.ex:221](../lib/seshat/tools/handlers.ex#L221)), so `params: nil`
+raises a `FunctionClauseError` — no `:invalid_params` error is ever produced,
+no reply reaches the client. It is the same "invalid params → opaque
+failure" class that feature exists to close, reached by a route that skips
+the interception entirely: an absent `"arguments"` key and a non-map value
+(e.g. a JSON array) are both handled, but an explicit `null` is neither.
+
+**Planner notes:**
+- Likely a one-line normalization at the seam: treat `nil` the same as an
+  absent key (Anubis already defaults an absent `"arguments"` to `%{}` before
+  this point — see case E in
+  [archive/PLAN_mcp_readable_rejections.md](archive/PLAN_mcp_readable_rejections.md)). Decide
+  whether that belongs in `Seshat.MCP.Server`'s `handle_request/2` clause or
+  in `Handlers.call/2` itself.
+- Confirm whether API-key mode (`Seshat.Agent`) can ever produce `nil`
+  params; if not, this may be MCP-only and the fix stays in `server.ex`.
+- Small effort — pair it with a case in
+  [test/seshat/mcp/server_test.exs](../test/seshat/mcp/server_test.exs)
+  alongside the existing non-map-`arguments` (array) case.
+
 ## #13 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
 lever gets measured instead of argued.
 
-**Why:** lever №9 of [sound-search-options.md](sound-search-options.md),
+**Why:** lever №9 of [sound-search-options.md](evaluating/sound-search-options.md),
 estimated at a morning's work. It exists to **gate the catalog levers below it**:
 after "Catalog vocabulary" lands, the eval decides whether any of the remaining
 catalog levers are still worth buying. Sequenced after "Catalog vocabulary"
@@ -516,7 +504,7 @@ catalog — no Ableton needed.
 **Gate: the six issues below are catalog levers that wait on "Search eval
 harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
-[sound-search-options.md](sound-search-options.md)'s impact-per-effort ordering.
+[sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
 ## #14 · Widen the search slate at tied score bands
 
@@ -813,7 +801,7 @@ flow, so this is not an active break.
 - **Deployment-gated security work** — HTTP authentication on `/mcp` and the
   LiveView, production binding, rate limiting, and the multi-user design
   question. Not in this queue by design; see
-  [SECURITY_BACKLOG.md](SECURITY_BACKLOG.md) for the two triggers that activate
+  [SECURITY_BACKLOG.md](evaluating/SECURITY_BACKLOG.md) for the two triggers that activate
   them. Note that authentication alone does not make Seshat multi-user — one
   transport, one mirror, one Ableton.
 - **The vendored Python test harness reloads AbletonOSC on import.**
@@ -865,7 +853,7 @@ flow, so this is not an active break.
 - Embeddings or a semantic index for the catalog — the LLM is already the
   semantic layer and has the musical context.
 - Replacing AbletonOSC with a Max for Live WebSocket bridge — weighed and
-  declined in [bridge-options.md](bridge-options.md); reopen only if a Remote
+  declined in [bridge-options.md](evaluating/bridge-options.md); reopen only if a Remote
   Script fundamentally can't do something we need.
 - **Machinery around the fork's two known soft spots** (recorded 2026-07-28
   with the fork itself): a pre-push guard for an unpushed `priv/AbletonOSC`

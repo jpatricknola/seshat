@@ -45,7 +45,7 @@ be able to say yes/no to each one.
      and listener, whether the LiveView UI shows anything affected.
    - Read any related archived plan or decision doc for constraints already
      discovered — don't rediscover what
-     [docs/bridge-options.md](docs/bridge-options.md) already settled.
+     [docs/evaluating/bridge-options.md](docs/evaluating/bridge-options.md) already settled.
    - Anything you could not verify (needs live Ableton, needs Live's own API
      stubs) goes in the plan flagged with ⚠️, not silently assumed. The
      AbletonOSC source itself is *not* in that category any more — it's
