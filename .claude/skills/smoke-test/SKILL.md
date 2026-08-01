@@ -634,9 +634,13 @@ read before the hole.
    Compare the reply against Live's own track headers by eye; that comparison is
    the check. The race is timing-dependent and may take several attempts to
    provoke; a run that never degrades is **not a pass**, it is a run that did not
-   test this. Confirm from the server log that a `Loaded N tracks` line was
-   overlapped by a structural change, and that a degraded read logged
-   `the read stopped at index …`.
+   test this. The log signature of a degraded rebuild is a `Song: …` line
+   followed by `the read stopped at index …`, with **no `Loaded N tracks` line
+   between them**: `Song:` is emitted before every rebuild's `num_tracks` probe,
+   while `Loaded …` and the stopped-index warning are the two arms of one `case`
+   and can never both describe the same rebuild. Healthy `Loaded …` lines from
+   neighbouring rebuilds in the same burst are expected — don't read one as
+   contradicting the degraded read.
 7. **It recovers without `refresh: true`.** After a degraded read, make no
    further tool call and wait ~3s, then read plainly again: the list is correct.
    This is the single retry doing what the narrowed `refresh: true` no longer
