@@ -1,8 +1,7 @@
 # Producer personas
 
 One file per persona: **musical taste only**, composed onto the base
-session instructions (`Seshat.Instructions`) at the same seam
-`Seshat.Agent.system_prompt/0` already uses. A persona is a sonic palette,
+session instructions (`Seshat.Instructions`). A persona is a sonic palette,
 genre instincts, and production tendencies — which presets to reach for, how
 much reverb, how hot the drums sit. What "good" sounds like, expressed as
 the *decisions* a producer would make. All *behavior* — how to run a slate,

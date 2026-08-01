@@ -9,9 +9,8 @@ This is a web application written using the Phoenix web framework.
 >
 > Path-scoped rulesets live in [.claude/rules/](.claude/rules/) and load
 > automatically when the matching files are touched:
-> - [phoenix-web.md](.claude/rules/phoenix-web.md) — Phoenix v1.8, HEEx,
->   LiveView, JS/CSS, and form-handling rules (`lib/seshat_web/**`,
->   `assets/**`)
+> - [phoenix-web.md](.claude/rules/phoenix-web.md) — Phoenix HTTP endpoint
+>   rules (`lib/seshat_web/**`)
 > - [osc.md](.claude/rules/osc.md) — OSC address safety and Seshat
 >   conventions (`lib/**`)
 > - [testing.md](.claude/rules/testing.md) — ExUnit and Seshat testing rules

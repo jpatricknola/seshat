@@ -190,7 +190,7 @@ defmodule Seshat.OSC.Transport do
 
         Logger.error("""
         OSC reply port #{reply_port} is already bound by another process — \
-        usually a second Seshat instance (an MCP server and `mix phx.server` \
+        usually a second Seshat instance (`mix mcp` and `mix phx.server` \
         running at once).
 
         AbletonOSC sends every reply and listener update to #{reply_port}, so \

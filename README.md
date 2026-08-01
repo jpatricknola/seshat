@@ -228,7 +228,8 @@ startup and says so:
 
 ```
 [error] OSC reply port 11001 is already bound by another process — usually a
-second Seshat instance (an MCP server and `mix phx.server` running at once).
+second Seshat instance (for example, `mix mcp` and `mix phx.server` running at
+once).
 ```
 
 If you see that, quit the other instance and restart. Reads returning
@@ -261,8 +262,6 @@ fails if that is ever pointed back at Live. Nothing in the suite reaches
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What's not built yet — the living, priority-ordered queue |
 | [docs/archive/PLAN_remaining_osc_tools.md](docs/archive/PLAN_remaining_osc_tools.md) | *Archived* — the tool-coverage plan ROADMAP.md superseded |
 | [docs/archive/PLAN_sound_catalog.md](docs/archive/PLAN_sound_catalog.md) | *Archived* — how the tag-aware sound catalog works, and its open follow-ups |
-| [docs/archive/architecture-evaluation.md](docs/archive/architecture-evaluation.md) | *Archived* — why tool use over structured JSON |
-| [docs/archive/tool-use-migration-plan.md](docs/archive/tool-use-migration-plan.md) | *Archived* — how the dual-mode design came about |
 
 ## Troubleshooting
 

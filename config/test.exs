@@ -13,10 +13,6 @@ config :logger, level: :warning
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 
-# Sort query params output of verified routes for robust url comparisons
-config :phoenix,
-  sort_verified_routes_query_params: true
-
 # Don't start OSC transport, session state, MCP server, or the library catalog
 # in tests — catalog tests start their own with an isolated table and path.
 config :seshat, :start_osc, false

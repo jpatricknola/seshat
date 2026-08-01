@@ -1,8 +1,8 @@
 # Adding a Tool
 
-Tools are defined once and surfaced over MCP automatically. This doc replaces
-the old "system prompt contract" — there is no JSON command schema in a system
-prompt to keep in sync.
+Tools are defined once and surfaced over MCP automatically. Tool definitions
+are the single model-facing contract; there is no separate command schema to
+keep in sync.
 
 ## The four steps
 
