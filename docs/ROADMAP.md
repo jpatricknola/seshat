@@ -96,9 +96,15 @@ script, or a fork/AbletonOSC behavior in front of it. A user who asks to
 entire track's worth of work instead.
 
 **User stories:**
-- As a producer who says "undo the quantize" after a few minutes of
-  back-and-forth, only the quantize is reverted — or Seshat warns me it's
-  about to take the whole track with it, before anything is lost.
+- As a producer who says "undo the quantize" right after quantizing, exactly
+  the quantize is reverted — not the track it lives on. Undo is top-of-stack,
+  as it is in Live itself: if other changes came after, they must be undone
+  first, and Seshat does not walk backward through them automatically. Live
+  has no undo history palette or selective revert, and Seshat does not invent
+  one (see the plan's rejected-approach section).
+- As a producer who says "undo that" after one instruction caused several
+  mutating tool calls (for example, "create 5 tracks"), the Desktop agent calls
+  `undo` once per action so the whole request is reversed.
 
 **Planner notes:**
 - Open research question, not a confirmed fix: check whether the Live Object
@@ -260,13 +266,6 @@ Personas live one per file in [priv/producers/](../priv/producers/)
 **Why:** The feel of colloborating with different styles of producer is valuable to the user.
 Also different songs might benefit from a different producer. Personas should carry aesthetic taste: sonic palette, genre instincts. Maybe other fun details like stylistic language differences in the responses.
 
- 
-
-
-
-shipped 2026-07-29) and stays consistent across personas. Swapping producers
-changes what Seshat reaches for, never how it works.
-
 **User stories:**
 - As a producer, "load me Volt Kessler" changes what every following pick
   reaches for — a different palette, same tools, no re-explaining a whole
@@ -280,8 +279,8 @@ changes what Seshat reaches for, never how it works.
   Its only loaded at the start of the session, which precedes the first user command, so a user has no way to select the producer being loaded. 
   Also there is a strict 2048 character limit on this field, and the base text needs to use most of it, not much room for the producer persona. 
 - Because of these limitations, the planner should explore out of the box creative solutions to loading a producer. 
-  Even resorting to asking a user to manual input a file or text somewhere in the desktop. 
-  Consider all possible avenues and angles for getting the mcp user to respond with a desired persona. 
+  Even resorting to asking a user to manual input a file or text somewhere in the desktop client. 
+  Consider all possible avenues and angles for getting the mcp consumer to respond with a desired persona. 
   so we are unfortunately quite limited with the space that can be given to a persona if using this delivery method. 
 - **The taste hierarchy:  the user's communicated taste
   always leads; the persona is the *default* — the prior that fills in when
