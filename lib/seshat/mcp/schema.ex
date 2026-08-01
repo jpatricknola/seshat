@@ -5,9 +5,8 @@ defmodule Seshat.MCP.Schema do
   carried in `{:meta, type, opts}` wrappers, which Peri turns back into JSON
   Schema for the MCP wire).
 
-  This runs at compile time, from `Seshat.MCP.Tools`. It exists so that both
-  entry points — the Anthropic tool-use loop and the MCP server — describe
-  their tools from one source of truth.
+  This runs at compile time from `Seshat.MCP.Tools`, keeping the MCP wire schema
+  derived from the format-agnostic definitions rather than hand-maintained.
   """
 
   @doc """

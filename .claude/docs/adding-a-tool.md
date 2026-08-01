@@ -1,8 +1,8 @@
 # Adding a Tool
 
-Tools are defined once and surfaced to both entry points automatically. This
-doc replaces the old "system prompt contract" — there is no longer a JSON
-command schema in a system prompt to keep in sync.
+Tools are defined once and surfaced over MCP automatically. This doc replaces
+the old "system prompt contract" — there is no JSON command schema in a system
+prompt to keep in sync.
 
 ## The four steps
 
@@ -35,8 +35,8 @@ the most common cause of wrong tool calls.
 
 Supported JSON Schema in `parameters`: `type` (`string`/`integer`/`number`/
 `boolean`/`array`/`object`), `description`, `enum`, `minimum`/`maximum`,
-`items`, nested `properties` + `required`. Anything else is passed to Anthropic
-but ignored by the MCP schema converter.
+`items`, nested `properties` + `required`. Anything else is ignored by the MCP
+schema converter.
 
 Every index parameter must declare `minimum: 0` — a negative index reaching
 AbletonOSC's Python selects from the *end* of Live's collection, so `track: -1`
@@ -95,9 +95,8 @@ matching schema. If the name doesn't round-trip through `Macro.camelize/1` →
 - **Don't write an MCP component.** `Seshat.MCP.Tools` generates one per
   definition at compile time. `lib/seshat/mcp/tools/` no longer exists.
 - **Don't touch `Seshat.MCP.Server`.** It registers whatever `Definitions` has.
-- **Don't add a JSON shape to a system prompt.** The old `Commands.Parser`
-  approach is gone. `Seshat.Agent`'s system prompt carries only cross-cutting
-  guidance (note names, beat math, index bases), not per-tool schemas.
+- **Don't add a JSON shape to server instructions.** Tool schemas and
+  descriptions are the model-facing contract.
 
 ## If the tool needs new session state
 
@@ -114,22 +113,18 @@ handler.
 
 ## Adding guidance the model needs
 
-Three places, and the choice is not a matter of taste:
+Two places, and the choice is not a matter of taste:
 
 1. **The tool description** — anything that matters when using *this* tool:
    chord intervals, drum-map pitches, warp modes, index bases, which tool to
    call first, how to present the result. This is the default, and it is the
-   only one of the three with no length limit (~36KB of schemas ships every
+   only one with no length limit (~36KB of schemas ships every
    request).
 2. **`Seshat.Instructions`** — only what belongs to *no* tool: register, what
    to do when a request is outside the tools entirely, the fact that the view
    has already moved. Hard-capped at 2,048 characters, because Claude Desktop
    truncates past that silently — so a rule that could live in a description
-   is free there and scarce here. Reaches both modes.
-3. **`@agent_specific` in `Seshat.Agent`** — API-key mode only, for what that
-   loop needs and MCP mode gets from its own client (its own identity, its own
-   turn budget). Nothing user-facing belongs here alone; it would be invisible
-   in the primary mode.
+   is free there and scarce here.
 
 Nothing in `mix test` checks what any of this makes the model *say* — the
 `/smoke-test` skill has the behavioural checks, one per rule.

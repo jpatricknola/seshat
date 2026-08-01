@@ -2,7 +2,7 @@ defmodule Seshat.MCP.ServerTest do
   @moduledoc """
   Guards two invariants of the MCP server module.
 
-  First, that MCP mode sends exactly the shared instructions — same spirit as
+  First, that the MCP server sends exactly the shared instructions — same spirit as
   `Seshat.MCP.ToolsTest`'s parity guard: the server must not grow its own copy
   of session-level guidance. Deliberately says nothing about what the text
   *is* — that is prose, edited in `Seshat.Instructions` alone.

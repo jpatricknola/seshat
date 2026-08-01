@@ -10,8 +10,7 @@ defmodule Seshat.MCP.Server do
   this server can't drift from the tool definitions.
 
   Session-level guidance — the conventions no single tool description can
-  carry — is sent as server `instructions` from `Seshat.Instructions`, shared
-  with API-key mode's system prompt.
+  carry — is sent as server `instructions` from `Seshat.Instructions`.
 
   ## Why `handle_request/2` is overridden
 
@@ -23,7 +22,7 @@ defmodule Seshat.MCP.Server do
   params` — the explanatory `data.message` never reaches the model, and even
   that hidden text is Elixir internals. So a model that sends `value: 2.0` had
   no way to learn the bound and retry, though `Seshat.Tools.Validation` already
-  writes exactly that sentence for API-key mode.
+  writes a model-readable explanation.
 
   The clause below intercepts those rejections and re-emits them as tool
   results carrying `Validation`'s message. It relies on three facts about

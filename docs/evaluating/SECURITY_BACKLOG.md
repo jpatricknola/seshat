@@ -40,24 +40,21 @@ Numbering starts at #4 because #1–#3 were the pre-gate items, now
 [resolved](#resolved) — the gap is deliberate, so that references in the
 archived plans still point at what they meant.
 
-## #4 · Nothing authenticates `/mcp` or the assistant UI
+## #4 · Nothing authenticates `/mcp`
 
 **Severity past the gate: critical.** This is the item the gate exists for.
 
-**What's wrong:** [router.ex:13-33](../../lib/seshat_web/router.ex#L13-L33) puts
-`live "/", AssistantLive` behind the plain `:browser` pipeline and forwards
-`/mcp` to Anubis with no auth plug in front of either.
+**What's wrong:** [router.ex](../../lib/seshat_web/router.ex) forwards `/mcp`
+to Anubis with no auth plug in front of it.
 [no_auth_discovery.ex](../../lib/seshat_web/plugs/no_auth_discovery.ex) exists
 specifically to tell probing MCP clients that there is no OAuth here — the
 absence is deliberate and documented, which is correct for a loopback tool and
 indefensible past the gate.
 
 **Reachable consequences:** `/mcp` is the full destructive tool surface —
-create, delete, rename, overwrite clips, load devices, transport. `/` is worse
-per request: an anonymous visitor drives Live *and* spends the configured
-Anthropic key.
+create, delete, rename, overwrite clips, load devices, and transport control.
 
-**Fix:** a shared-secret bearer token checked in a plug ahead of both scopes is
+**Fix:** a shared-secret bearer token checked in a plug ahead of the MCP scope is
 enough for a first version — this is not a product with accounts. The MCP
 spec's OAuth flow is the heavier option and probably premature.
 
@@ -93,8 +90,8 @@ this file.
 **Severity past the gate: medium.** Denial of service against a single-user
 music tool, not data loss — but the expensive calls are unusually expensive.
 
-**What's wrong:** nothing bounds request rate or body size on `/mcp` or the
-LiveView. A single expensive call is enough to matter here: `reindex_library`
+**What's wrong:** nothing bounds request rate or body size on `/mcp`. A single
+expensive call is enough to matter here: `reindex_library`
 walks Live's whole browser on the UI thread and freezes it for up to a minute,
 and `search_library` full-scans ETS per query.
 
@@ -126,11 +123,6 @@ observers, or per-user Ableton instances — that shape has to be decided before
 in [ROADMAP.md](../ROADMAP.md), which ranks them alongside everything else. Several
 are easy to mistake for security items because they touch the same files:
 
-| Finding | Why it isn't a security item |
-|---|---|
-| Agent iteration limit discards executed commands | Correctness. |
-| Unbounded LiveView conversation growth | A single local user can exhaust the context window on catalog output alone. |
-
 The general shape: a bad value reaching a tool comes from **the model**, not an
 attacker, so bounds and index validation are correctness work no matter how
 much they read like input sanitisation.
@@ -144,10 +136,7 @@ Not to be re-litigated when this queue is picked up:
 - **Prod refuses to boot without `SECRET_KEY_BASE`** — [runtime.exs:41-46](../../config/runtime.exs#L41-L46).
   The checked-in dev/test secrets are public in git, which is fine *because* dev
   is loopback-only; that stops being true if #5 is ever loosened by hand.
-- **LiveDashboard is dev-only** — gated on `dev_routes`, set solely in
-  [dev.exs:59](../../config/dev.exs#L59).
-- **`Handlers` is the single dispatch point** for both entry modes, so an auth
-  or validation layer has exactly one seam to cover rather than two.
+- **`Handlers` is the single tool dispatch point**, so validation has one seam.
 - **The OSC layer is loopback-only end to end** — see [Resolved](#resolved).
 
 ## Deliberately not planned

@@ -178,8 +178,8 @@ defmodule Seshat.Tools.HandlersTest do
   describe "param key normalisation" do
     setup :osc_sink
 
-    # MCP delivers Peri-validated params with atom keys; the Anthropic API
-    # delivers string keys. Both must reach the same clause.
+    # MCP delivers Peri-validated params with atom keys, while direct callers
+    # may use string keys. Both must reach the same clause.
     test "accepts atom-keyed params" do
       assert {:ok, msg} = Handlers.call("set_track_pan", %{track: 0, value: -1.0})
       assert msg =~ "pan"
@@ -207,8 +207,8 @@ defmodule Seshat.Tools.HandlersTest do
       assert Handlers.stringify_keys(params) == params
     end
 
-    # Validation runs on the stringified map, so both entry shapes are held to
-    # the same schema — MCP mode must not be the lenient one.
+    # Validation runs on the stringified map, so both key shapes are held to
+    # the same schema.
     test "atom-keyed params are validated identically" do
       assert {:error, message} = Handlers.call("set_track_pan", %{track: 0, value: 2.0})
       assert message =~ "- value: must be at most 1.0 (got 2.0)"
@@ -2425,7 +2425,7 @@ defmodule Seshat.Tools.HandlersTest do
 
     # Every non-nil term is truthy in Elixir, so a bare `if` would turn a
     # boolean spelled as `0` into 1 — the opposite of intent. `Validation` now
-    # rejects that shape in `call/2` for both modes, so this pins the direct
+    # rejects that shape in `call/2`, so this pins the direct
     # caller of the public `clip_property_writes/2`, which does not go through
     # it.
     test "a boolean spelled as 0/1 is not inverted" do

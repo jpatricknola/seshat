@@ -2,10 +2,9 @@ defmodule Seshat.Tools.Handlers do
   @moduledoc """
   Dispatches tool calls to their implementations.
 
-  Shared by both MCP and API key modes. Takes a tool name and input map and
-  returns a result suitable for sending back to the LLM. Single-message tools
-  talk to `Seshat.OSC.Transport` directly; multi-step sequences (create_track,
-  create_return_track, write_midi_notes) build a `%Command{}` and execute it via
+  Takes an MCP tool name and input map and returns a result suitable for sending
+  back to the model. Single-message tools talk to `Seshat.OSC.Transport`
+  directly; multi-step sequences build a `%Command{}` and execute it via
   `Seshat.Commands.Registry`.
   """
 
@@ -41,7 +40,7 @@ defmodule Seshat.Tools.Handlers do
   # verbatim to a musician who never asked about tags: the diagnose/facet text
   # did its real job (steering the model's retry) but was never meant to be
   # quoted. It travels with the text it governs rather than sitting in the tool
-  # description, so it reaches the model exactly when it matters, in both modes.
+  # description, so it reaches the model exactly when it matters.
   # Wording matches the session instructions' "speak music, not plumbing" rule.
   @diagnostics_internal "(Diagnostics are for refining your search — present results musically; " <>
                           "don't mention tags to the user.)"
@@ -221,10 +220,10 @@ defmodule Seshat.Tools.Handlers do
   def call(name, params) when is_binary(name) and is_map(params) do
     params = stringify_keys(params)
 
-    # The one place both entry modes meet, so the one place the declared
-    # schemas are actually enforced — neither the Anthropic API nor Peri does
-    # it for us (see `Seshat.Tools.Validation`). Nothing reaches Transport
-    # until the parameters are known good.
+    # The one dispatch point, so the one place the declared schemas are
+    # authoritatively enforced. Peri does not re-check every base type (see
+    # `Seshat.Tools.Validation`). Nothing reaches Transport until the
+    # parameters are known good.
     case Validation.validate(name, params) do
       :ok -> do_call(name, params)
       {:error, message} -> {:error, message}
@@ -234,10 +233,9 @@ defmodule Seshat.Tools.Handlers do
   @doc """
   Recursively converts map keys to strings.
 
-  Params arrive string-keyed from the Anthropic API but atom-keyed from MCP,
-  where Peri validates against an atom-keyed schema. Normalising here means the
-  clauses below only ever deal with one shape — an atom-keyed map otherwise
-  falls straight through to the "Unknown tool" clause.
+  MCP component params arrive atom-keyed after Peri validates against an
+  atom-keyed schema. Normalising here means the clauses below only ever deal
+  with one shape, and direct callers can safely supply either key form.
   """
   @spec stringify_keys(term()) :: term()
   def stringify_keys(map) when is_map(map) and not is_struct(map) do

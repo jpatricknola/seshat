@@ -1,11 +1,10 @@
 defmodule Seshat.InstructionsTest do
   @moduledoc """
-  Contract tests for the shared session-level guidance.
+  Contract tests for MCP session-level guidance.
 
   Deliberately text-agnostic: nothing here asserts on wording, so the prose can
-  be rewritten without touching a test. What is guarded is the contract both
-  entry points rely on, plus the one property that is easy to lose by
-  accident — brevity.
+  be rewritten without touching a test. What is guarded is the MCP initialize
+  contract, plus the one property that is easy to lose by accident — brevity.
   """
 
   use ExUnit.Case, async: true

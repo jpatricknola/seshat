@@ -1,6 +1,6 @@
 defmodule Seshat.MCP.ToolsTest do
   @moduledoc """
-  Guards the invariant that MCP mode and API-key mode expose the same tools.
+  Guards the invariant that every definition is exposed over MCP.
 
   Before these were generated, the MCP server listed components by hand and had
   drifted to 7 of 32 tools.

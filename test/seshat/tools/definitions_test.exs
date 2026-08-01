@@ -143,27 +143,4 @@ defmodule Seshat.Tools.DefinitionsTest do
     defp descend_schema(%{type: "object"} = spec, path), do: schemas_of(spec, path)
     defp descend_schema(_spec, _path), do: []
   end
-
-  describe "to_anthropic_tools/0" do
-    test "returns tools in Anthropic API format" do
-      tools = Definitions.to_anthropic_tools()
-
-      for tool <- tools do
-        assert Map.has_key?(tool, :name)
-        assert Map.has_key?(tool, :description)
-        assert Map.has_key?(tool, :input_schema)
-        # Anthropic uses input_schema, not parameters
-        refute Map.has_key?(tool, :parameters)
-      end
-    end
-
-    test "input_schema matches parameters from all/0" do
-      all_tools = Definitions.all() |> Map.new(&{&1.name, &1})
-      api_tools = Definitions.to_anthropic_tools() |> Map.new(&{&1.name, &1})
-
-      for {name, api_tool} <- api_tools do
-        assert api_tool.input_schema == all_tools[name].parameters
-      end
-    end
-  end
 end

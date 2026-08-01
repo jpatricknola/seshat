@@ -144,19 +144,6 @@ There is nothing to register: the fork's `__init__.py` and `manager.py` already
 list every handler. Restart Ableton Live.
 </details>
 
-For API-key mode, set an Anthropic key — either an env var:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-or `config/dev.secret.exs` (gitignored):
-
-```elixir
-import Config
-config :seshat, :anthropic_api_key, "sk-ant-..."
-```
-
 ## Starting a session
 
 Every session, start the three pieces in this order:
@@ -185,11 +172,9 @@ The same order applies to restarts. Restarting Seshat drops the client's
 connection, so reconnect it afterwards — in Claude Code, `/mcp` → reconnect.
 Restarting *Live* needs nothing: `/live/startup` re-syncs the mirror on its own.
 
-## Two ways to run it
+## Connect over MCP
 
-### MCP mode (primary)
-
-Seshat runs as an MCP server; the reasoning happens in your MCP client, so no
+Seshat runs only as an MCP server; the reasoning happens in your MCP client, so no
 API key is needed — your Claude subscription covers it.
 
 For **Claude Desktop**, add this to `claude_desktop_config.json` (with the
@@ -249,18 +234,6 @@ second Seshat instance (an MCP server and `mix phx.server` running at once).
 If you see that, quit the other instance and restart. Reads returning
 `{:error, :reply_port_unavailable}` are the same cause.
 
-### API-key mode (dev / fallback)
-
-```bash
-mix phx.server
-```
-
-Visit [localhost:4000](http://localhost:4000) and type commands into the chat
-UI. `Seshat.Agent` runs its own tool-use loop against the Anthropic API
-(`claude-haiku-4-5-20251001`).
-
-Both modes drive the same tools through the same handlers.
-
 ## Development
 
 ```bash
@@ -281,7 +254,7 @@ fails if that is ever pointed back at Live. Nothing in the suite reaches
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | Architecture and conventions — read this first |
 | [.claude/docs/adding-a-tool.md](.claude/docs/adding-a-tool.md) | How to add a tool |
-| [.claude/docs/command-flow.md](.claude/docs/command-flow.md) | End-to-end request path for both modes |
+| [.claude/docs/command-flow.md](.claude/docs/command-flow.md) | End-to-end MCP request path |
 | [.claude/docs/ableton-lom.md](.claude/docs/ableton-lom.md) | Ableton's Live Object Model |
 | [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md) | AbletonOSC conventions and gotchas |
 | [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) | Canonical OSC address reference |
