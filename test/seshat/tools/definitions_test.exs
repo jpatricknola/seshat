@@ -143,4 +143,60 @@ defmodule Seshat.Tools.DefinitionsTest do
     defp descend_schema(%{type: "object"} = spec, path), do: schemas_of(spec, path)
     defp descend_schema(_spec, _path), do: []
   end
+
+  # `Seshat.Tools.Handlers.call/2` makes one tool call exactly one Ableton undo
+  # step. That is a wire-level fact the model cannot observe, and Seshat never
+  # sees the user's original prompt — only the individual MCP calls — so nothing
+  # server-side can reconstruct "that request" from a burst of them. The tool
+  # description is therefore the *only* place the repeated-call rule can live,
+  # and losing a sentence of it silently degrades "undo that" back to reverting
+  # one arbitrary fragment. These pin the load-bearing clauses; the exact wording
+  # is free to change around them.
+  describe "the undo/redo prompt contract" do
+    test "undo says a step is one tool call, not one user message" do
+      description = tool("undo").description
+
+      assert description =~ "exactly one Ableton undo step"
+      assert description =~ "not each user message"
+      assert description =~ "write_midi_notes is still one step"
+    end
+
+    test "undo instructs one call per mutating call of a multi-call request" do
+      description = tool("undo").description
+
+      assert description =~ "call undo once for every call that changed Live"
+      assert description =~ "newest first"
+      assert description =~ "do not count read-only"
+    end
+
+    # Live's history is a plain last-in-first-out stack with no API for naming,
+    # skipping or deleting an older entry, so undoing "through" later work means
+    # destroying it. The description has to route that case elsewhere.
+    test "undo routes an older reversible action to its domain tool instead" do
+      description = tool("undo").description
+
+      assert description =~ "top of Live's undo history"
+      assert description =~ "use the relevant domain tool with the prior value"
+      assert description =~ "never call undo through unrelated later work"
+    end
+
+    # The one non-invertible case worth naming: quantizing again does not restore
+    # the original timing, so there is no domain-tool escape hatch here.
+    test "undo names quantize_clip as having no exact inverse" do
+      assert tool("undo").description =~
+               "quantize_clip cannot restore the original note timing by quantizing again"
+    end
+
+    test "redo carries the symmetric repeated-call rule" do
+      description = tool("redo").description
+
+      assert description =~ "exactly one undone Ableton step"
+      assert description =~ "call redo once per step that was undone"
+      assert description =~ "in the original order"
+    end
+
+    defp tool(name) do
+      Enum.find(Definitions.all(), &(&1.name == name)) || flunk("no #{name} tool defined")
+    end
+  end
 end

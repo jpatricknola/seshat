@@ -15,8 +15,15 @@ defmodule Seshat.Tools.Handlers do
   alias Seshat.Music.Pitch
   alias Seshat.OSC.Transport
   alias Seshat.Session.State
+  alias Seshat.Tools.Definitions
   alias Seshat.Tools.FollowCam
   alias Seshat.Tools.Validation
+
+  # Which names get an undo step wrapped around them. Validation deliberately
+  # lets an unknown name through to `do_call/2`'s catch-all, so membership here
+  # is what separates a real tool from a typo — without a second tool list to
+  # keep in sync by hand. Same compile-time derivation as `Seshat.MCP.Server`.
+  @tool_names MapSet.new(Definitions.all(), & &1.name)
 
   # Browsing and loading are both far slower than a property read: the first
   # walk of a big browser category takes seconds, and a heavy plugin can take
@@ -225,8 +232,104 @@ defmodule Seshat.Tools.Handlers do
     # `Seshat.Tools.Validation`). Nothing reaches Transport until the
     # parameters are known good.
     case Validation.validate(name, params) do
-      :ok -> do_call(name, params)
+      :ok -> dispatch(name, params)
       {:error, message} -> {:error, message}
+    end
+  end
+
+  # --- One tool call, one Ableton undo step ---
+  #
+  # Left to itself, Live decides where undo steps begin and end for a
+  # control-surface script, and its rules are activity-sensitive: measured on
+  # Live 12.4.3 (2026-08-01), `create_track` then `write_midi_notes` collapsed
+  # into a single step — one undo deleted the whole track, notes and all — while
+  # the same pair with an intervening timed-out call landed as two. Unpredictable
+  # is worse than coarse: neither the user nor the model can learn what one undo
+  # will do.
+  #
+  # `Song.begin_undo_step()` / `Song.end_undo_step()` (fork additions to
+  # `song.py`, the same mechanism Ableton's own Push script uses) demarcate a
+  # step explicitly. Wrapping here rather than around each datagram is the whole
+  # point: a multi-message tool like `write_midi_notes` — create clip, add notes,
+  # name it — reverts as one unit because the wrap encloses the entire dispatch.
+  #
+  # "One action" therefore means one *tool call*, not one user message. Seshat
+  # never sees the original prompt, only the individual MCP calls, so "undo that
+  # request" is one `undo` per mutating call — which is what the `undo` tool
+  # description teaches the model.
+  defp dispatch(name, params) do
+    if MapSet.member?(@tool_names, name) do
+      # Anubis serializes calls within one MCP session, but two clients can
+      # still overlap — and `begin_undo_step` is measured *not* to refcount, so
+      # without a global lock one caller's `end` closes another caller's step.
+      # The resource id is shared; `self()` is the lock owner, which OTP
+      # releases if the caller dies.
+      stepped = fn -> undo_stepped(name, params) end
+      :global.trans({{__MODULE__, :undo_step}, self()}, stepped, [node()])
+    else
+      # An unknown tool name must not touch the wire at all: it goes straight to
+      # `do_call/2`'s catch-all, which also keeps pure tests calling `call/2`
+      # without a running `Transport` alive.
+      do_call(name, params)
+    end
+  end
+
+  # Never wrapped — an undo inside an open step is a state this design never
+  # creates. The lone `end` first is defensive: a `begin` leaked by a BEAM death
+  # mid-call would otherwise fold the user's next undo into stale grouping.
+  # An unmatched `end` is measured harmless (Live logs it as an ordinary method
+  # call and the history is untouched).
+  defp undo_stepped(name, params) when name in ["undo", "redo"] do
+    _ = Transport.send_message("/live/song/end_undo_step", [])
+    do_call(name, params)
+  end
+
+  # Read-only tools are wrapped too, deliberately: an empty begin/end pair is
+  # measured to leave the undo history untouched, whereas a hand-maintained
+  # list of mutating tools would fail silently the first time a new tool forgot
+  # to join it.
+  #
+  # The lone `end` before the `begin` is the same defence `undo`/`redo` make,
+  # and it is load-bearing for a sharper reason than closing a leak. `begin` does
+  # not refcount, so a step left open by a BEAM death or by the failed `end` send
+  # below is *still open* when this call's `begin` arrives — that `begin` is a
+  # no-op, and the `end` in the `after` then closes a single step holding both
+  # the leaked partial work and this call's mutation, which one `undo` would
+  # revert together. Closing first gives the leak its own step and this call a
+  # clean boundary, which is the whole guarantee. An unmatched `end` is measured
+  # harmless, and the global lock means no other Seshat caller can hold a step
+  # open for this to close out from under.
+  defp undo_stepped(name, params) do
+    _ = Transport.send_message("/live/song/end_undo_step", [])
+
+    case Transport.send_message("/live/song/begin_undo_step", []) do
+      :ok ->
+        try do
+          do_call(name, params)
+        after
+          # An `after` block cannot change the return value, so a failed `end`
+          # is logged rather than swallowed: it means a step was left open, and
+          # the only other trace would be the user's next undo behaving
+          # strangely. No error is manufactured for a tool whose own work
+          # succeeded — the next call closes the leak before opening its own
+          # step, so the damage is bounded to this call's own boundary.
+          case Transport.send_message("/live/song/end_undo_step", []) do
+            :ok ->
+              :ok
+
+            {:error, reason} ->
+              Logger.warning(
+                "Could not close the Ableton undo step after #{name}: #{inspect(reason)}. " <>
+                  "Live may group the next change with this one until another tool call closes it."
+              )
+          end
+        end
+
+      {:error, reason} ->
+        {:error,
+         "Could not open an Ableton undo step (#{inspect(reason)}), so #{name} was not run — " <>
+           "running it now could fold into whatever step Live has open. Check that Ableton " <>
+           "Live is running with AbletonOSC enabled, then try again."}
     end
   end
 

@@ -1,16 +1,35 @@
 defmodule Seshat.Tools.HandlersTest do
   use ExUnit.Case, async: false
 
+  alias Seshat.OSC.Message
+  alias Seshat.Test.OSCSink
   alias Seshat.Tools.Handlers
 
-  # Only the describes that reach the wire own a socket. The sink binds the
-  # test send port first, so it is listening before the first datagram — and
-  # every mutation below is then asserted where it landed, which is provably
-  # not Ableton (config/test.exs).
+  @reply_port Application.compile_env!(:seshat, :osc_reply_port)
+
+  # Every describe that dispatches a *known* tool name owns a socket, whether or
+  # not the tool itself reaches the wire: `Handlers.call/2` wraps every known
+  # dispatch in a begin/end undo step, so even a tool that rejects its params
+  # before doing anything now talks to Transport. The sink binds the test send
+  # port first, so it is listening before the first datagram — and every
+  # mutation below is then asserted where it landed, which is provably not
+  # Ableton (config/test.exs).
   defp osc_sink(_context) do
-    start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
+    sink = start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
     start_supervised!(Seshat.OSC.Transport)
-    :ok
+    %{sink: sink}
+  end
+
+  # Datagrams in *arrival* order. `assert_receive` scans past what it doesn't
+  # match, so it can prove a message arrived but never that it arrived second —
+  # and the undo wrap is only correct if `begin` precedes the mutation and `end`
+  # follows it.
+  defp osc_trace(timeout \\ 200) do
+    receive do
+      {:osc_out, address, args} -> [{address, args} | osc_trace(timeout)]
+    after
+      timeout -> []
+    end
   end
 
   describe "set_track_pan" do
@@ -161,6 +180,10 @@ defmodule Seshat.Tools.HandlersTest do
   end
 
   describe "get_session_state" do
+    # A read-only tool still gets its (empty, free) undo step, so this needs a
+    # socket even though nothing here asserts on the wire.
+    setup :osc_sink
+
     test "returns session info or handles missing Ableton" do
       # Session.State crashes on startup when Ableton isn't running,
       # so this call may exit. Both outcomes are valid.
@@ -248,6 +271,151 @@ defmodule Seshat.Tools.HandlersTest do
     test "valid params still reach the wire" do
       assert {:ok, _msg} = Handlers.call("set_track_pan", %{"track" => 0, "value" => 1.0})
       assert_receive {:osc_out, "/live/track/set/panning", [0, 1.0]}
+    end
+  end
+
+  # Live decides undo-step boundaries for a control-surface script by its own
+  # activity-sensitive rules — measured on 12.4.3, a create_track plus a
+  # write_midi_notes collapsed into one step whose undo deleted the whole track.
+  # `call/2` wraps every known dispatch in an explicit begin/end pair so one tool
+  # call is one undo step. None of this can be seen in Live from here; what these
+  # tests pin is the wire shape the Python half depends on.
+  describe "one tool call, one undo step" do
+    setup :osc_sink
+
+    test "a wrapped tool sends begin, then its mutation, then end" do
+      assert {:ok, _msg} = Handlers.call("set_tempo", %{"bpm" => 120.0})
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/song/set/tempo", [120.0]},
+               {"/live/song/end_undo_step", []}
+             ] = osc_trace()
+    end
+
+    # The leading `end` is not decoration. `begin` does not refcount, so a step
+    # leaked by a BEAM death or a failed `end` send is still open when the next
+    # call runs: without closing first, that call's `begin` is a no-op and its
+    # own `end` closes one step holding both the leak's partial work and this
+    # call's mutation — one `undo` would revert two tool calls, which is exactly
+    # the guarantee the wrap exists to make. Nothing here can open a real step in
+    # Live, so what this pins is the wire shape that keeps the boundary correct:
+    # every wrapped call closes before it opens, on every path.
+    test "every wrapped call closes any leaked step before opening its own" do
+      assert {:ok, _msg} = Handlers.call("set_tempo", %{"bpm" => 120.0})
+      assert {:error, _msg} = Handlers.call("search_library", %{"query" => "bass"})
+      assert {:ok, _msg} = Handlers.call("set_track_volume", %{"track" => 0, "value" => 0.5})
+
+      trace = osc_trace()
+
+      # Each wrapped dispatch begins with `end` and never sends `begin` first.
+      assert {"/live/song/end_undo_step", []} == hd(trace)
+
+      refute Enum.any?(Enum.chunk_every(trace, 2, 1, :discard), fn
+               [{"/live/song/begin_undo_step", []}, {"/live/song/begin_undo_step", []}] -> true
+               _ -> false
+             end),
+             "a begin followed by another begin means a step was opened without closing the " <>
+               "previous one: #{inspect(trace)}"
+
+      # And every `begin` is immediately preceded by the defensive `end`.
+      for {{"/live/song/begin_undo_step", []}, i} <- Enum.with_index(trace) do
+        assert {"/live/song/end_undo_step", []} == Enum.at(trace, i - 1),
+               "begin at #{i} was not preceded by a defensive end: #{inspect(trace)}"
+      end
+    end
+
+    # The `end` lives in an `after` block precisely so a failing tool still
+    # closes its step. `search_library` is the cheap error path: the catalog is
+    # not started in the test env, so it returns before touching Ableton and
+    # without spending a query timeout.
+    test "an error path still closes the step it opened" do
+      assert {:error, msg} = Handlers.call("search_library", %{"query" => "bass"})
+      assert msg =~ "reindex_library"
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/song/end_undo_step", []}
+             ] = osc_trace()
+    end
+
+    # An undo inside an open step is a state this design never creates, so undo
+    # is never wrapped. The lone `end` is defensive: it closes a step leaked by a
+    # BEAM death mid-call, and is measured harmless when no step is open.
+    test "undo sends a defensive end and no begin" do
+      assert {:ok, _msg} = Handlers.call("undo", %{})
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/undo", []}
+             ] = osc_trace()
+    end
+
+    test "redo has the same unwrapped shape" do
+      assert {:ok, _msg} = Handlers.call("redo", %{})
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/redo", []}
+             ] = osc_trace()
+    end
+
+    # Validation deliberately passes an unknown name through to the catch-all,
+    # so membership in the tool list is what gates the wrap. A tool that doesn't
+    # exist must not put anything on the wire — and pure tests that call `call/2`
+    # with no Transport running depend on it too.
+    test "an unknown tool name sends nothing at all" do
+      assert {:error, msg} = Handlers.call("nonexistent_tool", %{})
+      assert msg =~ "Unknown tool"
+
+      assert [] == osc_trace()
+    end
+
+    # The tripwire for cross-session interleaving. Anubis serializes calls within
+    # one MCP session, but two Desktop clients can overlap — and `begin_undo_step`
+    # is measured *not* to refcount, so one caller's `end` would close the other's
+    # step and both actions would land in one undo. `hide_view` is the hold: it
+    # sends, then blocks on a query this test answers by hand.
+    test "a second caller cannot enter an open undo step", %{sink: sink} do
+      first = Task.async(fn -> Handlers.call("hide_view", %{"view" => "Browser"}) end)
+
+      assert_receive {:osc_out, "/live/song/end_undo_step", []}
+      assert_receive {:osc_out, "/live/song/begin_undo_step", []}
+      assert_receive {:osc_out, "/live/view/hide_view", ["Browser"]}
+      assert_receive {:osc_out, "/live/view/get/is_view_visible", ["Browser"]}
+
+      second = Task.async(fn -> Handlers.call("set_tempo", %{"bpm" => 140.0}) end)
+
+      # Nothing from the second caller reaches Ableton while the step is open —
+      # not its mutation, not its own `begin`, and not even its defensive `end`,
+      # which is what stops it closing the first caller's step from outside.
+      refute_receive {:osc_out, "/live/song/begin_undo_step", []}, 300
+      refute_receive {:osc_out, "/live/song/end_undo_step", []}, 0
+      refute_receive {:osc_out, "/live/song/set/tempo", _}, 0
+
+      # Play AbletonOSC and release the first call.
+      :ok =
+        OSCSink.send_datagram(
+          sink,
+          @reply_port,
+          Message.encode("/live/view/get/is_view_visible", ["Browser", "ok", 0])
+        )
+
+      assert {:ok, _msg} = Task.await(first)
+      assert {:ok, _msg} = Task.await(second)
+
+      # And once it is closed, the second caller runs its own complete step —
+      # the first `end` here is the first caller's, the second is the second
+      # caller's own defensive close.
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/song/set/tempo", [140.0]},
+               {"/live/song/end_undo_step", []}
+             ] = osc_trace()
     end
   end
 
@@ -739,6 +907,10 @@ defmodule Seshat.Tools.HandlersTest do
   end
 
   describe "search_library" do
+    # The undo wrap runs before the catalog is even consulted, so this needs a
+    # socket now. The catalog assertions below are unchanged.
+    setup :osc_sink
+
     test "explains itself when the catalog has never been built" do
       # The catalog is not started in the test env, so this is exactly the
       # first-run case a user hits.
@@ -754,6 +926,8 @@ defmodule Seshat.Tools.HandlersTest do
   # drive the real dispatch. The catalog is started under its real name because
   # that is the table the handler reads.
   describe "search_library against a populated catalog" do
+    setup :osc_sink
+
     setup do
       path =
         Path.join([
@@ -2448,14 +2622,21 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
-  # Only the transport-free error paths: everything past them queries Ableton.
+  # Only the error paths that stop before the first Ableton query: everything
+  # past them queries. The undo wrap means these are no longer transport-free —
+  # a begin/end pair still goes out — so the sink is what keeps them from
+  # exiting, and `refute_receive` on the clip addresses is what still proves the
+  # rejection came before anything was set.
   describe "set_clip_properties validation" do
+    setup :osc_sink
+
     test "rejects a call that changes nothing" do
       assert {:error, message} =
                Handlers.call("set_clip_properties", %{"track" => 0, "clip_slot" => 0})
 
       assert message =~ "Nothing to set"
       assert message =~ "loop_start"
+      refute_receive {:osc_out, "/live/clip" <> _, _}
     end
 
     test "rejects an inverted loop brace before touching Ableton" do
@@ -2469,6 +2650,7 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert message =~ "loop_start 8.0 is not before loop_end 4.0"
       assert message =~ "nothing was set"
+      refute_receive {:osc_out, "/live/clip" <> _, _}
     end
 
     test "rejects inverted play markers before touching Ableton" do
@@ -2481,6 +2663,7 @@ defmodule Seshat.Tools.HandlersTest do
                })
 
       assert message =~ "start_marker 4.0 is not before end_marker 4.0"
+      refute_receive {:osc_out, "/live/clip" <> _, _}
     end
   end
 
@@ -2666,9 +2849,12 @@ defmodule Seshat.Tools.HandlersTest do
   end
 
   describe "quantize_clip" do
-    # No socket and no sink on purpose: a zero amount is rejected before the
-    # first guard, so nothing may reach Transport at all. If this test ever
-    # starts timing out, the early return has been lost.
+    setup :osc_sink
+
+    # The sink exists only for the undo wrap's begin/end pair — a zero amount is
+    # rejected before the first guard, so nothing *else* may reach the wire. The
+    # trace assertion is what says so: if this ever grows a clip query, the early
+    # return has been lost.
     test "rejects 0% strength before touching Ableton" do
       assert {:error, message} =
                Handlers.call("quantize_clip", %{
@@ -2680,6 +2866,12 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert message =~ "0% strength"
       assert message =~ "try 0.5"
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/song/end_undo_step", []}
+             ] = osc_trace()
     end
 
     test "rejects an integer 0 the same way" do
@@ -2692,6 +2884,7 @@ defmodule Seshat.Tools.HandlersTest do
                })
 
       assert message =~ "0% strength"
+      refute_receive {:osc_out, "/live/clip" <> _, _}
     end
   end
 

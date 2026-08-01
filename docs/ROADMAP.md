@@ -21,7 +21,132 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · `start_new_project` — the setup wizard, and prompt budget back
+## #1 · The mirror goes stale after a burst of structural changes — and stays stale
+
+**Goal:** after a burst of structural changes — several undos, several
+creates, a handful of deletes by hand in Live — `get_session_state` converges
+on the truth by itself. It must never present a track that no longer exists as
+present.
+
+**Why:** measured 2026-08-01, smoke-testing the undo-granularity branch. Three
+`create_track` calls, then three `undo` calls (all three undos worked — the
+tracks really were gone in Live). The three reads that followed:
+
+1. `get_session_state`, no refresh → errored, "the session mirror did not
+   answer — it may be mid-refresh against an unresponsive Ableton."
+2. `get_session_state`, no refresh → a **stale, internally inconsistent**
+   snapshot: it listed the deleted Track 1 "Bass" as present, alongside a
+   Track 2 whose name, pan, volume and mute were all "unknown".
+3. `get_session_state` with `refresh: true` → correct: only Track 0 "1-MIDI".
+
+Reading 2 is the defect. The mirror did not say "I don't know" — it named a
+deleted track as present, which is the same class of failure the "no
+fabricated values" work removed for the scalar song fields and never closed
+for the track list. A producer has no reason to suspect the answer, and no
+reason to know `refresh` exists.
+
+Three causes compound, and no single one of them is the whole bug:
+
+- **The debounce window is shorter than the gap between tool calls.**
+  `@refresh_debounce_ms` is 1,000ms
+  ([lib/seshat/session/state.ex](../lib/seshat/session/state.ex)), but calls
+  issued in *separate model rounds* arrive ~2.1s apart at the floor (measured
+  2026-07-31, recorded in the `/smoke-test` skill). So a burst spread over
+  several rounds never coalesces — each call gets its own refresh — and each
+  refresh is still in flight when the next mutation lands. For this pattern
+  1,000ms is close to the worst available value: too short to merge, long
+  enough to overlap.
+- **A rebuild racing a structural change comes back degraded.** `do_refresh/1`
+  reads `num_tracks`, then queries five properties per index. When a track
+  disappears between those, the per-index query gets no reply at all
+  (AbletonOSC's track getters are silent on a bad index), the caller waits out
+  the 5s timeout, and later replies run one index behind — `read_tracks/2`'s
+  echo check then rejects every name and yields `nil`. That is the "unknown"
+  Track 2.
+- **The brake then stops it healing.** `finalize_reconciliations/3` records a
+  rebuild that couldn't reproduce the pushed list as `unreconciled` and
+  deliberately does not retry, which is correct as far as it goes — it is what
+  stops an unbounded refresh/re-subscribe/push spin. But the result is a
+  knowingly-wrong mirror held indefinitely behind a single `Logger.warning`,
+  until `refresh: true`, `/live/startup`, or a *different* push list arrives.
+
+**User stories:**
+- As a producer, after undoing the last few things I asked for, asking "what's
+  in the set?" tells me what is actually there — not a track I just removed.
+- As a producer, I never have to learn that a "refresh" exists, or that asking
+  twice gives different answers.
+
+**Planner notes:**
+
+Three changes, ranked. The first is the one that makes the mirror honest, the
+second is what makes it recover, and the third prevents the race but wants
+measurement before it is taken.
+
+1. **A degraded rebuild must never become the mirror.** *(the must-do)*
+   `do_refresh/1` already states this rule and argues for it — when
+   `num_tracks` fails it sets `tracks: nil` rather than keeping the old list,
+   because *"keeping the old list serves the previous set's tracks as this
+   set's. Unknown, not stale-but-plausible."* That rule simply does not cover
+   the case measured here: when the count *answers* but the per-track reads
+   fail, the half-`nil` list is merged in wholesale. Every query helper returns
+   a bare `nil` on an echo mismatch or a timeout, so a rebuild that resolved
+   nothing is indistinguishable from one that resolved everything — which is
+   how "Bass, present" ended up beside a row of unknowns. Fix: if a rebuild
+   could not name tracks it should have named, treat the track read as failed
+   and set `tracks: nil`. This applies a rule the file already argues for to
+   the case it doesn't reach, and it converts a confidently wrong answer into
+   an honest one.
+
+2. **Distinguish "disagreed" from "degraded"; allow exactly one retry.**
+   *(makes it self-heal)* The brake in `finalize_reconciliations/3` is right to
+   exist — without it the unbounded refresh → re-subscribe → push → refresh
+   spin its comment describes is real. But it currently treats "Live says X,
+   the mirror says Y" and "the rebuild resolved nothing at all" as the same
+   outcome, and only the first is a genuine disagreement. A rebuild that
+   yielded `nil` for everything has not disagreed with the push, it has
+   *failed*. Give that case one re-schedule and record the brake only if the
+   second attempt also fails. One retry is bounded; it is not the spin. This is
+   the smallest change that would have let the measured run recover without
+   the user knowing `refresh: true` exists.
+
+3. **Stop re-deriving a count that was just handed to us.** *(prevents it —
+   measure first)* This is what made the first read error, and the arithmetic
+   is stark: `@query_timeout` is 5,000ms and `read_tracks/2` issues **five**
+   queries per index, so a single over-reported track is **25 seconds** of dead
+   waiting. Upstream's `/live/track/get/name` is silent on a bad index — no
+   error, no reply, just the full timeout, five times over. Meanwhile
+   `song_structure.py` has already pushed the authoritative name list,
+   atomically, from Live's own callback, and `reconcile/4` receives it as
+   `names` before discarding it to re-derive the count via `num_tracks`. Using
+   `length(names)` when the refresh was triggered by a structure push removes
+   the dead-index queries in the common case. Ranked third because it narrows
+   the race rather than closing it — another change landing mid-read still
+   skews it — and because it alters the refresh's shape rather than its failure
+   handling.
+
+**Two fixes that look obvious and should not be taken:**
+
+- **Do not raise `@refresh_debounce_ms` past the ~2.1s inter-round floor.** It
+  would make bursts genuinely coalesce, but it widens the interval in which
+  every read is served from a stale mirror. That trades this symptom for a
+  quieter one, and the quieter one is harder to notice.
+- **Do not have `undo`/`redo` call `State.refresh/0`.** They don't today, which
+  is why the mirror only learned via `song_structure.py`'s push — but adding it
+  papers over the one trigger that happened to be measured. The identical race
+  reproduces from hand-edits in Live with no tool call involved.
+
+**Scope and coverage:**
+- Changes 1 and 2 together are roughly 30 lines in one file
+  ([lib/seshat/session/state.ex](../lib/seshat/session/state.ex)), and are what
+  convert this from silently wrong to honest and self-correcting.
+- Fold in **"Unit coverage for the mirror-refresh cross-key loop brake"**
+  (further down this queue): the brake is precisely the mechanism under-tested
+  here, and changes 1 and 2 both land inside it, so a fix wants that coverage
+  anyway.
+- Full evidence, including the wire-level reasoning, is in PR #54's body under
+  "Live verification".
+
+## #2 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -72,47 +197,6 @@ asserting a cleanup unconditionally and hoping the model checks.
   discipline, load-bearing here.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
-
-## #2 · `undo` can revert far more than the last action
-
-**Goal:** either make single scripted actions land as separate Live undo
-steps, or make Seshat's `undo` tool honest about what it is actually about to
-revert.
-
-**Plan:** [PLAN_undo_granularity.md](PLAN_undo_granularity.md) — measured
-against live Ableton 12.4.3 on 2026-08-01: the repro holds, and wrapping each
-tool call in `Song.begin_undo_step()`/`end_undo_step()` (two fork method-list
-entries + a wrap in `Handlers.call/2`) gives exactly one undo step per action.
-
-**Why:** smoke-testing `quantize_clip` on 2026-07-31 found that a single
-`undo` call after `create_track` → `write_midi_notes` reverted the *entire
-track*, not just the last write — reproduced three times, including with
-5-second pauses inserted between every step to rule out Live batching
-rapid-fire calls into one undo group. It reproduces with zero `quantize_clip`
-calls in the sequence, so this is not something that feature introduced; it
-is how Live's own undo history groups mutations driven by a control-surface
-script, or a fork/AbletonOSC behavior in front of it. A user who asks to
-"undo the quantize" after a short multi-step exchange could silently lose an
-entire track's worth of work instead.
-
-**User stories:**
-- As a producer who says "undo the quantize" after a few minutes of
-  back-and-forth, only the quantize is reverted — or Seshat warns me it's
-  about to take the whole track with it, before anything is lost.
-
-**Planner notes:**
-- Open research question, not a confirmed fix: check whether the Live Object
-  Model exposes `Song.begin_undo_step()`/`end_undo_step()` (or equivalent) to
-  a Remote Script, and whether wrapping each `/live/...` handler call in the
-  fork in its own step actually separates them — the 5-second-pause
-  reproduction suggests grouping may not be about call timing at all, so this
-  may not be fixable from the fork's side.
-- If no fix is available at the Python/LOM layer, the fallback is honesty
-  rather than silence: `undo`'s tool description and/or `Seshat.Instructions`
-  should say plainly that one `undo` may revert more than the most recent
-  visible action when several mutations happened in quick succession.
-- Reproduction: `create_track` → `write_midi_notes` (any notes) → `undo` →
-  the track is gone, not just the clip's notes. No quantize step needed.
 
 ## #3 · Make catalog persistence atomic and report write failures
 
@@ -260,13 +344,6 @@ Personas live one per file in [priv/producers/](../priv/producers/)
 **Why:** The feel of colloborating with different styles of producer is valuable to the user.
 Also different songs might benefit from a different producer. Personas should carry aesthetic taste: sonic palette, genre instincts. Maybe other fun details like stylistic language differences in the responses.
 
- 
-
-
-
-shipped 2026-07-29) and stays consistent across personas. Swapping producers
-changes what Seshat reaches for, never how it works.
-
 **User stories:**
 - As a producer, "load me Volt Kessler" changes what every following pick
   reaches for — a different palette, same tools, no re-explaining a whole
@@ -280,8 +357,8 @@ changes what Seshat reaches for, never how it works.
   Its only loaded at the start of the session, which precedes the first user command, so a user has no way to select the producer being loaded. 
   Also there is a strict 2048 character limit on this field, and the base text needs to use most of it, not much room for the producer persona. 
 - Because of these limitations, the planner should explore out of the box creative solutions to loading a producer. 
-  Even resorting to asking a user to manual input a file or text somewhere in the desktop. 
-  Consider all possible avenues and angles for getting the mcp user to respond with a desired persona. 
+  Even resorting to asking a user to manual input a file or text somewhere in the desktop client. 
+  Consider all possible avenues and angles for getting the mcp consumer to respond with a desired persona. 
   so we are unfortunately quite limited with the space that can be given to a persona if using this delivery method. 
 - **The taste hierarchy:  the user's communicated taste
   always leads; the persona is the *default* — the prior that fills in when

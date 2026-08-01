@@ -837,6 +837,49 @@ print("unknown tool:", json.dumps(unknown)[:300])
 Worth doing in Claude Code itself once, too: a bad call should read as a
 retryable message in the transcript, not as an opaque protocol error.
 
+## If the change touches undo granularity (`Handlers.call/2`'s undo wrap, `song.py`'s step methods)
+
+Nothing in `mix test` proves any of this. The suite pins the *wire shape* —
+`begin_undo_step`, the tool's own messages, `end_undo_step`, in that order — but
+whether Live actually collapses them into one history entry happens inside Live,
+and both addresses are send-only, so a Remote Scripts copy predating the fork
+pin drops them indistinguishably from success. Run `mix abletonosc.install` and
+**restart Live** first (see "First, if the change touches the bridge" above);
+item 1 is what catches a skipped reinstall.
+
+The failure this exists to prevent: before the wrap, `create_track` followed by
+`write_midi_notes` collapsed into **one** step on Live 12.4.3, so a single
+`undo` deleted the whole track, notes and all — and the same pair with an
+intervening timed-out call landed as two. Unpredictable, not merely coarse.
+
+1. **The headline.** `create_track` (name it), then `write_midi_notes` into it,
+   then **one** `undo`. The clip and its notes disappear; **the track stays.**
+   A vanished track means the wrap isn't reaching Live — reinstall and restart
+   before reading anything else here as a real result.
+2. `undo` again: the track goes.
+3. `redo` twice: both come back, one step at a time — clip first, in the
+   original order.
+4. **Read-only tools cost nothing.** `get_session_state`, then `search_library`,
+   then `undo`. The undo reverts the last real *change*, not one of the reads —
+   an empty begin/end pair leaves Live's history untouched, which is what lets
+   every tool be wrapped without maintaining a mutating-tool list.
+5. **A multi-message tool is still one step.** `create_return_track`, or a
+   `write_midi_notes` over an existing clip, undone in one call. `write_midi_notes`
+   is three OSC messages (create clip, add notes, name it) and must revert as a
+   unit, because the wrap encloses the whole dispatch rather than each datagram.
+6. **An error path still closes its step.** Call something that fails cleanly —
+   `fire_clip` on an empty slot, `quantize_clip` with `amount: 0` — then make a
+   real change and `undo` it. The undo must revert exactly that change; if the
+   failed call had leaked an open step, the two would be grouped.
+
+Then, **outside this checklist, in the real Claude Desktop client** (a smoke
+agent following an explicit list would only prove it can follow the list): ask
+for three named tracks in **one** user message, then say "undo that request."
+Confirm the model issues **three** `undo` calls and all three tracks disappear.
+Seshat never sees the original prompt — only the individual tool calls — so this
+is the only check that the `undo` tool description actually teaches the model to
+repeat the call. If it undoes once and stops, the fix is that description.
+
 ## Clean up and report
 
 5. Delete any scratch tracks/scenes/clips you created (`delete_track`,
