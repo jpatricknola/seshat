@@ -1,9 +1,22 @@
 # Plan — A degraded rebuild must never become the mirror
 
+> **Archived 2026-08-01 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The fix lives in
+> `Seshat.Session.State` (`read_tracks/2`'s `{:degraded, index}` result,
+> `do_refresh/1`'s `tracks: nil` branch, `finalize_reconciliations/3`'s
+> failed-vs-disagreed split and one retry, the `reconcile/4` echo-loop guard,
+> and `snapshot/0`'s `refresh_pending?` flag) plus `Seshat.Tools.Handlers`'
+> `format_session_state/5`. This also closes the roadmap's separate "Unit
+> coverage for the mirror-refresh cross-key loop brake" entry — Part 3 folds
+> that coverage in directly. No follow-ups were opened; see "Out of scope"
+> below for what was deliberately left alone, including the entry's declined
+> change 3 (re-deriving the track count from the pushed name list) and the
+> excluded return/master-track race.
+
 Roadmap item "The mirror goes stale after a burst of structural changes — and
 stays stale". Elixir-only, one production file
-([lib/seshat/session/state.ex](../lib/seshat/session/state.ex)) plus one
-rendering change in [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex).
+([lib/seshat/session/state.ex](../../lib/seshat/session/state.ex)) plus one
+rendering change in [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex).
 **No OSC address, argument, reply shape or Python change**: no submodule commit,
 no pin bump, no `mix abletonosc.install`, no Live restart.
 
@@ -65,14 +78,14 @@ below load-bearing rather than tidy-up.
 
 **A bad track index is silent, confirmed from the fork's own source.**
 `create_track_callback` in
-[priv/AbletonOSC/abletonosc/track.py:14-30](../priv/AbletonOSC/abletonosc/track.py#L14-L30)
+[priv/AbletonOSC/abletonosc/track.py:14-30](../../priv/AbletonOSC/abletonosc/track.py#L14-L30)
 does `track = self.song.tracks[track_index]` with no bounds check. The
 `IndexError` propagates out of the callback through
 `OSCServer.process_message` — whose exact-address branch
-([osc_server.py:96-106](../priv/AbletonOSC/abletonosc/osc_server.py#L96-L106))
+([osc_server.py:96-106](../../priv/AbletonOSC/abletonosc/osc_server.py#L96-L106))
 has no `try`/`except` — and is caught by the per-message handler in
 `OSCServer.process` at
-[osc_server.py:198-200](../priv/AbletonOSC/abletonosc/osc_server.py#L198-L200),
+[osc_server.py:198-200](../../priv/AbletonOSC/abletonosc/osc_server.py#L198-L200),
 which logs and moves on. **No reply is sent.** So the entry's arithmetic holds:
 five queries per index at `@query_timeout` 5,000ms is 25 seconds of dead waiting
 per over-reported track, and the caller cannot tell it from a slow Ableton.

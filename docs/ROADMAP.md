@@ -21,149 +21,7 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · The mirror goes stale after a burst of structural changes — and stays stale
-
-**Planned:** [PLAN_degraded_mirror_rebuild.md](PLAN_degraded_mirror_rebuild.md).
-Note two things that plan establishes: the consumer-side half of "Scope and
-coverage" below already shipped in 785db9f (`get_session_state`'s description
-and degraded replies now say read once per batch and never auto-retry), and
-change 3 is declined there in favour of short-circuiting the dead index —
-coalescing makes the pushed name list *staler* than a fresh `num_tracks`.
-
-**Goal:** after a burst of structural changes — several undos, several
-creates, a handful of deletes by hand in Live — `get_session_state` converges
-on the truth by itself. It must never present a track that no longer exists as
-present.
-
-**Why:** measured 2026-08-01, smoke-testing the undo-granularity branch. Three
-`create_track` calls, then three `undo` calls (all three undos worked — the
-tracks really were gone in Live). The three reads that followed:
-
-1. `get_session_state`, no refresh → errored, "the session mirror did not
-   answer — it may be mid-refresh against an unresponsive Ableton."
-2. `get_session_state`, no refresh → a **stale, internally inconsistent**
-   snapshot: it listed the deleted Track 1 "Bass" as present, alongside a
-   Track 2 whose name, pan, volume and mute were all "unknown".
-3. `get_session_state` with `refresh: true` → correct: only Track 0 "1-MIDI".
-
-Reading 2 is the defect. The mirror did not say "I don't know" — it named a
-deleted track as present, which is the same class of failure the "no
-fabricated values" work removed for the scalar song fields and never closed
-for the track list. A producer has no reason to suspect the answer, and no
-reason to know `refresh` exists.
-
-Three causes compound, and no single one of them is the whole bug:
-
-- **The debounce window is shorter than the gap between tool calls.**
-  `@refresh_debounce_ms` is 1,000ms
-  ([lib/seshat/session/state.ex](../lib/seshat/session/state.ex)), but calls
-  issued in *separate model rounds* arrive ~2.1s apart at the floor (measured
-  2026-07-31, recorded in the `/smoke-test` skill). So a burst spread over
-  several rounds never coalesces — each call gets its own refresh — and each
-  refresh is still in flight when the next mutation lands. For this pattern
-  1,000ms is close to the worst available value: too short to merge, long
-  enough to overlap.
-- **A rebuild racing a structural change comes back degraded.** `do_refresh/1`
-  reads `num_tracks`, then queries five properties per index. When a track
-  disappears between those, the per-index query gets no reply at all
-  (AbletonOSC's track getters are silent on a bad index), the caller waits out
-  the 5s timeout, and later replies run one index behind — `read_tracks/2`'s
-  echo check then rejects every name and yields `nil`. That is the "unknown"
-  Track 2.
-- **The brake then stops it healing.** `finalize_reconciliations/3` records a
-  rebuild that couldn't reproduce the pushed list as `unreconciled` and
-  deliberately does not retry, which is correct as far as it goes — it is what
-  stops an unbounded refresh/re-subscribe/push spin. But the result is a
-  knowingly-wrong mirror held indefinitely behind a single `Logger.warning`,
-  until `refresh: true`, `/live/startup`, or a *different* push list arrives.
-
-**User stories:**
-- As a producer, after undoing the last few things I asked for, asking "what's
-  in the set?" tells me what is actually there — not a track I just removed.
-- As a producer, I never have to learn that a "refresh" exists, or that asking
-  twice gives different answers.
-- As a producer, undoing a batch costs one verification read after the batch,
-  not a state read after every undo or a chain of automatic retries.
-
-**Planner notes:**
-
-Three changes, ranked. The first is the one that makes the mirror honest, the
-second is what makes it recover, and the third prevents the race but wants
-measurement before it is taken.
-
-1. **A degraded rebuild must never become the mirror.** *(the must-do)*
-   `do_refresh/1` already states this rule and argues for it — when
-   `num_tracks` fails it sets `tracks: nil` rather than keeping the old list,
-   because *"keeping the old list serves the previous set's tracks as this
-   set's. Unknown, not stale-but-plausible."* That rule simply does not cover
-   the case measured here: when the count *answers* but the per-track reads
-   fail, the half-`nil` list is merged in wholesale. Every query helper returns
-   a bare `nil` on an echo mismatch or a timeout, so a rebuild that resolved
-   nothing is indistinguishable from one that resolved everything — which is
-   how "Bass, present" ended up beside a row of unknowns. Fix: if a rebuild
-   could not name tracks it should have named, treat the track read as failed
-   and set `tracks: nil`. This applies a rule the file already argues for to
-   the case it doesn't reach, and it converts a confidently wrong answer into
-   an honest one.
-
-2. **Distinguish "disagreed" from "degraded"; allow exactly one retry.**
-   *(makes it self-heal)* The brake in `finalize_reconciliations/3` is right to
-   exist — without it the unbounded refresh → re-subscribe → push → refresh
-   spin its comment describes is real. But it currently treats "Live says X,
-   the mirror says Y" and "the rebuild resolved nothing at all" as the same
-   outcome, and only the first is a genuine disagreement. A rebuild that
-   yielded `nil` for everything has not disagreed with the push, it has
-   *failed*. Give that case one re-schedule and record the brake only if the
-   second attempt also fails. One retry is bounded; it is not the spin. This is
-   the smallest change that would have let the measured run recover without
-   the user knowing `refresh: true` exists.
-
-3. **Stop re-deriving a count that was just handed to us.** *(prevents it —
-   measure first)* This is what made the first read error, and the arithmetic
-   is stark: `@query_timeout` is 5,000ms and `read_tracks/2` issues **five**
-   queries per index, so a single over-reported track is **25 seconds** of dead
-   waiting. Upstream's `/live/track/get/name` is silent on a bad index — no
-   error, no reply, just the full timeout, five times over. Meanwhile
-   `song_structure.py` has already pushed the authoritative name list,
-   atomically, from Live's own callback, and `reconcile/4` receives it as
-   `names` before discarding it to re-derive the count via `num_tracks`. Using
-   `length(names)` when the refresh was triggered by a structure push removes
-   the dead-index queries in the common case. Ranked third because it narrows
-   the race rather than closing it — another change landing mid-read still
-   skews it — and because it alters the refresh's shape rather than its failure
-   handling.
-
-**Two fixes that look obvious and should not be taken:**
-
-- **Do not raise `@refresh_debounce_ms` past the ~2.1s inter-round floor.** It
-  would make bursts genuinely coalesce, but it widens the interval in which
-  every read is served from a stale mirror. That trades this symptom for a
-  quieter one, and the quieter one is harder to notice.
-- **Do not have `undo`/`redo` call `State.refresh/0`.** They don't today, which
-  is why the mirror only learned via `song_structure.py`'s push — but adding it
-  papers over the one trigger that happened to be measured. The identical race
-  reproduces from hand-edits in Live with no tool call involved.
-
-**Scope and coverage:**
-- Changes 1 and 2 together are roughly 30 lines in one file
-  ([lib/seshat/session/state.ex](../lib/seshat/session/state.ex)), and are what
-  convert this from silently wrong to honest and self-correcting.
-- Keep the consumer-side contract explicit in `get_session_state`'s description
-  and degraded/error replies: after a batch, read once at the end; never retry
-  automatically in the same response, including with `refresh: true`. If that
-  one read cannot verify the result, report the uncertainty to the user.
-- Repeat the Claude Desktop reproduction as an orchestration acceptance check:
-  after three tracks are created and the user says "undo", the trace is exactly
-  three `undo` calls followed by one ordinary `get_session_state` call — no
-  reads between undos and no follow-up state call.
-- Fold in **"Unit coverage for the mirror-refresh cross-key loop brake"**
-  (further down this queue): the brake is precisely the mechanism under-tested
-  here, and changes 1 and 2 both land inside it, so a fix wants that coverage
-  anyway.
-- Full evidence, including the wire-level reasoning, is in PR #54's body under
-  "Live verification".
-
-## #2 · `undo` reports success it never observed
+## #1 · `undo` reports success it never observed
 
 **Goal:** `undo` and `redo` stop claiming an outcome they cannot see, and a
 batch undo ends with the model able to say what actually reverted — without a
@@ -241,7 +99,7 @@ the "one read per batch" half; what remains below is the reply itself.
   something Seshat does routinely lands a step on the history, that is a second
   finding hiding behind this one.
 
-## #3 · `start_new_project` — the setup wizard, and prompt budget back
+## #2 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -293,7 +151,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #4 · Make catalog persistence atomic and report write failures
+## #3 · Make catalog persistence atomic and report write failures
 
 **Goal:** a reindex that cannot be persisted says so, and a crash mid-write
 cannot leave a truncated `catalog.json`.
@@ -319,7 +177,7 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
 - From the 2026-07-29 external review; the durability half accepted, the ETS
   generation swap declined above.
 
-## #5 · Catalog staleness check — notice without being asked
+## #4 · Catalog staleness check — notice without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -355,7 +213,7 @@ atomic".
 - A startup check may log or cache the stale status, but it must not start a
   reindex: no MCP conversation may be connected to receive the warning.
 
-## #6 · Verify destructive mutations before reporting success
+## #5 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -393,7 +251,7 @@ trigger is a stale model-held index.
   ride along here (or as a drive-by before this item is picked up) rather
   than rank on its own.
 
-## #7 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #6 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -428,7 +286,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #8 · Producer personas — switchable musical taste
+## #7 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* onto the base session instructions. 
 Personas live one per file in [priv/producers/](../priv/producers/)
@@ -461,7 +319,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #9 · `screenshot_live` — let Seshat see the screen
+## #8 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -485,7 +343,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #10 · Restart the MCP supervisor after abnormal failure
+## #9 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -504,7 +362,7 @@ healthy — the tools simply stop existing, with nothing saying why.
 - Raised as a speculative risk by the 2026-07-29 external review — the failure
   has not been reproduced, only reasoned from the child spec.
 
-## #11 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
+## #10 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
 
 **Goal:** a `tools/call` whose `"arguments"` is JSON `null` gets a
 model-readable rejection — same channel as any other invalid call — instead
@@ -533,7 +391,7 @@ the interception entirely: an absent `"arguments"` key and a non-map value
   [test/seshat/mcp/server_test.exs](../test/seshat/mcp/server_test.exs)
   alongside the existing non-map-`arguments` (array) case.
 
-## #12 · Search eval harness — numbers before opinions
+## #11 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -558,7 +416,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
-## #13 · Widen the search slate at tied score bands
+## #12 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -573,7 +431,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #14 · Accepted-search memory
+## #13 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -591,7 +449,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #15 · Browser preview audition
+## #14 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -612,7 +470,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #16 · Opt-in `samples` index
+## #15 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -630,7 +488,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #17 · LLM enrichment at reindex
+## #16 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an external model service or an MCP-client-driven tagging
@@ -650,7 +508,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #18 · User XMP tags
+## #17 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -665,7 +523,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #19 · Read-only audio input display — warn before a silent take
+## #18 · Read-only audio input display — warn before a silent take
 
 **Goal:** surface a track's audio input routing, read-only, so `record_clip`
 can warn when an audio take is about to record nothing.
@@ -694,7 +552,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #20 · Device list per track in session state
+## #19 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -713,7 +571,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #21 · Modify a note in place
+## #20 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -726,7 +584,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #22 · Clip grid in session state — only if usage demands it
+## #21 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -740,7 +598,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #23 · Small OSC breadth — grab bag
+## #22 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -761,7 +619,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #24 · Adopt MCP `2026-07-28` when Anubis supports it
+## #23 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
@@ -809,41 +667,6 @@ flow, so this is not an active break.
   [discovery](https://modelcontextprotocol.io/specification/2026-07-28/server/discover),
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
-
-## #25 · Unit coverage for the mirror-refresh cross-key loop brake
-
-**Goal:** make `Seshat.Session.State`'s `finalize_reconciliations/3` (and the
-`carried_over` computation in `run_refresh/2`) callable from `mix test`, so the
-cross-key structural loop brake has automated coverage instead of resting on
-`/smoke-test` alone.
-
-**Why:** flagged as a coverage gap in the "Coalesce mirror refreshes" PR
-review (2026-08-01). That change bounded the asynchronous full-refresh
-backlog to one running plus one trailing rebuild, and its cross-key brake is
-what stops a degraded rebuild from spinning refresh → re-subscribe → push →
-refresh forever. `finalize_reconciliations/3` is pure but only reachable
-through `do_refresh/1`, which needs live `Transport.query/3` calls — so
-`mix test` never exercises it, and the plan deliberately drew the smoke-test
-boundary there rather than adding a test-only injected refresh function.
-`/smoke-test`'s five checks all run against a *healthy* Ableton, though, so
-none of them enters the degraded-rebuild path either; losing the brake would
-flood Live with refresh traffic and nothing today would catch it before a
-human noticed. Not a regression — this path was equally untested before that
-change — but the file just grew a scheduler around it, which is exactly when
-a latent gap like this is worth closing.
-
-**Planner notes:**
-- The reviewer's own suggestion: make `finalize_reconciliations/3` (and the
-  `carried_over` computation it depends on) callable directly in tests,
-  bypassing `do_refresh/1`'s OSC calls, rather than adding a new mock-transport
-  abstraction the original plan explicitly rejected as disproportionate.
-- Keep the boundary the plan already drew: only the OSC round trip itself
-  stays live-only. Everything downstream of a rebuilt mirror map should be
-  plain data in, plain data out.
-- Low priority: no regression, no user-visible symptom, and the live behavior
-  is inferred from the same `_start_listen` machinery already proven for the
-  master listeners. Worth doing opportunistically or the next time
-  `Session.State`'s refresh path is touched.
 
 ---
 
