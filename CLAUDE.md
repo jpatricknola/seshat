@@ -104,7 +104,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
-| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (four view addresses in `view.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
+| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (four view addresses in `view.py`, the two undo-step addresses in `song.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
 | [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies the fork wholesale into Live's Remote Scripts |
 
 ## Adding a tool
@@ -126,8 +126,8 @@ collects the conventions and gotchas the address tables don't show (ports,
 irregular naming, listener pattern, ordering hazards).
 
 Some of those addresses are ours, not upstream's — they exist only in the fork
-at `priv/AbletonOSC`, in three handler modules of our own plus four additions to
-an upstream file (and one upstream file whose *behaviour* we change, below):
+at `priv/AbletonOSC`, in three handler modules of our own plus additions to two
+upstream files (and one upstream file whose *behaviour* we change, below):
 
 - `/live/browser/*` — `abletonosc/browser.py`. Upstream has no browser API at all.
 - `/live/return_track/*` and `/live/master/*` — `abletonosc/return_track.py`.
@@ -146,6 +146,13 @@ an upstream file (and one upstream file whose *behaviour* we change, below):
   needs), put a pane away, or say which panes are open. The three setters are
   silent; the getter always replies in the ok/error envelope, because a caller
   waits on it.
+- `/live/song/begin_undo_step` and `/live/song/end_undo_step` — two entries in
+  the generic methods list of upstream's own `abletonosc/song.py`. Upstream has
+  no way to demarcate an undo step, so Live groups script-driven mutations by
+  its own activity-sensitive rules and one `undo` can revert a whole
+  conversation. `Seshat.Tools.Handlers.call/2` wraps every tool dispatch in a
+  pair, making one tool call exactly one undo step. Send-only, like `undo`
+  itself.
 
 Any future address upstream doesn't provide goes into one of those files the
 same way. `vendored_addresses_test` is the tripwire in both directions: every

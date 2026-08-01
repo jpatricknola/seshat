@@ -62,6 +62,8 @@ Top-level Song object. Playback control, scene/track creation, cue points, globa
 
 | Address | Query Params | Description |
 |---|---|---|
+| `/live/song/begin_undo_step` | | ⚠️ **Seshat fork addition** — open an explicit undo step. Everything changed before the matching `end` collapses into one entry in Live's undo history |
+| `/live/song/end_undo_step` | | ⚠️ **Seshat fork addition** — close the open undo step. Harmless when none is open; `begin` does not refcount, so the first `end` closes |
 | `/live/song/capture_midi` | | Capture MIDI |
 | `/live/song/continue_playing` | | Resume session playback |
 | `/live/song/create_audio_track` | `index` | Create audio track at index (-1 = end) |
@@ -86,6 +88,23 @@ Top-level Song object. Playback control, scene/track creation, cue points, globa
 | `/live/song/tap_tempo` | | Tap tempo |
 | `/live/song/trigger_session_record` | | Trigger session record |
 | `/live/song/undo` | | Undo last operation |
+
+#### Song method extensions (Seshat — not in upstream AbletonOSC)
+
+⚠️ `begin_undo_step` and `end_undo_step` do **not** exist in stock AbletonOSC.
+They are two entries in the generic methods list of `abletonosc/song.py` in
+Seshat's fork (`priv/AbletonOSC`), installed with `mix abletonosc.install`
+(restart Live afterwards). Like every other row in this table they are
+send-only: nothing replies, so a missing install is indistinguishable from
+success on the wire — undo simply goes back to reverting whole conversations.
+
+Left to itself Live groups script-driven mutations into undo steps by its own
+activity-sensitive rules; `Song.begin_undo_step()` / `Song.end_undo_step()` are
+what Ableton's own Push script uses to make the boundary explicit.
+`Seshat.Tools.Handlers.call/2` wraps every tool dispatch in a pair, so one tool
+call is exactly one undo step. Measured on Live 12.4.3 (2026-08-01): an empty
+pair leaves the history untouched, an unmatched `end` is harmless, and `begin`
+does not refcount.
 
 ### Song Getters
 
@@ -206,9 +225,11 @@ User interface control — selecting tracks, scenes, clips, devices.
 ⚠️ Four rows above do **not** exist in stock AbletonOSC: `show_view`,
 `hide_view`, `get/is_view_visible` and `set/detail_clip`. They are served by
 `abletonosc/view.py` in Seshat's fork (`priv/AbletonOSC`), installed with
-`mix abletonosc.install` (restart Live afterwards) — the only Seshat addresses
-that live in an *upstream* file. Without that install all four are unknown: the
-three setters silently do nothing, and the getter never replies.
+`mix abletonosc.install` (restart Live afterwards). They are not the only Seshat
+addresses living in an *upstream* file — `/live/song/begin_undo_step` and
+`/live/song/end_undo_step` are two more, in `song.py` (see Song Methods above).
+Without that install all four here are unknown: the three setters silently do
+nothing, and the getter never replies.
 
 Upstream can *select* a track, scene, clip or device, but it cannot show the
 pane those live in, put one away, or say which panes are open at all:

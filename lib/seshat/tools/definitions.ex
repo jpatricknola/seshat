@@ -480,12 +480,28 @@ defmodule Seshat.Tools.Definitions do
     # --- Undo / Redo ---
     %{
       name: "undo",
-      description: "Undo the last action in Ableton Live.",
+      description:
+        "Undo exactly one Ableton undo step. Each mutating Seshat tool call that changes Live " <>
+          "creates one step — not each user message — and a multi-part call such as " <>
+          "write_midi_notes is still one step. If the user asks to undo or revert the previous " <>
+          "request, review the tool calls used to fulfill it and call undo once for every call " <>
+          "that changed Live, newest first; include a partially completed call, but do not count " <>
+          "read-only, validation-rejected, or no-change calls. Use undo only when the change to " <>
+          "reverse is at the top of Live's undo history. To reverse an older action while " <>
+          "preserving later work, use the relevant domain tool with the prior value or state when " <>
+          "that is exact and safe; never call undo through unrelated later work. If no exact " <>
+          "inverse exists — quantize_clip cannot restore the original note timing by quantizing " <>
+          "again — explain the limitation instead of risking other changes. Manual edits in Live " <>
+          "share the same history, so before performing multiple undos, warn or clarify if the " <>
+          "conversation indicates the user edited Live since that request.",
       parameters: %{type: "object", properties: %{}, required: []}
     },
     %{
       name: "redo",
-      description: "Redo the last undone action in Ableton Live.",
+      description:
+        "Redo exactly one undone Ableton step. If the user asks to redo a whole request that " <>
+          "required several mutating tool calls, call redo once per step that was undone, in the " <>
+          "original order. Any new edit can clear Live's redo history.",
       parameters: %{type: "object", properties: %{}, required: []}
     },
     # --- Clip control ---

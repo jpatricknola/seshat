@@ -3,16 +3,21 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   Tripwire for the addresses upstream AbletonOSC doesn't serve.
 
   `/live/browser/*`, `/live/return_track/*` and `/live/master/*` are ours, as are
-  two addresses under upstream's own `/live/song/` prefix and four under its
+  four addresses under upstream's own `/live/song/` prefix and four under its
   `/live/view/` prefix: they exist only because `browser.py`, `return_track.py`,
-  `song_structure.py` and our additions to `view.py` in the `priv/AbletonOSC`
-  fork register them. A typo on either side of that seam fails
+  `song_structure.py` and our additions to `view.py` and `song.py` in the
+  `priv/AbletonOSC` fork register them. A typo on either side of that seam fails
   the way every OSC mistake fails — silently, over UDP, with no reply — and the
   guard timeouts that catch it look exactly like "Ableton isn't running". These
   tests close the loop without needing Ableton at all:
 
     * every vendored address the Elixir code sends must be registered in Python
     * every address Python registers must be in the canonical address docs
+
+  Two of those four `/live/song/` addresses — `begin_undo_step` and
+  `end_undo_step` — plus the `swing_amount` property are entries in a *list*
+  rather than literal `add_handler` calls, so neither check above can see them
+  at all. They get their own grep-based describes at the bottom of this file.
 
   Upstream `/live/` addresses are out of scope here — verifying those against
   the fork's source is what the `audit-osc` workflow is for.
@@ -67,7 +72,9 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   # exactly rather than by prefix — `/live/view/` is upstream's. Unlike
   # song_structure.py these live *inside* an upstream file, so view.py joins
   # @handler_files below and its upstream registrations get checked against the
-  # docs alongside them (they are all documented already).
+  # docs alongside them (they are all documented already). song.py is the other
+  # upstream file we add to, but it stays out of @handler_files: its additions
+  # are list entries, not add_handler calls (see the last two describes).
   @vendored_view_addresses [
     "/live/view/show_view",
     "/live/view/hide_view",
@@ -503,6 +510,57 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       # somewhere else — worth looking at rather than silently tolerating.
       assert length(String.split(contents, ~s("swing_amount"))) == 2,
              ~s(#{@song_file} mentions "swing_amount" more than once; expected the single properties_rw entry.)
+    end
+  end
+
+  # The two undo-step methods are the same blind spot again, and worse: they are
+  # entries in song.py's *generic methods* list, so the loop
+  # (`"/live/song/%s" % method`) hides them from `registered_addresses/1`, and
+  # `/live/song/` is upstream's prefix so the Elixir literals aren't swept into
+  # `used_addresses` either. Unlike swing, losing them has no symptom that any
+  # test or any reply could show: both addresses are send-only, so the datagrams
+  # go out and nothing answers them whether they are registered or not. Undo just
+  # quietly goes back to reverting whole conversations at a time.
+  describe "the undo step boundary methods on the song handler" do
+    test "song.py still registers begin_undo_step and end_undo_step" do
+      contents = File.read!(@song_file)
+
+      for method <- ["begin_undo_step", "end_undo_step"] do
+        assert contents =~ ~s("#{method}"),
+               """
+               #{@song_file} no longer lists "#{method}" in its generic methods list.
+
+               That single list entry is the whole of /live/song/#{method} — a fork
+               addition upstream does not have, and one nothing else in this suite can
+               see (the address is built in a loop, and it never replies). Without it,
+               Seshat.Tools.Handlers.call/2 keeps sending the address forever while Live
+               groups tool calls into undo steps by its own rules again: one undo can
+               then revert an entire conversation.
+
+               Reinstate it and check SESHAT.md's "Additions to upstream's code".
+               """
+
+        assert length(String.split(contents, ~s("#{method}"))) == 2,
+               ~s(#{@song_file} mentions "#{method}" more than once; expected the single methods-list entry.)
+      end
+    end
+
+    # The other direction: the Elixir side sends these as literals, and a typo
+    # there is invisible for exactly the same reason (no reply, upstream prefix).
+    test "the handlers still send both addresses as literals" do
+      contents = File.read!("lib/seshat/tools/handlers.ex")
+
+      for address <- ["/live/song/begin_undo_step", "/live/song/end_undo_step"] do
+        assert contents =~ ~s("#{address}"),
+               """
+               lib/seshat/tools/handlers.ex no longer sends #{address} as a string literal.
+
+               `call/2` wraps every known tool dispatch in a begin/end pair so that one
+               tool call is one Ableton undo step. Interpolating or dropping either
+               address fails the way all OSC fails — silently — and the only symptom is
+               a user's undo reverting more than they asked for.
+               """
+      end
     end
   end
 

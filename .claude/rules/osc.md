@@ -84,6 +84,20 @@ exist because a typo'd address looks exactly like success.
   verified from the Elixir side instead, by reading that getter back after the
   send; its tool enum is only `Browser` and `Detail`, the two names measured to
   truly hide (the others swap to a sibling view).
+- **Two more of ours live inside upstream's own `song.py`**:
+  `/live/song/begin_undo_step` and `/live/song/end_undo_step`, two entries in
+  that file's generic methods list. Upstream has no way to demarcate an undo
+  step, so Live groups script-driven mutations by its own activity-sensitive
+  rules — measured on 12.4.3, a `create_track` plus a `write_midi_notes`
+  collapsed into a single step whose undo deleted the whole track.
+  `Seshat.Tools.Handlers.call/2` wraps **every** tool dispatch in a
+  `begin`/`end` pair so one tool call is one undo step, sending `end` from an
+  `after` block so an error or a raise still closes it, and serializing the
+  whole thing under `:global.trans` because `begin` does not refcount. `undo`
+  and `redo` are never wrapped; they send a lone defensive `end` first. Both
+  addresses are send-only and registered by a loop, so — like `swing_amount` —
+  `vendored_addresses_test` greps `song.py` for the literal names instead of
+  seeing the registration.
 - **Two addresses of ours live under a prefix upstream owns**:
   `/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
   from
