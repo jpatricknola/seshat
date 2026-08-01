@@ -1,5 +1,12 @@
 # Plan — Model-readable rejections for invalid tool parameters in MCP mode
 
+> **Archived 2026-08-01 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The feature lives in
+> `Seshat.MCP.Server`'s `handle_request/2` override (`rewrite_rejection/3`)
+> and `test/seshat/mcp/server_test.exs`. One follow-up surfaced during
+> pr-review and is now its own roadmap item: "MCP `tools/call` with
+> `arguments: null` crashes instead of a readable rejection."
+
 Roadmap: "Model-readable rejections for invalid tool parameters in MCP mode."
 One override on `Seshat.MCP.Server` — `handle_request/2`, which Anubis
 explicitly makes `defoverridable` — intercepts the JSON-RPC `-32602` that Peri
@@ -114,7 +121,7 @@ No OSC. The contract is JSON-RPC over both MCP transports:
 
 ### 1. `Seshat.MCP.Server` — intercept and rewrite
 
-[lib/seshat/mcp/server.ex](../lib/seshat/mcp/server.ex): add one specific
+[lib/seshat/mcp/server.ex](../../lib/seshat/mcp/server.ex): add one specific
 `handle_request/2` clause (with `@impl Anubis.Server`) ahead of the generated
 default:
 
@@ -178,7 +185,7 @@ a describe "invalid tools/call rejections", asserting on the returned tuple:
 - Non-map `"arguments"` (a list) → `isError: true`, text begins `Invalid
   parameters for` and carries Peri's text — the fallback band.
 - Valid call passes through to the real handler: start `Transport` +
-  `Seshat.Test.OSCSink` per [.claude/rules/testing.md](../.claude/rules/testing.md),
+  `Seshat.Test.OSCSink` per [.claude/rules/testing.md](../../.claude/rules/testing.md),
   call `set_metronome {enabled: true}`, assert the OSC send arrives at the
   sink and the reply is `{:reply, %{"isError" => false}, _}` — proving the
   interception never touches the valid path.
@@ -203,7 +210,7 @@ probe against the running server.
 
 ### 4. Roadmap link
 
-[docs/ROADMAP.md](ROADMAP.md): add the plan-doc pointer to the item's entry
+[docs/ROADMAP.md](../ROADMAP.md): add the plan-doc pointer to the item's entry
 (house style: the "MCP mode in the browser UI" entry). No shrinking — that is
 `/ship`'s job.
 

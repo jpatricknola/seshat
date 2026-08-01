@@ -217,14 +217,23 @@ it current: when something ships, run the `/ship` skill
 holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
-**ROADMAP.md ranks features, defects and security work in one queue** — as of
-2026-07-31 its top item is model-readable rejections for invalid tool
-parameters in MCP mode: a Peri validation failure surfaces to the model as a
-bare JSON-RPC error today, hiding `Seshat.Tools.Validation`'s own message.
-`start_new_project` — the read-only
+**ROADMAP.md ranks features, defects and security work in one queue.**
+Model-readable rejections for invalid tool parameters in MCP mode shipped
+2026-08-01, closing what had been the queue's top item: a Peri validation
+failure used to surface to the model as a bare JSON-RPC error, hiding
+`Seshat.Tools.Validation`'s own message. The fix is one `handle_request/2`
+override on `Seshat.MCP.Server` — the seam Anubis deliberately leaves
+`defoverridable`, since a Peri rejection never reaches the generated
+component at all — that rewrites a known tool's `-32602` into a tool result
+carrying `Validation`'s message, while an unknown tool name keeps its
+protocol error untouched. Plan archived at
+[docs/archive/PLAN_mcp_readable_rejections.md](docs/archive/PLAN_mcp_readable_rejections.md).
+Coalesce mirror refreshes — a burst of tool calls collapsing into one
+trailing mirror refresh instead of queuing one per call — is now the
+queue's top item. `start_new_project` — the read-only
 setup wizard that would catch "let's start a new project" and move the
 replace-not-append rule off the capped instructions budget and into a tool
-description — now sits a few places below it. Devices on return and master
+description — sits a couple of places below it. Devices on return and master
 tracks shipped 2026-07-31, closing what had led the queue: `create_return_track`
 no longer ships an empty return the user has to fill in by hand in Live — the
 six device tools (`load_device`, `get_track_devices`, `get_device_parameters`,
