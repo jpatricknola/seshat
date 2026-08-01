@@ -1,5 +1,13 @@
 # Plan: one Seshat action, one undo step
 
+> **Archived 2026-08-01 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The wrap lives in
+> `Seshat.Tools.Handlers.call/2` (`@tool_names`, `:global.trans/3` around
+> `undo_stepped/2`), the two fork addresses in
+> `priv/AbletonOSC/abletonosc/song.py`, and the updated `undo`/`redo`
+> descriptions in `Seshat.Tools.Definitions`. No follow-ups were opened —
+> see "Out of scope" below for what was deliberately left alone.
+
 Roadmap — `undo` can revert far more than the last action.
 
 ## Context

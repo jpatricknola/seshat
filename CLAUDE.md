@@ -220,6 +220,22 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
+One Seshat tool call is now exactly one Ableton undo step, shipped
+2026-08-01: `Song.begin_undo_step()`/`end_undo_step()` — two new entries in
+the fork's `song.py` method list, the same one-line shape as `swing_amount`
+— bracket every `Seshat.Tools.Handlers.call/2` dispatch via
+`:global.trans/3`, so Live's own activity-sensitive grouping (measured to
+fold a `create_track` → `write_midi_notes` sequence into one undo step, or
+two, depending on unrelated intervening activity) no longer decides the
+boundary. Read-only tools are wrapped too — empty pairs are measured free,
+so no mutating-tool list has to be hand-maintained — while `undo` and `redo`
+stay unwrapped and each sends a defensive lone `end_undo_step` first, so a
+`begin` leaked by a BEAM death can't fold a later undo into stale grouping.
+The `undo`/`redo` tool descriptions now teach the model that one step is one
+tool call, not one user message, so "undo that request" after a multi-track
+create means one `undo` per call that changed Live, newest first. Plan
+archived at
+[docs/archive/PLAN_undo_granularity.md](docs/archive/PLAN_undo_granularity.md).
 Model-readable rejections for invalid tool parameters in MCP mode shipped
 2026-08-01, closing what had been the queue's top item: a Peri validation
 failure used to surface to the model as a bare JSON-RPC error, hiding
