@@ -63,6 +63,24 @@ defmodule Seshat.Session.State do
   and the fork's `AbletonOSCHandler._start_listen` pushes the current value on
   subscription, so a field nil'd by one lost reply is repopulated milliseconds
   later whenever Ableton is actually alive.
+
+  That rule reaches the track *list* as well as the fields in it. A rebuild that
+  races a structural change gets no reply at all for an index that has just
+  gone — `track.py` raises `IndexError` inside the callback and AbletonOSC sends
+  nothing — so `read_tracks/2` stops at the first unanswered **name** and reports
+  `{:degraded, index}` rather than handing back a list with holes in it. A
+  degraded read nils the whole list: a half-read list still *names* tracks, and
+  naming a track Live no longer has is the same fabrication as a guessed tempo,
+  only harder to spot.
+
+  The recovery route for a nil'd list is deliberately not the scalar pushes.
+  `update_track/4`'s `%{tracks: nil}` clause drops them, because a scalar push
+  carries an index whose meaning is exactly what the failed read could not
+  establish. What heals it is the *structure* push — `song_structure.py` pushes
+  the authoritative name list the moment `do_refresh/1` re-subscribes, and
+  `stale?(nil, names)` is true against any list — together with the single retry
+  `finalize_reconciliations/3` grants a rebuild that established nothing. Those
+  two are load-bearing rather than tidy-up.
   """
 
   use GenServer
@@ -161,12 +179,19 @@ defmodule Seshat.Session.State do
 
   @doc """
   All four mirrored sections — `%{song:, tracks:, return_tracks:, master:}` — as
-  they stood in one GenServer turn.
+  they stood in one GenServer turn, plus `refresh_pending?`.
 
   What the four narrower reads can't offer: with refreshes coalesced, a rebuild
   can land between two of them and produce a reply that pairs the song from
   before it with the tracks from after. One call, one turn, one coherent answer,
   and one timeout window rather than four.
+
+  `refresh_pending?` is true when a rebuild is scheduled but hasn't run, which is
+  to say the structure in this snapshot is *known* to be behind Live: reads
+  neither force the timer nor cancel it. It is reported rather than waited on so
+  `get_session_state` can label its own uncertainty instead of asserting a layout
+  it has reason to doubt. `refresh_sync/0` cancels the timer before rebuilding,
+  so a refreshed read never sees it true.
   """
   def snapshot, do: GenServer.call(__MODULE__, :snapshot)
 
@@ -200,6 +225,111 @@ defmodule Seshat.Session.State do
   """
   def stale?(nil, _live_names), do: true
   def stale?(mirrored, live_names), do: Enum.map(mirrored, & &1.name) != live_names
+
+  @doc """
+  The deferred half of `reconcile/4`: the comparison that used to happen inline
+  right after `do_refresh/1`, run once the scheduled rebuild has finished.
+
+  Takes the rebuilt state, the `pending_reconciliations` map captured *before*
+  the rebuild cleared it, and the pre-refresh context
+  `%{unreconciled: previous_unreconciled, explicit?: boolean}`. Returns the state
+  with each pending key's brake recorded, cleared, or converted into one retry.
+
+  Public and OSC-free on purpose. Every decision below is a state transition with
+  no wire access, and each of them is the difference between a mirror that heals
+  and one that holds a knowingly-wrong answer forever — none of which is
+  reachable from `mix test` if the only entry point is a private function behind
+  `Transport.query/3`. It must stay that way: no query belongs in here.
+
+  ## Carry-over
+
+  For a structure-only rebuild, every record but the ones this refresh is about
+  survives it. `do_refresh/1` clears them all, which is what makes an explicitly
+  requested refresh lift the brake — but dropping the *other* key's record here
+  hands the two of them a way to lift each other's brake forever: tracks refresh,
+  which clears returns, whose echo then refreshes, which clears tracks, whose
+  echo then refreshes. Since every refresh re-subscribes and every re-subscribe
+  pushes again, that is an unbounded spin, reached whenever both lists are
+  unreconcilable at once — one degraded refresh does exactly that, since the same
+  abandoned replies defeat both echo checks.
+
+  An explicit request is the opposite case and takes precedence even when it
+  shares a timer with pending structure records: it is a forced retry of all of
+  them, so nothing old is carried over and only what this rebuild still can't
+  reproduce gets re-recorded.
+
+  ## Failed is not disagreed
+
+  "Live says X and the mirror says Y" and "the rebuild established nothing" used
+  to be treated identically, and only the first is a reason never to try again:
+
+    * **Reconciled** — the rebuild reproduced the pushed list. That key's brake
+      clears.
+    * **Failed** — the mirror value for that key is `nil`, so this rebuild has
+      not disagreed with anything; it read nothing. The pending record survives
+      marked `retried?: true` and one more rebuild is scheduled. No brake. Only
+      `:tracks` has a `nil` sentinel to fail into — `read_return_tracks/2` always
+      returns a list, so a return-side mismatch always takes the "Disagreed"
+      branch below instead.
+    * **Failed again** — `retried?` was already set. Now the brake goes on, with
+      the same warning as a disagreement. Two rebuilds per pushed list is the
+      bound, and that is not a spin.
+    * **Disagreed** — the mirror holds a real list whose names differ. Brake
+      immediately, no retry. A rebuild that read the session successfully and got
+      a different answer is information, not a failure, and retrying it is what
+      floods Live.
+
+  The retry rides `schedule_refresh/1` rather than recursing into `do_refresh/1`:
+  a second immediate rebuild would be racing the same structural change that
+  broke the first one, and it lands one debounce window later instead.
+  `refresh_requested?` stays false, so the retry is a structure-only rebuild and
+  the carry-over above keeps protecting the other key.
+  """
+  @spec finalize_reconciliations(map(), map(), %{unreconciled: map(), explicit?: boolean()}) ::
+          map()
+  def finalize_reconciliations(state, pending, %{unreconciled: previous, explicit?: explicit?}) do
+    # Preserved only for a structure-only rebuild, and only for the keys it isn't
+    # about; an explicit request deliberately keeps nothing.
+    carried_over = if explicit?, do: %{}, else: Map.drop(previous, Map.keys(pending))
+
+    state = Map.update!(state, :unreconciled, &Map.merge(&1, carried_over))
+
+    Enum.reduce(pending, state, fn {key, record}, acc ->
+      %{names: names, message: change_message} = record
+      mirrored = Map.fetch!(acc, key)
+
+      cond do
+        not stale?(mirrored, names) ->
+          reconciled(acc, key)
+
+        is_nil(mirrored) and not Map.get(record, :retried?, false) ->
+          Logger.info(
+            "#{change_message}, but the rebuild could not read the #{list_label(key)} — " <>
+              "retrying once."
+          )
+
+          acc
+          |> Map.update!(
+            :pending_reconciliations,
+            &Map.put(&1, key, Map.put(record, :retried?, true))
+          )
+          |> schedule_refresh()
+
+        true ->
+          Logger.warning(
+            "#{change_message}, but re-reading Ableton did not reproduce it: Live reports " <>
+              "#{inspect(names)} and the mirror holds " <>
+              "#{mirrored_names(mirrored)}. Leaving it as it " <>
+              "is rather than refreshing on every push; pass refresh: true to force a retry."
+          )
+
+          %{acc | unreconciled: Map.put(acc.unreconciled, key, names)}
+      end
+    end)
+  end
+
+  defp list_label(:tracks), do: "track list"
+  defp list_label(:return_tracks), do: "return track list"
 
   # --- Server Callbacks ---
 
@@ -280,7 +410,12 @@ defmodule Seshat.Session.State do
       song: state.song,
       tracks: state.tracks,
       return_tracks: state.return_tracks,
-      master: state.master
+      master: state.master,
+
+      # Only on the snapshot, never on the four narrower reads: this is a fact
+      # about the whole reply `get_session_state` is about to compose, and the
+      # narrower reads have no reply to qualify.
+      refresh_pending?: state.refresh_timer != nil
     }
 
     {:reply, snapshot, state}
@@ -528,6 +663,23 @@ defmodule Seshat.Session.State do
       Map.get(state.unreconciled, key) == names ->
         state
 
+      # The echo-loop guard. It is reachable any time a pending record already
+      # holds this exact list — not only when the mirror is degraded — but the
+      # degraded-rebuild state Part 2 creates is why it matters: a rebuild that
+      # came back degraded leaves `tracks: nil`, so `stale?/2` is true against
+      # *every* list — including the very list the re-subscription echo pushes
+      # straight back. Falling through to the general case would replace the
+      # pending record on each echo, discarding the `retried?` marker that
+      # bounds the retry and pushing the trailing edge out again, which is an
+      # unbounded loop. Outside that state the same guard just declines to
+      # extend the trailing edge for a duplicate push, which is harmless. Same
+      # names as the record already holds: keep the record exactly as it is,
+      # and touch neither the marker nor the timer. A list that genuinely
+      # differs still falls through and gets a fresh record, so a real change
+      # is never ignored.
+      match?(%{names: ^names}, Map.get(state.pending_reconciliations, key)) ->
+        state
+
       true ->
         Logger.info("#{change_message} — scheduling a session refresh")
 
@@ -545,60 +697,30 @@ defmodule Seshat.Session.State do
     end
   end
 
-  # The deferred half of `reconcile/4`: the comparison that used to happen inline
-  # right after `do_refresh/1`, now run when the scheduled rebuild finishes.
-  #
-  # For a structure-only rebuild, every record but the ones this refresh is about
-  # survives it. `do_refresh/1` clears them all, which is what makes an
-  # explicitly requested refresh lift the brake — but dropping the *other* key's
-  # record here hands the two of them a way to lift each other's brake forever:
-  # tracks refresh, which clears returns, whose echo then refreshes, which clears
-  # tracks, whose echo then refreshes. Since every refresh re-subscribes and every
-  # re-subscribe pushes again, that is the unbounded spin this bookkeeping exists
-  # to stop, reached whenever both lists are unreconcilable at once — one degraded
-  # refresh does exactly that, since the same abandoned replies defeat both echo
-  # checks.
-  #
-  # An explicit request is the opposite case and takes precedence even when it
-  # shares a timer with pending structure records: it is a forced retry of all of
-  # them, so nothing old is carried over and only what this rebuild still can't
-  # reproduce gets re-recorded.
-  defp finalize_reconciliations(state, pending, carried_over) do
-    state = Map.update!(state, :unreconciled, &Map.merge(&1, carried_over))
-
-    Enum.reduce(pending, state, fn {key, %{names: names, message: change_message}}, acc ->
-      if stale?(Map.fetch!(acc, key), names) do
-        Logger.warning(
-          "#{change_message}, but re-reading Ableton did not reproduce it: Live reports " <>
-            "#{inspect(names)} and the mirror holds " <>
-            "#{mirrored_names(Map.fetch!(acc, key))}. Leaving it as it " <>
-            "is rather than refreshing on every push; pass refresh: true to force a retry."
-        )
-
-        %{acc | unreconciled: Map.put(acc.unreconciled, key, names)}
-      else
-        reconciled(acc, key)
-      end
-    end)
-  end
-
   # The one refresh entry point that isn't a raw `do_refresh/1`: it takes over the
   # pending timer's work rather than running alongside it. Used by the trailing
   # timer and by `refresh_sync/0`, which differ only in whether the explicit flag
   # is forced on.
+  #
+  # Everything the rebuild is about to destroy is captured *first* and handed to
+  # `finalize_reconciliations/3` as raw context: `clear_refresh_schedule/1` empties
+  # the pending records and `do_refresh/1` empties `unreconciled`. The carry-over
+  # decision itself deliberately lives in the public finalizer rather than here —
+  # passing an already-computed `carried_over` map would leave the explicit-vs-
+  # structure choice unreachable from `mix test`, which is most of what this
+  # bookkeeping is.
   defp run_refresh(state, explicit?: forced?) do
-    explicit? = forced? or state.refresh_requested?
-    pending = state.pending_reconciliations
+    context = %{
+      unreconciled: state.unreconciled,
+      explicit?: forced? or state.refresh_requested?
+    }
 
-    # Preserved only for a structure-only rebuild, and only for the keys it isn't
-    # about; an explicit request deliberately keeps nothing.
-    carried_over =
-      if explicit?, do: %{}, else: Map.drop(state.unreconciled, Map.keys(pending))
+    pending = state.pending_reconciliations
 
     state
     |> clear_refresh_schedule()
     |> do_refresh()
-    |> finalize_reconciliations(pending, carried_over)
+    |> finalize_reconciliations(pending, context)
   end
 
   # Move the trailing edge: cancel whatever was scheduled and schedule one
@@ -690,16 +812,42 @@ defmodule Seshat.Session.State do
     state =
       case probe(Transport, "/live/song/get/num_tracks", [], @query_timeout) do
         {:ok, [count]} when is_integer(count) ->
-          tracks = read_tracks(Transport, count)
+          read = read_tracks(Transport, count)
 
-          subscribe_listeners(tracks)
+          # Subscribed from the *count*, not from the rows that were read, and
+          # unconditionally: a degraded read must not also go deaf. Subscribing
+          # an index that no longer exists is harmless — the same silent
+          # `IndexError` path, and no listener is created — whereas skipping the
+          # subscription is how a degraded refresh would stay degraded, since the
+          # structure push that heals it is itself a listener.
+          subscribe_listeners(if count < 1, do: [], else: 0..(count - 1))
 
-          Logger.info(
-            "Loaded #{length(tracks)} tracks: " <>
-              "#{Enum.map_join(tracks, ", ", &unknown_if_nil(&1.name))}"
-          )
+          case read do
+            {:ok, tracks} ->
+              Logger.info(
+                "Loaded #{length(tracks)} tracks: " <>
+                  "#{Enum.map_join(tracks, ", ", &unknown_if_nil(&1.name))}"
+              )
 
-          %{state | song: song, tracks: tracks}
+              %{state | song: song, tracks: tracks}
+
+            # The same rule as the failed-`num_tracks` branch below, applied to
+            # the case it never reached: a read that stopped partway established
+            # the *existence* of no track after `stopped_index` and the identity
+            # of none at it. Keeping what it managed to read would serve tracks
+            # that may already be gone — the measured 2026-08-01 failure, where a
+            # deleted "Bass" was reported as present beside a track whose every
+            # field was unknown, with nothing in the reply distinguishing the two.
+            {:degraded, stopped_index} ->
+              Logger.warning(
+                "Ableton reported #{count} track(s) but the read stopped at index " <>
+                  "#{stopped_index}: no name came back for it, so the whole track list is " <>
+                  "unknown rather than partly guessed. A structure push or the single retry " <>
+                  "in finalize_reconciliations/3 rebuilds it."
+              )
+
+              %{state | song: song, tracks: nil}
+          end
 
         # Anything else — a timeout, a deaf transport, a reply in a shape we
         # don't recognise — leaves the session unmirrored rather than crashing
@@ -732,19 +880,57 @@ defmodule Seshat.Session.State do
     |> Map.put(:unreconciled, %{})
   end
 
-  defp read_tracks(_transport, count) when count < 1, do: []
+  # `{:ok, tracks}` or `{:degraded, stopped_index}` — never a list with holes in
+  # it. `count < 1` is `{:ok, []}`: a verified-empty set, not degradation.
+  #
+  # The **name** is the marker, and only the name, for two reasons:
+  #
+  #   * It is the identity field. `stale?/2` compares names and nothing else, so
+  #     a row with `name: nil` can never reconcile against a pushed list — it is
+  #     guaranteed to be recorded as a brake, which is exactly the trap the
+  #     measured 2026-08-01 run fell into. A `nil` volume has no such
+  #     consequence, so an unanswered volume still leaves that one field unknown
+  #     and keeps the row.
+  #   * `query_string/4`'s echo check rejects a reply whose echoed index isn't
+  #     the one asked for, so a straggler running one index behind yields `nil`
+  #     here too. The marker therefore catches the abandoned-reply cascade as
+  #     well as the index that no longer exists — the same failure seen from two
+  #     ends.
+  #
+  # Aborting the whole read rather than skipping the one index is deliberate:
+  # `do_refresh/1` is about to discard the list anyway, so every query after the
+  # first unanswered name is spent on a result that gets thrown away. A fully
+  # dead read costs one @query_timeout instead of five per over-reported track —
+  # a bad index is *silent* (track.py's `create_track_callback` and its
+  # neighbours index `song.tracks` with no bounds check; the `IndexError` is
+  # logged and swallowed by `OSCServer.process`, and no reply is sent), so each
+  # one would otherwise be five full guard timeouts of dead waiting.
+  defp read_tracks(_transport, count) when count < 1, do: {:ok, []}
 
   defp read_tracks(transport, count) do
-    Enum.map(0..(count - 1), fn i ->
-      %{
-        index: i,
-        name: query_string(transport, "/live/track/get/name", i),
-        volume: query_float(transport, "/live/track/get/volume", i),
-        pan: query_float(transport, "/live/track/get/panning", i),
-        mute: query_int(transport, "/live/track/get/mute", i) |> to_bool(),
-        solo: query_int(transport, "/live/track/get/solo", i) |> to_bool()
-      }
+    0..(count - 1)
+    |> Enum.reduce_while([], fn i, acc ->
+      case query_string(transport, "/live/track/get/name", i) do
+        nil ->
+          {:halt, {:degraded, i}}
+
+        name ->
+          track = %{
+            index: i,
+            name: name,
+            volume: query_float(transport, "/live/track/get/volume", i),
+            pan: query_float(transport, "/live/track/get/panning", i),
+            mute: query_int(transport, "/live/track/get/mute", i) |> to_bool(),
+            solo: query_int(transport, "/live/track/get/solo", i) |> to_bool()
+          }
+
+          {:cont, [track | acc]}
+      end
     end)
+    |> case do
+      {:degraded, index} -> {:degraded, index}
+      tracks -> {:ok, Enum.reverse(tracks)}
+    end
   end
 
   defp refresh_returns(transport) do
@@ -860,11 +1046,14 @@ defmodule Seshat.Session.State do
     Transport.send_message("/live/master/start_listen/cue_volume", [])
   end
 
-  defp subscribe_listeners(tracks) do
+  # Takes track *indices* rather than the mirrored rows: the caller subscribes
+  # what `num_tracks` said exists, which is still true when the read of those
+  # tracks came back degraded and there are no rows to derive an index from.
+  defp subscribe_listeners(indices) do
     alias Seshat.OSC.Transport
 
-    for track <- tracks, prop <- @listened_properties do
-      Transport.send_message("/live/track/start_listen/#{prop}", [track.index])
+    for index <- indices, prop <- @listened_properties do
+      Transport.send_message("/live/track/start_listen/#{prop}", [index])
     end
   end
 

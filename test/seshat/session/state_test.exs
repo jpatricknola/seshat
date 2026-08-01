@@ -261,6 +261,166 @@ defmodule Seshat.Session.StateTest do
 
       assert state.unreconciled == %{}
     end
+
+    # The echo-loop guard. A degraded rebuild leaves `tracks: nil`, which is
+    # stale against every list including the one the re-subscription echo pushes
+    # straight back — so without this branch each echo would replace the pending
+    # record, throwing away the `retried?` marker that bounds the retry and
+    # pushing the trailing edge out again. Unbounded, and reachable only in the
+    # state a degraded read creates.
+    test "an identical re-push leaves a pending record, its marker and the timer alone" do
+      timer = make_ref()
+
+      pending =
+        state(%{
+          tracks: nil,
+          pending_reconciliations: %{
+            tracks: %{
+              names: ["Drums", "Bass"],
+              message: "Track list changed in Live",
+              retried?: true
+            }
+          },
+          refresh_timer: timer,
+          refresh_token: make_ref()
+        })
+
+      assert push(pending, "/live/song/get/tracks", ["Drums", "Bass"]) == pending
+    end
+
+    # The other half of the guarantee: a list that genuinely differs is a real
+    # change, so it gets a fresh record and a fresh attempt — the retry marker
+    # belongs to the list that failed, not to the key.
+    test "a different name list replaces the record and drops the retry marker" do
+      pending =
+        state(%{
+          tracks: nil,
+          pending_reconciliations: %{
+            tracks: %{
+              names: ["Drums", "Bass"],
+              message: "Track list changed in Live",
+              retried?: true
+            }
+          }
+        })
+
+      state = push(pending, "/live/song/get/tracks", ["Drums", "Bass", "Keys"])
+
+      assert state.pending_reconciliations == %{
+               tracks: %{names: ["Drums", "Bass", "Keys"], message: "Track list changed in Live"}
+             }
+
+      assert is_reference(state.refresh_timer)
+    end
+  end
+
+  # The post-rebuild decision, reachable from here because the finalizer is a
+  # public state transition that touches no OSC: it takes the rebuilt state, the
+  # pending records the rebuild cleared, and the pre-refresh context. Everything
+  # it decides — one retry for a rebuild that read nothing, an immediate brake for
+  # one that disagreed, and whether the other key's brake survives — is invisible
+  # to `mix test` if it lives behind `do_refresh/1`.
+  describe "finalize_reconciliations/3" do
+    defp record(names, extra \\ %{}) do
+      Map.merge(%{names: names, message: "Track list changed in Live"}, extra)
+    end
+
+    defp finalize(state, pending, context) do
+      State.finalize_reconciliations(state, pending, context)
+    end
+
+    # "The rebuild established nothing" is not "Live and the mirror disagree":
+    # nothing has been contradicted, so the brake — which exists to stop a spin
+    # between two answers — has nothing to brake yet.
+    test "a rebuild that read nothing keeps the record and schedules exactly one retry" do
+      final =
+        finalize(
+          state(%{tracks: nil}),
+          %{tracks: record(["Drums", "Bass"])},
+          %{unreconciled: %{return_tracks: ["Reverb", "Delay"]}, explicit?: false}
+        )
+
+      assert final.pending_reconciliations == %{
+               tracks: record(["Drums", "Bass"], %{retried?: true})
+             }
+
+      assert is_reference(final.refresh_timer)
+      # Untouched: this rebuild is only about :tracks, so the other key's brake
+      # rides through unchanged rather than being cleared as a side effect.
+      assert final.unreconciled == %{return_tracks: ["Reverb", "Delay"]}
+      # Structure-only, so the retry keeps protecting the other key's brake
+      # rather than lifting every one of them.
+      assert final.refresh_requested? == false
+    end
+
+    test "a second failure records the brake and schedules nothing further" do
+      final =
+        finalize(
+          state(%{tracks: nil}),
+          %{tracks: record(["Drums", "Bass"], %{retried?: true})},
+          %{unreconciled: %{}, explicit?: false}
+        )
+
+      assert final.unreconciled == %{tracks: ["Drums", "Bass"]}
+      assert final.refresh_timer == nil
+      assert final.pending_reconciliations == %{}
+    end
+
+    # A rebuild that read the session successfully and got a different answer is
+    # information, not a failure. Retrying it is the flood the brake exists to
+    # stop, so this one never gets the retry the failure case does.
+    test "a rebuild that disagrees brakes immediately with no retry" do
+      final =
+        finalize(
+          state(%{tracks: [track(0, "Drums")]}),
+          %{tracks: record(["Drums", "Bass"])},
+          %{unreconciled: %{}, explicit?: false}
+        )
+
+      assert final.unreconciled == %{tracks: ["Drums", "Bass"]}
+      assert final.refresh_timer == nil
+      assert final.pending_reconciliations == %{}
+    end
+
+    test "a rebuild that reproduced the pushed list clears that key's brake" do
+      final =
+        finalize(
+          state(%{tracks: [track(0, "Drums"), track(1, "Bass")]}),
+          %{tracks: record(["Drums", "Bass"])},
+          %{unreconciled: %{tracks: ["Drums", "Bass"]}, explicit?: false}
+        )
+
+      assert final.unreconciled == %{}
+      assert final.refresh_timer == nil
+    end
+
+    # The cross-key loop brake. Dropping the *other* key's record on a
+    # structure-only rebuild lets the two lift each other's brake forever: tracks
+    # refresh, clearing returns, whose echo refreshes, clearing tracks, and every
+    # refresh re-subscribes and every re-subscribe pushes again.
+    test "a structure-only rebuild carries an unrelated key's brake over" do
+      final =
+        finalize(
+          state(%{tracks: [track(0, "Drums"), track(1, "Bass")]}),
+          %{tracks: record(["Drums", "Bass"])},
+          %{unreconciled: %{return_tracks: ["Reverb", "Delay"]}, explicit?: false}
+        )
+
+      assert final.unreconciled == %{return_tracks: ["Reverb", "Delay"]}
+    end
+
+    # An explicit refresh is a forced retry of every brake, so it keeps none of
+    # them and re-records only what this rebuild still can't reproduce.
+    test "an explicit rebuild drops every brake it isn't about" do
+      final =
+        finalize(
+          state(%{tracks: [track(0, "Drums"), track(1, "Bass")]}),
+          %{tracks: record(["Drums", "Bass"])},
+          %{unreconciled: %{return_tracks: ["Reverb", "Delay"]}, explicit?: true}
+        )
+
+      assert final.unreconciled == %{}
+    end
   end
 
   # The trailing-edge scheduler. Everything here stops at the timer boundary: the
@@ -430,10 +590,22 @@ defmodule Seshat.Session.StateTest do
                song: mirrored.song,
                tracks: mirrored.tracks,
                return_tracks: mirrored.return_tracks,
-               master: mirrored.master
+               master: mirrored.master,
+               refresh_pending?: false
              }
 
       assert unchanged == mirrored
+    end
+
+    # The flag `get_session_state` uses to say the layout is still settling. It
+    # is a fact about this reply, so it rides the snapshot and not the four
+    # narrower reads, which have no reply to qualify.
+    test "a snapshot taken with a rebuild scheduled says so" do
+      scheduled = cast_refresh(state(%{tracks: [track(0, "Drums")]}))
+
+      {:reply, snapshot, _unchanged} = State.handle_call(:snapshot, self(), scheduled)
+
+      assert snapshot.refresh_pending? == true
     end
 
     # Reads answer from the push-updated mirror and neither force nor cancel the
@@ -681,7 +853,13 @@ defmodule Seshat.Session.StateTest do
   # Coalescing moved the *stale* branch of the two structure pushes out of that
   # set: it now records the pushed names and arms a timer, both pure, so
   # scheduling, latest-list replacement, cross-key accumulation and the settling
-  # rules are all tested above. What stays live-only is the authoritative rebuild
-  # itself and the post-refresh comparison in finalize_reconciliations/3 — the
-  # mirror-refresh coalescing section of /smoke-test.
+  # rules are all tested above. The post-refresh decision came out of that set
+  # too: finalize_reconciliations/3 is public and OSC-free, so the retry, the
+  # brake and the cross-key carry-over are ordinary state-transition tests above.
+  #
+  # What stays live-only is the authoritative rebuild itself —
+  # read_tracks/2 and do_refresh/1 reach Transport.query/3 by construction, so
+  # that a *real* degraded read produces `tracks: nil` at all is a /smoke-test
+  # check, not something this file can assert. See the Session.State refresh
+  # section there.
 end

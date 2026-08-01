@@ -220,6 +220,31 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
+A degraded mirror rebuild is now reported, never served, shipped 2026-08-01,
+closing what had been the queue's top item — "The mirror goes stale after a
+burst of structural changes — and stays stale" — along with the separately
+queued "Unit coverage for the mirror-refresh cross-key loop brake," which the
+fix folds in directly. `Seshat.Session.State`'s `read_tracks/2` now returns
+`{:degraded, stopped_index}` rather than a half-read list: it stops at the
+first index whose *name* query goes unanswered, since name is the identity
+field `stale?/2` compares and `query_string/4`'s echo check turns a straggler
+into the same signal, and `do_refresh/1` sets `tracks: nil` on that outcome
+instead of merging in a list with holes — applying the "unknown, not
+stale-but-plausible" rule the file already argued for one branch up.
+`finalize_reconciliations/3` (promoted to public, documented, and now
+unit-tested directly, closing the loop-brake coverage gap too) splits a
+rebuild that resolved nothing from one that genuinely disagreed with the
+pushed list: the first gets exactly one retry scheduled via
+`schedule_refresh/1`, the second brakes immediately as before. A new guard in
+`reconcile/4` stops the re-subscription echo from resetting that retry marker
+on every identical push. `snapshot/0` gained `refresh_pending?`, and
+`format_session_state/4` became `/5`, appending a settling sentence when a
+structural refresh is still in flight so an ordinary read inside the debounce
+window says so instead of asserting a layout that may already be stale. No
+OSC or Python change — every address this depends on was already in the fork.
+Plan archived at
+[docs/archive/PLAN_degraded_mirror_rebuild.md](docs/archive/PLAN_degraded_mirror_rebuild.md).
+`undo` reporting success it never observed is now the queue's top item.
 One Seshat tool call is now exactly one Ableton undo step, shipped
 2026-08-01: `Song.begin_undo_step()`/`end_undo_step()` — two new entries in
 the fork's `song.py` method list, the same one-line shape as `swing_amount`
@@ -263,11 +288,7 @@ return/master mixer tools) were deleted outright rather than debounced —
 their listeners already push every value they write, so the refresh was
 re-reading state that was already arriving. Plan archived at
 [docs/archive/PLAN_coalesce_mirror_refreshes.md](docs/archive/PLAN_coalesce_mirror_refreshes.md).
-Preserve partial agent results at the tool-iteration limit is now the
-queue's top item; `start_new_project` — the read-only
-setup wizard that would catch "let's start a new project" and move the
-replace-not-append rule off the capped instructions budget and into a tool
-description — sits just below it. Devices on return and master
+Devices on return and master
 tracks shipped 2026-07-31, closing what had led the queue: `create_return_track`
 no longer ships an empty return the user has to fill in by hand in Live — the
 six device tools (`load_device`, `get_track_devices`, `get_device_parameters`,
