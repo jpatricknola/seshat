@@ -56,9 +56,10 @@
 Natural-language control of Ableton Live. Say "pan the drums left a bit" or
 "write a four-bar minor key bassline on track 2" and it happens in your session.
 
-Seshat is an Elixir/Phoenix app that exposes Ableton control tools — tracks,
-clips, notes, devices, mixer, sends and returns, transport, recording, and the
-sound library — and sends OSC to a running copy of Ableton Live.
+Seshat is an MCP server built with Elixir/Phoenix. It exposes Ableton control
+tools — tracks, clips, notes, devices, mixer, sends and returns, transport,
+recording, and the sound library — and sends OSC to a running copy of Ableton
+Live.
 
 ## Prerequisites
 
