@@ -1,5 +1,14 @@
 # Plan — Coalesce mirror refreshes: one burst, one refresh
 
+> **Archived 2026-08-01 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The scheduler lives in
+> `Seshat.Session.State` (`@refresh_debounce_ms`, `schedule_refresh/1`,
+> `finalize_reconciliations/3`); the seven deleted scalar-setter refreshes
+> were in `Seshat.Tools.Handlers`. The one open follow-up — automated test
+> coverage for the cross-key structural loop brake — is its own entry in
+> [ROADMAP.md](../ROADMAP.md), "Unit coverage for the mirror-refresh
+> cross-key loop brake".
+
 Roadmap item "Coalesce mirror refreshes — one burst of tool calls, one
 refresh". This is an Elixir-only scheduling change: remove seven redundant
 full refreshes after scalar return/master writes, then bound the remaining
