@@ -267,7 +267,10 @@ defmodule Seshat.Session.State do
       clears.
     * **Failed** — the mirror value for that key is `nil`, so this rebuild has
       not disagreed with anything; it read nothing. The pending record survives
-      marked `retried?: true` and one more rebuild is scheduled. No brake.
+      marked `retried?: true` and one more rebuild is scheduled. No brake. Only
+      `:tracks` has a `nil` sentinel to fail into — `read_return_tracks/2` always
+      returns a list, so a return-side mismatch always takes the "Disagreed"
+      branch below instead.
     * **Failed again** — `retried?` was already set. Now the brake goes on, with
       the same warning as a disagreement. Two rebuilds per pushed list is the
       bound, and that is not a spin.
@@ -660,16 +663,20 @@ defmodule Seshat.Session.State do
       Map.get(state.unreconciled, key) == names ->
         state
 
-      # The echo-loop guard, and it is only reachable in the state Part 2 of the
-      # degraded-rebuild work creates. A rebuild that came back degraded leaves
-      # `tracks: nil`, so `stale?/2` is true against *every* list — including the
-      # very list the re-subscription echo pushes straight back. Falling through
-      # to the general case would replace the pending record on each echo,
-      # discarding the `retried?` marker that bounds the retry and pushing the
-      # trailing edge out again, which is an unbounded loop. Same names as the
-      # record already holds: keep the record exactly as it is, and touch neither
-      # the marker nor the timer. A list that genuinely differs still falls
-      # through and gets a fresh record, so a real change is never ignored.
+      # The echo-loop guard. It is reachable any time a pending record already
+      # holds this exact list — not only when the mirror is degraded — but the
+      # degraded-rebuild state Part 2 creates is why it matters: a rebuild that
+      # came back degraded leaves `tracks: nil`, so `stale?/2` is true against
+      # *every* list — including the very list the re-subscription echo pushes
+      # straight back. Falling through to the general case would replace the
+      # pending record on each echo, discarding the `retried?` marker that
+      # bounds the retry and pushing the trailing edge out again, which is an
+      # unbounded loop. Outside that state the same guard just declines to
+      # extend the trailing edge for a duplicate push, which is harmless. Same
+      # names as the record already holds: keep the record exactly as it is,
+      # and touch neither the marker nor the timer. A list that genuinely
+      # differs still falls through and gets a fresh record, so a real change
+      # is never ignored.
       match?(%{names: ^names}, Map.get(state.pending_reconciliations, key)) ->
         state
 

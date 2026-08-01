@@ -640,10 +640,13 @@ read before the hole.
 7. **It recovers without `refresh: true`.** After a degraded read, make no
    further tool call and wait ~3s, then read plainly again: the list is correct.
    This is the single retry doing what the narrowed `refresh: true` no longer
-   lets the model do for itself. The log shows it as a second `Song:` /
-   `Loaded …` sequence following the informational
-   `could not read the track list — retrying once` line, and **exactly one** such
-   retry.
+   lets the model do for itself. If a structure push was still pending when the
+   rebuild ran, the log shows it as a second `Song:` / `Loaded …` sequence
+   following the informational `could not read the track list — retrying once`
+   line, and **exactly one** such retry; if nothing was pending, recovery instead
+   comes from the re-subscription echo (`Track list changed in Live —
+   scheduling a session refresh`) and that line never appears. Either way, the
+   check is the list being correct on the follow-up read.
 8. **A genuine disagreement still brakes.** Not reproducible on demand and not
    required to pass — but if a `did not reproduce it` warning appears in the log
    during any of this, confirm it is followed by no further refresh for that

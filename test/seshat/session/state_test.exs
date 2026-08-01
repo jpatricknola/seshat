@@ -337,7 +337,7 @@ defmodule Seshat.Session.StateTest do
         finalize(
           state(%{tracks: nil}),
           %{tracks: record(["Drums", "Bass"])},
-          %{unreconciled: %{}, explicit?: false}
+          %{unreconciled: %{return_tracks: ["Reverb", "Delay"]}, explicit?: false}
         )
 
       assert final.pending_reconciliations == %{
@@ -345,7 +345,9 @@ defmodule Seshat.Session.StateTest do
              }
 
       assert is_reference(final.refresh_timer)
-      assert final.unreconciled == %{}
+      # Untouched: this rebuild is only about :tracks, so the other key's brake
+      # rides through unchanged rather than being cleared as a side effect.
+      assert final.unreconciled == %{return_tracks: ["Reverb", "Delay"]}
       # Structure-only, so the retry keeps protecting the other key's brake
       # rather than lifting every one of them.
       assert final.refresh_requested? == false
