@@ -23,7 +23,11 @@ defmodule Seshat.Session.StateTest do
         return_tracks: [],
         master: nil,
         returns_readable?: true,
-        unreconciled: %{}
+        unreconciled: %{},
+        refresh_timer: nil,
+        refresh_token: nil,
+        refresh_requested?: false,
+        pending_reconciliations: %{}
       },
       overrides
     )
@@ -43,6 +47,18 @@ defmodule Seshat.Session.StateTest do
 
   defp push(state, address, args) do
     {:noreply, state} = State.handle_info({:osc_message, address, args}, state)
+    state
+  end
+
+  defp cast_refresh(state) do
+    {:noreply, state} = State.handle_cast(:refresh, state)
+    state
+  end
+
+  # The timer message as the GenServer would receive it. Nothing here ever fires
+  # a *current* token: that branch runs do_refresh/1, which queries Ableton.
+  defp fire(state, token) do
+    {:noreply, state} = State.handle_info({:refresh, token}, state)
     state
   end
 
@@ -176,7 +192,16 @@ defmodule Seshat.Session.StateTest do
     test "a disagreeing return list is ignored while returns are unreadable" do
       mirrored = state(%{return_tracks: [], returns_readable?: false})
 
-      assert push(mirrored, "/live/song/get/return_tracks", ["Reverb"]) == mirrored
+      state = push(mirrored, "/live/song/get/return_tracks", ["Reverb"])
+
+      assert state == mirrored
+      # Explicitly, not just as a consequence of the equality above: the brake
+      # has to stop the *scheduling* now, not only the rebuild. A version that
+      # recorded the push and armed a timer would still refresh on every push a
+      # second later, which is the spin this test exists to prevent.
+      assert state.refresh_timer == nil
+      assert state.refresh_token == nil
+      assert state.pending_reconciliations == %{}
     end
 
     # The brake against an unbounded refresh spin: a refresh that comes back
@@ -191,7 +216,11 @@ defmodule Seshat.Session.StateTest do
           unreconciled: %{tracks: ["Drums", "Bass"]}
         })
 
-      assert push(mirrored, "/live/song/get/tracks", ["Drums", "Bass"]) == mirrored
+      state = push(mirrored, "/live/song/get/tracks", ["Drums", "Bass"])
+
+      assert state == mirrored
+      assert state.refresh_timer == nil
+      assert state.pending_reconciliations == %{}
     end
 
     # A refresh that couldn't read the track count leaves `tracks: nil`, and
@@ -231,6 +260,212 @@ defmodule Seshat.Session.StateTest do
       state = push(mirrored, "/live/song/get/tracks", ["Drums"])
 
       assert state.unreconciled == %{}
+    end
+  end
+
+  # The trailing-edge scheduler. Everything here stops at the timer boundary: the
+  # branch where a *current* token fires calls do_refresh/1, which queries
+  # Ableton, so it stays a /smoke-test concern (testing.md: never reach
+  # Transport.query/3). Driving a configurable delay to zero would reach the same
+  # calls sooner rather than avoid them, which is why the delay is a constant.
+  #
+  # Timer messages land in the bare ExUnit test process here, never in a running
+  # GenServer, so an unhandled due message is inert and dies with the test.
+  describe "coalescing refresh requests" do
+    test "a refresh cast schedules one rather than rebuilding" do
+      state = cast_refresh(state())
+
+      assert is_reference(state.refresh_timer)
+      assert is_reference(state.refresh_token)
+      assert state.refresh_requested? == true
+    end
+
+    # The whole point of a trailing edge: a second request during the window
+    # doesn't queue a second rebuild, it moves the one that's already scheduled.
+    test "a second refresh cast replaces the timer rather than adding one" do
+      first = cast_refresh(state())
+      second = cast_refresh(first)
+
+      assert second.refresh_token != first.refresh_token
+      assert second.refresh_timer != first.refresh_timer
+      assert second.refresh_requested? == true
+    end
+
+    # Process.cancel_timer/1 can't unsend a message already in the mailbox, so
+    # the token — not the cancellation — is what makes a replaced timer harmless.
+    test "the replaced timer's message is ignored when it arrives late" do
+      first = cast_refresh(state())
+      second = cast_refresh(first)
+
+      assert fire(second, first.refresh_token) == second
+    end
+
+    test "a stale timer message cannot erase pending work or touch the mirror" do
+      scheduled =
+        %{tracks: [track(0, "Drums")]}
+        |> state()
+        |> push("/live/song/get/tracks", ["Drums", "Bass"])
+
+      assert fire(scheduled, make_ref()) == scheduled
+    end
+
+    # `nil` is the marker for "nothing scheduled". A message carrying it must not
+    # be read as matching the idle state.
+    test "a timer message carrying no token is ignored" do
+      idle = state()
+
+      assert fire(idle, nil) == idle
+    end
+
+    test "a stale track list schedules a refresh instead of rebuilding inline" do
+      state =
+        %{tracks: [track(0, "Drums")]}
+        |> state()
+        |> push("/live/song/get/tracks", ["Drums", "Bass"])
+
+      assert is_reference(state.refresh_timer)
+      # Not an explicit request: this timer exists only to reconcile structure,
+      # which decides whether the rebuild lifts every brake or only this key's.
+      assert state.refresh_requested? == false
+
+      assert state.pending_reconciliations == %{
+               tracks: %{names: ["Drums", "Bass"], message: "Track list changed in Live"}
+             }
+    end
+
+    test "successive track lists keep only the latest names under one timer" do
+      first =
+        %{tracks: [track(0, "Drums")]}
+        |> state()
+        |> push("/live/song/get/tracks", ["Drums", "Bass"])
+
+      second = push(first, "/live/song/get/tracks", ["Drums", "Bass", "Keys"])
+
+      assert second.pending_reconciliations[:tracks].names == ["Drums", "Bass", "Keys"]
+      assert map_size(second.pending_reconciliations) == 1
+      assert second.refresh_token != first.refresh_token
+    end
+
+    test "a track and a return change ride one timer with a record each" do
+      state =
+        %{tracks: [track(0, "Drums")], return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/song/get/tracks", ["Drums", "Bass"])
+        |> push("/live/song/get/return_tracks", ["Reverb", "Delay"])
+
+      assert state.pending_reconciliations |> Map.keys() |> Enum.sort() ==
+               [:return_tracks, :tracks]
+
+      assert state.pending_reconciliations[:tracks].names == ["Drums", "Bass"]
+      assert state.pending_reconciliations[:return_tracks].names == ["Reverb", "Delay"]
+      assert is_reference(state.refresh_timer)
+    end
+
+    # The mirror caught up on its own — pushes filled it in, or the change was
+    # undone — so the question the timer was scheduled to answer is already
+    # answered, and there is nothing left to rebuild for.
+    test "a list matching the mirror drops its record and cancels the timer" do
+      state =
+        %{tracks: [track(0, "Drums")]}
+        |> state()
+        |> push("/live/song/get/tracks", ["Drums", "Bass"])
+        |> push("/live/song/get/tracks", ["Drums"])
+
+      assert state.pending_reconciliations == %{}
+      assert state.refresh_timer == nil
+      assert state.refresh_token == nil
+    end
+
+    test "the timer survives a settled track list while a return list is still pending" do
+      state =
+        %{tracks: [track(0, "Drums")], return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/song/get/tracks", ["Drums", "Bass"])
+        |> push("/live/song/get/return_tracks", ["Reverb", "Delay"])
+        |> push("/live/song/get/tracks", ["Drums"])
+
+      assert Map.keys(state.pending_reconciliations) == [:return_tracks]
+      assert is_reference(state.refresh_timer)
+    end
+
+    # An explicit refresh/0 asked for a rebuild, not for a structure comparison,
+    # so settling the structure question must not cancel it out from under them.
+    test "the timer survives a settled list while an explicit refresh is riding it" do
+      state =
+        %{tracks: [track(0, "Drums")]}
+        |> state()
+        |> push("/live/song/get/tracks", ["Drums", "Bass"])
+        |> cast_refresh()
+        |> push("/live/song/get/tracks", ["Drums"])
+
+      assert state.pending_reconciliations == %{}
+      assert state.refresh_requested? == true
+      assert is_reference(state.refresh_timer)
+    end
+
+    test "a matching return list settles the same way" do
+      state =
+        %{return_tracks: [return(0, "Reverb")]}
+        |> state()
+        |> push("/live/song/get/return_tracks", ["Reverb", "Delay"])
+        |> push("/live/song/get/return_tracks", ["Reverb"])
+
+      assert state.pending_reconciliations == %{}
+      assert state.refresh_timer == nil
+    end
+  end
+
+  describe "reads while a refresh is scheduled" do
+    test "a snapshot returns all four mirror sections from one state" do
+      mirrored =
+        state(%{
+          tracks: [track(0, "Drums")],
+          return_tracks: [return(0, "Reverb")],
+          master: master()
+        })
+
+      {:reply, snapshot, unchanged} = State.handle_call(:snapshot, self(), mirrored)
+
+      assert snapshot == %{
+               song: mirrored.song,
+               tracks: mirrored.tracks,
+               return_tracks: mirrored.return_tracks,
+               master: mirrored.master
+             }
+
+      assert unchanged == mirrored
+    end
+
+    # Reads answer from the push-updated mirror and neither force nor cancel the
+    # pending rebuild. Structural staleness for at most the debounce window is
+    # the trade; blocking every read on a scheduled refresh would reintroduce the
+    # queuing this change removes.
+    test "a snapshot leaves a pending timer alone" do
+      scheduled = cast_refresh(state(%{tracks: [track(0, "Drums")]}))
+
+      {:reply, snapshot, unchanged} = State.handle_call(:snapshot, self(), scheduled)
+
+      assert snapshot.tracks == [track(0, "Drums")]
+      assert unchanged == scheduled
+    end
+
+    test "the narrower reads leave a pending timer alone too" do
+      scheduled =
+        state(%{
+          tracks: [track(0, "Drums")],
+          return_tracks: [return(0, "Reverb")],
+          master: master()
+        })
+        |> cast_refresh()
+
+      for {request, expected} <- [
+            tracks: scheduled.tracks,
+            song: scheduled.song,
+            return_tracks: scheduled.return_tracks,
+            master: scheduled.master
+          ] do
+        assert {:reply, ^expected, ^scheduled} = State.handle_call(request, self(), scheduled)
+      end
     end
   end
 
@@ -433,7 +668,7 @@ defmodule Seshat.Session.StateTest do
     end
   end
 
-  # `/live/startup` and the stale branches of the two structure pushes all call
+  # `/live/startup`, `refresh_sync/0` and a *current* timer token all call
   # do_refresh/1, which queries Ableton — untestable here by design
   # (testing.md: never reach Transport.query/3), and covered by /smoke-test.
   # That includes subscribe_return_listeners/1's five start_listen sends: the
@@ -441,4 +676,11 @@ defmodule Seshat.Session.StateTest do
   # but the function is private and reachable only through do_refresh/1, so
   # there is no pure entry point to call it through. New mixer smoke item 3
   # ("Push, not poll") is the actual coverage.
+  #
+  # Coalescing moved the *stale* branch of the two structure pushes out of that
+  # set: it now records the pushed names and arms a timer, both pure, so
+  # scheduling, latest-list replacement, cross-key accumulation and the settling
+  # rules are all tested above. What stays live-only is the authoritative rebuild
+  # itself and the post-refresh comparison in finalize_reconciliations/3 — the
+  # mirror-refresh coalescing section of /smoke-test.
 end

@@ -620,6 +620,64 @@ so read both before starting:
    half: listener re-subscription pushes the current value of everything, so
    anything a lost datagram nil'd repopulates without a manual refresh.
 
+## If the change touches mirror-refresh coalescing (`Session.State`'s scheduler)
+
+Asynchronous refreshes are debounced: `refresh/0` and the structure pushes move
+one trailing timer to **one second** after the latest request, and only then does
+a single rebuild run. The guarantee is a bounded backlog — at most one running
+rebuild plus one scheduled one. State correctness alone cannot see any of this:
+one refresh and twenty redundant ones leave the same mirror. **Read the server
+log and count rebuilds** — a full one prints a `Song: …` line followed by
+`Loaded N tracks: …`.
+
+**How the calls are issued is part of the check, not a detail.** Checks 2, 3 and
+4 need a second call to land *inside* the one-second window. Measured on this
+machine 2026-07-31: tool calls emitted **in one model response** arrive ~0.5s
+apart, while calls needing **separate model rounds** arrive ~2.1s apart at the
+floor — after the timer has already fired. So ask for the whole sequence in a
+*single instruction* and let it come out as several tool calls in one response;
+one message per step silently tests nothing, and reports success while doing it.
+Check 1 is exempt: it asserts a refresh does *not* happen, so spacing can't fake
+a pass.
+
+No bridge reinstall or Live restart is required — this is Elixir-only.
+
+1. **The seven scalar setters no longer refresh.** Issue the four return mixer
+   setters (volume, pan, mute, solo) and the three master ones (volume, pan, cue
+   volume) in a burst, then `get_session_state` **without** `refresh: true`: it
+   answers and carries the pushed final values. The log shows **no** full-refresh
+   `Song:` / `Loaded …` sequence caused by those setters. If the four return
+   values are the ones that don't arrive, the fix is to restore `State.refresh()`
+   in those four handlers only — their listener pushes were inferred from the
+   master ones, never measured.
+2. **A burst of creates collapses.** On scratch material, create several tracks
+   with a distinct final name, **with the creates and the read in one model
+   response**. An ordinary read during the quiet window answers promptly (it may
+   still show the pre-create structure — that snapshot window is intended); after
+   the window, state includes the final track. Record the log timestamps of every
+   tool call and every `Song:` / `Loaded …` sequence: calls closer together than
+   the window must share one trailing refresh, and calls separated by longer model
+   rounds may form several windows — report the observed count rather than
+   claiming the whole request was one window. At no point may finished calls leave
+   a *chain* of refreshes queued; after the last call exactly one trailing refresh
+   converges the mirror. Delete every scratch track afterwards.
+3. **`refresh: true` absorbs the pending timer.** While an asynchronous refresh
+   is pending, call `get_session_state(refresh: true)` — issue the mutation and
+   the refreshing read **in one model response**, or the timer has already fired
+   and nothing is pending when the read lands, which reads as a pass. It rebuilds
+   immediately, and **no duplicate refresh appears a second later**.
+4. **The last request is never dropped.** Make one more structural mutation while
+   a rebuild is already running (it lasts 1.0–1.8s, so again from the same model
+   response), and confirm one trailing refresh follows it and the final mutation
+   is present afterwards. Check the log timestamps to confirm the mutation really
+   landed *mid*-rebuild: arriving just after one looks identical in the final
+   state and is the likely near-miss.
+5. **The dead-Ableton reply is still honest.** `get_session_state` now makes one
+   `snapshot/0` call instead of four narrower ones, so re-run steps 1 and 2 of the
+   `Session.State` refresh section above with Live unavailable: the plain read
+   made while the forced refresh is still running must still say "the session
+   mirror did not answer", never stale state and never an empty session.
+
 ## If the change touches session guidance (`Seshat.Instructions` or a tool description)
 
 The only checks in this repo that exercise **what the model says** rather than
