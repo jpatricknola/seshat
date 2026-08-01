@@ -23,6 +23,13 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ## #1 · The mirror goes stale after a burst of structural changes — and stays stale
 
+**Planned:** [PLAN_degraded_mirror_rebuild.md](PLAN_degraded_mirror_rebuild.md).
+Note two things that plan establishes: the consumer-side half of "Scope and
+coverage" below already shipped in 785db9f (`get_session_state`'s description
+and degraded replies now say read once per batch and never auto-retry), and
+change 3 is declined there in favour of short-circuiting the dead index —
+coalescing makes the pushed name list *staler* than a fresh `num_tracks`.
+
 **Goal:** after a burst of structural changes — several undos, several
 creates, a handful of deletes by hand in Live — `get_session_state` converges
 on the truth by itself. It must never present a track that no longer exists as
