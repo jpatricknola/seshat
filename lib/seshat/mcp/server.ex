@@ -12,6 +12,36 @@ defmodule Seshat.MCP.Server do
   Session-level guidance — the conventions no single tool description can
   carry — is sent as server `instructions` from `Seshat.Instructions`, shared
   with API-key mode's system prompt.
+
+  ## Why `handle_request/2` is overridden
+
+  An invalid `tools/call` is rejected by Peri *before* the generated component
+  runs, and Anubis turns that into a JSON-RPC `-32602` protocol error. Protocol
+  errors are the channel for broken calls (malformed JSON, unknown method);
+  clients feed *tool results* back to the model. Claude Code, measured
+  2026-07-30, shows a `-32602` as nothing but `MCP error -32602: Invalid
+  params` — the explanatory `data.message` never reaches the model, and even
+  that hidden text is Elixir internals. So a model that sends `value: 2.0` had
+  no way to learn the bound and retry, though `Seshat.Tools.Validation` already
+  writes exactly that sentence for API-key mode.
+
+  The clause below intercepts those rejections and re-emits them as tool
+  results carrying `Validation`'s message. It relies on three facts about
+  Anubis (1.10.0), all verified empirically against this repo's deps:
+
+  1. `handle_request/2` is `defoverridable` and the default Anubis injects at
+     `__before_compile__` is `quote generated: true`, so a specific clause in
+     this module body coexists with it without a duplicate-clause warning
+     under `--warnings-as-errors`.
+  2. The body's clause wins dispatch; the injected catch-all stays reachable
+     for `tools/list` and every other method, so no dependency plumbing needs
+     copying here.
+  3. `Anubis.Server.Handlers.handle/3` is what the injected default calls
+     verbatim, so delegating to it round-trips normal requests untouched.
+
+  If an Anubis upgrade moves any of those, `Seshat.MCP.ServerTest`'s
+  "invalid tools/call rejections" cases fail loudly rather than the feature
+  silently reverting to protocol errors.
   """
 
   use Anubis.Server,
@@ -19,8 +49,18 @@ defmodule Seshat.MCP.Server do
     version: "0.1.0",
     capabilities: [:tools]
 
+  alias Anubis.MCP.Error
+  alias Anubis.Server.Response
+  alias Seshat.Tools.Definitions
+  alias Seshat.Tools.Validation
+
   # Forces Seshat.MCP.Tools — and the components it generates — to compile first.
   require Seshat.MCP.Tools
+
+  # "Tool not found" arrives as :invalid_params too, so the rewrite has to
+  # discriminate by name membership rather than by error text: an unknown tool
+  # keeps its protocol error, which is what the MCP spec says it is.
+  @tool_names MapSet.new(Definitions.all(), & &1.name)
 
   # Resolved at session init rather than compile time, so editing the text is a
   # one-file change in Seshat.Instructions. A module-defined callback wins over
@@ -28,6 +68,50 @@ defmodule Seshat.MCP.Server do
   # its own. Returning nil omits the field from the initialize result entirely.
   @impl Anubis.Server
   def server_instructions, do: Seshat.Instructions.text()
+
+  # Only `tools/call` is intercepted; every other method falls through to the
+  # generated catch-all below this module body.
+  @impl Anubis.Server
+  def handle_request(%{"method" => "tools/call"} = request, frame) do
+    case Anubis.Server.Handlers.handle(request, __MODULE__, frame) do
+      {:error, %Error{reason: :invalid_params} = error, frame} = rejection ->
+        params = request["params"] || %{}
+        name = params["name"]
+
+        if is_binary(name) and MapSet.member?(@tool_names, name) do
+          message = rewrite_rejection(name, Map.get(params, "arguments", %{}), error)
+          {:reply, Response.to_protocol(Response.error(Response.tool(), message)), frame}
+        else
+          rejection
+        end
+
+      other ->
+        other
+    end
+  end
+
+  # The wire decode guarantees string keys, which is what `Validation` wants.
+  defp rewrite_rejection(name, arguments, error) when is_map(arguments) do
+    case Validation.validate(name, arguments) do
+      {:error, message} -> message
+      :ok -> fallback(name, error)
+    end
+  end
+
+  # Non-map `arguments` (a JSON array or scalar): `Validation.validate/2` is
+  # guarded `is_map` and must not be fed this.
+  defp rewrite_rejection(name, _arguments, error), do: fallback(name, error)
+
+  # Peri saw something the central validator doesn't model, so its own text is
+  # the only diagnosis available — worse prose, right channel. The first line
+  # duplicates `Validation`'s framing as a literal; one sentence of drift risk
+  # is cheaper than widening that module's API.
+  defp fallback(name, error) do
+    "Invalid parameters for #{name} — nothing was sent to Ableton:\n- #{peri_text(error)}"
+  end
+
+  defp peri_text(%Error{data: %{message: text}}) when is_binary(text), do: text
+  defp peri_text(%Error{message: message}), do: message
 
   for module <- Seshat.MCP.Tools.all() do
     component(module)

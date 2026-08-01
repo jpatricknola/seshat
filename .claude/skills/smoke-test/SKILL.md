@@ -731,6 +731,54 @@ shape became `oneOf: [{"type": "number", "minimum": …, "maximum": …}, {"type
 all 53 tools listed fine over a raw handshake, and Claude Desktop was not
 covered.
 
+## If the change touches how MCP mode rejects a bad call (`Seshat.MCP.Server`'s `handle_request/2`, `Seshat.Tools.Validation`)
+
+`mix test` covers this seam purely — `handle_request/2` is request map in, reply
+tuple out, and `Seshat.MCP.ServerTest` drives it directly. The live check exists
+anyway because the defect was *found* by a real client swallowing the useful
+text: Claude Code shows a JSON-RPC `-32602` as nothing but `MCP error -32602:
+Invalid params`, `data.message` and all. So the check of record is
+client-shaped: what comes back over a real handshake, not what the BEAM returns.
+
+With the server running, reusing the `post`/`sid` helper from the schema
+section above:
+
+```bash
+python3 -c '
+import json, urllib.request
+U = "http://localhost:4000/mcp"
+H = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+def post(body, sid=None):
+    h = dict(H)
+    if sid: h["Mcp-Session-Id"] = sid
+    r = urllib.request.urlopen(urllib.request.Request(U, json.dumps(body).encode(), h), timeout=15)
+    raw = r.read().decode()
+    if raw.startswith(("event:", "data:")):
+        raw = [l[5:].strip() for l in raw.splitlines() if l.startswith("data:")][0]
+    return json.loads(raw), r.headers.get("Mcp-Session-Id")
+_, sid = post({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}})
+post({"jsonrpc":"2.0","method":"notifications/initialized"}, sid)
+bad, _ = post({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"set_track_pan","arguments":{"track":0,"value":2.0}}}, sid)
+print("out of range:", json.dumps(bad)[:400])
+unknown, _ = post({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"no_such_tool","arguments":{}}}, sid)
+print("unknown tool:", json.dumps(unknown)[:300])
+'
+```
+
+- The out-of-range call must come back as a **tool result** — a `result` with
+  `"isError": true` whose text names the bound and the value it got (`must be
+  at most 1.0 (got 2.0)`), with no Peri internals (`{:float,`) in it. An
+  `"error"` key with `-32602` means the interception is gone.
+- The unknown tool name must stay a JSON-RPC `-32602`. That is what the MCP
+  spec says an unknown tool is, and it is the discriminator that keeps the
+  rewrite from swallowing real protocol errors.
+- Then read the target back (`get_session_state`) and confirm the rejected pan
+  never reached Live — a refusal that silently *did* send is the thing worth
+  catching.
+
+Worth doing in Claude Code itself once, too: a bad call should read as a
+retryable message in the transcript, not as an opaque protocol error.
+
 ## Clean up and report
 
 5. Delete any scratch tracks/scenes/clips you created (`delete_track`,
