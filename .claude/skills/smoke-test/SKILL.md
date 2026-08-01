@@ -740,8 +740,8 @@ text: Claude Code shows a JSON-RPC `-32602` as nothing but `MCP error -32602:
 Invalid params`, `data.message` and all. So the check of record is
 client-shaped: what comes back over a real handshake, not what the BEAM returns.
 
-With the server running, reusing the `post`/`sid` helper from the schema
-section above:
+With the server running (same `post`/`sid` helper as the schema section
+above, reproduced here so this block is copy-pasteable on its own):
 
 ```bash
 python3 -c '

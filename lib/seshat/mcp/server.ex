@@ -98,8 +98,12 @@ defmodule Seshat.MCP.Server do
     end
   end
 
-  # Non-map `arguments` (a JSON array or scalar): `Validation.validate/2` is
-  # guarded `is_map` and must not be fed this.
+  # Non-map `arguments`: `Validation.validate/2` is guarded `is_map` and must
+  # not be fed this. Only a JSON array is known to reach this clause — a
+  # scalar (e.g. a bare string) makes Peri's own error formatting raise
+  # earlier, inside `Anubis.Server.Handlers.handle/3`, so this clause never
+  # runs for it. That's a pre-existing gap in Anubis/Peri, not one this
+  # override introduces or closes.
   defp rewrite_rejection(name, _arguments, error), do: fallback(name, error)
 
   # Peri saw something the central validator doesn't model, so its own text is
