@@ -10,6 +10,8 @@ config :seshat, SeshatWeb.Endpoint,
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
+  # Development-only Phoenix signing secret, not an API key or production
+  # credential. Production reads its own SECRET_KEY_BASE from the environment.
   secret_key_base: "WzEnBLTXYTO4PyC89N3vNsrLR7m8zEBlKka44zBFWYEFC1PqJgw1co9TbzbPskR7"
 
 # ## SSL Support
