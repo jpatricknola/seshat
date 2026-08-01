@@ -1921,6 +1921,18 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # None of the seven scalar setters below — the four return mixer values and the
+  # three master ones — asks `Session.State` to refresh. Each of those seven
+  # values has a listener behind it (`subscribe_return_listeners/1`), so Live
+  # pushes the value it actually accepted into the mirror on its own, exactly as
+  # the regular-track setters have always relied on. A full refresh here bought
+  # nothing and cost a serial re-read of the whole session on the shared
+  # Transport queue, ahead of the next tool's guard query. Nothing writes the new
+  # value into the mirror optimistically either: the push is the single update
+  # path, and Live's accepted value is the source of truth.
+  #
+  # Structural changes (creates, deletes, duplicates) still refresh — they change
+  # what every index means and which Live objects the listeners are bound to.
   defp do_call("set_return_track_volume", %{"return_track" => index, "value" => value}) do
     with {:ok, old} <-
            query_echoed(
@@ -1930,11 +1942,7 @@ defmodule Seshat.Tools.Handlers do
              @return_extension_hint
            ),
          :ok <- Transport.send_message("/live/return_track/set/volume", [index, value / 1.0]) do
-      # Label first, refresh second: `refresh/0` is a cast, so a `State` call made
-      # after it queues behind the whole re-query and would time out into a blank
-      # label on a slow refresh. The name doesn't change here anyway.
       label = return_track_label(index)
-      State.refresh()
 
       {:ok,
        "Set volume on return track #{index}#{label} to #{value} " <>
@@ -1955,7 +1963,6 @@ defmodule Seshat.Tools.Handlers do
            ),
          :ok <- Transport.send_message("/live/return_track/set/panning", [index, value / 1.0]) do
       label = return_track_label(index)
-      State.refresh()
 
       {:ok,
        "Set pan on return track #{index}#{label} to #{value} (#{pan_display(value)}) — was " <>
@@ -1980,7 +1987,6 @@ defmodule Seshat.Tools.Handlers do
              [index, if(muted, do: 1, else: 0)]
            ) do
       label = return_track_label(index)
-      State.refresh()
 
       {:ok,
        "#{if muted, do: "Muted", else: "Unmuted"} return track #{index}#{label} — was " <>
@@ -2006,7 +2012,6 @@ defmodule Seshat.Tools.Handlers do
              [index, if(soloed, do: 1, else: 0)]
            ) do
       label = return_track_label(index)
-      State.refresh()
 
       {:ok,
        "#{if soloed, do: "Soloed", else: "Unsoloed"} return track #{index}#{label} — was " <>
@@ -2020,8 +2025,6 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("set_master_volume", %{"value" => value}) do
     with {:ok, old} <- master_volume(),
          :ok <- Transport.send_message("/live/master/set/volume", [value / 1.0]) do
-      State.refresh()
-
       {:ok,
        "Set master volume to #{value} (#{volume_display(value)}) — was " <>
          "#{format_number(old)} (#{volume_display(old)})"}
@@ -2034,8 +2037,6 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("set_master_pan", %{"value" => value}) do
     with {:ok, old} <- master_bare_float("/live/master/get/panning", "the master pan"),
          :ok <- Transport.send_message("/live/master/set/panning", [value / 1.0]) do
-      State.refresh()
-
       {:ok,
        "Set the master pan (shown as Main in Live 12) to #{value} (#{pan_display(value)}) — " <>
          "was #{format_number(old)} (#{pan_display(old)})"}
@@ -2048,8 +2049,6 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("set_cue_volume", %{"value" => value}) do
     with {:ok, old} <- master_bare_float("/live/master/get/cue_volume", "the cue volume"),
          :ok <- Transport.send_message("/live/master/set/cue_volume", [value / 1.0]) do
-      State.refresh()
-
       {:ok,
        "Set the cue (preview/headphone) volume to #{value} (#{volume_display(value)}) — was " <>
          "#{format_number(old)} (#{volume_display(old)}). This is the browser-preview level, " <>
@@ -2947,7 +2946,15 @@ defmodule Seshat.Tools.Handlers do
   # the backstop for what the listeners can't see (a lost UDP push, or two
   # identically named tracks swapping places) and blocks until the re-read is
   # done — hence sync rather than the fire-and-forget `State.refresh/0`, which
-  # would serve the stale mirror it just asked to replace.
+  # is now debounced as well as asynchronous and would serve the stale mirror it
+  # just asked to replace.
+  #
+  # That debounce is also why an unrefreshed read can be behind on *structure*
+  # specifically: a track just created is in the mirror only once the coalesced
+  # rebuild runs, and the debounce is trailing-edge — a sustained burst restarts
+  # the timer on every request, so a long burst can leave structure stale for
+  # the whole burst plus the debounce window plus the rebuild itself, not just
+  # one second. Scalars are unaffected — they arrive by push.
   defp do_call("get_session_state", params) do
     with :ok <- maybe_refresh(params) do
       serve_session_state()
@@ -2978,9 +2985,19 @@ defmodule Seshat.Tools.Handlers do
   # session (which this used to do) is the same fabrication as a guessed tempo,
   # just wearing a different coat: the caller has no way to tell "I couldn't ask"
   # from "there is nothing there".
+  #
+  # One `snapshot/0` call rather than four narrower ones: refreshes are coalesced
+  # now, so a refresh can land *between* two reads of the same reply and produce
+  # a session line combining song-before with tracks-after. One GenServer turn
+  # can't straddle a refresh, and it faces one five-second timeout instead of
+  # four. It still waits behind a refresh that has already started — against a
+  # genuinely unresponsive Ableton the error below is more honest than quietly
+  # serving a stale copy, and `refresh: true` is there for a caller that needs an
+  # authoritative rebuild.
   defp serve_session_state do
-    {:ok,
-     format_session_state(State.song(), State.tracks(), State.return_tracks(), State.master())}
+    %{song: song, tracks: tracks, return_tracks: return_tracks, master: master} = State.snapshot()
+
+    {:ok, format_session_state(song, tracks, return_tracks, master)}
   catch
     :exit, _ ->
       {:error,
@@ -3030,17 +3047,18 @@ defmodule Seshat.Tools.Handlers do
   # What's left here is gathering the one fact a delete needs — how many of that
   # kind of object are left — and the optional clip name.
 
-  # Ordering matters: this query runs *before* the clause's own `State.refresh()`
-  # cast, so its reply can't interleave with that explicit refresh's queries to
-  # the same address (Transport serializes queries but still correlates replies
-  # by address alone, so a straggler from an abandoned query can answer the next
-  # one on that address). That does *not* cover every source of contention:
-  # the delete itself makes `song_structure.py` push `/live/song/get/tracks`,
-  # which `Session.State` turns into its own synchronous read of this same
-  # address, independent of the cast below and capable of racing this query.
-  # If that race is lost, this call reports `:error` (see `remaining_count/1`)
-  # and steering is simply skipped for that delete — never a crash or a wrong
-  # index. The steering sends themselves are fire-and-forget and race nothing.
+  # This query still races the delete's own side effects, even though the
+  # clause's `State.refresh()` cast is now a debounced timer at least a second
+  # out rather than an inline query: the delete itself makes `song_structure.py`
+  # push `/live/song/get/tracks`, which `Session.State` records as a pending
+  # reconciliation and schedules for its own coalesced rebuild — a rebuild that
+  # can still land before this query's reply and race it on the same address
+  # (Transport serializes queries but still correlates replies by address
+  # alone, so a straggler from an abandoned query can answer the next one on
+  # that address). If that race is lost, this call reports `:error` (see
+  # `remaining_count/1`) and steering is simply skipped for that delete — never
+  # a crash or a wrong index. The steering sends themselves are fire-and-forget
+  # and race nothing.
   defp steer_after_delete(tool, facts, count_address) do
     case remaining_count(count_address) do
       {:ok, remaining} -> FollowCam.steer(tool, Map.put(facts, :remaining, remaining))

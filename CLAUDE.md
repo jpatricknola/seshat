@@ -228,12 +228,28 @@ component at all — that rewrites a known tool's `-32602` into a tool result
 carrying `Validation`'s message, while an unknown tool name keeps its
 protocol error untouched. Plan archived at
 [docs/archive/PLAN_mcp_readable_rejections.md](docs/archive/PLAN_mcp_readable_rejections.md).
-Coalesce mirror refreshes — a burst of tool calls collapsing into one
-trailing mirror refresh instead of queuing one per call — is now the
-queue's top item. `start_new_project` — the read-only
+Coalesce mirror refreshes shipped 2026-08-01, closing what had been the
+queue's top item: a burst of tool calls — "create twenty tracks," five
+mixer setters in a row — no longer queues one full mirror refresh per call.
+`Seshat.Session.State` gained a trailing-edge debounced scheduler
+(`@refresh_debounce_ms` 1,000ms): `refresh/0` and the structural pushes
+`reconcile/4` records now arm or reset a timer instead of running inline,
+while initial setup, `/live/startup` and `refresh_sync/0` stay immediate. A
+stale structural push is recorded under its key and compared against the
+mirror only after the scheduled rebuild runs, preserving the existing
+cross-key brake against a degraded-rebuild spin; a new `snapshot/0` call lets
+`get_session_state` read the whole mirror in one GenServer round trip instead
+of four. The seven scalar-setter refreshes on the return/master mixer tools
+(`set_return_track_volume`, `set_master_volume`, and the five newer
+return/master mixer tools) were deleted outright rather than debounced —
+their listeners already push every value they write, so the refresh was
+re-reading state that was already arriving. Plan archived at
+[docs/archive/PLAN_coalesce_mirror_refreshes.md](docs/archive/PLAN_coalesce_mirror_refreshes.md).
+Preserve partial agent results at the tool-iteration limit is now the
+queue's top item; `start_new_project` — the read-only
 setup wizard that would catch "let's start a new project" and move the
 replace-not-append rule off the capped instructions budget and into a tool
-description — sits a couple of places below it. Devices on return and master
+description — sits just below it. Devices on return and master
 tracks shipped 2026-07-31, closing what had led the queue: `create_return_track`
 no longer ships an empty return the user has to fill in by hand in Live — the
 six device tools (`load_device`, `get_track_devices`, `get_device_parameters`,

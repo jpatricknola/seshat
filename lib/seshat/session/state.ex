@@ -20,6 +20,38 @@ defmodule Seshat.Session.State do
   `refresh_sync/0` is the backstop for that and for a lost datagram; it is what
   `get_session_state`'s `refresh` parameter calls.
 
+  ## Refreshes are coalesced, not immediate
+
+  A full refresh is expensive — it serially queries the song, every track, every
+  return and the master, then re-subscribes every listener, which measured
+  1.0–1.8s against a ten-track set — and it runs *inside* this GenServer, so
+  reads queue behind it. A model turn can fire twenty tools; twenty rebuilds
+  queued back to back put an ordinary five-second read past its own timeout and
+  make a healthy Ableton look dead.
+
+  So the asynchronous requests — `refresh/0` and the structure pushes — do not
+  rebuild. They move a **trailing-edge** timer to one second after the latest
+  request; when it fires, exactly one rebuild runs. Anything arriving
+  while that rebuild blocks the GenServer is still sitting in the mailbox and,
+  once handled, schedules the *next* trailing rebuild, so the final mutation is
+  never the one that gets dropped. The guarantee is a bounded backlog: at most
+  one running rebuild plus one scheduled one, at any request rate.
+
+  A leading-edge throttle would not do: one rebuild can outlast the interval, so
+  work still accumulates. The token carried on the timer message is the other
+  half — `Process.cancel_timer/1` can't recall a message already queued in the
+  mailbox, so a `{:refresh, token}` whose token is no longer the current one is
+  ignored rather than trusted.
+
+  The three immediate paths stay immediate: initial setup, `/live/startup` (the
+  old song's listeners are dead, so this cannot wait), and `refresh_sync/0`,
+  which cancels the pending timer and consumes its pending work in the rebuild
+  the caller is waiting on. Ordinary reads never force the timer; they answer
+  from the push-updated mirror, which costs nothing on scalars and, on
+  *structure*, the debounce window past the *last* request — a trailing-edge
+  debounce, so a sustained burst restarts the timer on every request and
+  stretches that window to cover the whole burst, not just one second.
+
   ## Unknown is `nil`, never a guess
 
   One rule holds for every mirrored value here: **a read that Ableton didn't
@@ -56,6 +88,16 @@ defmodule Seshat.Session.State do
   # own time. Reaching it means Ableton is unreachable rather than slow, which is
   # what `get_session_state` reports when `maybe_refresh` catches the exit.
   @refresh_sync_timeout 30_000
+
+  # How long the trailing-edge timer waits after the *latest* asynchronous
+  # refresh request before rebuilding. A module constant, not application
+  # configuration: no product decision hangs on the number, and the one reason
+  # anyone would want it configurable — making `do_refresh/1` unit-testable by
+  # driving the delay to zero — is a mirage. A zero delay reaches the same live
+  # `Transport.query/3` calls, just sooner. The scheduler's state transitions are
+  # unit-tested by calling the callbacks directly; the real coalesced rebuild is
+  # a /smoke-test check.
+  @refresh_debounce_ms 1_000
 
   # `/live/return_track/*` and `/live/master/*` come from Seshat's return_track.py
   # extension, not upstream AbletonOSC, so a Live where `mix abletonosc.install`
@@ -105,8 +147,28 @@ defmodule Seshat.Session.State do
   """
   def master, do: GenServer.call(__MODULE__, :master)
 
-  @doc "Re-queries Ableton for full state and re-subscribes to all listeners."
+  @doc """
+  Requests a full re-query of Ableton and a re-subscribe of every listener,
+  *eventually*.
+
+  Not a rebuild on the spot: this schedules one, one second after the last such
+  request, so a burst of tool calls collapses into a single rebuild instead of
+  queuing one apiece behind reads that then time out. The last request in a burst
+  is never the one discarded — see the module doc. Callers that must read state
+  they know is current want `refresh_sync/0` instead.
+  """
   def refresh, do: GenServer.cast(__MODULE__, :refresh)
+
+  @doc """
+  All four mirrored sections — `%{song:, tracks:, return_tracks:, master:}` — as
+  they stood in one GenServer turn.
+
+  What the four narrower reads can't offer: with refreshes coalesced, a rebuild
+  can land between two of them and produce a reply that pairs the song from
+  before it with the tracks from after. One call, one turn, one coherent answer,
+  and one timeout window rather than four.
+  """
+  def snapshot, do: GenServer.call(__MODULE__, :snapshot)
 
   @doc """
   Like `refresh/0`, but returns only once the mirror has been rebuilt.
@@ -115,6 +177,11 @@ defmodule Seshat.Session.State do
   identically named tracks swapping places. Callers that only want the refresh to
   happen eventually should use `refresh/0`; this one exists so
   `get_session_state` can serve state it knows is current.
+
+  Immediate and un-debounced by definition, and it *absorbs* any pending
+  trailing refresh rather than racing it: the timer is cancelled, its pending
+  structure work is reconciled against this rebuild, and no duplicate refresh
+  fires a second later.
   """
   def refresh_sync, do: GenServer.call(__MODULE__, :refresh_sync, @refresh_sync_timeout)
 
@@ -163,7 +230,29 @@ defmodule Seshat.Session.State do
       return_tracks: [],
       master: nil,
       returns_readable?: false,
-      unreconciled: %{}
+      unreconciled: %{},
+
+      # The trailing-edge scheduler. `refresh_timer` is what gets cancelled;
+      # `refresh_token` is what makes a cancellation that arrived too late
+      # harmless, since a due message can already be in the mailbox. They are
+      # separate fields because cancelling has to clear the token too — a
+      # `nil` token matches no message.
+      refresh_timer: nil,
+      refresh_token: nil,
+
+      # True when an explicit `refresh/0` is riding on the current timer, as
+      # opposed to a timer scheduled only to reconcile a structure push. The
+      # distinction decides whether the rebuild lifts *every* `unreconciled`
+      # brake (explicit: a forced retry of all of them) or only the ones it is
+      # about.
+      refresh_requested?: false,
+
+      # `%{tracks: %{names: [...], message: "..."}, ...}` — the latest name list
+      # Live pushed for each structure key, held until the scheduled rebuild can
+      # be compared against it. This is `reconcile/4`'s inline check, deferred:
+      # the comparison still happens, just after the refresh the timer runs
+      # rather than after an inline one.
+      pending_reconciliations: %{}
     }
 
     {:ok, state, {:continue, :setup}}
@@ -174,27 +263,65 @@ defmodule Seshat.Session.State do
     {:noreply, do_refresh(state)}
   end
 
+  # Reads answer from the mirror as it stands, even with a rebuild scheduled:
+  # they neither force the timer nor cancel it. The cost is structural
+  # staleness — and on a sustained burst that is not one debounce window but
+  # the whole burst (every request restarts the timer), plus the window past
+  # the last request, plus the rebuild itself. That is the trade the coalescing
+  # buys; `refresh_sync/0` is the way out of it.
   @impl true
   def handle_call(:tracks, _from, state), do: {:reply, state.tracks, state}
   def handle_call(:song, _from, state), do: {:reply, state.song, state}
   def handle_call(:return_tracks, _from, state), do: {:reply, state.return_tracks, state}
   def handle_call(:master, _from, state), do: {:reply, state.master, state}
-  def handle_call(:refresh_sync, _from, state), do: {:reply, :ok, do_refresh(state)}
+
+  def handle_call(:snapshot, _from, state) do
+    snapshot = %{
+      song: state.song,
+      tracks: state.tracks,
+      return_tracks: state.return_tracks,
+      master: state.master
+    }
+
+    {:reply, snapshot, state}
+  end
+
+  # Immediate, and it consumes whatever the pending timer was going to do: an
+  # explicit refresh is a forced retry of every brake, so it starts from an empty
+  # `unreconciled` (via `do_refresh/1`) and re-records only what this rebuild
+  # still can't reproduce.
+  def handle_call(:refresh_sync, _from, state) do
+    {:reply, :ok, run_refresh(state, explicit?: true)}
+  end
 
   @impl true
   def handle_cast(:refresh, state) do
-    {:noreply, do_refresh(state)}
+    {:noreply, state |> Map.put(:refresh_requested?, true) |> schedule_refresh()}
   end
+
+  # The trailing edge. Only the token minted by the *latest* `schedule_refresh/1`
+  # does any work: `Process.cancel_timer/1` cannot recall a message that has
+  # already been queued, so a replaced timer's message still arrives and must be
+  # inert. Rebuilding on it would be exactly the duplicate refresh the debounce
+  # exists to remove.
+  @impl true
+  def handle_info({:refresh, token}, %{refresh_token: token} = state) when not is_nil(token) do
+    {:noreply, run_refresh(state, explicit?: false)}
+  end
+
+  def handle_info({:refresh, _stale_token}, state), do: {:noreply, state}
 
   # AbletonOSC sends this every time the control surface initialises: Live
   # launching, a different set being loaded, or AbletonOSC toggled off and on.
   # Every listener registered against the previous song object is gone by then,
   # so this is the only thing standing between a set load and a mirror that is
-  # both wrong and permanently deaf.
-  @impl true
+  # both wrong and permanently deaf. Never debounced, and it *discards* rather
+  # than consumes any pending structure work: those name lists describe the
+  # previous song, so reconciling this song's rebuild against them would record a
+  # brake against a list that is no longer meaningful.
   def handle_info({:osc_message, "/live/startup", _args}, state) do
     Logger.info("AbletonOSC started — refreshing session state and re-subscribing")
-    {:noreply, do_refresh(state)}
+    {:noreply, state |> clear_refresh_schedule() |> do_refresh()}
   end
 
   # Pushed by song_structure.py whenever tracks are added, deleted, duplicated or
@@ -220,7 +347,7 @@ defmodule Seshat.Session.State do
   def handle_info({:osc_message, "/live/song/get/return_tracks", names}, state) do
     cond do
       not stale?(state.return_tracks, names) ->
-        {:noreply, reconciled(state, :return_tracks)}
+        {:noreply, settled(state, :return_tracks)}
 
       state.returns_readable? ->
         {:noreply, reconcile(state, :return_tracks, names, "Return track list changed in Live")}
@@ -370,7 +497,7 @@ defmodule Seshat.Session.State do
 
   # --- Private ---
 
-  # A pushed name list that disagrees with the mirror triggers one authoritative
+  # A pushed name list that disagrees with the mirror schedules one authoritative
   # re-read. Normally that reconciles it and the echo from re-subscribing
   # compares equal, so the exchange ends there.
   #
@@ -384,50 +511,126 @@ defmodule Seshat.Session.State do
   # re-subscribe, push, disagree,
   # refresh. Recording the exact list that failed stops the second attempt at it
   # while leaving any *different* list a fresh try, so a real change is never
-  # ignored. `/live/startup` and `refresh_sync/0` lift the brake, because
-  # `do_refresh/1` clears every record — but a refresh triggered from *here*
-  # must keep the records it isn't about; see below.
+  # ignored. `/live/startup`, `refresh_sync/0` and an explicit `refresh/0` lift
+  # the brake, because `do_refresh/1` clears every record — but a refresh
+  # scheduled from *here* alone must keep the records it isn't about; see
+  # `finalize_reconciliations/3`.
+  #
+  # What changed with coalescing is only *when* the comparison happens. The
+  # re-read no longer runs inline: this records the pushed list and moves the
+  # trailing timer, and `finalize_reconciliations/3` does the comparing once the
+  # rebuild that timer schedules has finished.
   defp reconcile(state, key, names, change_message) do
     cond do
       not stale?(Map.fetch!(state, key), names) ->
-        reconciled(state, key)
+        settled(state, key)
 
       Map.get(state.unreconciled, key) == names ->
         state
 
       true ->
-        Logger.info("#{change_message} — refreshing session state")
+        Logger.info("#{change_message} — scheduling a session refresh")
 
-        # Every record but this one survives the refresh. `do_refresh/1` clears
-        # them all, which is what makes an explicitly requested refresh lift the
-        # brake — but this refresh is about `key` alone, and dropping the other
-        # key's record hands the two of them a way to lift each other's brake
-        # forever: tracks refresh, which clears returns, whose echo then
-        # refreshes, which clears tracks, whose echo then refreshes. Since every
-        # refresh re-subscribes and every re-subscribe pushes again, that is the
-        # unbounded spin this bookkeeping exists to stop, reached whenever both
-        # lists are unreconcilable at once — one degraded refresh does exactly
-        # that, since the same abandoned replies defeat both echo checks.
-        others = Map.delete(state.unreconciled, key)
-
-        refreshed =
-          state
-          |> do_refresh()
-          |> Map.update!(:unreconciled, &Map.merge(&1, others))
-
-        if stale?(Map.fetch!(refreshed, key), names) do
-          Logger.warning(
-            "#{change_message}, but re-reading Ableton did not reproduce it: Live reports " <>
-              "#{inspect(names)} and the mirror holds " <>
-              "#{mirrored_names(Map.fetch!(refreshed, key))}. Leaving it as it " <>
-              "is rather than refreshing on every push; pass refresh: true to force a retry."
-          )
-
-          %{refreshed | unreconciled: Map.put(refreshed.unreconciled, key, names)}
-        else
-          reconciled(refreshed, key)
-        end
+        # Only the *latest* list for this key is kept: an older one describes a
+        # session state Live has already moved past, and comparing the rebuild
+        # against it would record a brake against a list nobody is claiming any
+        # more. The other key's pending record, if there is one, rides the same
+        # timer.
+        state
+        |> Map.update!(
+          :pending_reconciliations,
+          &Map.put(&1, key, %{names: names, message: change_message})
+        )
+        |> schedule_refresh()
     end
+  end
+
+  # The deferred half of `reconcile/4`: the comparison that used to happen inline
+  # right after `do_refresh/1`, now run when the scheduled rebuild finishes.
+  #
+  # For a structure-only rebuild, every record but the ones this refresh is about
+  # survives it. `do_refresh/1` clears them all, which is what makes an
+  # explicitly requested refresh lift the brake — but dropping the *other* key's
+  # record here hands the two of them a way to lift each other's brake forever:
+  # tracks refresh, which clears returns, whose echo then refreshes, which clears
+  # tracks, whose echo then refreshes. Since every refresh re-subscribes and every
+  # re-subscribe pushes again, that is the unbounded spin this bookkeeping exists
+  # to stop, reached whenever both lists are unreconcilable at once — one degraded
+  # refresh does exactly that, since the same abandoned replies defeat both echo
+  # checks.
+  #
+  # An explicit request is the opposite case and takes precedence even when it
+  # shares a timer with pending structure records: it is a forced retry of all of
+  # them, so nothing old is carried over and only what this rebuild still can't
+  # reproduce gets re-recorded.
+  defp finalize_reconciliations(state, pending, carried_over) do
+    state = Map.update!(state, :unreconciled, &Map.merge(&1, carried_over))
+
+    Enum.reduce(pending, state, fn {key, %{names: names, message: change_message}}, acc ->
+      if stale?(Map.fetch!(acc, key), names) do
+        Logger.warning(
+          "#{change_message}, but re-reading Ableton did not reproduce it: Live reports " <>
+            "#{inspect(names)} and the mirror holds " <>
+            "#{mirrored_names(Map.fetch!(acc, key))}. Leaving it as it " <>
+            "is rather than refreshing on every push; pass refresh: true to force a retry."
+        )
+
+        %{acc | unreconciled: Map.put(acc.unreconciled, key, names)}
+      else
+        reconciled(acc, key)
+      end
+    end)
+  end
+
+  # The one refresh entry point that isn't a raw `do_refresh/1`: it takes over the
+  # pending timer's work rather than running alongside it. Used by the trailing
+  # timer and by `refresh_sync/0`, which differ only in whether the explicit flag
+  # is forced on.
+  defp run_refresh(state, explicit?: forced?) do
+    explicit? = forced? or state.refresh_requested?
+    pending = state.pending_reconciliations
+
+    # Preserved only for a structure-only rebuild, and only for the keys it isn't
+    # about; an explicit request deliberately keeps nothing.
+    carried_over =
+      if explicit?, do: %{}, else: Map.drop(state.unreconciled, Map.keys(pending))
+
+    state
+    |> clear_refresh_schedule()
+    |> do_refresh()
+    |> finalize_reconciliations(pending, carried_over)
+  end
+
+  # Move the trailing edge: cancel whatever was scheduled and schedule one
+  # refresh for `@refresh_debounce_ms` from now, under a fresh token. The token
+  # is what makes this safe — `Process.cancel_timer/1` can't unsend a message
+  # already sitting in the mailbox, so the old timer's message is discarded on
+  # arrival by `handle_info/2` instead.
+  defp schedule_refresh(state) do
+    state = cancel_refresh_timer(state)
+    token = make_ref()
+
+    %{
+      state
+      | refresh_timer: Process.send_after(self(), {:refresh, token}, @refresh_debounce_ms),
+        refresh_token: token
+    }
+  end
+
+  defp cancel_refresh_timer(%{refresh_timer: nil} = state), do: %{state | refresh_token: nil}
+
+  defp cancel_refresh_timer(state) do
+    Process.cancel_timer(state.refresh_timer)
+    %{state | refresh_timer: nil, refresh_token: nil}
+  end
+
+  # Everything the scheduler was holding, dropped: used by the paths that refresh
+  # right now, so no cancelled timer can produce a second rebuild behind them.
+  defp clear_refresh_schedule(state) do
+    state
+    |> cancel_refresh_timer()
+    |> Map.put(:refresh_requested?, false)
+    |> Map.put(:pending_reconciliations, %{})
   end
 
   defp mirrored_names(nil), do: "unknown"
@@ -436,6 +639,25 @@ defmodule Seshat.Session.State do
   defp reconciled(state, key) do
     %{state | unreconciled: Map.delete(state.unreconciled, key)}
   end
+
+  # A pushed list that agrees with the mirror answers the question the pending
+  # refresh was scheduled to answer — pushes updated the mirror in the meantime,
+  # or the change was undone — so that record goes, and with it the timer if
+  # nothing else is riding on it. An explicit `refresh/0` on the same timer keeps
+  # it: that caller asked for a rebuild, not for a structure comparison.
+  defp settled(state, key) do
+    state
+    |> reconciled(key)
+    |> Map.update!(:pending_reconciliations, &Map.delete(&1, key))
+    |> cancel_idle_timer()
+  end
+
+  defp cancel_idle_timer(%{refresh_requested?: false, pending_reconciliations: pending} = state)
+       when map_size(pending) == 0 do
+    cancel_refresh_timer(state)
+  end
+
+  defp cancel_idle_timer(state), do: state
 
   defp do_refresh(state) do
     alias Seshat.OSC.Transport
