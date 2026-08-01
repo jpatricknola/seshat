@@ -47,8 +47,10 @@ defmodule Seshat.Session.State do
   old song's listeners are dead, so this cannot wait), and `refresh_sync/0`,
   which cancels the pending timer and consumes its pending work in the rebuild
   the caller is waiting on. Ordinary reads never force the timer; they answer
-  from the push-updated mirror, which costs at most the debounce window of
-  *structural* staleness and nothing at all on scalars.
+  from the push-updated mirror, which costs nothing on scalars and, on
+  *structure*, the debounce window past the *last* request — a trailing-edge
+  debounce, so a sustained burst restarts the timer on every request and
+  stretches that window to cover the whole burst, not just one second.
 
   ## Unknown is `nil`, never a guess
 

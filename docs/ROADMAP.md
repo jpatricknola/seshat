@@ -793,6 +793,40 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
+## #28 · Unit coverage for the mirror-refresh cross-key loop brake
+
+**Goal:** make `Seshat.Session.State`'s `finalize_reconciliations/3` (and the
+`carried_over` computation in `run_refresh/2`) callable from `mix test`, so the
+cross-key structural loop brake has automated coverage instead of resting on
+`/smoke-test` alone.
+
+**Why:** flagged as a coverage gap in the "Coalesce mirror refreshes" PR
+review (2026-08-01). That change bounded the asynchronous full-refresh
+backlog to one running plus one trailing rebuild, and its cross-key brake is
+what stops a degraded rebuild from spinning refresh → re-subscribe → push →
+refresh forever. `finalize_reconciliations/3` is pure but only reachable
+through `do_refresh/1`, which needs live `Transport.query/3` calls — so
+`mix test` never exercises it, and the plan deliberately drew the smoke-test
+boundary there rather than adding a test-only injected refresh function.
+`/smoke-test`'s five checks all run against a *healthy* Ableton, though, so
+none of them enters the degraded-rebuild path either; losing the brake would
+flood Live with refresh traffic and nothing today would catch it before a
+human noticed. Not a regression — this path was equally untested before that
+change — but the file just grew a scheduler around it, which is exactly when
+a latent gap like this is worth closing.
+
+**Planner notes:**
+- The reviewer's own suggestion: make `finalize_reconciliations/3` (and the
+  `carried_over` computation it depends on) callable directly in tests,
+  bypassing `do_refresh/1`'s OSC calls, rather than adding a new mock-transport
+  abstraction the original plan explicitly rejected as disproportionate.
+- Keep the boundary the plan already drew: only the OSC round trip itself
+  stays live-only. Everything downstream of a rebuilt mirror map should be
+  plain data in, plain data out.
+- Low priority: no regression, no user-visible symptom, and the live behavior
+  is inferred from the same `_start_listen` machinery already proven for the
+  master listeners. Worth doing opportunistically or the next time
+  `Session.State`'s refresh path is touched.
 
 ---
 

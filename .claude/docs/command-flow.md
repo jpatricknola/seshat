@@ -73,7 +73,8 @@ AbletonOSC (Python MIDI Remote Script) → Ableton Live
         ▼
 Seshat.Session.State (subscribed to "osc:in")
   → updates the in-memory mirror as Ableton pushes changes
-  → refresh/0 re-queries after structural changes (track create/delete)
+  → refresh/0 schedules a debounced re-query after structural changes (track
+    create/delete), coalescing a burst into one trailing rebuild
 ```
 
 ## Why the split

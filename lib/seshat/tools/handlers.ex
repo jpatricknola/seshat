@@ -2949,9 +2949,12 @@ defmodule Seshat.Tools.Handlers do
   # is now debounced as well as asynchronous and would serve the stale mirror it
   # just asked to replace.
   #
-  # That debounce is also why an unrefreshed read can be up to a second behind on
-  # *structure* specifically: a track just created is in the mirror only once the
-  # coalesced rebuild runs. Scalars are unaffected — they arrive by push.
+  # That debounce is also why an unrefreshed read can be behind on *structure*
+  # specifically: a track just created is in the mirror only once the coalesced
+  # rebuild runs, and the debounce is trailing-edge — a sustained burst restarts
+  # the timer on every request, so a long burst can leave structure stale for
+  # the whole burst plus the debounce window plus the rebuild itself, not just
+  # one second. Scalars are unaffected — they arrive by push.
   defp do_call("get_session_state", params) do
     with :ok <- maybe_refresh(params) do
       serve_session_state()
@@ -3044,17 +3047,18 @@ defmodule Seshat.Tools.Handlers do
   # What's left here is gathering the one fact a delete needs — how many of that
   # kind of object are left — and the optional clip name.
 
-  # Ordering matters: this query runs *before* the clause's own `State.refresh()`
-  # cast, so its reply can't interleave with that explicit refresh's queries to
-  # the same address (Transport serializes queries but still correlates replies
-  # by address alone, so a straggler from an abandoned query can answer the next
-  # one on that address). That does *not* cover every source of contention:
-  # the delete itself makes `song_structure.py` push `/live/song/get/tracks`,
-  # which `Session.State` turns into its own synchronous read of this same
-  # address, independent of the cast below and capable of racing this query.
-  # If that race is lost, this call reports `:error` (see `remaining_count/1`)
-  # and steering is simply skipped for that delete — never a crash or a wrong
-  # index. The steering sends themselves are fire-and-forget and race nothing.
+  # This query still races the delete's own side effects, even though the
+  # clause's `State.refresh()` cast is now a debounced timer at least a second
+  # out rather than an inline query: the delete itself makes `song_structure.py`
+  # push `/live/song/get/tracks`, which `Session.State` records as a pending
+  # reconciliation and schedules for its own coalesced rebuild — a rebuild that
+  # can still land before this query's reply and race it on the same address
+  # (Transport serializes queries but still correlates replies by address
+  # alone, so a straggler from an abandoned query can answer the next one on
+  # that address). If that race is lost, this call reports `:error` (see
+  # `remaining_count/1`) and steering is simply skipped for that delete — never
+  # a crash or a wrong index. The steering sends themselves are fire-and-forget
+  # and race nothing.
   defp steer_after_delete(tool, facts, count_address) do
     case remaining_count(count_address) do
       {:ok, remaining} -> FollowCam.steer(tool, Map.put(facts, :remaining, remaining))
