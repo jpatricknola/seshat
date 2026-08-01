@@ -2325,8 +2325,9 @@ defmodule Seshat.Tools.HandlersTest do
   # The trailing explanation is asserted here and nowhere else: it is a property
   # of the whole reply, and appending it per formatter would print it twice on a
   # session that is degraded in more than one place.
-  describe "format_session_state/4" do
+  describe "format_session_state/5" do
     @explanation "Unknown values mean Ableton did not answer"
+    @settling "A structural change is still settling"
 
     defp known_returns, do: [return(%{volume: 0.7})]
 
@@ -2337,12 +2338,19 @@ defmodule Seshat.Tools.HandlersTest do
             song: song(),
             tracks: [mirrored_track()],
             return_tracks: known_returns(),
-            master: master()
+            master: master(),
+            refresh_pending?: false
           },
           overrides
         )
 
-      Handlers.format_session_state(args.song, args.tracks, args.return_tracks, args.master)
+      Handlers.format_session_state(
+        args.song,
+        args.tracks,
+        args.return_tracks,
+        args.master,
+        args.refresh_pending?
+      )
     end
 
     test "a fully known session gets no trailing explanation" do
@@ -2421,6 +2429,43 @@ defmodule Seshat.Tools.HandlersTest do
       assert reply =~ "Do not call get_session_state again automatically"
       refute reply =~ "refresh: true"
       assert reply =~ "AbletonOSC"
+    end
+
+    # A read served inside the debounce window is known to be behind on
+    # structure. The sentence exists so the reply says so instead of asserting a
+    # layout it has reason to doubt — measured 2026-08-01, where three creates
+    # and a plain read in one model response returned the pre-burst track list
+    # with nothing marking it.
+    test "a pending rebuild appends the settling sentence exactly once" do
+      reply = compose(%{refresh_pending?: true})
+
+      assert length(String.split(reply, @settling)) == 2
+      assert reply =~ "new entries can be absent and deleted entries can still appear"
+      assert reply =~ "Do not re-read automatically"
+    end
+
+    test "no pending rebuild leaves the reply exactly as it was" do
+      settled = compose()
+
+      refute settled =~ @settling
+      assert compose(%{refresh_pending?: true}) == settled <> "\n\n" <> settling_sentence()
+    end
+
+    # Two different facts — "Ableton didn't answer" and "Ableton answered, we
+    # haven't asked yet" — so a reply that is both says both, once each, rather
+    # than collapsing them into one hedge.
+    test "a degraded and pending reply carries both sentences once each" do
+      reply = compose(%{tracks: nil, refresh_pending?: true})
+
+      assert length(String.split(reply, @explanation)) == 2
+      assert length(String.split(reply, @settling)) == 2
+      assert reply =~ "The track list could not be read from Ableton"
+    end
+
+    defp settling_sentence do
+      compose(%{refresh_pending?: true})
+      |> String.split("\n\n")
+      |> List.last()
     end
   end
 

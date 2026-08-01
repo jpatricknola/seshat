@@ -620,6 +620,46 @@ so read both before starting:
    half: listener re-subscription pushes the current value of everything, so
    anything a lost datagram nil'd repopulates without a manual refresh.
 
+The rest of this section needs Live **running**, so it follows step 5 rather
+than the dead-Ableton setup above. These check the degraded-rebuild path: a
+rebuild that races a structural change gets no reply for an index that has just
+gone, and must report the track list unknown rather than name what it managed to
+read before the hole.
+
+6. **The degraded rebuild is honest.** Ask for several tracks to be created and
+   then removed **in one model response** — creates and deletes in the same
+   instruction, so they land inside one debounce window and race the rebuild.
+   Then read state once, plainly. Either the list is correct, or it reports the
+   track list unknown — **it must never name a track that is not in Live's UI**.
+   Compare the reply against Live's own track headers by eye; that comparison is
+   the check. The race is timing-dependent and may take several attempts to
+   provoke; a run that never degrades is **not a pass**, it is a run that did not
+   test this. Confirm from the server log that a `Loaded N tracks` line was
+   overlapped by a structural change, and that a degraded read logged
+   `the read stopped at index …`.
+7. **It recovers without `refresh: true`.** After a degraded read, make no
+   further tool call and wait ~3s, then read plainly again: the list is correct.
+   This is the single retry doing what the narrowed `refresh: true` no longer
+   lets the model do for itself. The log shows it as a second `Song:` /
+   `Loaded …` sequence following the informational
+   `could not read the track list — retrying once` line, and **exactly one** such
+   retry.
+8. **A genuine disagreement still brakes.** Not reproducible on demand and not
+   required to pass — but if a `did not reproduce it` warning appears in the log
+   during any of this, confirm it is followed by no further refresh for that
+   list. The brake is what stops the flood, and the failed/disagreed split must
+   not have loosened it for the disagreed case.
+9. **The settling marker appears and clears.** Creates plus a plain read in one
+   model response → the reply carries "A structural change is still settling…".
+   A later plain read, after the window, does not. `refresh: true` never carries
+   it (`refresh_sync/0` cancels the timer before rebuilding).
+10. **The orchestration check.** In Claude Desktop, create three tracks in one
+    request, then say "undo that". The trace must be exactly three `undo` calls
+    followed by **one** ordinary `get_session_state` — no read between undos, no
+    second read after. This verifies the shipped `get_session_state` description
+    rather than the mirror, and it is the check that failed on 2026-08-01. Run it
+    last, since it is the end-to-end statement of the whole item.
+
 ## If the change touches mirror-refresh coalescing (`Session.State`'s scheduler)
 
 Asynchronous refreshes are debounced: `refresh/0` and the structure pushes move

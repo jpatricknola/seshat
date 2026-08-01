@@ -1352,28 +1352,49 @@ defmodule Seshat.Tools.Handlers do
                          "user what could not be verified, and check Ableton is running with " <>
                          "AbletonOSC enabled."
 
+  # Appended when a coalesced rebuild is scheduled but hasn't run: the mirror is
+  # then *known* to be behind on structure, and an unqualified reply would state
+  # a layout it has reason to doubt. Deliberately a second sentence rather than a
+  # variant of @unknown_explanation — they answer different questions ("Ableton
+  # didn't answer" versus "Ableton answered, we haven't asked yet") and a reply
+  # can honestly carry both. The closing instruction is the same one 785db9f
+  # shipped: an uncertain read must not become a retry loop.
+  @settling_explanation "A structural change is still settling, so this may still show the " <>
+                          "previous track or return layout: new entries can be absent and " <>
+                          "deleted entries can still appear. It converges on its own. Do not " <>
+                          "re-read automatically; tell the user the layout is still settling " <>
+                          "rather than reporting it as final."
+
   @doc """
-  The whole `get_session_state` reply, from the four mirrored values.
+  The whole `get_session_state` reply, from the four mirrored values and the
+  mirror's own `refresh_pending?` flag.
 
   Composition lives here rather than in the caller because the "exactly one
   trailing explanation for the whole reply" rule is a property of the
   composition, not of any one formatter. It `or`s the formatters' `unknown?`
   flags rather than sniffing the composed text for the word "unknown", which
   would work right up until a track is legitimately named that.
+
+  The settling sentence is appended on the same once-per-reply rule, and
+  independently: a reply can be both degraded and pending, and each fact gets
+  said exactly once.
   """
-  @spec format_session_state(map(), [map()] | nil, [map()], map() | nil) :: String.t()
-  def format_session_state(song, tracks, return_tracks, master) do
+  @spec format_session_state(map(), [map()] | nil, [map()], map() | nil, boolean()) :: String.t()
+  def format_session_state(song, tracks, return_tracks, master, refresh_pending?) do
     {song_line, song_unknown?} = format_song_line(song)
     {track_summary, tracks_unknown?} = format_track_summary(tracks)
     return_summary = format_return_tracks(return_tracks, master)
 
     body = "#{song_line}\n\n#{track_summary}\n\n#{return_summary}"
 
-    if song_unknown? or tracks_unknown? or returns_unknown?(return_tracks, master) do
-      "#{body}\n\n#{@unknown_explanation}"
-    else
-      body
-    end
+    body =
+      if song_unknown? or tracks_unknown? or returns_unknown?(return_tracks, master) do
+        "#{body}\n\n#{@unknown_explanation}"
+      else
+        body
+      end
+
+    if refresh_pending?, do: "#{body}\n\n#{@settling_explanation}", else: body
   end
 
   # `master: nil` is both "the extension never answered" (so returns are
@@ -1394,7 +1415,7 @@ defmodule Seshat.Tools.Handlers do
 
   Renders per field, so a lost tempo reply doesn't cost the time signature: only
   the phrase whose source is `nil` says "unknown". The caller owns the trailing
-  explanation — see `format_session_state/4`.
+  explanation — see `format_session_state/5`.
   """
   @spec format_song_line(map()) :: {String.t(), boolean()}
   def format_song_line(song) do
@@ -3095,10 +3116,21 @@ defmodule Seshat.Tools.Handlers do
   # genuinely unresponsive Ableton the error below is more honest than quietly
   # serving a stale copy, and `refresh: true` is there for a caller that needs an
   # authoritative rebuild.
+  # The snapshot's `refresh_pending?` rides through to the formatter rather than
+  # being acted on here: a scheduled rebuild is a fact about the reply, not a
+  # reason to block one. `refresh: true` above cancels the timer before rebuilding,
+  # so an explicitly refreshed read never carries the settling sentence — it is a
+  # marker for the ordinary read, which is the one that had no way to know.
   defp serve_session_state do
-    %{song: song, tracks: tracks, return_tracks: return_tracks, master: master} = State.snapshot()
+    %{
+      song: song,
+      tracks: tracks,
+      return_tracks: return_tracks,
+      master: master,
+      refresh_pending?: refresh_pending?
+    } = State.snapshot()
 
-    {:ok, format_session_state(song, tracks, return_tracks, master)}
+    {:ok, format_session_state(song, tracks, return_tracks, master, refresh_pending?)}
   catch
     :exit, _ ->
       {:error,
