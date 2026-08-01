@@ -71,6 +71,14 @@ For anything multi-step or stateful, add a `%Command{}` clause to
 `Seshat.Commands.Registry` instead and call `execute/1`. Registry is where
 sequences live (create-then-name a track, ensure-clip-then-add-notes).
 
+Every tool registered in `Definitions` is automatically wrapped in its own
+Ableton undo step — `Handlers.call/2` sends `begin_undo_step`/`end_undo_step`
+around every known-tool dispatch (see `.claude/rules/osc.md`), so there is
+nothing to opt into here. One consequence worth knowing: the wrap holds a
+node-wide `:global.trans` lock for the handler's full duration, so a
+long-running tool (a slow `load_device`, a `reindex_library` export) blocks
+every other tool call, not just concurrent undo steps, until it returns.
+
 ### 3. Update the count — `test/seshat/tools/definitions_test.exs`
 
 The `assert length(tools) == N` there is a deliberate tripwire. Bump it.
