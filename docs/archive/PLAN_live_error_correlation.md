@@ -1,7 +1,23 @@
 # Plan: Correlate `/live/error` so a failed query fails fast
 
+> **Archived 2026-08-03 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. All four parts landed: the
+> fork's `osc_server.py` (`process_message`'s exact-match branch) and
+> `manager.py` (`LiveOSCErrorLogHandler.emit`) now send a structured
+> `/live/error` request-context payload; `Seshat.OSC.Transport` gained the
+> `/live/error` `dispatch/3` clause, `failed_request/2`, `wire_args_match?/2`
+> and `describe_error/1`; callers in `Seshat.Session.State`,
+> `Seshat.Commands.Registry` and `Seshat.Library.Catalog` render the new
+> error; and `docs/abletonosc-api-docs.md` plus `vendored_addresses_test`
+> cover the new payload shape. No follow-ups were opened — the plan's two
+> open questions were both closed (one by measurement at plan time, one
+> flagged non-blocking with no test asserting on Live's message text). The
+> "Monitored refresh worker for `Session.State`" roadmap item, explicitly
+> gated on this fix, is still open pending re-measurement now that the
+> blocking window this fix targeted has shipped.
+
 Roadmap item: **"Correlate `/live/error` so a failed query fails fast"**
-(currently #1).
+(shipped 2026-08-03).
 
 ## Context
 
@@ -27,10 +43,10 @@ refuses the partial list); only the *cost of detection* is wrong.
 
 **Why the payload is the blocker, and why it is ours to fix.** `/live/error`
 today carries only a formatted log message. It is emitted by a generic logging
-relay in the fork's [manager.py:53-64](../priv/AbletonOSC/manager.py#L53) — a
+relay in the fork's [manager.py:53-64](../../priv/AbletonOSC/manager.py#L53) — a
 `logging.StreamHandler` on the `abletonosc` logger that fires on every
 error-level record — and the exception that matters is caught in
-[osc_server.py `process()`](../priv/AbletonOSC/abletonosc/osc_server.py#L190),
+[osc_server.py `process()`](../../priv/AbletonOSC/abletonosc/osc_server.py#L190),
 *outside* the per-message callback, where the offending address and arguments
 are no longer in scope. Correlating on the message string alone is impossible
 (no address), and correlating on address alone is unsafe (an error delayed past
@@ -41,17 +57,17 @@ indices). So the fork gains request context at the callback boundary, where
 **Where the exceptions actually flow** (verified against the fork source, not
 the installed copy):
 
-- The fork's [handler.py](../priv/AbletonOSC/abletonosc/handler.py) catches and
+- The fork's [handler.py](../../priv/AbletonOSC/abletonosc/handler.py) catches and
   only logs failures *inside* `_call_method` and `_set_property` (upstream
   PR #208, hand-applied), and `_get_property` catches `RuntimeError` and
   replies with a `None` value. None of those raise through to the dispatcher.
 - What does raise through the callback is **index resolution**: upstream's
   per-object callbacks index the LOM before calling the generic helper —
-  [track.py:21](../priv/AbletonOSC/abletonosc/track.py#L21)
+  [track.py:21](../../priv/AbletonOSC/abletonosc/track.py#L21)
   (`track = self.song.tracks[track_index]`, no bounds check) and the same
   shape in `clip.py`, `clip_slot.py`, `device.py`, and `song.py`'s
   `song_get_track_data`
-  ([song.py:137](../priv/AbletonOSC/abletonosc/song.py#L137)). Live raises
+  ([song.py:137](../../priv/AbletonOSC/abletonosc/song.py#L137)). Live raises
   ("Index out of range"), the exception unwinds through `process_message` to
   `process()`'s per-datagram catch, gets logged, relayed, and **no reply is
   ever sent**. That is precisely the fast-fail target: every getter Seshat
@@ -91,7 +107,7 @@ fixed `127.0.0.1:11001` reply destination.
 `OscMessageBuilder`, so each element keeps its wire type: OSC `i` stays `i`,
 `f` stays `f` (already the 32-bit value after the inbound parse, so re-encoding
 is lossless), `s` stays `s`. Seshat's own queries only ever send `i`/`f`/`s`
-([message.ex:164-166](../lib/seshat/osc/message.ex#L164)), so the echoed tail
+([message.ex:164-166](../../lib/seshat/osc/message.ex#L164)), so the echoed tail
 is always decodable by `Seshat.OSC.Message.decode/1`.
 
 **Float caveat, load-bearing for the matcher:** Elixir floats are 64-bit and
@@ -108,9 +124,9 @@ entirely in the Live verification section.
 
 ## Part 1 — the fork preserves request context at the callback boundary
 
-Files: [priv/AbletonOSC/abletonosc/osc_server.py](../priv/AbletonOSC/abletonosc/osc_server.py),
-[priv/AbletonOSC/manager.py](../priv/AbletonOSC/manager.py),
-[priv/AbletonOSC/SESHAT.md](../priv/AbletonOSC/SESHAT.md).
+Files: [priv/AbletonOSC/abletonosc/osc_server.py](../../priv/AbletonOSC/abletonosc/osc_server.py),
+[priv/AbletonOSC/manager.py](../../priv/AbletonOSC/manager.py),
+[priv/AbletonOSC/SESHAT.md](../../priv/AbletonOSC/SESHAT.md).
 
 **`osc_server.py` — `process_message`, exact-match branch only.** Wrap the
 callback invocation in `try`/`except Exception`:
@@ -173,7 +189,7 @@ structured send in an upstream merge is invisible — every address still
 answers, queries just go back to timing out on rejection. Part 4's grep
 tripwire is the mechanical half of that record.
 
-Commit sequence per [.claude/rules/osc.md](../.claude/rules/osc.md):
+Commit sequence per [.claude/rules/osc.md](../../.claude/rules/osc.md):
 `git -C priv/AbletonOSC checkout master` first, commit and push inside the
 submodule, `git add priv/AbletonOSC` from the root in the same Seshat commit as
 the Elixir side. `mix abletonosc.install` + Live restart before any live
@@ -182,7 +198,7 @@ loaded.
 
 ## Part 2 — Transport correlates a structured error with the in-flight query
 
-File: [lib/seshat/osc/transport.ex](../lib/seshat/osc/transport.ex).
+File: [lib/seshat/osc/transport.ex](../../lib/seshat/osc/transport.ex).
 
 A new `dispatch/3` clause, **ahead of** the existing address-match clause (its
 own guard keeps it from shadowing anything: nothing ever queries
@@ -268,7 +284,7 @@ change is that a raw `{:live_error, …}` tuple must never reach a tool result
 via `inspect/1`.
 
 - **`Seshat.Session.State` — no change.** `probe/4`
-  ([state.ex:1179-1186](../lib/seshat/session/state.ex#L1179)) already returns
+  ([state.ex:1179-1186](../../lib/seshat/session/state.ex#L1179)) already returns
   `{:error, reason}` for any non-ok query result, and every query helper's
   fall-through turns that into `nil` — so a live error makes `read_tracks/2`
   hit its `{:halt, {:degraded, i}}` branch in milliseconds instead of after
@@ -276,7 +292,7 @@ via `inspect/1`.
   partial list" requirement is satisfied by construction; the test in Part 5
   pins it.
 - **`Seshat.Tools.Handlers` — `query_echoed/5` and `read_all_notes/3`**
-  ([handlers.ex:4838-4858](../lib/seshat/tools/handlers.ex#L4838)): add a
+  ([handlers.ex:4838-4858](../../lib/seshat/tools/handlers.ex#L4838)): add a
   `{:error, {:live_error, message}} -> {:error, remote_error(message)}` clause
   ahead of the generic `{:error, reason}` fallback. `remote_error/1` is
   exactly the right rendering: it already serves the vendored envelope's error
@@ -307,7 +323,7 @@ via `inspect/1`.
   `history_guard`'s malformed-reply branch) already degrade correctly and are
   listed here as verified-no-change.
 - **`Seshat.Commands.Registry`** — three sites pass `{:error, reason}` through
-  raw ([registry.ex:98-127](../lib/seshat/commands/registry.ex#L98),
+  raw ([registry.ex:98-127](../../lib/seshat/commands/registry.ex#L98),
   `return_track_count/1`, `track_count/1`), relying on Handlers' `is_binary`
   check plus inspect fallback. Same treatment: render via
   `Transport.describe_error/1` at each site so the string that reaches
@@ -316,7 +332,7 @@ via `inspect/1`.
   consequence sentence its timeout branch already uses — a rejected slot
   lookup and an unanswered one carry the same "nothing was written" guarantee.
 - **`Seshat.Library.Catalog` — `export_browser/0`**
-  ([catalog.ex:914-940](../lib/seshat/library/catalog.ex#L914)): the
+  ([catalog.ex:914-940](../../lib/seshat/library/catalog.ex#L914)): the
   `{:error, reason}` branch passes raw today. Render via
   `Transport.describe_error/1`. Practically unreachable (`/live/browser/export`
   takes no args and catches internally, so only a zero-arg raise before the
@@ -328,11 +344,11 @@ No tool definitions change, no new tool, no tool-count bump, no
 
 ## Part 4 — docs and tripwires
 
-- **[docs/abletonosc-api-docs.md](../docs/abletonosc-api-docs.md)** — the
+- **[docs/abletonosc-api-docs.md](../../docs/abletonosc-api-docs.md)** — the
   `/live/error` row in "Status Messages" gets both payload shapes (the OSC
   contract table above, condensed) and a pointer to SESHAT.md. This file is
   canonical; the fork change does not exist until it is recorded here.
-- **[test/seshat/osc/vendored_addresses_test.exs](../test/seshat/osc/vendored_addresses_test.exs)**
+- **[test/seshat/osc/vendored_addresses_test.exs](../../test/seshat/osc/vendored_addresses_test.exs)**
   — a new grep-based describe alongside "the loopback-only network boundary",
   because this divergence has the same failure mode: losing it in an upstream
   merge is invisible (every address still answers; queries just quietly go
@@ -348,9 +364,9 @@ No tool definitions change, no new tool, no tool-count bump, no
 
 All pure, no Ableton. Nothing new tests through `Transport.query/3` against a
 real Live — `OSCSink` plays AbletonOSC per
-[.claude/rules/testing.md](../.claude/rules/testing.md).
+[.claude/rules/testing.md](../../.claude/rules/testing.md).
 
-**[test/seshat/osc/transport_test.exs](../test/seshat/osc/transport_test.exs)**,
+**[test/seshat/osc/transport_test.exs](../../test/seshat/osc/transport_test.exs)**,
 new describe "failed-query correlation" (the sink injects `/live/error`
 datagrams with `send_datagram/3`; the existing `encode/2` builds the payloads):
 
@@ -374,21 +390,21 @@ datagrams with `send_datagram/3`; the existing `encode/2` builds the payloads):
 9. A matched error is still broadcast on PubSub (subscribe in the test,
    assert receipt).
 
-**[test/seshat/session/state_test.exs](../test/seshat/session/state_test.exs)**:
+**[test/seshat/session/state_test.exs](../../test/seshat/session/state_test.exs)**:
 through the existing stub-transport seam, a `read_tracks` walk whose name
 query returns `{:error, {:live_error, "Index out of range"}}` yields
 `{:degraded, i}` / `tracks: nil` exactly as an unanswered query does — pinning
 the roadmap's "existing structural-race path still refuses the partial
 mirror".
 
-**[test/seshat/tools/handlers_test.exs](../test/seshat/tools/handlers_test.exs)**:
+**[test/seshat/tools/handlers_test.exs](../../test/seshat/tools/handlers_test.exs)**:
 one OSCSink-driven case (the narrow allowed shape: the test's own sink answers
 the guard query) where a pre-mutation guard receives a structured `/live/error`
 for its own request: the tool replies with `remote_error/1`'s wording — assert
 the "Nothing further was sent" phrasing and that **no mutation datagram
 follows** (`refute_receive` at the wire).
 
-**[test/seshat/osc/vendored_addresses_test.exs](../test/seshat/osc/vendored_addresses_test.exs)**:
+**[test/seshat/osc/vendored_addresses_test.exs](../../test/seshat/osc/vendored_addresses_test.exs)**:
 Part 4's greps.
 
 What the suite cannot cover, by construction: that Live's embedded Python
@@ -471,7 +487,7 @@ data).
    Live's embedded `logging` delivers `extra={"osc_request_error": True}` to a
    sibling handler's `record` — a temporary probe in the *installed* copy
    (per the rig in
-   [.claude/docs/ableton-osc-reference.md](../.claude/docs/ableton-osc-reference.md),
+   [.claude/docs/ableton-osc-reference.md](../../.claude/docs/ableton-osc-reference.md),
    restored with `mix abletonosc.install` and confirmed gone afterwards)
    logged an error with that `extra` and read
    `getattr(record, "osc_request_error", None)` back as `True` from a handler
