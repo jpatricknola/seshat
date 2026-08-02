@@ -510,8 +510,6 @@ defmodule Seshat.Tools.HandlersTest do
                {"/live/song/get/can_undo", []},
                {"/live/song/get/can_undo", []}
              ] = trace
-
-      refute_receive {:osc_out, "/live/song/undo", []}
     end
 
     test "an available step sends the undo and claims nothing about history", %{sink: sink} do
@@ -621,7 +619,6 @@ defmodule Seshat.Tools.HandlersTest do
       assert message =~ "any new edit can clear Live's redo history"
 
       refute {"/live/song/redo", []} in trace
-      refute_receive {:osc_out, "/live/song/redo", []}
     end
 
     test "redo sends and reports only the request when a step is available", %{sink: sink} do

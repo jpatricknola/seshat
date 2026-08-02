@@ -2181,8 +2181,6 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # --- Undo / Redo ---
-
   # --- Undo / redo ---
   #
   # Both addresses are send-only: Live never acknowledges either, so
