@@ -205,6 +205,32 @@ defmodule Seshat.Tools.DefinitionsTest do
       assert description =~ "in the original order"
     end
 
+    # Neither address replies, so the handler's reply can only ever confirm the
+    # request. Without these sentences the model reads "requested" as "done" and
+    # keeps calling past a refusal — which is the failure the guard exists to
+    # surface, wasted at the last step.
+    for name <- ["undo", "redo"] do
+      test "#{name} says the reply confirms the request, not that history moved" do
+        description = tool(unquote(name)).description
+
+        assert description =~ "confirms the request was sent, not that Live's history moved"
+        assert description =~ "Ableton does not acknowledge #{unquote(name)}"
+      end
+
+      test "#{name} stops rather than retrying when Live reports no step available" do
+        description = tool(unquote(name)).description
+
+        assert description =~ "no #{unquote(name)} step available"
+        assert description =~ "stop calling #{unquote(name)} and tell the user"
+        assert description =~ "do not retry unless history has changed"
+      end
+
+      test "#{name} verifies once after a batch, not after each call" do
+        assert tool(unquote(name)).description =~
+                 "Verify a batch once at the end with get_session_state, never after each call"
+      end
+    end
+
     defp tool(name) do
       Enum.find(Definitions.all(), &(&1.name == name)) || flunk("no #{name} tool defined")
     end

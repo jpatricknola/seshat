@@ -2183,18 +2183,51 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Undo / Redo ---
 
+  # --- Undo / redo ---
+  #
+  # Both addresses are send-only: Live never acknowledges either, so
+  # `Transport.send_message/2` returning `:ok` means the bytes left the socket
+  # and nothing more. The old replies ("Undone" / "Redone") asserted an outcome
+  # nothing had observed — measured 2026-08-02, a `redo` against an exhausted
+  # redo stack reported success while a refreshed `get_session_state` showed
+  # Live had not moved. Two things change that: the reply now reports the
+  # *request*, never the outcome, and `can_undo` / `can_redo` are read first so
+  # the one case the model is actively steered into — walking off the end of the
+  # history, one call per mutating tool call — is refused with a reason instead
+  # of confirmed with a fiction.
+  #
+  # The guard runs on every call rather than once per batch. `Handlers` has no
+  # batch (each MCP `tools/call` is independent), and an up-front check is wrong
+  # for the goal anyway: three `undo` calls against a two-deep history pass it
+  # and the third still lies. The guard has to sit where the wall is hit.
+  #
+  # It also sits inside `do_call/2` deliberately, i.e. *after* `undo_stepped/2`'s
+  # defensive `/live/song/end_undo_step`. Closing a leaked step can legitimately
+  # add an entry to the history, flipping `can_undo` from false to true, so a
+  # read taken before that send would answer about a history state that no
+  # longer exists by the time we send.
   defp do_call("undo", _params) do
-    case Transport.send_message("/live/song/undo", []) do
-      :ok -> {:ok, "Undone"}
-      {:error, reason} -> {:error, inspect(reason)}
-    end
+    history_move(%{
+      verb: "undo",
+      guard_address: "/live/song/get/can_undo",
+      guard_name: "can_undo",
+      send_address: "/live/song/undo",
+      refusal:
+        "Live reported no undo step available, so no undo was sent. Do not retry unless " <>
+          "history has changed."
+    })
   end
 
   defp do_call("redo", _params) do
-    case Transport.send_message("/live/song/redo", []) do
-      :ok -> {:ok, "Redone"}
-      {:error, reason} -> {:error, inspect(reason)}
-    end
+    history_move(%{
+      verb: "redo",
+      guard_address: "/live/song/get/can_redo",
+      guard_name: "can_redo",
+      send_address: "/live/song/redo",
+      refusal:
+        "Live reported no redo step available, so no redo was sent. Do not retry unless " <>
+          "history has changed; any new edit can clear Live's redo history."
+    })
   end
 
   # --- Clip control ---
@@ -4965,6 +4998,93 @@ defmodule Seshat.Tools.Handlers do
       {:error,
        "The hide was sent but confirming it timed out, so it is unknown whether " <>
          "#{view_label(view)} closed — verify with get_view_state. #{@view_extension_hint}"}
+  end
+
+  # The shared body of `undo` and `redo`, which differ only in their two
+  # addresses and in what a refusal has to warn about (redo's history can also
+  # be cleared by any new edit; undo's cannot). Three-way, never two: only a
+  # confirmed `false` stops the send. An unanswered or unreadable guard proceeds
+  # and says so — refusing there would turn a dropped datagram into a failed
+  # undo, a worse regression than the dishonest reply this replaces.
+  defp history_move(%{verb: verb, send_address: send_address} = move) do
+    case history_guard(move.guard_address) do
+      :unavailable ->
+        {:error, move.refusal}
+
+      availability ->
+        uncertainty =
+          if availability == :unknown do
+            " Ableton did not answer the #{move.guard_name} check, so whether there was " <>
+              "anything to #{verb} is unknown."
+          else
+            ""
+          end
+
+        # Nothing to check on the way back: the address never replies. The
+        # reply's job is to say exactly that, so the model verifies once after
+        # the batch instead of trusting a per-call confirmation that cannot
+        # exist.
+        case Transport.send_message(send_address, []) do
+          :ok ->
+            {:ok,
+             "#{String.capitalize(verb)} requested. Ableton does not acknowledge #{verb}, so " <>
+               "this confirms the request was sent, not that history moved. Verify once after " <>
+               "the batch with get_session_state." <> uncertainty}
+
+          {:error, reason} ->
+            {:error, inspect(reason)}
+        end
+    end
+  end
+
+  # Reads `can_undo` / `can_redo` — upstream `song.py` `properties_r`, so a plain
+  # song property with no index and no envelope.
+  #
+  # That missing index is why `query_echoed/5` cannot be reused: there is nothing
+  # for a reply to echo, so the caller-side correlation defence Transport's
+  # "Query serialization" section insists is not redundant is unavailable, and
+  # its two residual collision classes have to be argued instead. Class 2 (a
+  # listener push satisfying a query on the same address) cannot occur — nothing
+  # in `lib/` starts a listener on either property. Class 1 (a straggler from a
+  # timed-out query answering the next query on that address) can, and it is not
+  # benign in both directions: a history-changing call between the two queries
+  # can make an old `false` wrong, while a stale `true` only sends a request
+  # whose reply asserts nothing. So a `false` is queried once more and refused
+  # only if the second recognized answer agrees — the same reissue-once
+  # mitigation the echoed guards use, not correlation, which is why the refusal
+  # wording reports what Live said rather than asserting the history state as an
+  # independently known fact.
+  #
+  # The accepted reply shape is deliberately loose. `_get_property` hands Live's
+  # raw Python value to the encoder, so a bool reaches the wire as OSC `T`/`F`
+  # while anything integral arrives as an int; both are read here exactly as
+  # `Seshat.Session.State.query_song_int/2` reads them, which makes measuring the
+  # exact encoding unnecessary rather than merely deferred.
+  #
+  # `Transport.query/3` **exits** the caller on timeout and never returns
+  # `{:error, :timeout}`, so the unanswered path is a `catch :exit` — without it a
+  # dropped datagram would kill the tool call and surface as an opaque MCP crash,
+  # strictly worse than today, where undo at least always sends.
+  @spec history_guard(String.t(), boolean()) :: :available | :unavailable | :unknown
+  defp history_guard(address, reissued? \\ false) do
+    case Transport.query(address, [], @guard_timeout) do
+      {:ok, {_addr, [value]}} when is_boolean(value) or is_number(value) ->
+        cond do
+          truthy?(value) -> :available
+          reissued? -> :unavailable
+          true -> history_guard(address, true)
+        end
+
+      # A shape this code cannot read is a crossed wire, not an answer — and an
+      # answer is the only thing that may stop the send.
+      {:ok, {_addr, _args}} ->
+        :unknown
+
+      {:error, _reason} ->
+        :unknown
+    end
+  catch
+    :exit, _ -> :unknown
   end
 
   @doc """

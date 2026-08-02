@@ -927,6 +927,35 @@ Seshat never sees the original prompt — only the individual tool calls — so 
 is the only check that the `undo` tool description actually teaches the model to
 repeat the call. If it undoes once and stops, the fix is that description.
 
+## If the change touches undo/redo *reporting* (the `can_undo` / `can_redo` guards)
+
+`/live/song/undo` and `/live/song/redo` never reply, so the handler's reply can
+only ever confirm the request — and the guard read before the send is the only
+thing that can turn "off the end of the history" into an honest refusal. Both
+guard addresses are upstream properties that already ship, so no reinstall is
+needed here.
+
+Nothing in `mix test` settles the live half: the suite supplies the guard's
+reply itself, so it proves how Seshat *reacts* to a `false`, never that Live
+ever says `false`.
+
+1. **The boundary, in a brand-new empty set.** File → New Live Set (hold Command
+   and press N), touch nothing, then call `undo`. Expect the error — "Live
+   reported no undo step available, so no undo was sent" — and **not** a success
+   string. This is the one check that proves `Song.can_undo` really reports
+   `false` at the bottom of the history. If `undo` reports the request as sent
+   instead, `can_undo` is always true, the guard buys nothing, and the finding is
+   that the guard should be dropped rather than widened — say so in the report.
+   Call `redo` in that same fresh set to answer the matching question for the
+   redo stack.
+2. **An ordinary undo still works and still moves exactly one step.**
+   `create_track`, then `undo`: the track disappears, and the reply says the
+   request was sent rather than claiming history moved. Then `redo` once and
+   confirm it comes back.
+3. **A refusal is not a dead end.** After 1, make any real change and `undo` it:
+   the refusal must not have left the guard stuck — the next call reads Live
+   again, not a remembered answer.
+
 ## Clean up and report
 
 5. Delete any scratch tracks/scenes/clips you created (`delete_track`,

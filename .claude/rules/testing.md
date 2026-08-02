@@ -26,8 +26,22 @@ paths:
     There `OSCSink` plays AbletonOSC and supplies the reply, or the test is
     deliberately asserting the timeout path with a sub-second timeout — the
     rule's rationale, "needs a live Ableton", doesn't apply, and the query
-    queue can't be tested at all without calling `query/3`. Everything above
-    the transport keeps the rule as written.
+    queue can't be tested at all without calling `query/3`.
+  - **One more, narrower: a handler test whose own `OSCSink` supplies the
+    reply.** A guard that reads before it mutates (`hide_view`'s read-back,
+    `undo`/`redo`'s `can_undo`/`can_redo` check) *is* the behaviour under test,
+    and there is no pure layer underneath it to test instead. Where the test
+    starts the sink itself and answers the query with
+    `OSCSink.send_datagram/3`, nothing waits on Ableton and nothing times out —
+    see the `undo`/`redo` guard tests and the `hide_view` test in
+    [test/seshat/tools/handlers_test.exs](../../test/seshat/tools/handlers_test.exs).
+    What stays forbidden is the shape the rule was written against: a handler
+    test that calls `query/3` and *hopes* something answers, which on a machine
+    with Live open is a real Ableton and everywhere else is a timeout.
+    Deliberately leaving an attempt unanswered is fine when the timeout path is
+    the thing being asserted and the test says so.
+
+  Everything above the transport otherwise keeps the rule as written.
 - MCP components are tested for **parity with `Seshat.Tools.Definitions`**
   (`Seshat.MCP.ToolsTest`); adding a tool means bumping the tool count in
   [test/seshat/tools/definitions_test.exs](../../test/seshat/tools/definitions_test.exs).

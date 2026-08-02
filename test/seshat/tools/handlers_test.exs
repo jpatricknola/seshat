@@ -32,6 +32,56 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  # `undo`/`redo` read `can_undo`/`can_redo` before sending, and block on the
+  # reply — so a tool call that nothing answers spends the full 2s guard timeout.
+  @guard_addresses ["/live/song/get/can_undo", "/live/song/get/can_redo"]
+
+  # Datagrams in arrival order, playing AbletonOSC for the guard as they go by.
+  #
+  # `assert_receive` cannot do this job: it removes the guard query from the
+  # mailbox, which is precisely the ordering evidence these tests exist to keep.
+  # So the tool call runs in a `Task` and the test process drains and answers in
+  # one pass, spending one entry of `replies` per guard query: `true`/`false`
+  # for the OSC boolean Live's own property yields, a list of args for any other
+  # shape, or `:silence` to leave that attempt unanswered. Replies run out
+  # silently, which is what an unanswered attempt looks like anyway.
+  defp guarded_trace(sink, replies, timeout \\ 200) do
+    receive do
+      {:osc_out, address, args} ->
+        [{address, args} | guarded_trace(sink, answer_guard(sink, address, replies), timeout)]
+    after
+      timeout -> []
+    end
+  end
+
+  defp answer_guard(sink, address, [reply | rest]) when address in @guard_addresses do
+    case reply do
+      :silence -> :ok
+      flag when is_boolean(flag) -> reply_datagram(sink, encode_flag(address, flag))
+      args when is_list(args) -> reply_datagram(sink, Message.encode(address, args))
+    end
+
+    rest
+  end
+
+  defp answer_guard(_sink, _address, replies), do: replies
+
+  defp reply_datagram(sink, binary), do: :ok = OSCSink.send_datagram(sink, @reply_port, binary)
+
+  # `Message.encode/2` has no boolean clause, because nothing in Seshat ever
+  # sends one — but AbletonOSC's `_get_property` hands Live's raw Python value
+  # to its own encoder, so `can_undo` arrives as OSC's payload-free `T`/`F` type
+  # tag. Built by hand for exactly the reason `OSCSink.send_datagram/3` takes raw
+  # binary: it is a byte sequence our encoder cannot produce.
+  defp encode_flag(address, flag) do
+    pad = fn string ->
+      terminated = string <> <<0>>
+      terminated <> :binary.copy(<<0>>, rem(4 - rem(byte_size(terminated), 4), 4))
+    end
+
+    pad.(address) <> pad.(if flag, do: ",T", else: ",F")
+  end
+
   describe "set_track_pan" do
     setup :osc_sink
 
@@ -344,22 +394,36 @@ defmodule Seshat.Tools.HandlersTest do
     # An undo inside an open step is a state this design never creates, so undo
     # is never wrapped. The lone `end` is defensive: it closes a step leaked by a
     # BEAM death mid-call, and is measured harmless when no step is open.
-    test "undo sends a defensive end and no begin" do
-      assert {:ok, _msg} = Handlers.call("undo", %{})
+    #
+    # The `can_undo` guard's position is load-bearing and is why this pins the
+    # order rather than three separate `assert_receive`s: closing a leaked step
+    # can itself add an entry to Live's history, so a guard read *before* that
+    # `end` would answer about a history state that no longer exists by the time
+    # the undo is sent.
+    test "undo sends a defensive end, then its guard, then the undo", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("undo", %{}) end)
+      trace = guarded_trace(sink, [true])
+
+      assert {:ok, _msg} = Task.await(call)
 
       assert [
                {"/live/song/end_undo_step", []},
+               {"/live/song/get/can_undo", []},
                {"/live/song/undo", []}
-             ] = osc_trace()
+             ] = trace
     end
 
-    test "redo has the same unwrapped shape" do
-      assert {:ok, _msg} = Handlers.call("redo", %{})
+    test "redo has the same unwrapped shape", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("redo", %{}) end)
+      trace = guarded_trace(sink, [true])
+
+      assert {:ok, _msg} = Task.await(call)
 
       assert [
                {"/live/song/end_undo_step", []},
+               {"/live/song/get/can_redo", []},
                {"/live/song/redo", []}
-             ] = osc_trace()
+             ] = trace
     end
 
     # Validation deliberately passes an unknown name through to the catch-all,
@@ -416,6 +480,180 @@ defmodule Seshat.Tools.HandlersTest do
                {"/live/song/set/tempo", [140.0]},
                {"/live/song/end_undo_step", []}
              ] = osc_trace()
+    end
+  end
+
+  # `/live/song/undo` and `/live/song/redo` never reply, so the old "Undone" /
+  # "Redone" asserted an outcome nothing had observed: measured 2026-08-02, a
+  # `redo` against an exhausted redo stack reported success while Live had not
+  # moved. What is checkable from here is that no reply claims history moved,
+  # and that a `can_undo`/`can_redo` answer of `false` — confirmed once, because
+  # Transport correlates by address alone and a song property has no index to
+  # echo — stops the send instead of dressing it up.
+  describe "undo and redo report the request, not the outcome" do
+    setup :osc_sink
+
+    test "a confirmed no-step-available refuses, and nothing reaches the wire", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("undo", %{}) end)
+      trace = guarded_trace(sink, [false, false])
+
+      assert {:error, message} = Task.await(call)
+
+      # Observational wording: this reports what Live said, not an independently
+      # known history state — the reissue is stale-reply mitigation, not
+      # correlation.
+      assert message =~ "Live reported no undo step available, so no undo was sent"
+      assert message =~ "Do not retry unless history has changed"
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/get/can_undo", []},
+               {"/live/song/get/can_undo", []}
+             ] = trace
+
+      refute_receive {:osc_out, "/live/song/undo", []}
+    end
+
+    test "an available step sends the undo and claims nothing about history", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("undo", %{}) end)
+      trace = guarded_trace(sink, [true])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert message =~ "Undo requested"
+      assert message =~ "not that history moved"
+      assert message =~ "get_session_state"
+      refute message =~ "Undone"
+
+      assert {"/live/song/undo", []} in trace
+    end
+
+    # The tripwire for the same-address straggler defence: a `false` that the
+    # reissue contradicts belonged to an earlier query, and must not refuse.
+    test "a false answer contradicted by the reissue still sends", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("undo", %{}) end)
+      trace = guarded_trace(sink, [false, true])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Undo requested"
+      refute message =~ "did not answer"
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/get/can_undo", []},
+               {"/live/song/get/can_undo", []},
+               {"/live/song/undo", []}
+             ] = trace
+    end
+
+    # Slow by construction — 2s of guard timeout — and worth it: refusing here
+    # would turn a dropped datagram into a failed undo, a worse regression than
+    # the dishonest reply this replaces. Called synchronously because nothing is
+    # going to answer.
+    test "an unanswered guard sends anyway and states the uncertainty" do
+      assert {:ok, message} = Handlers.call("undo", %{})
+
+      assert message =~ "Undo requested"
+      assert message =~ "did not answer the can_undo check"
+      assert message =~ "unknown"
+
+      assert_receive {:osc_out, "/live/song/undo", []}
+    end
+
+    test "a reply shape the guard cannot read is not an answer", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("undo", %{}) end)
+      trace = guarded_trace(sink, [["yes"]])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "did not answer the can_undo check"
+
+      assert {"/live/song/undo", []} in trace
+    end
+
+    # A `false` whose reissue goes unanswered has one recognized answer, and one
+    # is not the two the refusal requires.
+    # `assert_receive` rather than the trace helper: the second attempt spends
+    # the full 2s guard timeout, and a drain window wide enough to outlast it
+    # would then idle that long again after the undo landed. Ordering is already
+    # pinned above.
+    test "a false whose reissue is unanswered takes the uncertain path", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("undo", %{}) end)
+
+      assert_receive {:osc_out, "/live/song/get/can_undo", []}
+      :ok = reply_datagram(sink, encode_flag("/live/song/get/can_undo", false))
+
+      assert {:ok, message} = Task.await(call, 5_000)
+      assert message =~ "did not answer the can_undo check"
+
+      assert_receive {:osc_out, "/live/song/undo", []}
+    end
+
+    # `_get_property` hands Live's raw value to the encoder, so the flag may
+    # arrive as OSC T/F or as an int. Both shapes are read, exactly as
+    # `Session.State.query_song_int/2` reads them — which is why the exact
+    # encoding never had to be measured.
+    test "an integer 0 refuses just as a bool false does", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("undo", %{}) end)
+      trace = guarded_trace(sink, [[0], [0]])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "Live reported no undo step available"
+      refute {"/live/song/undo", []} in trace
+    end
+
+    test "an integer 1 sends just as a bool true does", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("undo", %{}) end)
+      trace = guarded_trace(sink, [[1]])
+
+      assert {:ok, _message} = Task.await(call)
+      assert {"/live/song/undo", []} in trace
+    end
+
+    test "redo refuses on a confirmed empty redo stack", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("redo", %{}) end)
+      trace = guarded_trace(sink, [false, false])
+
+      assert {:error, message} = Task.await(call)
+
+      assert message =~ "Live reported no redo step available, so no redo was sent"
+      # Redo's history is the one an unrelated edit can wipe, so its refusal
+      # says so where undo's does not.
+      assert message =~ "any new edit can clear Live's redo history"
+
+      refute {"/live/song/redo", []} in trace
+      refute_receive {:osc_out, "/live/song/redo", []}
+    end
+
+    test "redo sends and reports only the request when a step is available", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("redo", %{}) end)
+      trace = guarded_trace(sink, [[1]])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert message =~ "Redo requested"
+      assert message =~ "not that history moved"
+      refute message =~ "Redone"
+
+      assert {"/live/song/redo", []} in trace
+    end
+
+    test "redo's reissue contradicting a false still sends", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("redo", %{}) end)
+      trace = guarded_trace(sink, [false, true])
+
+      assert {:ok, _message} = Task.await(call)
+      assert {"/live/song/redo", []} in trace
+    end
+
+    test "redo states the uncertainty when its guard cannot be read", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("redo", %{}) end)
+      trace = guarded_trace(sink, [["maybe"]])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "did not answer the can_redo check"
+      assert message =~ "anything to redo is unknown"
+
+      assert {"/live/song/redo", []} in trace
     end
   end
 
