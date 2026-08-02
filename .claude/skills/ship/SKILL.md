@@ -33,7 +33,7 @@ are often no-ops, but check rather than assume.
    an out-of-file rank reference is a bug in that file, not renumbering work you
    owe. If you notice one, rewrite it to name the item's title instead.
 
-3. **Promote or retire each live check, before archiving.** Walk the plan's
+3. **Promote, carry or retire each live check, before archiving.** Walk the plan's
    `## Live verification` section and decide, per check, where it goes when
    the plan leaves circulation:
 
@@ -46,9 +46,20 @@ are often no-ops, but check rather than assume.
      `<!-- standing -->` — confirm that judgment rather than re-deriving it,
      and promote anything it missed. Move the check verbatim; a rewritten
      check is an unrun check.
-   - **Retire** everything else with the plan. A check that verifies *this
-     feature works* is an acceptance test, and its job is done. Archiving it
-     is correct, not a loss — `docs/archive/` keeps it findable.
+   - **Carry** any check that has **never actually run**. An acceptance test's
+     job is done when it *passes*, not when the feature ships — and a plan can
+     be archived with its checks unrun, which has happened (see
+     [docs/archive/PLAN_session_record.md](docs/archive/PLAN_session_record.md):
+     *"nothing below has executed through the tool path"*). Retiring those
+     would silently convert "never verified" into "verified", which is the one
+     failure this whole structure exists to prevent. Move them to
+     [docs/PLAN_backfill_live_verification.md](docs/PLAN_backfill_live_verification.md),
+     the standing home for checks whose feature shipped before they ran. Ask
+     rather than assume: a check is run only if a smoke report, a PR body, or
+     the plan itself says so.
+   - **Retire** everything else with the plan — checks that ran and passed. An
+     acceptance test that has done its job is correctly archived, not lost;
+     `docs/archive/` keeps it findable.
 
    This step is the only thing standing between `live-invariants.md` and the
    fate of the old monolithic smoke-test file, which grew a section per
@@ -94,5 +105,6 @@ are often no-ops, but check rather than assume.
 
 7. **Verify** with `mix precommit` if anything outside `docs/` changed, then
    summarize: what was removed from the roadmap, what was archived, which live
-   checks were promoted to `live-invariants.md` and which retired with the
-   plan, and what follow-ups were added.
+   checks were promoted to `live-invariants.md`, which were carried to the
+   backfill plan as never having run, which retired with the plan, and what
+   follow-ups were added.

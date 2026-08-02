@@ -28,10 +28,15 @@ a section that has gone a long time without a date is the honest signal that
 nobody has checked. Leave the date alone if you substituted something for the
 check; note the substitution in the run report instead.
 
-**Measurements cited here live in
-[abletonosc-api-docs.md](abletonosc-api-docs.md)**, dated and version-stamped.
-Never restate a number here — link to it. A number copied into a checklist is a
-duplicate nobody keeps in sync.
+**A check may state the number it expects to see; it may never be that number's
+only home.** The measurements themselves live in
+[abletonosc-api-docs.md](abletonosc-api-docs.md), dated and version-stamped,
+and operationally in the code that acts on them. A check without its expected
+value isn't runnable, so "confirm the spacing is 0.25" is right — but it must
+link to the measurement it is guarding, so the fact survives the check being
+rewritten or retired. If you find a number whose only record is here, move it to
+the API docs and link back. That drift is exactly how the monolithic checklist
+became a lab notebook.
 
 ---
 
@@ -213,12 +218,17 @@ future "fix" toward an older doc gets caught.
    `"1/16"`, amount 1.0, and confirm note starts land on **0.25-beat** multiples.
    A 0.125 spacing means a 1/32 grid was sent. That single observation caught the
    `GridQuantization` table being wrong in *every* row; the fix is
-   `Seshat.Tools.Handlers.grid_quantization/1`, not the schema.
+   `Seshat.Tools.Handlers.grid_quantization/1`, not the schema. The corrected
+   table, measured 2026-07-31, is in
+   [abletonosc-api-docs.md](abletonosc-api-docs.md) under `/live/clip/quantize`
+   — this check guards that table, and is not a second copy of it.
 2. **The groove dial reads 130% at 1.3.** With a groove assigned to a clip by
    hand, `set_groove_amount 1.0` then `1.3` — the Groove Pool's Amount dial must
    read 100% then 130%. Anything else means the mapping moved in this Live
-   version and the schema max needs revisiting. The 0.0–1.3 bound was read out of
-   Live's own shipped Python, correcting the LOM apiref's understated 0.0–1.0.
+   version and the schema max needs revisiting. The 0.0–1.3 bound — read out of
+   Live's own shipped Python, correcting the LOM apiref's understated 0.0–1.0 —
+   is recorded on the `groove_amount` rows in
+   [abletonosc-api-docs.md](abletonosc-api-docs.md#song-getters).
 3. **`hide_view` hides exactly two panes.** For `Browser` and `Detail`:
    `get_view_state`, `hide_view(name)`, `get_view_state`. The pane must go from
    present to absent. `Session` and `Arranger` are a pair with no closed state,
@@ -232,20 +242,18 @@ future "fix" toward an older doc gets caught.
    spells the display differently, `bypass_device` refuses on *every* device and
    its error prints the actual string; the fix is widening the accepted set in
    `ensure_on_off_switch`.
-5. **`can_undo=False` is reachable at an empty history.** ⚠️ **Unmeasured.**
-   File → New Live Set (hold Command and press N), touch nothing, then call
-   `undo`. Expect the error — "Live reported no undo step available, so no undo
-   was sent" — and **not** a success string. `Song.can_undo` and `Song.can_redo`
-   were measured on 2026-08-02 (Live 12.4.3) to be plain `bool` attributes that
-   track availability independently and in both directions, so the guard's
-   `false` branch is reachable for *redo*; the empty-history reading for *undo*
-   is the one the probe could not reach without spending the open set's history.
-   If `undo` reports the request as sent instead, `can_undo` alone is always
-   true, and the finding is that the **undo guard should be dropped rather than
-   widened** — say so in the report. The redo guard stands on the 2026-08-02
-   measurement either way. Delete this item once it has been run: it is a
-   one-time measurement, and once made it belongs in
-   [abletonosc-api-docs.md](abletonosc-api-docs.md).
+5. **`can_undo=False` is reachable at an empty history.** ⚠️ **Unmeasured** —
+   the one reading the 2026-08-02 probe could not reach; what *was* measured
+   about both properties is in
+   [abletonosc-api-docs.md](abletonosc-api-docs.md#song-getters), and the redo
+   guard stands on it either way. File → New Live Set (hold Command and press
+   N), touch nothing, then call `undo`. Expect the error — "Live reported no
+   undo step available, so no undo was sent" — and **not** a success string. If
+   `undo` reports the request as sent instead, `can_undo` alone is always true,
+   and the finding is that the **undo guard should be dropped rather than
+   widened**; say so in the report. Delete this item once it has run and fold
+   the reading into the API docs — a made measurement does not belong in a
+   checklist.
 6. **The stray-track guard fires.** Load an *instrument* (Operator) with
    `target: "return"`, then again with `target: "master"`. Both must **error**,
    naming the stray MIDI track Live created; nothing may be claimed as loaded;

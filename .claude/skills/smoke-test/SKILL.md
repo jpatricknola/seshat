@@ -24,6 +24,11 @@ and you read the relevant one before touching anything:
   outlive any one feature: bridge liveness, the listener rebind, the loopback
   bind, the advertised schema. `/full-smoke` sweeps these wholesale regardless
   of branch.
+- **[docs/PLAN_backfill_live_verification.md](docs/PLAN_backfill_live_verification.md)**
+  — checks whose feature shipped before they ever ran. Not branch-scoped and
+  not swept by `/full-smoke`: if you have Live open and time to spare, this is
+  the highest-value thing to run, because nothing behind it has been verified
+  once. Delete each check as it passes.
 
 **If the plan has no `## Live verification` section, or it plainly doesn't
 cover the diff, stop and run `/write-smoke-tests` first.** Deriving checks in

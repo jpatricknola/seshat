@@ -2,7 +2,6 @@
 name: write-smoke-tests
 description: Derive the live checks a change needs and write them into its plan doc — what only a running Ableton can confirm, stated so someone else can run it. Use at plan time, after implementation when the diff outgrew the plan, or on a branch with no plan at all.
 argument-hint: [optional - a plan doc, a branch, or what changed; defaults to the current diff]
-disable-model-invocation: true
 ---
 
 Write the live checks for: **$ARGUMENTS** (no argument → whatever changed on
@@ -27,8 +26,12 @@ Two destinations, and choosing between them is part of the job:
 
 1. **The plan doc's `## Live verification` section** — `docs/PLAN_*.md` for the
    change under test. This is the default and holds the great majority: checks
-   that verify *this feature works*. They are acceptance tests. `/ship` archives
-   them with the plan, and that is correct — their job is done when they pass.
+   that verify *this feature works*. They are acceptance tests, and their job is
+   done when they **pass** — not when the feature ships. `/ship` archives the
+   ones that ran, and carries any that never did to
+   [docs/PLAN_backfill_live_verification.md](docs/PLAN_backfill_live_verification.md)
+   rather than retiring them, since archiving an unrun check silently converts
+   *never verified* into *verified*.
 2. **[docs/live-invariants.md](docs/live-invariants.md)** — checks that outlive
    the feature. Only three kinds qualify:
    - **standing properties** of the system, tied to no feature: the bridge

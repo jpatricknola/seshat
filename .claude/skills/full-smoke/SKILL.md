@@ -123,6 +123,15 @@ them, each with its one-line reason:
   empty history needs File → New Live Set, which discards the open set.
 - **Everything else by ear** — sound choice, levels, bypass audibility,
   quantize feel, glitches on mid-playback deletes.
+- **Everything in
+  [docs/PLAN_backfill_live_verification.md](docs/PLAN_backfill_live_verification.md)**
+  — checks whose feature shipped before they ever ran. Most need the ears,
+  hands or hardware routing this sweep excludes by definition, so it does not
+  attempt them. **Name the file and the count of outstanding checks in the
+  report**, per feature. This is the one exclusion that is not merely "we
+  couldn't": these are unverified rather than merely unswept, and a sweep that
+  reads as complete while `record_clip` has never run is exactly what the
+  Uncovered list exists to prevent.
 
 ## Run order
 
