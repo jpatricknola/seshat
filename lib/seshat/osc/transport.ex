@@ -375,16 +375,6 @@ defmodule Seshat.OSC.Transport do
 
   defp source(ip, port), do: "#{:inet.ntoa(ip)}:#{port}"
 
-  # Answer the in-flight query if the response address matches, otherwise
-  # broadcast only — today's handling of listener pushes and unsolicited
-  # traffic, and the fate of every late reply that doesn't collide with the
-  # in-flight address.
-  #
-  # No deadline check here, deliberately: the UDP datagram and deadline timer
-  # are serialized through this process's mailbox. If the datagram is handled
-  # first it is the request's answer; if the timer is handled first there is no
-  # in-flight match left. A second wall-clock comparison here would override
-  # that arrival ordering without making correlation any stronger.
   # Ahead of the address-match clause on purpose. Nothing ever queries
   # `/live/error`, so the two can't actually collide — ordering it first makes
   # that a non-question rather than a fact a reader has to establish.
@@ -403,6 +393,16 @@ defmodule Seshat.OSC.Transport do
     end
   end
 
+  # Answer the in-flight query if the response address matches, otherwise
+  # broadcast only — today's handling of listener pushes and unsolicited
+  # traffic, and the fate of every late reply that doesn't collide with the
+  # in-flight address.
+  #
+  # No deadline check here, deliberately: the UDP datagram and deadline timer
+  # are serialized through this process's mailbox. If the datagram is handled
+  # first it is the request's answer; if the timer is handled first there is no
+  # in-flight match left. A second wall-clock comparison here would override
+  # that arrival ordering without making correlation any stronger.
   defp dispatch(address, args, %{in_flight: %{address: expected} = request} = state)
        when address == expected do
     # `false` means the `{:query_timeout, ref}` message is already in the

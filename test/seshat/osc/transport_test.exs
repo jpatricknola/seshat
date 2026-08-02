@@ -433,6 +433,32 @@ defmodule Seshat.OSC.TransportTest do
       assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
     end
 
+    test "a structured error whose arg_count is not an integer is not delivered", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      # Right address, right argument, but `arg_count` came back as a string —
+      # the `is_integer(arg_count)` guard must reject this rather than let
+      # `length(echoed) == arg_count` coerce it into a false match.
+      raw_error(sink, ["request", "/live/track/get/name", "Index out of range", "1", 5])
+
+      reply(sink, "/live/track/get/name", [5, "Bass"])
+      assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
+    end
+
+    test "an echoed argument of a different wire type never matches", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      # Same address and count, but the echoed argument is a float where an
+      # integer was sent — `wire_arg_match?/2`'s type-checked clauses must fall
+      # through to the catch-all non-match rather than comparing across types.
+      raw_error(sink, ["request", "/live/track/get/name", "Index out of range", 1, 5.0])
+
+      reply(sink, "/live/track/get/name", [5, "Bass"])
+      assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
+    end
+
     test "legacy and log-tagged error payloads are never delivered", %{sink: sink} do
       a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
       assert_receive {:osc_out, "/live/track/get/name", [5]}
