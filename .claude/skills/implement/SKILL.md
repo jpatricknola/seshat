@@ -64,7 +64,7 @@ Implement the plan for: **$ARGUMENTS**
    perform: name what needs a live Ableton and suggest `/smoke-test`. **If the
    implementation outgrew the plan** — behaviour the plan's `## Live
    verification` section doesn't cover, which a deviation usually implies —
-   run `/write-smoke-tests` to bring that section up to the diff before
+   run `/smoke-write` to bring that section up to the diff before
    suggesting anyone run it. Checks derived at run time by whoever happens to be
    in front of Live are checks nobody reviewed. **If you changed
    `priv/AbletonOSC`, green proves less than usual** — the tests grep the

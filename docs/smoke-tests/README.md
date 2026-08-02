@@ -27,7 +27,7 @@ in full.
 
 1. **`/plan` writes a `## Live verification` section** listing the tests that
    change needs, each cited as `smoke-tests/<file>.md § <Title>`. It uses
-   `/write-smoke-tests`, which owns the rules for which properties of a change
+   `/smoke-write`, which owns the rules for which properties of a change
    imply which tests. If nothing here fits, that skill writes a new test into
    the right file and cites it like any other.
 2. **`/smoke-test` runs them** against live Ableton and records the result in
@@ -37,9 +37,6 @@ in full.
 3. **It also stamps the test's own `Last run` line here.** The plan's record
    answers "was this change verified"; the `Last run` line answers "has anyone
    exercised this test lately", which no archived plan can.
-
-`/full-smoke` sweeps this whole folder regardless of branch, in the subset that
-needs no human, and names everything it couldn't cover.
 
 ## What goes in, and what comes out
 

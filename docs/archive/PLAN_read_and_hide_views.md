@@ -483,9 +483,6 @@ around the getter so it is **self-checking** — the point of the feature:
    before a launch still sends `show_view(Session)` directly, without paying
    for a six-query pre-check before the action.
 
-Also update the cross-reference at the skill's line ~538 (full-sweep list)
-if its wording states the old blind-spot rationale.
-
 ### 7. `mix precommit`
 
 Compile with warnings-as-errors, format, full suite. The suite greps the

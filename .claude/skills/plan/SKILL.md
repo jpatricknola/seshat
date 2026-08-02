@@ -69,7 +69,7 @@ be able to say yes/no to each one.
      `Transport.query/3`.
    - **Live verification** — the tests in [docs/smoke-tests/](docs/smoke-tests/)
      this change needs, each cited by file and title, plus what they leave
-     uncovered. Run `/write-smoke-tests` to derive them: it owns the rules for
+     uncovered. Run `/smoke-write` to derive them: it owns the rules for
      which properties of a change imply which tests, and writes any that don't
      exist yet into the right file. Deciding this now, before the code exists,
      is the point — it forces naming what `mix test` cannot reach while the
@@ -135,4 +135,3 @@ be able to say yes/no to each one.
    rival plan and adjudicates. Self-review is no substitute: the address
    check in particular is worthless performed by the agent that transcribed
    the addresses. `/lifecycle` runs it automatically as its own phase.
-

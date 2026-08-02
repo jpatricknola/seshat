@@ -1,5 +1,5 @@
 ---
-name: write-smoke-tests
+name: smoke-write
 description: Derive the live checks a change needs and cite them in its plan doc — picking existing tests out of docs/smoke-tests/ and writing new ones there when nothing fits. Use at plan time, after implementation when the diff outgrew the plan, or on a branch with no plan at all.
 argument-hint: [optional - a plan doc, a branch, or what changed; defaults to the current diff]
 ---

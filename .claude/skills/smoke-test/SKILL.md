@@ -21,7 +21,7 @@ section — `docs/PLAN_*.md` while the work is in flight,
 [docs/archive/](docs/archive/) once `/ship` has run.
 
 **If the plan has no `## Live verification` section, or it plainly doesn't cover
-the diff, stop and run `/write-smoke-tests` first.** Deriving checks in your head
+the diff, stop and run `/smoke-write` first.** Deriving checks in your head
 and running them in the same breath produces a report nobody can re-run and nobody
 reviewed — and it is how the checks once accreted into a single 9,000-word file
 instead of into the plans. Write them down, then come back. A branch whose plan
