@@ -857,9 +857,72 @@ defmodule Seshat.Session.StateTest do
   # too: finalize_reconciliations/3 is public and OSC-free, so the retry, the
   # brake and the cross-key carry-over are ordinary state-transition tests above.
   #
-  # What stays live-only is the authoritative rebuild itself —
-  # read_tracks/2 and do_refresh/1 reach Transport.query/3 by construction, so
-  # that a *real* degraded read produces `tracks: nil` at all is a /smoke-test
-  # check, not something this file can assert. See the Session.State refresh
-  # section there.
+  # What stays live-only is `do_refresh/1` itself, which names
+  # `Seshat.OSC.Transport` directly. `read_tracks/2` does not: it takes the
+  # transport module as an argument, so the degrade decision — the part of a
+  # rebuild worth pinning — is testable against a stub that answers the way
+  # Ableton does. That a *real* rebuild wires this to Live is still a
+  # /smoke-test check; see the Session.State refresh section there.
+  describe "read_tracks/2" do
+    defmodule StubTransport do
+      @moduledoc false
+      # Answers from a map of {address, index} => reply, defaulting to silence
+      # (an exit, which is what Transport.query/3 does on timeout).
+      def query(address, [index], _timeout) do
+        case Process.get({__MODULE__, address, index}, :timeout) do
+          :timeout -> exit({:timeout, {GenServer, :call, [Transport, :stub, 0]}})
+          reply -> reply
+        end
+      end
+
+      def put(address, index, reply), do: Process.put({__MODULE__, address, index}, reply)
+    end
+
+    defp stub_track(index, name) do
+      StubTransport.put(
+        "/live/track/get/name",
+        index,
+        {:ok, {"/live/track/get/name", [index, name]}}
+      )
+
+      StubTransport.put("/live/track/get/volume", index, {:ok, {"", [index, 0.85]}})
+      StubTransport.put("/live/track/get/panning", index, {:ok, {"", [index, 0.0]}})
+      StubTransport.put("/live/track/get/mute", index, {:ok, {"", [index, 0]}})
+      StubTransport.put("/live/track/get/solo", index, {:ok, {"", [index, 0]}})
+    end
+
+    test "a count of zero is a verified-empty set, not degradation" do
+      assert State.read_tracks(StubTransport, 0) == {:ok, []}
+    end
+
+    test "every name answered gives the whole list" do
+      stub_track(0, "Drums")
+      stub_track(1, "Bass")
+
+      assert {:ok, [%{index: 0, name: "Drums"}, %{index: 1, name: "Bass"}]} =
+               State.read_tracks(StubTransport, 2)
+    end
+
+    # The point of the whole /live/error correlation: an index that vanished
+    # mid-walk now *answers* — with a rejection — where it used to leave the
+    # query to time out. The degrade decision must be identical either way,
+    # since a rejected name is exactly as unknown as an unanswered one.
+    test "a rejected name degrades at that index, like an unanswered one" do
+      stub_track(0, "Drums")
+
+      StubTransport.put(
+        "/live/track/get/name",
+        1,
+        {:error, {:live_error, "Index out of range"}}
+      )
+
+      assert State.read_tracks(StubTransport, 3) == {:degraded, 1}
+    end
+
+    test "an unanswered name degrades at that index" do
+      stub_track(0, "Drums")
+
+      assert State.read_tracks(StubTransport, 3) == {:degraded, 1}
+    end
+  end
 end

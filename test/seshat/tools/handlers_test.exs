@@ -656,6 +656,44 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  # AbletonOSC answers a request whose index has gone with a structured
+  # /live/error rather than with the property, and Transport turns that into
+  # `{:error, {:live_error, message}}`. A pre-mutation guard must treat it the
+  # way it treats the vendored envelope's error arm — the index doesn't exist,
+  # so nothing further is sent — rather than leaking the tuple through
+  # `inspect/1`.
+  describe "a guard query Ableton rejects" do
+    setup :osc_sink
+
+    test "fails the tool in Live's own words and sends no mutation", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_track_send", %{"track" => 9, "send" => 0, "value" => 0.5})
+        end)
+
+      assert_receive {:osc_out, "/live/track/get/send", [9, 0]}
+
+      reply_datagram(
+        sink,
+        Message.encode(
+          "/live/error",
+          ["request", "/live/track/get/send", "Index out of range", 2, 9, 0]
+        )
+      )
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "Index out of range"
+      assert message =~ "Nothing further was sent"
+      assert message =~ "get_session_state"
+
+      # The whole point of the guard: the value is never written to a track
+      # index Live has just told us it doesn't have.
+      refute Enum.any?(osc_trace(), fn {address, _args} ->
+               address == "/live/track/set/send"
+             end)
+    end
+  end
+
   describe "show_view" do
     setup :osc_sink
 

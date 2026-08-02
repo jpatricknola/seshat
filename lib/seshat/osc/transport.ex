@@ -45,14 +45,43 @@ defmodule Seshat.OSC.Transport do
      `/live/track/get/volume` can satisfy an in-flight query for the same
      property. No queue can remove that.
 
-  The remaining defense against both is caller-side: the echo checks in
+  3. **A structured `/live/error` delayed past a timeout fails the next
+     identical request.** Same shape as class 1, and strictly safer: the caller
+     gets a refusal it can retry rather than wrong data that looks right. It
+     needs the same conjunction — a timeout, address adjacency, *and* identical
+     arguments, since correlation here is by address **and** every argument.
+
+  The remaining defense against all three is caller-side: the echo checks in
   `Seshat.Tools.Handlers.query_echoed/5`, `Seshat.Commands.Registry.ensure_clip/4`
   and `Seshat.Session.State`'s query helpers compare the indices a reply echoes
   against the ones asked for, and refuse a mismatch. Keep them.
 
   A reply whose address does *not* match the in-flight request is broadcast and
   answers nobody — not suppressed, because the mirror turns those into free
-  freshness.
+  freshness. The one exception is `/live/error`, below.
+
+  ## Failed-query correlation
+
+  A callback that raises inside AbletonOSC sends no reply at all, so without
+  help the query pays a full timeout to learn what Live already announced. The
+  fork therefore sends the failing request back with the error (see
+  `priv/AbletonOSC/SESHAT.md`):
+
+      /live/error ["request", address, message, arg_count, ...request_args]
+      /live/error ["log", message]
+
+  Only the first shape is correlatable, and only against the in-flight request
+  whose address **and** every argument it echoes match. Matching releases the
+  caller with `{:error, {:live_error, message}}` and advances the queue at once,
+  exactly as a real reply would. Everything else — a `"log"` payload, a legacy
+  one-string payload, a mismatch of address, arity or arguments, or any
+  `/live/error` with nothing in flight — is broadcast and answers nobody, i.e.
+  today's behaviour. Strictness is deliberate: a false negative costs a timeout,
+  which is what happens today anyway, while a false positive fails the wrong
+  caller's query.
+
+  All knowledge of `/live/error`'s payload lives in this module. Callers see
+  only `{:error, {:live_error, message}}`, and `describe_error/1` renders it.
 
   `MIX_ENV=test` uses port `0` as a safe fallback and injects OS-assigned
   ephemeral ports into each supervised Transport, so concurrent test BEAMs
@@ -144,6 +173,19 @@ defmodule Seshat.OSC.Transport do
         exit({:timeout, {GenServer, :call, [__MODULE__, request, timeout]}})
     end
   end
+
+  @doc """
+  Render a `query/3` error reason as a sentence for a tool result.
+
+  `{:live_error, message}` is this module's own term — Live rejected the request
+  and said why — so its human rendering lives beside it rather than being taught
+  to every caller separately. Every other reason keeps the `inspect/1` rendering
+  callers used before, so this is a drop-in replacement for `inspect(reason)` at
+  any query error site.
+  """
+  @spec describe_error(term()) :: String.t()
+  def describe_error({:live_error, message}), do: "Ableton rejected the request: #{message}"
+  def describe_error(reason), do: inspect(reason)
 
   # Both ports are resolved once, here, and carried in state: a config change
   # mid-run must not split a running transport's behaviour across two ports.
@@ -343,6 +385,24 @@ defmodule Seshat.OSC.Transport do
   # first it is the request's answer; if the timer is handled first there is no
   # in-flight match left. A second wall-clock comparison here would override
   # that arrival ordering without making correlation any stronger.
+  # Ahead of the address-match clause on purpose. Nothing ever queries
+  # `/live/error`, so the two can't actually collide — ordering it first makes
+  # that a non-question rather than a fact a reader has to establish.
+  defp dispatch("/live/error" = address, args, %{in_flight: request} = state)
+       when not is_nil(request) do
+    case failed_request(args, request) do
+      {:match, message} ->
+        Process.cancel_timer(request.timer)
+        GenServer.reply(request.from, {:error, {:live_error, message}})
+        broadcast(address, args)
+        advance(%{state | in_flight: nil})
+
+      :no_match ->
+        broadcast(address, args)
+        state
+    end
+  end
+
   defp dispatch(address, args, %{in_flight: %{address: expected} = request} = state)
        when address == expected do
     # `false` means the `{:query_timeout, ref}` message is already in the
@@ -356,6 +416,48 @@ defmodule Seshat.OSC.Transport do
   defp dispatch(address, args, state) do
     broadcast(address, args)
     state
+  end
+
+  # A structured `/live/error` belongs to the in-flight request only when it
+  # names the same address and echoes back exactly the arguments that were sent.
+  # `arg_count` is on the wire so the variable tail is explicit; disagreeing
+  # with the tail's actual length means the payload is malformed, which is a
+  # non-match rather than a guess.
+  defp failed_request(["request", address, message, arg_count | echoed], %{
+         address: address,
+         args: sent
+       })
+       when is_binary(message) and is_integer(arg_count) and length(echoed) == arg_count do
+    if wire_args_match?(echoed, sent), do: {:match, message}, else: :no_match
+  end
+
+  defp failed_request(_args, _request), do: :no_match
+
+  defp wire_args_match?(echoed, sent) when length(echoed) == length(sent) do
+    Enum.zip(echoed, sent) |> Enum.all?(fn {e, s} -> wire_arg_match?(e, s) end)
+  end
+
+  defp wire_args_match?(_echoed, _sent), do: false
+
+  # Same value *and* same wire type. A float needs the 32-bit round-trip: OSC
+  # `f` is 32-bit and an Elixir float is 64-bit, so `0.1` comes back as the
+  # widening of its 32-bit truncation and plain `==` would call a real match a
+  # mismatch. Anything else — an echoed boolean or nil, which Seshat never
+  # sends, or an integer against a float — is a non-match by falling through.
+  defp wire_arg_match?(echoed, sent) when is_integer(echoed) and is_integer(sent),
+    do: echoed == sent
+
+  defp wire_arg_match?(echoed, sent) when is_binary(echoed) and is_binary(sent),
+    do: echoed == sent
+
+  defp wire_arg_match?(echoed, sent) when is_float(echoed) and is_float(sent),
+    do: echoed == float32(sent)
+
+  defp wire_arg_match?(_echoed, _sent), do: false
+
+  defp float32(value) do
+    <<truncated::big-float-32>> = <<value::big-float-32>>
+    truncated
   end
 
   # Pop the next request and put it on the wire. Invariant afterwards:

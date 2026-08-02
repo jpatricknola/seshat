@@ -65,9 +65,11 @@ defmodule Seshat.Session.State do
   later whenever Ableton is actually alive.
 
   That rule reaches the track *list* as well as the fields in it. A rebuild that
-  races a structural change gets no reply at all for an index that has just
-  gone — `track.py` raises `IndexError` inside the callback and AbletonOSC sends
-  nothing — so `read_tracks/2` stops at the first unanswered **name** and reports
+  races a structural change gets no *value* back for an index that has just
+  gone — `track.py` raises `IndexError` inside the callback, and the fork
+  answers with a `/live/error` naming that request rather than with the property,
+  which `Transport` correlates into `{:error, {:live_error, _}}` — so
+  `read_tracks/2` stops at the first unreadable **name** and reports
   `{:degraded, index}` rather than handing back a list with holes in it. A
   degraded read nils the whole list: a half-read list still *names* tracks, and
   naming a track Live no longer has is the same fabrication as a guessed tempo,
@@ -880,34 +882,47 @@ defmodule Seshat.Session.State do
     |> Map.put(:unreconciled, %{})
   end
 
-  # `{:ok, tracks}` or `{:degraded, stopped_index}` — never a list with holes in
-  # it. `count < 1` is `{:ok, []}`: a verified-empty set, not degradation.
-  #
-  # The **name** is the marker, and only the name, for two reasons:
-  #
-  #   * It is the identity field. `stale?/2` compares names and nothing else, so
-  #     a row with `name: nil` can never reconcile against a pushed list — it is
-  #     guaranteed to be recorded as a brake, which is exactly the trap the
-  #     measured 2026-08-01 run fell into. A `nil` volume has no such
-  #     consequence, so an unanswered volume still leaves that one field unknown
-  #     and keeps the row.
-  #   * `query_string/4`'s echo check rejects a reply whose echoed index isn't
-  #     the one asked for, so a straggler running one index behind yields `nil`
-  #     here too. The marker therefore catches the abandoned-reply cascade as
-  #     well as the index that no longer exists — the same failure seen from two
-  #     ends.
-  #
-  # Aborting the whole read rather than skipping the one index is deliberate:
-  # `do_refresh/1` is about to discard the list anyway, so every query after the
-  # first unanswered name is spent on a result that gets thrown away. A fully
-  # dead read costs one @query_timeout instead of five per over-reported track —
-  # a bad index is *silent* (track.py's `create_track_callback` and its
-  # neighbours index `song.tracks` with no bounds check; the `IndexError` is
-  # logged and swallowed by `OSCServer.process`, and no reply is sent), so each
-  # one would otherwise be five full guard timeouts of dead waiting.
-  defp read_tracks(_transport, count) when count < 1, do: {:ok, []}
+  @doc """
+  Read `count` tracks out of Ableton, one index at a time.
 
-  defp read_tracks(transport, count) do
+  `{:ok, tracks}` or `{:degraded, stopped_index}` — never a list with holes in
+  it. `count < 1` is `{:ok, []}`: a verified-empty set, not degradation.
+
+  The **name** is the marker, and only the name, for two reasons:
+
+    * It is the identity field. `stale?/2` compares names and nothing else, so
+      a row with `name: nil` can never reconcile against a pushed list — it is
+      guaranteed to be recorded as a brake, which is exactly the trap the
+      measured 2026-08-01 run fell into. A `nil` volume has no such
+      consequence, so an unanswered volume still leaves that one field unknown
+      and keeps the row.
+    * `query_string/4`'s echo check rejects a reply whose echoed index isn't
+      the one asked for, so a straggler running one index behind yields `nil`
+      here too. The marker therefore catches the abandoned-reply cascade as
+      well as the index that no longer exists — the same failure seen from two
+      ends.
+
+  Aborting the whole read rather than skipping the one index is deliberate:
+  `do_refresh/1` is about to discard the list anyway, so every query after the
+  first unanswered name is spent on a result that gets thrown away. A vanished
+  index is refused rather than answered — `track.py`'s `create_track_callback`
+  and its neighbours index `song.tracks` with no bounds check, and the fork
+  turns the resulting `IndexError` into a `/live/error` naming this exact
+  request, which `Transport` correlates and returns as
+  `{:error, {:live_error, _}}` — so `query_string/4` yields `nil` in
+  milliseconds. Before that correlation existed the same index cost a full
+  `@query_timeout` of silence each, which is what made stopping at the first one
+  worth this much prose.
+
+  `transport` is the module to query through — `Seshat.OSC.Transport` in
+  production. Public, and parameterised, for the same reason
+  `finalize_reconciliations/3` is: the degrade decision is the part of a refresh
+  worth pinning in a unit test, and everything around it needs a live Ableton.
+  """
+  @spec read_tracks(module(), integer()) :: {:ok, [map()]} | {:degraded, non_neg_integer()}
+  def read_tracks(_transport, count) when count < 1, do: {:ok, []}
+
+  def read_tracks(transport, count) do
     0..(count - 1)
     |> Enum.reduce_while([], fn i, acc ->
       case query_string(transport, "/live/track/get/name", i) do

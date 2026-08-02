@@ -114,8 +114,14 @@ defmodule Seshat.Commands.Registry do
            "twice in a row — they belong to an earlier query that timed out. Nothing was " <>
            "written; try again."}
 
+      # Rendered here rather than passed through: the string a handler shows the
+      # model must never be an inspected Transport term. A rejected slot lookup
+      # carries the same guarantee as an unanswered one — nothing was written —
+      # so it keeps the timeout branch's consequence sentence.
       {:error, reason} ->
-        {:error, reason}
+        {:error,
+         "#{Transport.describe_error(reason)} — the clip slot could not be read, so no notes " <>
+           "were written. Check the slot with get_clip_slots."}
     end
   catch
     :exit, _ ->
@@ -153,7 +159,7 @@ defmodule Seshat.Commands.Registry do
         {:error, "Unexpected reply from /live/return_track/get/count: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -234,7 +240,7 @@ defmodule Seshat.Commands.Registry do
         {:error, "Unexpected reply from /live/song/get/num_tracks: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
