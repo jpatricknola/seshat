@@ -36,9 +36,9 @@ be able to say yes/no to each one.
      A Python half is not free, and the plan must say so: it lands as a
      commit in the submodule plus a pin bump here, it puts a
      `mix abletonosc.install` + Live restart on the user, and **no test in
-     this repo executes it** — so its verification is a `/smoke-test` item by
-     construction. Say which parts only Ableton can confirm rather than
-     implying the suite covers them.
+     this repo executes it** — so its verification lives entirely in the
+     plan's Live verification section (step 3). Say which parts only Ableton
+     can confirm rather than implying the suite covers them.
    - Grep the codebase for every touchpoint: which `Handlers` clauses,
      whether it's single-message (Transport direct) or multi-step
      (`%Command{}` + Registry), whether `Session.State` needs a new field and
@@ -65,9 +65,16 @@ be able to say yes/no to each one.
      [.claude/docs/adding-a-tool.md](.claude/docs/adding-a-tool.md)). Tool
      descriptions deserve a draft in the plan: they're prompt text for a
      model that can't see the code (index base, value range, resolver tool).
-   - **Testing** — what's covered pure (no Ableton) and exactly what needs
-     the `/smoke-test` checklist with Ableton open. Nothing tests through
+   - **Testing** — what's covered pure (no Ableton). Nothing tests through
      `Transport.query/3`.
+   - **Live verification** — the checks that need Ableton open, written out
+     here rather than deferred to a checklist elsewhere. Run
+     `/write-smoke-tests` to derive them: it owns the rules for which
+     properties of a change imply which checks, and the format `/smoke-test`
+     later runs and `/ship` later promotes from. Writing them now, before the
+     code exists, is the point — it forces naming what `mix test` cannot reach
+     while the reasoning is fresh, and it puts the verification in front of
+     `/plan-review` instead of leaving it to whoever ships.
    - **Out of scope** — what you're deliberately not doing and where it goes
      (usually: stays on the roadmap). A plan without this section grows
      during implementation.

@@ -33,7 +33,29 @@ are often no-ops, but check rather than assume.
    an out-of-file rank reference is a bug in that file, not renumbering work you
    owe. If you notice one, rewrite it to name the item's title instead.
 
-3. **Archive the plan doc, if one exists.** If the feature had a detailed plan
+3. **Promote or retire each live check, before archiving.** Walk the plan's
+   `## Live verification` section and decide, per check, where it goes when
+   the plan leaves circulation:
+
+   - **Promote** to [docs/live-invariants.md](docs/live-invariants.md) if it
+     outlives the feature — a standing property of the system (the bridge
+     answering, the loopback bind, the listener rebind, the advertised tool
+     count), a tripwire guarding a corrected measurement (a grid spacing, a
+     dial reading, an enum measured against Live), or a model-behaviour probe
+     tied to `Seshat.Instructions`. `/write-smoke-tests` marks its candidates
+     `<!-- standing -->` — confirm that judgment rather than re-deriving it,
+     and promote anything it missed. Move the check verbatim; a rewritten
+     check is an unrun check.
+   - **Retire** everything else with the plan. A check that verifies *this
+     feature works* is an acceptance test, and its job is done. Archiving it
+     is correct, not a loss — `docs/archive/` keeps it findable.
+
+   This step is the only thing standing between `live-invariants.md` and the
+   fate of the old monolithic smoke-test file, which grew a section per
+   feature and never lost one. If nothing qualifies, say so; an empty
+   promotion is a normal outcome and a common one.
+
+4. **Archive the plan doc, if one exists.** If the feature had a detailed plan
    in [docs/](docs/) (outside `archive/`), move it to
    [docs/archive/](docs/archive/) and prepend the banner style the other
    archived docs use:
@@ -54,11 +76,11 @@ are often no-ops, but check rather than assume.
    plan is how the reasoning behind a shipped decision stops being findable,
    which is the entire reason the plan is kept.
 
-4. **Sync [CLAUDE.md](CLAUDE.md).** New module → add it to the module map.
+5. **Sync [CLAUDE.md](CLAUDE.md).** New module → add it to the module map.
    Changed flow or conventions → fix the relevant section. No changes needed
    is a fine answer, but look.
 
-5. **Check [.claude/docs/](.claude/docs/)** — if the feature changed how
+6. **Check [.claude/docs/](.claude/docs/)** — if the feature changed how
    tools are added, how commands flow, or added OSC gotchas, update the
    matching doc.
 
@@ -70,6 +92,7 @@ are often no-ops, but check rather than assume.
    addresses) — an address added under a prefix upstream owns, like
    `/live/clip/quantize`, is documented by hand or not at all.
 
-6. **Verify** with `mix precommit` if anything outside `docs/` changed, then
-   summarize: what was removed from the roadmap, what was archived, what
-   follow-ups were added.
+7. **Verify** with `mix precommit` if anything outside `docs/` changed, then
+   summarize: what was removed from the roadmap, what was archived, which live
+   checks were promoted to `live-invariants.md` and which retired with the
+   plan, and what follow-ups were added.

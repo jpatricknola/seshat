@@ -4,15 +4,23 @@ description: Run every section of the smoke-test checklist in one zero-touch swe
 disable-model-invocation: true
 ---
 
-**Read [.claude/skills/smoke-test/SKILL.md](.claude/skills/smoke-test/SKILL.md)
-in full before doing anything.** That file is the single source of truth for
-what each check is and how to judge it — this one never restates a check, only
-decides *whether* it runs in a zero-touch sweep and *what stands in* for the
-parts that normally need a human. If the two ever disagree about how to verify
-something, the smoke-test skill wins; fix the divergence there, not here.
+**Read [docs/live-invariants.md](docs/live-invariants.md) in full, and
+[.claude/skills/smoke-test/SKILL.md](.claude/skills/smoke-test/SKILL.md) for how
+to run and judge a check.** Those two are the source of truth; this file never
+restates a check, only decides *whether* it runs in a zero-touch sweep and *what
+stands in* for the parts that normally need a human. If they ever disagree about
+how to verify something, they win; fix the divergence there, not here.
 
-Scope is **everything, regardless of branch**: run every section of the
-checklist, not just the ones the current diff touches.
+Scope is **every section of `live-invariants.md`, regardless of branch** — those
+checks are standing properties, so the current diff has no bearing on which
+apply. Feature-specific checks in `docs/PLAN_*.md` are **out of scope**: they are
+acceptance tests for one change, and `/smoke-test` on that change's branch is
+where they run.
+
+A sweep updates each swept section's `Last verified` line — that line is the
+only record anywhere that the live layer was exercised, and keeping it current
+is half the value of running this. Leave it alone for any section you
+substituted rather than ran.
 
 ## Ground rules
 
@@ -73,14 +81,6 @@ reported as the original check having run.
   listener push to `127.0.0.1:11001`, so a plain `get_session_state` (no
   refresh) showing the new tempo proves the route. Same substitute covers the
   "change tempo or a volume by hand in Live" push checks.
-- **Non-4/4 recording check** → set the song time signature by raw send-only
-  OSC — `/live/song/set/signature_numerator` and
-  `/live/song/set/signature_denominator` (both canonical; see
-  [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md)) — using the
-  send-only Python client pattern from smoke-test so nothing binds 11001.
-  Confirm the mirror saw the change (that's a listener-push check for free),
-  run the recording checks that need 4/4 in 4/4 and the two-bars-in-6/8 check
-  in 6/8, then restore the original signature the same way.
 - **Quantize "by eye"** → numeric: `write_midi_notes` with starts deliberately
   off-grid by known offsets, then `quantize_clip` with grid `"1/16"` and amount
   1.0, then `get_clip_notes` → every start on a **0.25-beat** multiple (a
@@ -88,76 +88,70 @@ reported as the original check having run.
   measured table exists to catch). `undo`, re-run with amount 0.5 → starts
   exactly halfway to the grid. This is *stronger* than the by-eye original;
   timing feel by ear stays uncovered.
-- **Preview audibility** → send `preview_item` / `stop_preview` raw and verify
-  what is checkable: nothing added to the set (`get_session_state`,
-  `get_track_devices`) and a clean Log.txt tail. Whether it *sounds* is
-  uncovered — cue routing is a hands-and-ears matter.
-- **Bypass/delete device audibility** → `get_device_parameters` read-back of
-  parameter 0 before and after, reply-vs-fresh-read agreement for
-  `delete_device`. The audible drop, the dimmed power button, and
-  click-on-delete-while-playing stay uncovered.
+- **`Device On` audibility** (tripwire 4) → `get_device_parameters` read-back of
+  parameter 0 before and after `bypass_device`. The audible drop and the dimmed
+  power button stay uncovered.
+- **Groove dial and `hide_view` flip** (tripwires 2 and 3) → `hide_view` reads
+  its own pane back through `get_view_state`, so tripwire 3 runs fully
+  unattended. The groove dial cannot: reading 130% off the Groove Pool needs
+  eyes on Live's UI, and assigning a groove needs hands. Report tripwire 2 as
+  uncovered, not substituted — there is no stand-in for reading a dial.
 - **Instructions delivery and the 2,048-character truncation** → mechanical
   proxy: `mix run --no-start -e 'IO.puts(String.length(Seshat.Instructions.text()))'`
   — over 2,048 means the tail is being written for nobody, flag it loudly.
   Whether a real client actually delivers the text stays uncovered.
-- **Audio recording headline** → run the take on an audio track and verify a
-  clip exists with the right length; whether it contains audible material
-  depends on input routing Seshat can neither see nor set — uncovered.
 
 ## Excluded outright — the standing Uncovered list
 
 These have no automated stand-in worth the name. Every run's report lists
 them, each with its one-line reason:
 
-- **The whole Session.State failure-path section** — requires Ableton to stop
+- **"The mirror never fabricates", entire** — requires Ableton to stop
   answering, which requires quitting Live or toggling AbletonOSC. Its only
   coverage remains the pure formatter tests and whatever run last exercised it.
-- **Claude Desktop** — tool-list acceptance and instruction delivery in the
-  one client with a history of failing quietly. Needs a fresh conversation
-  there.
-- **The session-guidance behaviour probes** — what the model *says* can only
-  be judged from a separate conversation that received the instructions.
-- **Everything by ear** — sound choice, levels, bypass audibility, preview
-  audibility, quantize feel, glitches on mid-playback deletes.
-- **Guards needing routing or track types no tool creates** — the
-  unrouted-input `will_record_on_start` guard and the group-track arm guard.
+  Since this is where the 120 BPM / 4/4 / C Major fabrications would return, a
+  long-stale `Last verified` on that section is a real risk, not a formality —
+  say so in the report rather than listing it and moving on.
+- **"Model behaviour", entire, plus the MCP surface's Claude Desktop item** —
+  what the model *says* can only be judged from a fresh conversation that
+  received the instructions, in a client this sweep cannot drive. That includes
+  the undo-orchestration probe, which is the one that failed on 2026-08-01.
+- **Bridge integrity item 4 in its real form** — the listener rebind performed
+  by hand in Live's UI. The substitution covers the LOM path only.
+- **Measurement tripwire 2** — reading the Groove Pool's Amount dial needs eyes
+  on Live's UI, and assigning a groove needs hands.
+- **Everything else by ear** — sound choice, levels, bypass audibility,
+  quantize feel, glitches on mid-playback deletes.
 
 ## Run order
 
 Ordering exists to keep state changes from invalidating later checks:
 
 1. Preflight, as above.
-2. Bridge liveness: the bad-index envelope checks (immediate error naming the
-   real count, never a ~2s timeout) on the vendored getters.
-3. MCP schema section: the raw `tools/list` handshake against
-   `http://localhost:4000/mcp` from smoke-test, count matched to
-   `Definitions.all()`. (No schema changed; this is the baseline that the
-   advertised surface is intact.)
-4. The generic tool sweep — smoke-test's "Exercise the change" pattern
-   (normal / boundary / invalid, read every effect back) applied across the
-   tool surface, on scratch tracks.
-5. Catalog section (the conversation-shaped search checks, judged as
-   conversations).
-6. Device tools section, on a stock device and a rack loaded via
-   `load_device`; plugin coverage only if one is already in the set.
-7. Clip-properties section, including the §05 aliasing wart check.
-8. Quantize section (numeric, as above), then the one remaining no-tool-yet
-   address: preview (as above).
-9. Recording section — 4/4 checks, then the 6/8 check via the signature
-   substitution, then restore the signature.
-10. Network-boundary section: export fixtures (plant stale + fresh in
-    `~/.seshat/browser-exports/`, backdate the stale one, `reindex_library`,
-    verify, then delete the surviving fresh fixture yourself), the obsolete
-    path-taking export form by raw OSC with the Log.txt tail as the observable,
-    and the push-route substitution.
-11. The tool-driven listener-fix check (it deletes a track, so it lives near
-    the end).
-12. The Elixir listener/decoder pass — the normal-session traffic list from
-    smoke-test's network item 7, then Seshat's own log output: zero occurrences
-    of either `Dropped OSC` line.
-13. Cleanup: delete every scratch track/scene/clip, restore tempo and time
-    signature, `undo` any in-place edits, remove planted fixtures. Leave the
-    session as preflight found it.
+2. **Bridge integrity** — items 1 and 2 (the extension answering, the bad-index
+   envelope at every depth). Item 4, the listener rebind, is deferred: it
+   deletes a track, so it runs near the end, and only in its substituted form.
+3. **The advertised MCP surface** — items 1–4 via `scripts/mcp_call.py`. Item 5
+   (Claude Desktop) is excluded outright.
+4. A generic tool sweep across the surface on scratch tracks — normal /
+   boundary / invalid, every effect read back. Not an invariants section; it is
+   the cheap breadth pass that catches a tool that stopped answering at all.
+5. **Catalog ranking** — all four, judged as conversations.
+6. **Measurement tripwires** — item 4 (`Device On`) on a stock device and a
+   rack; item 5 (stray-track guard); item 1 (quantize spacing) numerically per
+   the substitution above; item 3 (`hide_view`), which self-checks. Item 2
+   (groove dial) is excluded outright.
+7. **OSC network boundary** — item 1 (`lsof`, already done in preflight), item 3
+   (obsolete export form, Log.txt tail as the observable), item 4 (the
+   listener/decoder traffic pass). Item 2 needs Seshat stopped: substituted.
+   Also run the export-fixture cleanup check here — plant stale + fresh in
+   `~/.seshat/browser-exports/`, backdate the stale one, `reindex_library`,
+   verify, then delete the surviving fresh fixture yourself.
+8. **Bridge integrity item 4**, substituted (see below).
+9. Cleanup: delete every scratch track/scene/clip, restore tempo and time
+   signature, `undo` any in-place edits, remove planted fixtures. Leave the
+   session as preflight found it.
+10. Update the `Last verified` line on every section actually run.
 
 ## Report
 
