@@ -5,8 +5,6 @@ defmodule Seshat.Tools.HandlersTest do
   alias Seshat.Test.OSCSink
   alias Seshat.Tools.Handlers
 
-  @reply_port Application.compile_env!(:seshat, :osc_reply_port)
-
   # Every describe that dispatches a *known* tool name owns a socket, whether or
   # not the tool itself reaches the wire: `Handlers.call/2` wraps every known
   # dispatch in a begin/end undo step, so even a tool that rejects its params
@@ -16,7 +14,8 @@ defmodule Seshat.Tools.HandlersTest do
   # Ableton (config/test.exs).
   defp osc_sink(_context) do
     sink = start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
-    start_supervised!(Seshat.OSC.Transport)
+    start_supervised!({Seshat.OSC.Transport, send_port: OSCSink.port(sink), reply_port: 0})
+
     %{sink: sink}
   end
 
@@ -66,7 +65,10 @@ defmodule Seshat.Tools.HandlersTest do
 
   defp answer_guard(_sink, _address, replies), do: replies
 
-  defp reply_datagram(sink, binary), do: :ok = OSCSink.send_datagram(sink, @reply_port, binary)
+  defp reply_datagram(sink, binary) do
+    reply_port = :sys.get_state(Seshat.OSC.Transport).reply_port
+    :ok = OSCSink.send_datagram(sink, reply_port, binary)
+  end
 
   # `Message.encode/2` has no boolean clause, because nothing in Seshat ever
   # sends one — but AbletonOSC's `_get_property` hands Live's raw Python value
@@ -463,7 +465,7 @@ defmodule Seshat.Tools.HandlersTest do
       :ok =
         OSCSink.send_datagram(
           sink,
-          @reply_port,
+          :sys.get_state(Seshat.OSC.Transport).reply_port,
           Message.encode("/live/view/get/is_view_visible", ["Browser", "ok", 0])
         )
 

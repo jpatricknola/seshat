@@ -2,16 +2,19 @@ defmodule Seshat.Test.OSCSink do
   @moduledoc """
   A UDP socket standing in for AbletonOSC in tests.
 
-  Binds the port `Seshat.OSC.Transport` sends to in `MIX_ENV=test`
-  (`config :seshat, :osc_send_port`, 31000 — never AbletonOSC's 11000), so a
-  test that starts Transport provably cannot reach a running Live.
+  By default, binds an OS-assigned ephemeral port and exposes it through
+  `port/1`. Tests inject that port into `Seshat.OSC.Transport`, so concurrent
+  test BEAMs never compete for a process-wide fixed port and no test can reach
+  a running Live.
 
   With `forward_to: pid` every datagram is decoded and delivered as
   `{:osc_out, address, args}`, which turns isolation from a claim into an
   assertion:
 
-      start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
-      start_supervised!(Seshat.OSC.Transport)
+      sink = start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
+      start_supervised!(
+        {Seshat.OSC.Transport, send_port: Seshat.Test.OSCSink.port(sink), reply_port: 0}
+      )
       # ...
       assert_receive {:osc_out, "/live/track/set/panning", [0, -1.0]}
 
@@ -43,16 +46,26 @@ defmodule Seshat.Test.OSCSink do
     GenServer.call(pid, {:send_datagram, to_port, binary})
   end
 
+  @doc "Return the UDP port this sink owns."
+  @spec port(pid()) :: :inet.port_number()
+  def port(pid), do: GenServer.call(pid, :port)
+
   @impl true
   def init(opts) do
-    port =
-      Keyword.get_lazy(opts, :port, fn -> Application.fetch_env!(:seshat, :osc_send_port) end)
+    port = Keyword.get(opts, :port, 0)
 
     case :gen_udp.open(port, [:binary, active: true]) do
-      {:ok, socket} -> {:ok, %{socket: socket, forward_to: opts[:forward_to]}}
-      {:error, reason} -> {:stop, reason}
+      {:ok, socket} ->
+        {:ok, actual_port} = :inet.port(socket)
+        {:ok, %{socket: socket, port: actual_port, forward_to: opts[:forward_to]}}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
   end
+
+  @impl true
+  def handle_call(:port, _from, state), do: {:reply, state.port, state}
 
   @impl true
   def handle_call({:send_datagram, to_port, binary}, _from, state) do

@@ -130,8 +130,11 @@ defmodule Seshat.MCP.ServerTest do
 
   describe "requests the interception must not touch" do
     test "a valid call reaches the handler and sends OSC" do
-      start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
-      start_supervised!(Seshat.OSC.Transport)
+      sink = start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
+
+      start_supervised!(
+        {Seshat.OSC.Transport, send_port: Seshat.Test.OSCSink.port(sink), reply_port: 0}
+      )
 
       assert {:reply, %{"isError" => false}, _frame} = call("set_metronome", %{"enabled" => true})
 

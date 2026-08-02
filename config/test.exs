@@ -21,8 +21,10 @@ config :seshat, :start_catalog, false
 
 # The suite must be safe to run with Live open and unsaved work. AbletonOSC
 # listens on 11000 and replies to a fixed 11001; these are deliberately neither.
-# Any test that starts Seshat.OSC.Transport therefore talks to a test-local
-# socket (Seshat.Test.OSCSink) and cannot reach Ableton — asserted by
+# Tests inject OS-assigned ephemeral ports from Seshat.Test.OSCSink into each
+# Transport they start. Zero is the safe fallback: an uninjected Transport can
+# bind locally but cannot send to AbletonOSC's 11000, and concurrent test BEAMs
+# cannot collide on a process-wide fixed port. Asserted by
 # test/seshat/osc/transport_test.exs.
-config :seshat, :osc_send_port, 31000
-config :seshat, :osc_reply_port, 31001
+config :seshat, :osc_send_port, 0
+config :seshat, :osc_reply_port, 0
