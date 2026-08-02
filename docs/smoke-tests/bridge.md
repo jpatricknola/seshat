@@ -16,7 +16,9 @@ tests when they differ.
 ## The extension is answering at all
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. `get_session_state` printed `Return 0 "A-Smoke
+Return" (send A): volume=0.85, pan=0.0` and the master line with pan and cue
+volume; no "Return/master state unavailable".*
 
 `get_session_state` prints return tracks and master volume when `return_track.py`
 is loaded, and a single "Return/master state unavailable" line when it isn't. A
@@ -26,7 +28,14 @@ and Live restart — check this before diagnosing anything else.
 ## A bad index errors immediately, not after ~2s
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed at all three depths, every reply naming the real
+count, all ≤0.20s (whole `mcp_call.py` round trip, Python startup included):
+`get_track_devices` return 99 → "this set has 1 return track(s)";
+`set_device_parameter`/`bypass_device` device 99 on a valid return → "the chain
+holds 1 device(s)"; `get_device_parameters` device 5 on the master → "the chain
+holds 0 device(s)". The historical `-1` parameter echo is gone —
+`set_device_parameter` parameter 999 replied "there is no parameter 999 —
+'Reverb' has 33 parameter(s)", echoing the value actually asked for.*
 
 These handlers always reply, including on an out-of-range index, and the reply
 names the real count. A ~2s timeout instead means the installed copy is stale.
@@ -41,7 +50,10 @@ parameter index was echoed as `-1` instead of the value actually asked for.
 ## A stale install is distinguishable from a broken tool
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — **not reproduced**. `diff -rq` of `priv/AbletonOSC`
+against the installed Remote Scripts copy showed no divergence (only the
+installed `logs/` and the repo's `tests/`), so the stale state was unreachable
+without downgrading, which this test forbids.*
 
 Before reinstalling during implementation — or against an older Remote Scripts
 copy — every vendored tool must fail with the `mix abletonosc.install` hint

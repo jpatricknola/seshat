@@ -33,7 +33,16 @@ defmodule Seshat.Tools.HandlersTest do
 
   # `undo`/`redo` read `can_undo`/`can_redo` before sending, and block on the
   # reply — so a tool call that nothing answers spends the full 2s guard timeout.
-  @guard_addresses ["/live/song/get/can_undo", "/live/song/get/can_redo"]
+  # `record_clip`'s pre-fire chain and post-fire echo read the same way, so they
+  # are answered by the same helper.
+  @guard_addresses [
+    "/live/song/get/can_undo",
+    "/live/song/get/can_redo",
+    "/live/clip_slot/get/has_clip",
+    "/live/track/get/arm",
+    "/live/clip_slot/get/will_record_on_start",
+    "/live/clip/get/is_recording"
+  ]
 
   # Datagrams in arrival order, playing AbletonOSC for the guard as they go by.
   #
@@ -2010,6 +2019,53 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert message =~ "- bars: must be a number"
       assert message =~ ~s(got "four")
+    end
+  end
+
+  # The one guard in record_clip's chain that had no coverage at all, which is
+  # how it shipped 2026-07-29 refusing every call for ten months.
+  #
+  # `will_record_on_start` was read as "would firing this slot record?" and used
+  # to gate the fire. It isn't that: measured 2026-08-03 on Live 12.4.3, it
+  # returns `False` on an armed MIDI track with an empty slot that
+  # `/live/clip_slot/fire` then records immediately — and stays `False` with the
+  # transport stopped or playing and `session_record` off or on. So a `false`
+  # must reach the *reply*, never the control flow. `bars` is omitted throughout:
+  # that is the one path where `record_length/1` short-circuits without reading
+  # `State.song()`, leaving a chain made purely of OSC the sink can answer.
+  describe "record_clip and the unreliable will_record_on_start reading" do
+    setup :osc_sink
+
+    test "a false reading still fires, and is disclosed in the reply", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("record_clip", %{"track" => 2, "clip_slot" => 0}) end)
+
+      # Indexed getters must echo the indices they were asked about or
+      # `query_echoed/5` rejects the reply, so these are arg lists rather than
+      # the bare `T`/`F` an index-free song property answers with. In order:
+      # has_clip 0 (slot empty), arm 1 (already armed), will_record **0**, then
+      # the post-fire echo — has_clip 1, is_recording 1.
+      trace = guarded_trace(sink, [[2, 0, 0], [2, 1], [2, 0, 0], [2, 0, 1], [2, 0, 1]])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/clip_slot/fire", [2, 0]} in trace,
+             "a false will_record_on_start must not stop the fire"
+
+      assert message =~ "Recording into track 2, slot 0 until stop_recording."
+      assert message =~ "might not capture input"
+      assert message =~ "fired anyway"
+      assert message =~ "check the track's input routing"
+    end
+
+    test "a true reading fires with no input caveat in the reply", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("record_clip", %{"track" => 2, "clip_slot" => 0}) end)
+      trace = guarded_trace(sink, [[2, 0, 0], [2, 1], [2, 0, 1], [2, 0, 1], [2, 0, 1]])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/clip_slot/fire", [2, 0]} in trace
+      refute message =~ "might not capture input"
+      refute message =~ "input routing"
     end
   end
 

@@ -650,6 +650,69 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
+## #25 · `record_clip` says "Queued" for a take that starts immediately
+
+**Goal:** a take fired from a stopped transport reports "Recording now.", not
+"Queued".
+
+**Why:** found running the never-run agent smoke tests on 2026-08-03
+([smoke-tests/recording.md](smoke-tests/recording.md) § Echo wording). Across
+five takes with the transport verified stopped immediately beforehand, every
+reply said "Queued: it starts at the next launch-quantization boundary, usually
+the next bar." All five then recorded correctly, so this is cosmetic — but it
+contradicts `record_clip`'s own description ("from a stopped transport it starts
+immediately") and tells the user to expect a wait that isn't happening.
+
+The echo is probably not lying: firing from a stopped transport also *starts* the
+transport, and at the instant `record_echo/2` reads, the slot is triggered while
+`is_recording` is still false, so `queued_or_nothing/2` correctly labels the
+moment it sampled. The reply is describing the echo's timing rather than the
+user's experience.
+
+**Planner notes:**
+- Decide which is wrong, the wording or the read. Re-reading `is_recording` once
+  after a short delay would resolve it but adds latency to every take; treating
+  "transport was stopped when we fired" as sufficient to say "Recording now." is
+  cheaper and needs no extra round trip.
+- Whatever changes, keep `queued_or_nothing/2`'s real job intact — distinguishing
+  a queued take from a fire that did nothing at all. The smoke test confirms
+  `is_triggered` does read true in the window, so that half works.
+- Small. The pure layer can cover the wording; the timing claim needs the live
+  test above re-run.
+
+## #26 · A rejected index says which index, and what to call next
+
+**Goal:** a tool call Live rejects for a bad index tells the model which index
+was bad and which `get_*` tool resolves it, instead of the bare "Ableton
+rejected the request: Index out of range".
+
+**Why:** found running the never-run agent smoke tests on 2026-08-03
+([smoke-tests/devices.md](smoke-tests/devices.md) § Device error paths are
+errors, not stalls). The guidance was never deleted — it was stranded. The
+helpful wording ("Check both indices with `get_track_devices` first") lives on
+`do_call`'s `catch :exit` timeout branch
+([handlers.ex:2886](../lib/seshat/tools/handlers.ex#L2886) and siblings), and
+the `/live/error` correlation shipped the same day made that branch unreachable
+for a bad index: Live's rejection now arrives in ~0.19s and renders through
+`Transport.describe_error/1`, which knows only the message Python sent. The
+fast-fail is the right behaviour and is not in question; the regression is that
+the model went from a slow, actionable message to a fast, generic one, on
+exactly the path a model is most likely to hit by guessing an index.
+
+**Planner notes:**
+- The information is present at the rejection site — `/live/error`'s structured
+  payload carries `address`, `arg_count` and the request args (see
+  `Seshat.OSC.Transport`'s "Failed-query correlation"), so the offending index is
+  in hand; only the rendering drops it.
+- Decide where the hint belongs. `describe_error/1` is deliberately the one
+  place a caller renders the message, but it is tool-agnostic — a per-tool hint
+  probably wants to travel with the `{:error, reason}` the handler clause
+  already matches, not be pattern-matched onto message strings inside Transport.
+- Audit the other `catch :exit` hints for the same stranding while in there;
+  this is unlikely to be the only one the fast-fail bypassed.
+- Small effort. The pure layer can cover it: `transport_test.exs` already
+  constructs `/live/error` payloads, so the rendering is testable without Live.
+
 ---
 
 ## Deliberately not planned

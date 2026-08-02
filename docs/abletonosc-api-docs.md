@@ -572,6 +572,27 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/get/end_marker` | `track_id, clip_id` | `track_id, clip_id, end_marker` | End marker |
 | `/live/clip/set/end_marker` | `track_id, clip_id, end_marker` | | Set end marker (beats) |
 
+### The loop pair rejects an inversion, silently
+
+Measured 2026-08-03, Live 12.4.3. `/live/clip/set/loop_start` with a value at or
+past the current `loop_end` **does nothing** — Live does not clamp it to a legal
+value, and nothing comes back on the wire. Live raises
+`Cannot set LoopStart behind LoopEnd`, `AbletonOSCHandler` catches it and writes
+`ERROR:abletonosc:… - Error setting clip.loop_start: …` to Live's `Log.txt`, and
+the property keeps its old value. (`/live/clip/set/loop_end` is symmetric.)
+
+That is why `set_clip_properties` validates the pair caller-side and orders the
+two writes end-first when a brace moves entirely past its old position: without
+both, moving a brace forward would silently half-apply.
+
+Also measured the same day: **with `looping` off, `loop_start`/`loop_end` read
+`0.0` and the clip length** — they do not track `start_marker`/`end_marker`. A
+clip with markers at 0.0–2.0 and an 8-beat length reports a loop pair of
+0.0–8.0. Reading the pair to decide anything while looping is off therefore
+reads the clip extent, not the brace Live will restore when looping goes back on
+(that brace survives independently — measured by toggling looping off and on
+around a 2.0–6.0 brace, which came back as 2.0–6.0).
+
 ### Quantization grid
 
 `/live/clip/quantize`'s `grid` argument is Live's `GridQuantization` enum, which

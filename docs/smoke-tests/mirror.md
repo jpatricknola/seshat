@@ -103,7 +103,13 @@ failed/disagreed split must not have loosened it for the disagreed case.
 ## The settling marker appears and clears
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed, all three clauses. Two `create_track` calls plus
+a plain read in one model response: the read carried "A structural change is
+still settling…" and showed the pre-create layout (track 0 alone). A plain read
+one model round later carried no such sentence and listed both new tracks. A
+third create plus `refresh: true` in one model response rebuilt immediately —
+the just-created track present, no settling sentence — confirming
+`refresh_sync/0` cancels the timer.*
 
 Creates plus a plain read **in one model response** → the reply carries "A
 structural change is still settling…". A later plain read, after the window, does
@@ -113,7 +119,14 @@ rebuilding).
 ## The scalar mixer setters no longer trigger a refresh
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — **state half passed, log half not checked.** All seven
+setters issued in one model response, then a plain `get_session_state`: it
+answered carrying every pushed value — return volume 0.7, pan −0.3, muted,
+soloed; master volume 0.8, pan 0.2, cue 0.6. **The four return listener pushes
+this test flags as "inferred from the master ones, never measured" are hereby
+measured: all four arrive.** The `no Song:/Loaded …` assertion was not checked —
+the Seshat server's log goes to its own tty (`/dev/ttys005`), which the agent
+cannot read; re-run this half from the terminal running the server.*
 
 Issue the four return mixer setters (volume, pan, mute, solo) and the three
 master ones (volume, pan, cue volume) in a burst, then `get_session_state`
@@ -128,7 +141,13 @@ inferred from the master ones, never measured.
 ## A burst of creates collapses into one refresh
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — **blocked, not run.** The check is the log timestamps of
+every tool call against every `Song:` / `Loaded …` sequence, and the Seshat
+server's log goes to its own tty (`/dev/ttys005`), unreadable by an agent. The
+state-visible half was seen incidentally while running the settling-marker test
+above (burst of creates → snapshot window → convergence) but proves nothing
+about the refresh *count*, which is this test. Re-run from the terminal running
+the server.*
 
 On scratch material, create several tracks with a distinct final name, **with the
 creates and the read in one model response**. An ordinary read during the quiet
@@ -146,7 +165,11 @@ afterwards.
 ## `refresh: true` absorbs the pending timer
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — **blocked, not run.** The "rebuilds immediately" half was
+observed (create + `refresh: true` in one model response returned the new track
+at once), but the discriminating half — **no duplicate refresh a second later** —
+is a log reading, and the server's log goes to its own tty (`/dev/ttys005`).
+Re-run from the terminal running the server.*
 
 While an asynchronous refresh is pending, call `get_session_state(refresh: true)`
 — issue the mutation and the refreshing read **in one model response**, or the
@@ -157,7 +180,12 @@ later**.
 ## The last request is never dropped
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — **blocked, not run.** Confirming the mutation landed
+*mid*-rebuild requires the log timestamps, and the server's log goes to its own
+tty (`/dev/ttys005`). Running only the final-state half would not distinguish a
+mid-rebuild mutation from the just-after one this test names as the likely
+near-miss, so it was not attempted. Re-run from the terminal running the
+server.*
 
 Make one more structural mutation while a rebuild is already running (it lasts
 1.0–1.8s, so again from the same model response), and confirm one trailing
