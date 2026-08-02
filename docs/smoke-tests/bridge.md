@@ -61,6 +61,58 @@ Baseline its byte size before the run and read only the tail. Upstream raised a
 old AbletonOSC is still installed.
 (`~/Library/Preferences/Ableton/Live <version>/Log.txt`.)
 
+## A rejected query fails fast, and says rejected
+
+*Run mode: agent*
+*Last run: —*
+
+The reinstall-and-restart precondition at the top of this file applies — the
+structured `/live/error` payload exists only in the fork commit this test
+guards. Call a tool that queries an upstream indexed getter with a track index
+far past the set — `get_track_devices` on track 99 — and time the reply. It
+must come back in milliseconds, not seconds (its queries otherwise wait out
+the 5-second default query timeout), and read as a rejection
+("Ableton rejected" in the message), not as the guard-timeout wording ("Timed
+out checking…"). Then repeat with `get_clip_notes` on track 99 with a
+fractional `from_time` of 0.1 — that query carries float arguments 32-bit OSC
+cannot represent exactly, so a fast rejection here is the end-to-end proof
+that the error's echoed float tail still matches the request after the
+round-trip.
+
+A timeout instead of a rejection means the structured error never arrived or
+never matched. Check Live's `Log.txt` for the per-address
+"Error handling OSC message /live/…" line (Python raised and caught it), then
+the Seshat server's `OSC in: /live/error` debug line (the payload reached
+Elixir): the first missing means a stale install, the second missing means the
+send, the payload shape, or the Transport matcher.
+
+## One rejection, one error datagram
+
+*Run mode: agent*
+*Last run: —*
+
+While provoking the rejection above, the Seshat server's debug log shows
+exactly **one** `OSC in: /live/error` for it, with a `"request"`-tagged
+payload. A second copy tagged `"log"` for the same rejection means the relay
+is not skipping marked records — harmless to correlation, since a `"log"`
+payload is never matched, but a duplicate per error. The marker *mechanism*
+(`extra` reaching a sibling handler's `record` inside Live's embedded Python)
+was measured working on 2026-08-03, so a failure here points at the marker
+check in `manager.py`'s relay, not at Live's logging and not at the matcher.
+
+## Only the offender fails
+
+*Run mode: agent*
+*Last run: —*
+
+Issue the bad-index call and a valid read of the same kind
+(`get_track_devices` on a track that exists) **in one model response**, so the
+two queries sit adjacent in Transport's FIFO. The bad one is rejected fast;
+the valid one succeeds with correct data. The valid call failing with the
+rejection message means the matcher correlates too loosely (address without
+arguments); both calls timing out means the queue never advanced after the
+error.
+
 ## The listener rebind, by hand in Live's UI
 
 *Run mode: user — requires deleting and renaming tracks in Live's UI*

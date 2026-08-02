@@ -23,8 +23,10 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ## #1 · Correlate `/live/error` so a failed query fails fast
 
-**Goal:** a query Live rejects fails in milliseconds, on the error AbletonOSC
-already broadcasts, instead of sitting out a full 5-second timeout.
+**Goal:** a query Live rejects fails as soon as AbletonOSC reports the rejection,
+instead of sitting out a full 5-second timeout. Only the query that produced the
+error may fail; unrelated setters, other queries, and general AbletonOSC errors
+must not disturb it.
 
 **Why:** measured 2026-08-02, while reproducing the `undo`/`redo` honest-
 reporting defect (since shipped — see
@@ -61,27 +63,58 @@ the same five seconds, including the stale model-held index named in "Verify
 destructive mutations before reporting success."
 
 **User stories:**
+
 - As a producer, undoing a few things doesn't freeze Seshat mid-conversation for
   five seconds while it waits out an error Ableton already reported.
 
 **Planner notes:**
-- **The blocker is the payload, and it is ours to fix.** `/live/error` carries a
-  bare `str(e)` — no address, no index — caught at the top-level parse loop
-  ([osc_server.py:199](../priv/AbletonOSC/abletonosc/osc_server.py#L199)). With
-  one query in flight an error is *probably* about it, but not soundly: a silent
-  setter erroring concurrently (a bad `show_view` name) would falsely fail an
-  unrelated query. Include the offending address in the error payload — one line,
-  in a file the fork already diverges in — and correlation becomes sound.
+
+- **The blocker is the payload, and it is ours to fix.** `/live/error` currently
+  carries only the formatted log message. Its generic log relay
+  ([manager.py:53-64](../priv/AbletonOSC/manager.py#L53)) has neither the
+  offending address nor its arguments, while the exception is caught outside
+  the individual callback
+  ([osc_server.py:190-200](../priv/AbletonOSC/abletonosc/osc_server.py#L190)).
+  Preserve that request context at the callback boundary. The wire contract is
+  `/live/error ["request", address, message, arg_count, ...request_args]` for a
+  handler failure and `/live/error ["log", message]` for an error with no
+  originating OSC request. `arg_count` makes the variable tail explicit and
+  preserves zero-argument requests without a special case.
+  Address alone is insufficient: an error delayed past a timeout could otherwise
+  fail the next query to the same address with different indices. General
+  AbletonOSC errors that have no request context must remain explicitly
+  uncorrelated, not be guessed onto the current query.
 - **Fork change: two commits, `mix abletonosc.install`, and a Live restart.**
   Standard sequence in [.claude/rules/osc.md](../.claude/rules/osc.md). The new
   payload shape belongs in the address docs, and `vendored_addresses_test` will
   care.
-- Decide what a fast-failed query returns. Timeout-shaped (`nil`) keeps every
-  existing caller working unchanged — `read_tracks/2` already maps it to
-  `{:degraded, i}` — while a distinct error value is more honest but touches
-  every call site. Prefer the former unless a caller can act on the difference.
-- Keep this a Transport concern; no caller should learn that `/live/error`
-  exists.
+- **Transport contract:** when both address and arguments exactly match the
+  in-flight request, cancel its timer, reply
+  `{:error, {:live_error, message}}`, and advance the FIFO immediately. This is
+  intentionally distinct from a timeout: `Transport.query/3` exits on timeout;
+  it never returns `nil`. Audit its callers and preserve each caller's existing
+  degraded/error behaviour rather than leaking a raw internal term into a tool
+  result. In particular, the structural race above must still make
+  `read_tracks/2` return `{:degraded, i}`.
+- A structured error whose address or arguments do not match the in-flight
+  request, a legacy one-string `/live/error`, and an error received with no query
+  in flight are broadcast normally and answer nobody. Keep all knowledge of
+  `/live/error` and its payload inside Transport.
+
+**Done when:**
+
+- A matching handler error releases the query queue immediately with the
+  Transport result above; it does not wait for the request deadline.
+- An error from a concurrent setter, a different query, or a timed-out earlier
+  query cannot fail the current query.
+- The existing structural-race path still refuses the partial mirror and
+  schedules its normal recovery.
+- Transport tests cover matching, mismatched-address, mismatched-arguments,
+  legacy/unstructured, no-in-flight, and FIFO-advance cases; the plan's live
+  verification reproduces a rejected indexed getter after reinstalling the
+  fork and restarting Live.
+
+**Plan:** [PLAN_live_error_correlation.md](PLAN_live_error_correlation.md)
 
 ## #2 · `start_new_project` — the setup wizard, and prompt budget back
 
