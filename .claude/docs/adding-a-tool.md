@@ -134,5 +134,6 @@ Two places, and the choice is not a matter of taste:
    truncates past that silently — so a rule that could live in a description
    is free there and scarce here.
 
-Nothing in `mix test` checks what any of this makes the model *say* — the
-`/smoke-test` skill has the behavioural checks, one per rule.
+Nothing in `mix test` checks what any of this makes the model *say* —
+[docs/smoke-tests/model-behaviour.md](../../docs/smoke-tests/model-behaviour.md)
+has the behavioural checks, one per rule.

@@ -429,10 +429,10 @@ values, and the resulting brace is not the one asked for.
   `handlers_test.exs` are the place. What is not pure-testable is whether Live
   aliases as described; that is a measurement, and it belongs in
   [abletonosc-api-docs.md](abletonosc-api-docs.md) once made.
-- The live check goes in the plan's `## Live verification` section per
-  `/write-smoke-tests`: with looping off, confirm `get_clip_properties` shows
-  the loop points tracking the play markers, then set `looping` and both points
-  in one call and confirm the intended brace results.
+- The live check already exists as
+  `smoke-tests/clips.md § The loop pair with looping off`, where a failure is
+  currently the *expected* result. Cite it from the plan, and when this ships,
+  rewrite that test so a failure means a regression again.
 
 ## #13 · Search eval harness — numbers before opinions
 

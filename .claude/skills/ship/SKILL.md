@@ -33,38 +33,22 @@ are often no-ops, but check rather than assume.
    an out-of-file rank reference is a bug in that file, not renumbering work you
    owe. If you notice one, rewrite it to name the item's title instead.
 
-3. **Promote, carry or retire each live check, before archiving.** Walk the plan's
-   `## Live verification` section and decide, per check, where it goes when
-   the plan leaves circulation:
+3. **Check the plan's `## Live verification` section before archiving.** The
+   tests themselves live in [docs/smoke-tests/](docs/smoke-tests/) and stay there
+   — nothing is promoted or retired, because a smoke test guards a *silent*
+   failure mode that outlasts the feature shipping. What archives is the plan's
+   record of what a run observed, which is why it matters that the record is
+   there. So:
 
-   - **Promote** to [docs/live-invariants.md](docs/live-invariants.md) if it
-     outlives the feature — a standing property of the system (the bridge
-     answering, the loopback bind, the listener rebind, the advertised tool
-     count), a tripwire guarding a corrected measurement (a grid spacing, a
-     dial reading, an enum measured against Live), or a model-behaviour probe
-     tied to `Seshat.Instructions`. `/write-smoke-tests` marks its candidates
-     `<!-- standing -->` — confirm that judgment rather than re-deriving it,
-     and promote anything it missed. Move the check verbatim; a rewritten
-     check is an unrun check.
-   - **Carry** any check that has **never actually run**. An acceptance test's
-     job is done when it *passes*, not when the feature ships — and a plan can
-     be archived with its checks unrun, which has happened (see
-     [docs/archive/PLAN_session_record.md](docs/archive/PLAN_session_record.md):
-     *"nothing below has executed through the tool path"*). Retiring those
-     would silently convert "never verified" into "verified", which is the one
-     failure this whole structure exists to prevent. Move them to
-     [docs/PLAN_backfill_live_verification.md](docs/PLAN_backfill_live_verification.md),
-     the standing home for checks whose feature shipped before they ran. Ask
-     rather than assume: a check is run only if a smoke report, a PR body, or
-     the plan itself says so.
-   - **Retire** everything else with the plan — checks that ran and passed. An
-     acceptance test that has done its job is correctly archived, not lost;
-     `docs/archive/` keeps it findable.
-
-   This step is the only thing standing between `live-invariants.md` and the
-   fate of the old monolithic smoke-test file, which grew a section per
-   feature and never lost one. If nothing qualifies, say so; an empty
-   promotion is a normal outcome and a common one.
+   - **Every citation must carry a result**, written by `/smoke-test`. A
+     citation with nothing under it means the test never ran — say so in the
+     summary, name it, and leave the section as it is. Archiving a plan whose
+     checks are blank is fine; *implying they passed* is not.
+   - **If any test still reads `*Last run: —*`** in `docs/smoke-tests/`, mention
+     it. Shipping with unrun tests is a decision the user is allowed to make,
+     but not one they should discover later.
+   - A test whose behaviour this feature **removed** gets deleted from its file.
+     That is the only reason to delete one.
 
 4. **Archive the plan doc, if one exists.** If the feature had a detailed plan
    in [docs/](docs/) (outside `archive/`), move it to
@@ -105,6 +89,6 @@ are often no-ops, but check rather than assume.
 
 7. **Verify** with `mix precommit` if anything outside `docs/` changed, then
    summarize: what was removed from the roadmap, what was archived, which live
-   checks were promoted to `live-invariants.md`, which were carried to the
-   backfill plan as never having run, which retired with the plan, and what
-   follow-ups were added.
+   tests the plan cited and which of those actually ran, how many tests in
+   `docs/smoke-tests/` still read `*Last run: —*`, and what follow-ups were
+   added.

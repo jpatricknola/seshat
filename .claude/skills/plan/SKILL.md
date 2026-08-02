@@ -67,14 +67,15 @@ be able to say yes/no to each one.
      model that can't see the code (index base, value range, resolver tool).
    - **Testing** — what's covered pure (no Ableton). Nothing tests through
      `Transport.query/3`.
-   - **Live verification** — the checks that need Ableton open, written out
-     here rather than deferred to a checklist elsewhere. Run
-     `/write-smoke-tests` to derive them: it owns the rules for which
-     properties of a change imply which checks, and the format `/smoke-test`
-     later runs and `/ship` later promotes from. Writing them now, before the
-     code exists, is the point — it forces naming what `mix test` cannot reach
-     while the reasoning is fresh, and it puts the verification in front of
-     `/plan-review` instead of leaving it to whoever ships.
+   - **Live verification** — the tests in [docs/smoke-tests/](docs/smoke-tests/)
+     this change needs, each cited by file and title, plus what they leave
+     uncovered. Run `/write-smoke-tests` to derive them: it owns the rules for
+     which properties of a change imply which tests, and writes any that don't
+     exist yet into the right file. Deciding this now, before the code exists,
+     is the point — it forces naming what `mix test` cannot reach while the
+     reasoning is fresh, and it puts the verification in front of
+     `/plan-review` instead of leaving it to whoever ships. `/smoke-test`
+     writes its results back under each citation.
    - **Out of scope** — what you're deliberately not doing and where it goes
      (usually: stays on the roadmap). A plan without this section grows
      during implementation.
