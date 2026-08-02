@@ -21,83 +21,67 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · `undo` reports success it never observed
+## #1 · Correlate `/live/error` so a failed query fails fast
 
-**Goal:** `undo` and `redo` stop claiming an outcome they cannot see, and a
-batch undo ends with the model able to say what actually reverted — without a
-state read after every single call.
+**Goal:** a query Live rejects fails in milliseconds, on the error AbletonOSC
+already broadcasts, instead of sitting out a full 5-second timeout.
 
-**Why:** measured 2026-08-01, running the repeated-undo acceptance check
-through Claude Desktop. Three MIDI tracks were created in one request (Bass,
-then Keys, then Drums); "undo that" produced three `undo` calls, all three
-returned `"Undone"` — and **Bass was still there afterwards**.
+**Why:** measured 2026-08-02, while reproducing the `undo`/`redo` honest-
+reporting defect (since shipped — see
+[archive/PLAN_undo_honest_reporting.md](archive/PLAN_undo_honest_reporting.md)).
+A mirror rebuild read the track count, then walked indices while three undos
+deleted tracks underneath it. Live raised on the vanished index and AbletonOSC
+announced it immediately:
 
-Bass was created *first*, so it sits deepest in the stack and undo pops
-newest-first. Two tracks going and the deepest one surviving is the signature
-of one undo being consumed by a step that was not a track creation, sitting on
-top of the history — not of an undo failing to send. But **nothing in the
-system can tell those apart after the fact**, and that is the defect. A dropped
-datagram, an unexpected step on top, and reaching the bottom of the history all
-produce the identical string.
-
-The reply is a claim made before any evidence could exist:
-
-```elixir
-case Transport.send_message("/live/song/undo", []) do
-  :ok -> {:ok, "Undone"}
+```
+OSC in: /live/track/get/name [1, "Bass"]
+OSC in: /live/error ["Error handling OSC message: Index out of range"]
+OSC in: /live/song/get/tracks ["1-MIDI"]
 ```
 
-`:ok` there means `:gen_udp.send/4` accepted the datagram. `/live/song/undo`
-never replies, so there is nothing else it could mean. The model then reported,
-accurately, that it had "three vague success signals and no per-track
-confirmation either way."
+Nothing in Seshat consumes `/live/error` — not one reference to it in `lib/` —
+and [transport.ex](../lib/seshat/osc/transport.ex) makes that deliberate: *"A
+reply whose address does not match the in-flight request is broadcast and
+answers nobody."* So the in-flight `/live/track/get/name` waited its full
+`@query_timeout` of 5,000ms to conclude what the error had already said.
 
-This became a user-facing problem the day repeated undo became the *instructed*
-workflow: `undo`'s description now tells the model to call it once per mutating
-tool call when reversing a request. That instruction assumes the top of the
-stack is what the model thinks it is, and nothing checks that assumption or
-notices when it breaks.
+The cost is not local to that one query. Transport keeps exactly one query in
+flight and queues the rest FIFO, and `Seshat.Session.State`'s `do_refresh/1`
+runs synchronously inside the GenServer — so one rejected index stalls every OSC
+query in the process, and every mirror read, for five seconds.
+
+**The structural race itself is not the defect and needs no fix.** A
+count-then-walk-indices read over an async wire has no snapshot, so it can always
+lose to a session mutating underneath it; `read_tracks/2` already handles that
+correctly (`{:degraded, i}`, refuse to serve the partial list, re-read). What is
+wrong is only the *cost of detection*.
+
+The trigger is also wider than structural races: **any** query Live rejects pays
+the same five seconds, including the stale model-held index named in "Verify
+destructive mutations before reporting success."
 
 **User stories:**
-- As a producer, when I ask to undo what I just asked for and one part of it
-  doesn't revert, Seshat tells me — instead of reporting three successes and
-  leaving me to spot the leftover track myself.
-- As a producer, "undo that" that only partly worked is a sentence I hear about,
-  not something I discover later.
-
-**Already done — do not rebuild it.** The batch-verification half of this has
-shipped: `get_session_state`'s description now says to call it once after a
-batch of actions *including several undo calls*, never after each one, and to
-report what could not be verified rather than silently retrying. That covers
-the "one read per batch" half; what remains below is the reply itself.
+- As a producer, undoing a few things doesn't freeze Seshat mid-conversation for
+  five seconds while it waits out an error Ableton already reported.
 
 **Planner notes:**
-- **`undo`/`redo` must stop asserting.** `"Undone"` should say the request was
-  sent, not that history moved. This is the substance of the item and a
-  one-string change — the honest floor regardless of what else is built on top.
-- **Optional, one query:** guard the first undo of a batch with `can_undo` so
-  hitting the bottom of the history is an honest error rather than a cheerful
-  `"Undone"`. Worth it only if the wall proves common in practice.
-  `/live/song/get/can_undo` and `/live/song/get/can_redo` already exist
-  upstream and are already documented
-  ([docs/abletonosc-api-docs.md](abletonosc-api-docs.md)) — **no fork change,
-  no `mix abletonosc.install`, no Live restart.** The undo-granularity plan
-  deferred exposing them — *"nothing needs it yet; stays off the roadmap until
-  something does"* — and this is the something.
-- **Do not add a state read per `undo` call, and do not add a retry chain.**
-  Ruled out by the user story on the stale-mirror item above, and now also by
-  the shipped description: a batch undo costs one verification read *after the
-  batch*.
-- Related, and worth reading together: **"Verify destructive mutations before
-  reporting success"** further down this queue is the same family — a mutation
-  reporting success as soon as `:gen_udp.send/4` returns. This entry is ranked
-  well above it because the undo path now has an instruction telling the model
-  to repeat the call, which multiplies an unverified claim by N.
-- Still unexplained and worth establishing during planning: **what occupied the
-  top of the undo stack.** Selection changes, the follow cam's view steering,
-  and Live's own housekeeping are all candidates; none has been measured. If
-  something Seshat does routinely lands a step on the history, that is a second
-  finding hiding behind this one.
+- **The blocker is the payload, and it is ours to fix.** `/live/error` carries a
+  bare `str(e)` — no address, no index — caught at the top-level parse loop
+  ([osc_server.py:199](../priv/AbletonOSC/abletonosc/osc_server.py#L199)). With
+  one query in flight an error is *probably* about it, but not soundly: a silent
+  setter erroring concurrently (a bad `show_view` name) would falsely fail an
+  unrelated query. Include the offending address in the error payload — one line,
+  in a file the fork already diverges in — and correlation becomes sound.
+- **Fork change: two commits, `mix abletonosc.install`, and a Live restart.**
+  Standard sequence in [.claude/rules/osc.md](../.claude/rules/osc.md). The new
+  payload shape belongs in the address docs, and `vendored_addresses_test` will
+  care.
+- Decide what a fast-failed query returns. Timeout-shaped (`nil`) keeps every
+  existing caller working unchanged — `read_tracks/2` already maps it to
+  `{:degraded, i}` — while a distinct error value is more honest but touches
+  every call site. Prefer the former unless a caller can act on the difference.
+- Keep this a Transport concern; no caller should learn that `/live/error`
+  exists.
 
 ## #2 · `start_new_project` — the setup wizard, and prompt budget back
 
@@ -286,7 +270,39 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #7 · Producer personas — switchable musical taste
+## #7 · Monitored refresh worker for `Session.State`
+
+**Goal:** move the mirror rebuild off the GenServer's synchronous path and give
+it an overall deadline plus freshness / connection / last-error metadata, so a
+slow or unreachable Ableton cannot block every mirror read behind it.
+
+**Why:** this lived in "Deliberately not planned" — the larger half of the
+2026-07-29 review's session-refresh finding, deferred rather than declined, with
+one stated reopen condition: *"the blocking window is short and has never been
+observed. Reconsider if the blocking window is ever actually seen."* **It was
+observed on 2026-08-02.** An ordinary undo burst raced a rebuild, and one
+rejected index blocked `do_refresh/1` inside the GenServer for a full five
+seconds — see "Correlate `/live/error` so a failed query fails fast" for the
+measurement. The condition has fired, so this belongs in the queue rather than
+in the declined list.
+
+**Gated on the fast-fail fix landing first.** Correlating `/live/error` cuts that
+same window from ~5,000ms to ~1ms without restructuring anything, which may
+remove this item's entire motivation. Buy it only if blocking is still observed
+after that ships — the same discipline the catalog levers get from "Search eval
+harness". Ranked here for that reason: conditional, and the cheap fix above may
+retire it.
+
+**Planner notes:**
+- Only the fabricated-defaults half of the original finding shipped (2026-07-30);
+  refresh still runs sequential synchronous OSC calls inside the GenServer.
+- The OSC query queue changed the contention picture after that review was
+  written — re-establish the real blocking behaviour by measurement before
+  designing against the review's description of it.
+- `@refresh_sync_timeout` already bounds what the *caller* waits, not what the
+  refresh costs. That asymmetry is what this item is actually about.
+
+## #8 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* onto the base session instructions. 
 Personas live one per file in [priv/producers/](../priv/producers/)
@@ -319,7 +335,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #8 · `screenshot_live` — let Seshat see the screen
+## #9 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -343,7 +359,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #9 · Restart the MCP supervisor after abnormal failure
+## #10 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -362,7 +378,7 @@ healthy — the tools simply stop existing, with nothing saying why.
 - Raised as a speculative risk by the 2026-07-29 external review — the failure
   has not been reproduced, only reasoned from the child spec.
 
-## #10 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
+## #11 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
 
 **Goal:** a `tools/call` whose `"arguments"` is JSON `null` gets a
 model-readable rejection — same channel as any other invalid call — instead
@@ -391,7 +407,7 @@ the interception entirely: an absent `"arguments"` key and a non-map value
   [test/seshat/mcp/server_test.exs](../test/seshat/mcp/server_test.exs)
   alongside the existing non-map-`arguments` (array) case.
 
-## #11 · Search eval harness — numbers before opinions
+## #12 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -416,7 +432,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
-## #12 · Widen the search slate at tied score bands
+## #13 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -431,7 +447,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #13 · Accepted-search memory
+## #14 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -449,7 +465,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #14 · Browser preview audition
+## #15 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -470,7 +486,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #15 · Opt-in `samples` index
+## #16 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -488,7 +504,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #16 · LLM enrichment at reindex
+## #17 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an external model service or an MCP-client-driven tagging
@@ -508,7 +524,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #17 · User XMP tags
+## #18 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -523,7 +539,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #18 · Read-only audio input display — warn before a silent take
+## #19 · Read-only audio input display — warn before a silent take
 
 **Goal:** surface a track's audio input routing, read-only, so `record_clip`
 can warn when an audio take is about to record nothing.
@@ -552,7 +568,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #19 · Device list per track in session state
+## #20 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -571,7 +587,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #20 · Modify a note in place
+## #21 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -584,7 +600,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #21 · Clip grid in session state — only if usage demands it
+## #22 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -598,7 +614,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #22 · Small OSC breadth — grab bag
+## #23 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -619,7 +635,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #23 · Adopt MCP `2026-07-28` when Anubis supports it
+## #24 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
@@ -710,13 +726,6 @@ flow, so this is not an active break.
   option: monitor PubSub and re-subscribe after replacement.
   `get_session_state`'s `refresh: true` is already a manual backstop for a
   mirror that has gone stale for any reason.
-- **The monitored refresh worker for `Session.State`** — an overall deadline
-  plus freshness/connection/last-error metadata, the larger half of the
-  2026-07-29 review's session-refresh finding. Only the fabricated-defaults half
-  shipped (2026-07-30); refresh still runs sequential synchronous OSC calls
-  inside the GenServer. Deferred, not declined: the blocking window is short and
-  has never been observed, and the OSC query queue changed the contention
-  picture anyway. **Reconsider if the blocking window is ever actually seen.**
 - **Arrangement view** — everything Seshat does is Session view. Upstream has
   arrangement addresses (`/live/track/get/arrangement_clips/*`, arrangement
   overdub, song position) — revisit if a real workflow needs the timeline.

@@ -493,7 +493,11 @@ defmodule Seshat.Tools.Definitions do
           "inverse exists — quantize_clip cannot restore the original note timing by quantizing " <>
           "again — explain the limitation instead of risking other changes. Manual edits in Live " <>
           "share the same history, so before performing multiple undos, warn or clarify if the " <>
-          "conversation indicates the user edited Live since that request.",
+          "conversation indicates the user edited Live since that request. The reply confirms " <>
+          "the request was sent, not that Live's history moved — Ableton does not acknowledge " <>
+          "undo. If Live reports no undo step available, stop calling undo and tell the user; " <>
+          "do not retry unless history has changed. Verify a batch once at the end with " <>
+          "get_session_state, never after each call.",
       parameters: %{type: "object", properties: %{}, required: []}
     },
     %{
@@ -501,7 +505,11 @@ defmodule Seshat.Tools.Definitions do
       description:
         "Redo exactly one undone Ableton step. If the user asks to redo a whole request that " <>
           "required several mutating tool calls, call redo once per step that was undone, in the " <>
-          "original order. Any new edit can clear Live's redo history.",
+          "original order. Any new edit can clear Live's redo history. The reply confirms the " <>
+          "request was sent, not that Live's history moved — Ableton does not acknowledge " <>
+          "redo. If Live reports no redo step available, stop calling redo and tell the user; " <>
+          "do not retry unless history has changed. Verify a batch once at the end with " <>
+          "get_session_state, never after each call.",
       parameters: %{type: "object", properties: %{}, required: []}
     },
     # --- Clip control ---
