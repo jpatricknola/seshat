@@ -425,26 +425,80 @@ first (bridge.md's change-verification precondition). Run with `/smoke-test`.
   getter answers in milliseconds with the rejection wording, including the
   float-argument variant that exercises the matcher's 32-bit round-trip
   against a real echo.
+
+  **Run 2026-08-03 — passed, with the float variant not provoked.**
+  `get_track_devices` on track 99, driven through `mcp_call.py`'s real HTTP
+  handshake, returned `"Ableton rejected the request: Index out of range"` in
+  **212ms** total (Python startup, handshake and call included) against a
+  5,000ms `@query_timeout` — the rejection wording, not the guard-timeout
+  wording. Live's `Log.txt` carried the matching
+  `Error handling OSC message /live/track/get/devices/name: Index out of range`.
+
+  The float variant is **unreachable through the tool surface**, and the test
+  has been rewritten to say so rather than leave the step in place. Running it
+  as written (`get_clip_notes` track 99, fractional `start_time`) returned a
+  fast rejection — 234ms — but Live's log named the raising address as
+  `/live/clip_slot/get/has_clip`, not `/live/clip/get/notes`: `get_clip_notes`
+  gates on `ensure_clip` then `ensure_midi_clip`, both integer-only probes, so
+  a bad index always rejects before the ranged query goes out. The one case
+  that would raise on a *valid* index — a notes read of an audio clip — is
+  refused by `ensure_midi_clip` first, and the attempt to build one was blocked
+  anyway (`record_clip` on a fresh audio track correctly refused: no input
+  routed). The float query was confirmed working on the *success* path
+  (`start_time: 0.1` on a real clip correctly excluded the beat-0 note), so
+  floats do round-trip on the wire; what stays uncovered live is specifically
+  the *echoed* float tail in an error payload, which the pure
+  `transport_test.exs` cases cover.
 - `smoke-tests/bridge.md § One rejection, one error datagram` — written for
   this change. The end-to-end check that the relay actually skips
   marked records: a duplicate `"log"`-tagged copy of the same rejection is
   the observable. (The marker *mechanism* was already measured at plan time —
   see Open questions — so a failure here points at the relay edit, not at
   Live's logging.)
+
+  **Run 2026-08-03 — passed.** One rejection produced exactly one datagram, on
+  the wire verbatim as `OSC in: /live/error ["request",
+  "/live/track/get/devices/name", "Index out of range", 1, 99]` — the
+  documented payload shape, `arg_count` 1, echoed tail `99` — with no
+  `"log"`-tagged copy following it. The relay's marker skip works inside Live's
+  embedded Python, not just in principle. The broadcast still happens alongside
+  the correlation (`Unhandled OSC notification: /live/error` follows it), as
+  designed. Observability note for the next runner: the server's debug log is
+  the *only* place this is visible, and it goes to the server's terminal — an
+  agent without access to that tty cannot run this test unaided.
 - `smoke-tests/bridge.md § Only the offender fails` — written for this change.
   The correlation-strictness check against a real queue: an adjacent valid
   query must be answered normally, and the FIFO must advance immediately after
   the error.
+
+  **Run 2026-08-03 — passed.** `get_track_devices` on track 99 and on track 0,
+  issued in one model response so both sat adjacent in Transport's FIFO: the
+  first returned "Ableton rejected the request: Index out of range", the second
+  returned track 0's real chain ("No devices on track 0…"). Neither timed out,
+  so the queue advanced immediately after the error and the matcher did not
+  correlate on address alone.
 - `smoke-tests/bridge.md § Live's Log.txt stays clean during ordinary work` —
   existing. The fork commit edits the error logging path itself
   (`osc_server.py`'s catch, `manager.py`'s relay); ordinary non-erroring work
   must not gain tracebacks or new noise.
+
+  **Run 2026-08-03 — passed.** Baselined at 5,067,394 bytes, then create track
+  → `write_midi_notes` → `get_clip_slots` → `duplicate_clip` → ranged
+  `get_clip_notes` → `delete_clip` ×2 → `delete_track`. Zero `Traceback`, zero
+  `RemoteScriptError` and zero `ERROR:abletonosc` lines past the offset; only
+  ordinary INFO property/method lines.
 - `smoke-tests/mirror.md § A degraded rebuild is honest` — existing. The
   structural race is this item's original trigger; the degraded path must
   still refuse a partial list, now reaching that refusal in milliseconds.
   Note when running: this change makes the race markedly harder to provoke —
   the vulnerable window per rejected index shrinks from ~5s to ~one AbletonOSC
   tick — so a run that never degrades tests the coalescing, not this.
+
+  **Not run 2026-08-03 — user-required.** The test is tagged *Run mode: user*
+  because its check is a by-eye comparison against Live's visible track
+  headers, which no agent can make. Not substituted: a tool-only version would
+  read the mirror against itself and prove nothing. This is the one cited check
+  still outstanding.
 
 **Uncovered:** the `["log", …]` arm against real Live — nothing on the tool
 surface can provoke an error with no originating request (unknown addresses

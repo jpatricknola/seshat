@@ -61,6 +61,20 @@ compare against a 32-bit round-trip of what was sent, never a 64-bit float).
 error matching the in-flight query's address *and* every argument fails that
 query immediately instead of letting it wait out its timeout.
 
+Measured on the wire, Live 12.4.3, 2026-08-03 — `get_track_devices` on a track
+index past the end of the set produced exactly one datagram, and no
+`"log"`-tagged duplicate for the same failure:
+
+```
+/live/error ["request", "/live/track/get/devices/name", "Index out of range", 1, 99]
+```
+
+The whole rejection, client call to tool result, took 212ms against a 5,000ms
+query timeout. The raising address is the one that actually raised, which is not
+always the address the tool is named for: `get_clip_notes` on a bad index raises
+at its `/live/clip_slot/get/has_clip` guard, never reaching
+`/live/clip/get/notes`.
+
 ---
 
 ## Song API

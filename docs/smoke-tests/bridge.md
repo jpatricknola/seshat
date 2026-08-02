@@ -53,7 +53,9 @@ bypasses the handler wording this test exists to verify.
 ## Live's `Log.txt` stays clean during ordinary work
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. Create track, write notes, get_clip_slots,
+duplicate_clip, ranged get_clip_notes, delete_clip ×2, delete_track produced
+zero tracebacks and zero ERROR lines past the baseline offset.*
 
 Baseline its byte size before the run and read only the tail. Upstream raised a
 `RemoteScriptError` on every clip-slot operation, so a traceback during
@@ -64,7 +66,10 @@ old AbletonOSC is still installed.
 ## A rejected query fails fast, and says rejected
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. `get_track_devices` track 99 answered in 212ms
+(whole `mcp_call.py` round trip, Python startup and HTTP handshake included)
+with "Ableton rejected the request: Index out of range". The float-tail step
+was found unreachable and removed — see below.*
 
 The reinstall-and-restart precondition at the top of this file applies — the
 structured `/live/error` payload exists only in the fork commit this test
@@ -73,11 +78,23 @@ far past the set — `get_track_devices` on track 99 — and time the reply. It
 must come back in milliseconds, not seconds (its queries otherwise wait out
 the 5-second default query timeout), and read as a rejection
 ("Ableton rejected" in the message), not as the guard-timeout wording ("Timed
-out checking…"). Then repeat with `get_clip_notes` on track 99 with a
-fractional `from_time` of 0.1 — that query carries float arguments 32-bit OSC
-cannot represent exactly, so a fast rejection here is the end-to-end proof
-that the error's echoed float tail still matches the request after the
-round-trip.
+out checking…").
+
+**The matcher's float tail cannot be provoked from the tool surface, and this
+test no longer asks you to try.** It once said to repeat with `get_clip_notes`
+on track 99 and a fractional `start_time`, on the reasoning that
+`/live/clip/get/notes` carries floats 32-bit OSC cannot represent exactly. It
+does — but `get_clip_notes` gates on `ensure_clip` and then `ensure_midi_clip`
+first, and both probe with integers only, so a bad index is always rejected
+*before* the ranged query goes out (measured 2026-08-03: Live's log named
+`/live/clip_slot/get/has_clip` as the raising address, not
+`/live/clip/get/notes`). With valid indices Live does not raise, and the one
+case that would raise on a valid index — a notes read of an *audio* clip — is
+refused by `ensure_midi_clip` before it reaches the wire. Running the old step
+tests the integer path a second time while reading as float coverage, which is
+worse than not running it. The 32-bit round-trip is covered by the pure
+`transport_test.exs` cases; reinstate a live step here only if a float-carrying
+query ever becomes reachable with an index Live rejects.
 
 A timeout instead of a rejection means the structured error never arrived or
 never matched. Check Live's `Log.txt` for the per-address
@@ -89,7 +106,11 @@ send, the payload shape, or the Transport matcher.
 ## One rejection, one error datagram
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. One rejection produced exactly one
+`OSC in: /live/error ["request", "/live/track/get/devices/name",
+"Index out of range", 1, 99]` and no `"log"`-tagged copy. Note the server's
+debug log is the only place this is observable; it goes to the server's
+terminal, so an agent with no access to that tty must ask.*
 
 While provoking the rejection above, the Seshat server's debug log shows
 exactly **one** `OSC in: /live/error` for it, with a `"request"`-tagged
@@ -103,7 +124,10 @@ check in `manager.py`'s relay, not at Live's logging and not at the matcher.
 ## Only the offender fails
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. `get_track_devices` 99 and 0 issued in one
+model response: the first rejected fast, the second returned track 0's real
+(empty) chain, so the FIFO advanced immediately and the matcher did not
+correlate on address alone.*
 
 Issue the bad-index call and a valid read of the same kind
 (`get_track_devices` on a track that exists) **in one model response**, so the
