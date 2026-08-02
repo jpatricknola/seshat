@@ -199,6 +199,15 @@ consequences:
 - **Bulk replies can't be checked this way.** `/live/song/get/track_data` answers
   with a bare value list and no index echo, so it can't be validated against the
   request. Prefer per-index getters where the answer gates a mutation.
+- **Scalar song properties have nothing to echo either.** `/live/song/get/can_undo`
+  and `/live/song/get/can_redo` take no index, so there is no argument to compare
+  against the request the way `query_flag/3` does. `Handlers.history_guard/2`
+  (guarding `undo`/`redo`) is the precedent: on a `false` reply, reissue the same
+  query once and only refuse on a second confirmed `false` — a stale `true`
+  straggler is harmless (it only sends a mutation whose own reply already
+  asserts nothing), but an uncorrelated `false` between two queries could be
+  wrong, so it gets the one extra round trip an index-bearing guard gets from
+  the echo check instead.
 - **Listener pushes share the getter's address.** `/live/track/start_listen/volume`
   pushes arrive on `/live/track/get/volume`, so a push can satisfy a pending query
   for the same property. The properties `Session.State` listens to are in

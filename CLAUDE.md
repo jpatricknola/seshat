@@ -220,6 +220,26 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
+`undo`/`redo` stop reporting success they never observed, shipped 2026-08-02,
+closing what had been the queue's top item. `Seshat.Tools.Handlers`'s
+`undo`/`redo` clauses used to return `{:ok, "Undone"}`/`{:ok, "Redone"}` the
+instant `:gen_udp.send/4` accepted the datagram — `/live/song/undo` and
+`/live/song/redo` never reply, so a dropped datagram, an unexpected step on
+top of the history, and reaching the bottom of the history all produced the
+identical string. A shared `history_move/1` now reports the request, not the
+outcome ("Undo requested… this confirms the request was sent, not that
+history moved"), and a new `history_guard/2` queries the matching upstream
+`can_undo`/`can_redo` property before sending: a confirmed `false` (reissued
+once, to survive a stale straggler on the same address) refuses the send
+outright, an unanswered or malformed reply sends anyway with a stated
+uncertainty, and a `true` sends normally. No fork change — both guard
+addresses were already upstream `song.py` properties, already documented.
+Both tool descriptions now teach the model to stop retrying on the refusal
+and to verify a whole batch once with `get_session_state`, never after each
+call. Plan archived at
+[docs/archive/PLAN_undo_honest_reporting.md](docs/archive/PLAN_undo_honest_reporting.md).
+Correlating `/live/error` so a failed query fails fast is now the queue's top
+item.
 A degraded mirror rebuild is now reported, never served, shipped 2026-08-01,
 closing what had been the queue's top item — "The mirror goes stale after a
 burst of structural changes — and stays stale" — along with the separately
@@ -244,7 +264,6 @@ window says so instead of asserting a layout that may already be stale. No
 OSC or Python change — every address this depends on was already in the fork.
 Plan archived at
 [docs/archive/PLAN_degraded_mirror_rebuild.md](docs/archive/PLAN_degraded_mirror_rebuild.md).
-`undo` reporting success it never observed is now the queue's top item.
 One Seshat tool call is now exactly one Ableton undo step, shipped
 2026-08-01: `Song.begin_undo_step()`/`end_undo_step()` — two new entries in
 the fork's `song.py` method list, the same one-line shape as `swing_amount`

@@ -1,5 +1,19 @@
 # Plan: `undo`/`redo` stop reporting success they never observed
 
+> **Archived 2026-08-02 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. Part 1 and Part 2 both
+> landed: the honest reply lives in `Seshat.Tools.Handlers`' `history_move/1`,
+> the three-way `can_undo`/`can_redo` guard in `history_guard/2`, and the
+> updated `undo`/`redo` descriptions in `Seshat.Tools.Definitions`. No fork
+> change — both guard addresses were already upstream. No follow-ups were
+> opened; the plan's two open questions (does `can_undo` really report
+> `false` at the bottom of the history, and is `undo`'s boundary behaviour
+> identical to the measured `redo`) remain unverified against a live Ableton
+> and are now a smoke-test check
+> ([.claude/skills/smoke-test/SKILL.md](../../.claude/skills/smoke-test/SKILL.md))
+> rather than an open item — see that check before trusting Part 2 in a real
+> session.
+
 Roadmap item: **"`undo` reports success it never observed"** (currently #1).
 
 ## Context
@@ -54,16 +68,16 @@ restart.** Both guards are upstream properties that already ship.
 | `/live/song/get/can_undo` | *(none)* | `/live/song/get/can_undo [bool]` | upstream `song.py` `properties_r` |
 | `/live/song/get/can_redo` | *(none)* | `/live/song/get/can_redo [bool]` | upstream `song.py` `properties_r` |
 
-Verified in [docs/abletonosc-api-docs.md](abletonosc-api-docs.md) lines 84/90
+Verified in [docs/abletonosc-api-docs.md](../abletonosc-api-docs.md) lines 84/90
 (undo/redo) and 117/118 (can_redo/can_undo), and against the fork source at
-[priv/AbletonOSC/abletonosc/song.py:84-95](../priv/AbletonOSC/abletonosc/song.py#L84-L95),
+[priv/AbletonOSC/abletonosc/song.py:84-95](../../priv/AbletonOSC/abletonosc/song.py#L84-L95),
 where `can_redo` and `can_undo` sit in `properties_r` and are registered through
 the same `_get_property` loop as `is_playing`. Song properties take no index, so
 the reply carries the bare value with no envelope and nothing to echo-check.
 
 **Reply shape is deliberately not pinned to one type.** `_get_property` returns
 Live's raw Python value; a bool reaches the wire as OSC `T`/`F`, which
-[message.ex:133-134](../lib/seshat/osc/message.ex#L133-L134) decodes to
+[message.ex:133-134](../../lib/seshat/osc/message.ex#L133-L134) decodes to
 `true`/`false`. `Seshat.Session.State.query_song_int/2` nonetheless accepts
 `[v] when is_integer(v)` *and* `[true]`/`[false]`, and this plan copies that
 tolerance rather than betting on one shape — which makes measuring the exact
@@ -71,7 +85,7 @@ encoding unnecessary rather than merely deferred.
 
 ## Part 1 — `undo`/`redo` stop asserting
 
-[lib/seshat/tools/handlers.ex:2186-2198](../lib/seshat/tools/handlers.ex#L2186-L2198).
+[lib/seshat/tools/handlers.ex:2186-2198](../../lib/seshat/tools/handlers.ex#L2186-L2198).
 
 This is the honest floor and lands independently of Part 2.
 
@@ -122,21 +136,21 @@ defect being fixed. The item is about honest reporting, not about blocking; so
 the send goes ahead and the reply states the uncertainty.
 
 **Reuse `@guard_timeout` (2,000ms)**, already defined at
-[handlers.ex:40](../lib/seshat/tools/handlers.ex#L40) and used by every other
+[handlers.ex:40](../../lib/seshat/tools/handlers.ex#L40) and used by every other
 pre-mutation guard. No new constant.
 
 **The unanswered branch is a `catch :exit`, not an `{:error, _}` clause.**
 `Transport.query/3` **exits** the caller on timeout and *never* returns
 `{:error, :timeout}` — stated outright at
-[transport.ex:113-117](../lib/seshat/osc/transport.ex#L113-L117), and visible at
-[transport.ex:283-284](../lib/seshat/osc/transport.ex#L283-L284), where the
+[transport.ex:113-117](../../lib/seshat/osc/transport.ex#L113-L117), and visible at
+[transport.ex:283-284](../../lib/seshat/osc/transport.ex#L283-L284), where the
 server's own timer only reclaims the queue entry and deliberately does not
 reply. A `case Transport.query(...)` with `{:ok, _}` and `{:error, _}` clauses
 therefore does not reach the unanswered row of the table above: the tool call
 dies instead, and a dropped datagram becomes an opaque MCP crash — strictly
 worse than today, where `undo` at least always sends. Every one of the ~33
 `catch :exit, _ ->` sites in `Handlers` exists for this; `query_echoed/5`
-([handlers.ex:4825-4826](../lib/seshat/tools/handlers.ex#L4825-L4826)) is the
+([handlers.ex:4825-4826](../../lib/seshat/tools/handlers.ex#L4825-L4826)) is the
 guard-shaped one to copy. Checkable: the guard's unanswered path must be a
 `catch :exit, _ ->` clause returning the send-anyway branch, and Testing item 4
 below is what proves it.
@@ -161,7 +175,7 @@ than asserting the history state as an independently known fact.
 
 **Ordering is load-bearing.** `undo_stepped/2`'s `undo`/`redo` clause sends a
 defensive `/live/song/end_undo_step` *before* dispatching
-([handlers.ex:282-285](../lib/seshat/tools/handlers.ex#L282-L285)). The guard
+([handlers.ex:282-285](../../lib/seshat/tools/handlers.ex#L282-L285)). The guard
 query must stay **after** that send: closing a leaked step can legitimately add
 an entry to the history, flipping `can_undo` from false to true, and a guard read
 before the close would answer about a history state that no longer exists by the
@@ -175,7 +189,7 @@ against the user clicking in Live — accepted, and unfixable from here.
 
 ## Part 3 — teach the model what the new replies mean
 
-[lib/seshat/tools/definitions.ex:481-506](../lib/seshat/tools/definitions.ex#L481-L506).
+[lib/seshat/tools/definitions.ex:481-506](../../lib/seshat/tools/definitions.ex#L481-L506).
 
 The strings above are wasted if the model reads a "no step available" error and
 keeps calling. Add to `undo`'s description (and the matching sentence to
@@ -203,20 +217,20 @@ tool, so **no tool-count bump** in `definitions_test.exs`.
    sent, reply states the uncertainty.
 5. Both reply shapes accepted: `[true]`/`[false]` and `[1]`/`[0]`.
 6. Existing trace tests at
-   [handlers_test.exs:347-360](../test/seshat/tools/handlers_test.exs#L347-L360)
+   [handlers_test.exs:347-360](../../test/seshat/tools/handlers_test.exs#L347-L360)
    must be updated — the expected trace gains the guard query between the
    defensive `end_undo_step` and the `undo`.
 7. Same six for `redo`/`can_redo`.
 
 These reach `Transport.query/3`, which
-[.claude/rules/testing.md](../.claude/rules/testing.md) forbids above the
+[.claude/rules/testing.md](../../.claude/rules/testing.md) forbids above the
 transport layer. The precedent to follow is the `hide_view` test at
-[handlers_test.exs:381-419](../test/seshat/tools/handlers_test.exs#L381-L419),
+[handlers_test.exs:381-419](../../test/seshat/tools/handlers_test.exs#L381-L419),
 which does exactly this: `OSCSink` plays AbletonOSC and answers the query by hand
 with `OSCSink.send_datagram/3`. The rule's rationale — "needs a live Ableton and
 will time out" — does not apply when the sink supplies the reply. Follow that
 shape; do not start a real Transport against 11000/11001. Update
-[.claude/rules/testing.md](../.claude/rules/testing.md) in the same change with a
+[.claude/rules/testing.md](../../.claude/rules/testing.md) in the same change with a
 narrow second exception for handler tests whose test-local `OSCSink` supplies
 the reply; the current rule names only Transport's own tests even though this
 safe handler-test pattern already exists for `hide_view`.
@@ -235,7 +249,7 @@ unchanged.
    `false` at the boundary — see Open questions.
 9. Ordinary undo of a real change still works and still reverts exactly one step.
 
-Add both checks to [.claude/skills/smoke-test/SKILL.md](../.claude/skills/smoke-test/SKILL.md);
+Add both checks to [.claude/skills/smoke-test/SKILL.md](../../.claude/skills/smoke-test/SKILL.md);
 the Python/Live property behavior is not covered by the Elixir suite.
 
 ## Out of scope
