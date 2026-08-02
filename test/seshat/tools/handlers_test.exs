@@ -656,6 +656,44 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  # AbletonOSC answers a request whose index has gone with a structured
+  # /live/error rather than with the property, and Transport turns that into
+  # `{:error, {:live_error, message}}`. A pre-mutation guard must treat it the
+  # way it treats the vendored envelope's error arm — the index doesn't exist,
+  # so nothing further is sent — rather than leaking the tuple through
+  # `inspect/1`.
+  describe "a guard query Ableton rejects" do
+    setup :osc_sink
+
+    test "fails the tool in Live's own words and sends no mutation", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_track_send", %{"track" => 9, "send" => 0, "value" => 0.5})
+        end)
+
+      assert_receive {:osc_out, "/live/track/get/send", [9, 0]}
+
+      reply_datagram(
+        sink,
+        Message.encode(
+          "/live/error",
+          ["request", "/live/track/get/send", "Index out of range", 2, 9, 0]
+        )
+      )
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "Index out of range"
+      assert message =~ "Nothing further was sent"
+      assert message =~ "get_session_state"
+
+      # The whole point of the guard: the value is never written to a track
+      # index Live has just told us it doesn't have.
+      refute Enum.any?(osc_trace(), fn {address, _args} ->
+               address == "/live/track/set/send"
+             end)
+    end
+  end
+
   describe "show_view" do
     setup :osc_sink
 
@@ -3002,6 +3040,102 @@ defmodule Seshat.Tools.HandlersTest do
     test "forces float encoding even when the amount arrives as an integer" do
       assert :ok = Handlers.send_quantize(2, 3, "1/8T", 1)
       assert_receive {:osc_out, "/live/clip/quantize", [2, 3, 3, 1.0]}
+    end
+  end
+
+  # `quantize_clip` reads the notes either side of a fire-and-forget quantize, so
+  # the two reads cannot make the same claim when they fail. Before the datagram
+  # goes out "nothing further was sent" is true; after it, the mutation is on the
+  # wire and may have landed. The tool's `catch :exit` clause has always drawn
+  # that line by hand — these pin it for the rejection path, which only became
+  # reachable when a correlated `/live/error` started failing a read in
+  # milliseconds instead of never.
+  #
+  # Answering the sink's queries in order is what the no-`Transport.query/3` rule
+  # permits (testing.md): nothing waits on Ableton, and the guards *are* the
+  # behaviour under test.
+  describe "quantize_clip when a read is rejected" do
+    setup :osc_sink
+
+    defp reply(sink, address, args) do
+      reply_datagram(sink, Message.encode(address, args))
+    end
+
+    defp quantize_task do
+      Task.async(fn ->
+        Handlers.call("quantize_clip", %{
+          "track" => 0,
+          "clip_slot" => 0,
+          "grid" => "1/16",
+          "amount" => 1.0
+        })
+      end)
+    end
+
+    defp answer_quantize_guards(sink) do
+      assert_receive {:osc_out, "/live/clip_slot/get/has_clip", [0, 0]}
+      reply(sink, "/live/clip_slot/get/has_clip", [0, 0, 1])
+
+      assert_receive {:osc_out, "/live/clip/get/is_midi_clip", [0, 0]}
+      reply(sink, "/live/clip/get/is_midi_clip", [0, 0, 1])
+
+      assert_receive {:osc_out, "/live/clip/get/name", [0, 0]}
+      reply(sink, "/live/clip/get/name", [0, 0, "Keys"])
+    end
+
+    # The failure the reviewer of the /live/error work found: the clip survives
+    # every guard, the quantize goes out, and only then does the track vanish.
+    test "the after-read never claims nothing was sent", %{sink: sink} do
+      task = quantize_task()
+      answer_quantize_guards(sink)
+
+      assert_receive {:osc_out, "/live/clip/get/notes", [0, 0]}
+      reply(sink, "/live/clip/get/notes", [0, 0, 60, 0.0, 1.0, 100, 0])
+
+      assert_receive {:osc_out, "/live/clip/quantize", [0, 0, 5, 1.0]}
+
+      assert_receive {:osc_out, "/live/clip/get/notes", [0, 0]}
+
+      reply(sink, "/live/error", [
+        "request",
+        "/live/clip/get/notes",
+        "Index out of range",
+        2,
+        0,
+        0
+      ])
+
+      assert {:error, message} = Task.await(task)
+
+      assert message =~ "Index out of range"
+      assert message =~ "The quantize was already sent"
+      assert message =~ "get_clip_notes on track 0, slot 0"
+
+      refute message =~ "Nothing further was sent",
+             "the quantize datagram was already on the wire: #{message}"
+    end
+
+    # The other side of the same line — here the claim is true and must survive.
+    test "the before-read still says nothing further was sent", %{sink: sink} do
+      task = quantize_task()
+      answer_quantize_guards(sink)
+
+      assert_receive {:osc_out, "/live/clip/get/notes", [0, 0]}
+
+      reply(sink, "/live/error", [
+        "request",
+        "/live/clip/get/notes",
+        "Index out of range",
+        2,
+        0,
+        0
+      ])
+
+      assert {:error, message} = Task.await(task)
+
+      assert message =~ "Index out of range"
+      assert message =~ "Nothing further was sent"
+      refute_receive {:osc_out, "/live/clip/quantize", _}, 0
     end
   end
 

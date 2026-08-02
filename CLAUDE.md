@@ -105,7 +105,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
-| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (four view addresses in `view.py`, the two undo-step addresses in `song.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
+| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (four view addresses in `view.py`, the two undo-step addresses in `song.py`, the structured `/live/error` request-context payload split across `osc_server.py` and `manager.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
 | [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies the fork wholesale into Live's Remote Scripts |
 
 ## Adding a tool
@@ -154,6 +154,18 @@ upstream files (and one upstream file whose *behaviour* we change, below):
   conversation. `Seshat.Tools.Handlers.call/2` wraps every tool dispatch in a
   pair, making one tool call exactly one undo step. Send-only, like `undo`
   itself.
+- `/live/error`'s structured payload — `abletonosc/osc_server.py`'s
+  `process_message` exact-match branch and `manager.py`'s
+  `LiveOSCErrorLogHandler.emit`. Upstream's `/live/error` carries only a
+  formatted log string, with no address or arguments to say which request
+  failed, so a rejected query could only wait out its full timeout. A raising
+  callback now also sends `("request", address, message, arg_count,
+  ...request_args)` directly on `/live/error`, marked `extra:
+  {osc_request_error: true}` so the log relay's own `("log", message)` copy of
+  the same failure is skipped — one rejection, one datagram.
+  `Seshat.OSC.Transport` matches it against the in-flight query and fails fast
+  instead of waiting out `@query_timeout`; see its "Failed-query correlation"
+  section.
 
 Any future address upstream doesn't provide goes into one of those files the
 same way. `vendored_addresses_test` is the tripwire in both directions: every
@@ -223,6 +235,35 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
+A failed query now fails fast instead of waiting out a 5-second timeout,
+shipped 2026-08-03, closing what had been the queue's top item. `/live/error`
+used to carry only a formatted log string, with nothing to say which request
+raised — measured 2026-08-02 while reproducing the `undo`/`redo` defect below:
+a rejected indexed getter (a vanished track index mid-mirror-rebuild) stalled
+`Seshat.OSC.Transport`'s single in-flight query, and everything queued behind
+it, for the full `@query_timeout`. Two fork commits (`osc_server.py`'s
+`process_message` exact-match branch, `manager.py`'s
+`LiveOSCErrorLogHandler.emit`) now preserve the request at the callback
+boundary and send it directly on `/live/error` as `["request", address,
+message, arg_count, ...request_args]`, marked so the log relay's own
+`["log", message]` copy of the same failure is skipped — one rejection, one
+datagram. `Seshat.OSC.Transport` gained a `/live/error` dispatch clause that
+matches address and arguments (with a 32-bit float round-trip for the
+matcher, since OSC floats are 32-bit and Elixir's are not) against the
+in-flight request only, cancels its timer, and replies `{:error,
+{:live_error, message}}` — a mismatched address, mismatched arguments, the
+unstructured `["log", …]` shape, or no query in flight are all still
+broadcast and answer nobody, and `describe_error/1` is the one place a caller
+renders the message. `Seshat.Session.State`, `Seshat.Commands.Registry` and
+`Seshat.Library.Catalog` all render the new error through it; the structural
+mirror race that motivated this (three undos deleting tracks mid-walk) still
+produces `read_tracks/2`'s `{:degraded, stopped_index}`, just in
+milliseconds instead of seconds. Plan archived at
+[docs/archive/PLAN_live_error_correlation.md](docs/archive/PLAN_live_error_correlation.md).
+"Monitored refresh worker for `Session.State`" — gated on this fix, since it
+may have removed that item's whole motivation — is now the item to
+re-measure before deciding whether to build it; `start_new_project` is now
+the queue's top unconditional item.
 `undo`/`redo` stop reporting success they never observed, shipped 2026-08-02,
 closing what had been the queue's top item. `Seshat.Tools.Handlers`'s
 `undo`/`redo` clauses used to return `{:ok, "Undone"}`/`{:ok, "Redone"}` the
@@ -241,8 +282,6 @@ Both tool descriptions now teach the model to stop retrying on the refusal
 and to verify a whole batch once with `get_session_state`, never after each
 call. Plan archived at
 [docs/archive/PLAN_undo_honest_reporting.md](docs/archive/PLAN_undo_honest_reporting.md).
-Correlating `/live/error` so a failed query fails fast is now the queue's top
-item.
 A degraded mirror rebuild is now reported, never served, shipped 2026-08-01,
 closing what had been the queue's top item — "The mirror goes stale after a
 burst of structural changes — and stays stale" — along with the separately

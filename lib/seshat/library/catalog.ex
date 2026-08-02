@@ -935,8 +935,13 @@ defmodule Seshat.Library.Catalog do
       # `reindex_library` handler catches that exit and already answers with the
       # "is Ableton running, has mix abletonosc.install been run" advice, which is
       # the same instruction the stale-install hint above gives.
+      #
+      # Rendered rather than passed through so a `{:live_error, …}` reaches the
+      # caller as prose, like every other branch here. Practically unreachable —
+      # `/live/browser/export` takes no arguments and catches internally — but the
+      # branch must not be the one place a Transport term leaks into a tool result.
       {:error, reason} ->
-        {:error, reason}
+        {:error, Transport.describe_error(reason)}
     end
   end
 

@@ -52,24 +52,36 @@ defmodule Seshat.Tools.Handlers do
   @diagnostics_internal "(Diagnostics are for refining your search — present results musically; " <>
                           "don't mention tags to the user.)"
 
-  # Advice appended to a guard timeout, per address family. A timeout means "no
-  # reply at all", which for an upstream address is nearly always a bad index and
-  # for one of Seshat's own is that plus "the extension was never installed".
-  @clip_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
-                     "track and slot indices with get_clip_slots first; failing that, check " <>
-                     "Ableton is running with AbletonOSC enabled."
+  # Advice appended to a guard timeout, per address family.
+  #
+  # These used to say a bad index gets no reply at all, and a timeout therefore
+  # nearly always meant a bad index. The fork's structured `/live/error` inverted
+  # that: Live raises, AbletonOSC now sends the request back with the error, and
+  # `Seshat.OSC.Transport` fails the query in milliseconds with the rejection
+  # wording. A bad index is the one thing a guard timeout no longer means. What
+  # is left is Ableton unreachable, AbletonOSC not enabled, a dropped datagram,
+  # or a Remote Scripts copy predating the fork — and since that last one is
+  # indistinguishable from here and re-reading indices is cheap, the index advice
+  # stays, as the second thing to check rather than the first.
+  @clip_index_hint "A bad index is normally rejected outright rather than met with silence, so " <>
+                     "silence points at Ableton — check it is running with AbletonOSC enabled. " <>
+                     "If it is, re-check the track and slot indices with get_clip_slots: a " <>
+                     "Remote Scripts copy older than `mix abletonosc.install` still answers a " <>
+                     "bad index with nothing."
 
-  @send_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
-                     "track index (get_session_state) and send index (get_track_sends; sends are " <>
-                     "0-based, send A = 0)."
+  @send_index_hint "A bad index is normally rejected outright rather than met with silence, so " <>
+                     "silence points at Ableton — check it is running with AbletonOSC enabled. " <>
+                     "If it is, re-check the track index (get_session_state) and send index " <>
+                     "(get_track_sends; sends are 0-based, send A = 0)."
 
-  @track_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
-                      "track index with get_session_state; failing that, check Ableton is " <>
-                      "running with AbletonOSC enabled."
+  @track_index_hint "A bad index is normally rejected outright rather than met with silence, so " <>
+                      "silence points at Ableton — check it is running with AbletonOSC enabled. " <>
+                      "If it is, re-check the track index with get_session_state."
 
-  @device_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check " <>
-                       "the track and device indices with get_track_devices first; failing " <>
-                       "that, check Ableton is running with AbletonOSC enabled."
+  @device_index_hint "A bad index is normally rejected outright rather than met with silence, " <>
+                       "so silence points at Ableton — check it is running with AbletonOSC " <>
+                       "enabled. If it is, re-check the track and device indices with " <>
+                       "get_track_devices."
 
   # The return/master addresses are Seshat's own, and they always reply — a bad
   # index comes back as an error envelope, not silence. So unlike the upstream
@@ -883,7 +895,7 @@ defmodule Seshat.Tools.Handlers do
            amount / 1.0
          ]) do
       :ok -> :ok
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1639,14 +1651,14 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("set_track_pan", %{"track" => track, "value" => value}) do
     case Transport.send_message("/live/track/set/panning", [track, value / 1.0]) do
       :ok -> {:ok, "Set pan on track #{track} to #{value} (#{pan_display(value)})"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("set_track_volume", %{"track" => track, "value" => value}) do
     case Transport.send_message("/live/track/set/volume", [track, value / 1.0]) do
       :ok -> {:ok, "Set volume on track #{track} to #{value} (#{volume_display(value)})"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1655,7 +1667,7 @@ defmodule Seshat.Tools.Handlers do
 
     case Transport.send_message("/live/track/set/mute", [track, value]) do
       :ok -> {:ok, "#{if muted, do: "Muted", else: "Unmuted"} track #{track}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1664,7 +1676,7 @@ defmodule Seshat.Tools.Handlers do
 
     case Transport.send_message("/live/track/set/solo", [track, value]) do
       :ok -> {:ok, "#{if soloed, do: "Soloed", else: "Unsoloed"} track #{track}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1681,7 +1693,7 @@ defmodule Seshat.Tools.Handlers do
         {:error, reason}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1724,7 +1736,7 @@ defmodule Seshat.Tools.Handlers do
        "Wrote #{note_count} note(s) to track #{track}, clip slot #{slot}#{clip_name_note(name)}"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     # `ensure_midi_track/1` and Registry's own clip lookup each report their
@@ -1750,7 +1762,7 @@ defmodule Seshat.Tools.Handlers do
         {:ok, "Deleted track #{track}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1764,21 +1776,21 @@ defmodule Seshat.Tools.Handlers do
         {:ok, "Duplicated track #{track} — the copy is track #{track + 1}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("set_track_name", %{"track" => track, "name" => name}) do
     case Transport.send_message("/live/track/set/name", [track, name]) do
       :ok -> {:ok, "Renamed track #{track} to '#{name}'"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("set_tempo", %{"bpm" => bpm}) do
     case Transport.send_message("/live/song/set/tempo", [bpm / 1.0]) do
       :ok -> {:ok, "Set tempo to #{bpm} BPM"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1797,7 +1809,7 @@ defmodule Seshat.Tools.Handlers do
            "run mix abletonosc.install and restart Live."}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1810,7 +1822,7 @@ defmodule Seshat.Tools.Handlers do
            "unaffected."}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1826,21 +1838,21 @@ defmodule Seshat.Tools.Handlers do
        "Set the time signature to #{numerator}/#{denominator}. " <>
          "Clip lengths and note times still count quarter-note beats: one bar is now #{beats} beats."}
     else
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("start_playing", _params) do
     case Transport.send_message("/live/song/start_playing", []) do
       :ok -> {:ok, "Started playback"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("stop_playing", _params) do
     case Transport.send_message("/live/song/stop_playing", []) do
       :ok -> {:ok, "Stopped playback"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1849,7 +1861,7 @@ defmodule Seshat.Tools.Handlers do
 
     case Transport.send_message("/live/song/set/metronome", [value]) do
       :ok -> {:ok, "Metronome #{if enabled, do: "on", else: "off"}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1858,7 +1870,7 @@ defmodule Seshat.Tools.Handlers do
 
     case Transport.send_message("/live/track/set/arm", [track, value]) do
       :ok -> {:ok, "#{if armed, do: "Armed", else: "Disarmed"} track #{track}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1876,7 +1888,7 @@ defmodule Seshat.Tools.Handlers do
       fire_capture(tempo_before, before_grid, Map.get(params, "name"))
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -1925,7 +1937,7 @@ defmodule Seshat.Tools.Handlers do
       report_record_started(track, slot, bars, beats, just_armed?)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -1952,7 +1964,7 @@ defmodule Seshat.Tools.Handlers do
          "if it's MIDI — an audio take has no notes to read); delete_clip to scrap it."}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1980,7 +1992,7 @@ defmodule Seshat.Tools.Handlers do
          "#{track} to #{value} (was #{format_number(old)})"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1990,7 +2002,7 @@ defmodule Seshat.Tools.Handlers do
       {:ok, format_track_sends(track, sends)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2010,7 +2022,7 @@ defmodule Seshat.Tools.Handlers do
         {:error, reason}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2039,7 +2051,7 @@ defmodule Seshat.Tools.Handlers do
          "touching another send."}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2071,7 +2083,7 @@ defmodule Seshat.Tools.Handlers do
          "(#{volume_display(value)}) — was #{format_number(old)} (#{volume_display(old)})"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2091,7 +2103,7 @@ defmodule Seshat.Tools.Handlers do
          "#{format_number(old)} (#{pan_display(old)})"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2116,7 +2128,7 @@ defmodule Seshat.Tools.Handlers do
          "unchanged."}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2140,7 +2152,7 @@ defmodule Seshat.Tools.Handlers do
          "#{if truthy?(old), do: "soloed", else: "not soloed"}."}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2152,7 +2164,7 @@ defmodule Seshat.Tools.Handlers do
          "#{format_number(old)} (#{volume_display(old)})"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2164,7 +2176,7 @@ defmodule Seshat.Tools.Handlers do
          "was #{format_number(old)} (#{pan_display(old)})"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2177,7 +2189,7 @@ defmodule Seshat.Tools.Handlers do
          "not the master output."}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2243,14 +2255,14 @@ defmodule Seshat.Tools.Handlers do
       {:ok, "Fired clip on track #{track}, slot #{slot}"}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("stop_clip", %{"track" => track, "clip_slot" => slot}) do
     case Transport.send_message("/live/clip/stop", [track, slot]) do
       :ok -> {:ok, "Stopped clip on track #{track}, slot #{slot}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2261,7 +2273,7 @@ defmodule Seshat.Tools.Handlers do
         {:ok, "Deleted clip on track #{track}, slot #{slot}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2277,14 +2289,14 @@ defmodule Seshat.Tools.Handlers do
         {:ok, "Duplicated clip from track #{t}/slot #{s} to track #{tt}/slot #{ts}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("set_clip_name", %{"track" => track, "clip_slot" => slot, "name" => name}) do
     case Transport.send_message("/live/clip/set/name", [track, slot, name]) do
       :ok -> {:ok, "Renamed clip on track #{track}, slot #{slot} to '#{name}'"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2304,7 +2316,7 @@ defmodule Seshat.Tools.Handlers do
       {:ok, format_clip_properties(track, slot, midi?, Map.merge(common, audio))}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2334,7 +2346,7 @@ defmodule Seshat.Tools.Handlers do
       {:ok, format_clip_writes(track, slot, current, writes, readback)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     # Everything before the sends reports its own timeout, so an exit reaching
@@ -2355,7 +2367,7 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("fire_scene", %{"scene" => scene}) do
     case Transport.send_message("/live/scene/fire", [scene]) do
       :ok -> {:ok, "Fired scene #{scene}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2378,7 +2390,7 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2389,7 +2401,7 @@ defmodule Seshat.Tools.Handlers do
         {:ok, "Deleted scene #{scene}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2401,14 +2413,14 @@ defmodule Seshat.Tools.Handlers do
         {:ok, "Duplicated scene #{scene} — the copy is scene #{scene + 1}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("set_scene_name", %{"scene" => scene, "name" => name}) do
     case Transport.send_message("/live/scene/set/name", [scene, name]) do
       :ok -> {:ok, "Renamed scene #{scene} to '#{name}'"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2422,7 +2434,7 @@ defmodule Seshat.Tools.Handlers do
          :ok <- maybe_set_loop_length(params) do
       {:ok, "Loop #{if enabled, do: "on", else: "off"}#{loop_range_summary(params)}"}
     else
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2436,7 +2448,7 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("show_view", %{"view" => view}) do
     case Transport.send_message("/live/view/show_view", [view]) do
       :ok -> {:ok, "Showing #{view_label(view)}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2452,7 +2464,7 @@ defmodule Seshat.Tools.Handlers do
          :ok <- confirm_view_hidden(view) do
       {:ok, "Hidden #{view_label(view)}. show_view brings it back."}
     else
-      {:error, reason} when not is_binary(reason) -> {:error, inspect(reason)}
+      {:error, reason} when not is_binary(reason) -> {:error, Transport.describe_error(reason)}
       {:error, message} -> {:error, message}
     end
   end
@@ -2470,21 +2482,21 @@ defmodule Seshat.Tools.Handlers do
     |> case do
       {:ok, visibility} -> {:ok, view_state_summary(visibility)}
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("select_track", %{"track" => track}) do
     case Transport.send_message("/live/view/set/selected_track", [track]) do
       :ok -> {:ok, "Selected track #{track}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
   defp do_call("select_scene", %{"scene" => scene}) do
     case Transport.send_message("/live/view/set/selected_scene", [scene]) do
       :ok -> {:ok, "Selected scene #{scene}"}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2510,7 +2522,7 @@ defmodule Seshat.Tools.Handlers do
         {:ok, "Removed notes from track #{track}, clip slot #{slot}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2533,7 +2545,7 @@ defmodule Seshat.Tools.Handlers do
       {:ok, format_clip_notes(track, slot, clip_name, clip_length, notes)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     # `slot` is bound in the body, which the implicit try can't see — only the
@@ -2569,17 +2581,17 @@ defmodule Seshat.Tools.Handlers do
          :ok <- ensure_clip(track, slot),
          :ok <- ensure_midi_clip(track, slot),
          clip_name = read_clip_name(track, slot),
-         {:ok, before_notes} <- read_all_notes(track, slot),
+         {:ok, before_notes} <- read_all_notes(track, slot, :before_quantize),
          :ok <- ensure_notes_to_quantize(before_notes, track, slot),
          :ok <- send_quantize(track, slot, grid, amount),
-         {:ok, after_notes} <- read_all_notes(track, slot) do
+         {:ok, after_notes} <- read_all_notes(track, slot, :after_quantize) do
       FollowCam.steer("quantize_clip", %{track: track, slot: slot})
 
       {:ok,
        format_quantize_result(track, slot, clip_name, grid, amount, before_notes, after_notes)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     # Deliberately not "nothing was sent": the exit can happen either side of
@@ -2665,7 +2677,7 @@ defmodule Seshat.Tools.Handlers do
         {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2711,7 +2723,7 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2745,7 +2757,7 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2786,7 +2798,7 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2815,7 +2827,7 @@ defmodule Seshat.Tools.Handlers do
            Transport.query("/live/track/get/devices/class_name", [track]) do
       {:ok, format_device_chain({:track, track}, names, types, classes)}
     else
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2868,7 +2880,7 @@ defmodule Seshat.Tools.Handlers do
          maxes
        )}
     else
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2933,7 +2945,7 @@ defmodule Seshat.Tools.Handlers do
        "Set parameter #{parameter} of device #{device} on track #{track} to #{value} — " <>
          "it now reads '#{display}'"}
     else
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2989,7 +3001,7 @@ defmodule Seshat.Tools.Handlers do
       {:ok, deleted_device_reply({:track, track}, device, names)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -3067,7 +3079,7 @@ defmodule Seshat.Tools.Handlers do
       end)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -3083,7 +3095,7 @@ defmodule Seshat.Tools.Handlers do
         case query_scene_names(num_scenes) do
           {:ok, scenes} -> {:ok, format_clip_slots(scenes, tracks)}
           {:error, reason} when is_binary(reason) -> {:error, reason}
-          {:error, reason} -> {:error, inspect(reason)}
+          {:error, reason} -> {:error, Transport.describe_error(reason)}
         end
 
       {:error, reason} ->
@@ -3188,7 +3200,7 @@ defmodule Seshat.Tools.Handlers do
       snapshot_tracks(num_tracks, num_scenes)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -3202,7 +3214,7 @@ defmodule Seshat.Tools.Handlers do
       {:ok, %{num_scenes: num_scenes, tracks: tracks}}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -3301,7 +3313,7 @@ defmodule Seshat.Tools.Handlers do
         {:error, "Unexpected reply from /live/song/get/tempo: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -3317,7 +3329,7 @@ defmodule Seshat.Tools.Handlers do
       report_capture(before_grid, after_grid, tempo_before, tempo_after, name)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -3698,7 +3710,7 @@ defmodule Seshat.Tools.Handlers do
         {:error, "Unexpected reply from /live/return_track/get/count: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ -> {:error, extension_missing_error("read the return tracks", "no sends were read")}
@@ -3713,7 +3725,7 @@ defmodule Seshat.Tools.Handlers do
         {:error, "Unexpected reply from /live/master/get/volume: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ -> {:error, extension_missing_error("read the master volume", "nothing was changed")}
@@ -3732,7 +3744,7 @@ defmodule Seshat.Tools.Handlers do
         {:error, "Unexpected reply from #{address}: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ -> {:error, extension_missing_error("read #{subject}", "nothing was changed")}
@@ -3878,7 +3890,7 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -3959,7 +3971,7 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ -> {:error, guard_timeout_error(subject, @return_extension_hint)}
@@ -3993,7 +4005,7 @@ defmodule Seshat.Tools.Handlers do
         {:error, reason}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -4046,7 +4058,7 @@ defmodule Seshat.Tools.Handlers do
       {:ok, deleted_device_reply(chain, device, names)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -4078,7 +4090,7 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -4116,7 +4128,7 @@ defmodule Seshat.Tools.Handlers do
       end)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, inspect(reason)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -4148,7 +4160,7 @@ defmodule Seshat.Tools.Handlers do
            "is unknown whether the device was removed. Verify with get_track_devices."}
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -4179,7 +4191,7 @@ defmodule Seshat.Tools.Handlers do
           {:error, reason}
 
         {:error, reason} ->
-          {:error, inspect(reason)}
+          {:error, Transport.describe_error(reason)}
       end
     end
   end
@@ -4215,7 +4227,7 @@ defmodule Seshat.Tools.Handlers do
         end
 
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -4788,7 +4800,17 @@ defmodule Seshat.Tools.Handlers do
   # answer to the *before* read satisfying the *after* read carries the same
   # indices, passes this check, and reads as "nothing moved". Only the hedged
   # nothing-moved wording stands against that.
-  defp read_all_notes(track, slot, reissued? \\ false) do
+  #
+  # `phase` decides the *consequence* sentence, never the diagnosis. This helper
+  # reads either side of `send_quantize/4`, and the two sides can afford
+  # different claims: before the datagram goes out "nothing further was sent" is
+  # true and actionable, while after it the mutation is already on the wire and
+  # Live may well have applied it. Saying nothing was sent there would be the
+  # same lie the `catch :exit` clause in `quantize_clip` is written to avoid —
+  # and this became reachable when a rejection started arriving in milliseconds
+  # instead of never, so the failure the exit clause guards against by hand now
+  # has a fast sibling that has to make the same distinction.
+  defp read_all_notes(track, slot, phase, reissued? \\ false) do
     case Transport.query("/live/clip/get/notes", [track, slot]) do
       {:ok, {_addr, [echoed_track, echoed_slot | fields]}}
       when echoed_track == track and echoed_slot == slot ->
@@ -4796,15 +4818,34 @@ defmodule Seshat.Tools.Handlers do
 
       {:ok, {_addr, _mismatched}} ->
         if reissued? do
-          {:error, stale_reply_error("the notes in slot #{slot} on track #{track}")}
+          {:error,
+           stale_reply_error(
+             "the notes in slot #{slot} on track #{track}",
+             notes_read_consequence(phase, track, slot)
+           )}
         else
-          read_all_notes(track, slot, true)
+          read_all_notes(track, slot, phase, true)
         end
 
+      # As in `query_echoed/5`: a rejected read of this clip means the track or
+      # slot isn't there. Before the quantize that carries the same consequence
+      # as the vendored envelope's error arm; after it, only the diagnosis
+      # survives.
+      {:error, {:live_error, message}} ->
+        {:error, "#{message}. " <> notes_read_consequence(phase, track, slot)}
+
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   end
+
+  defp notes_read_consequence(:before_quantize, _track, _slot),
+    do: "Nothing further was sent — check get_session_state for the indices that actually exist."
+
+  defp notes_read_consequence(:after_quantize, track, slot),
+    do:
+      "The quantize was already sent, so it may or may not have been applied — read the clip " <>
+        "back with get_clip_notes on track #{track}, slot #{slot}."
 
   # `query_echoed/4` for the boolean properties, normalising AbletonOSC's mix of
   # `true`/`false` and 1/0.
@@ -4850,8 +4891,15 @@ defmodule Seshat.Tools.Handlers do
           reissue_or_give_up(address, indices, subject, hint, reissued?)
         end
 
+      # Live rejected this exact request — for a guard query that means the
+      # index doesn't exist, which is precisely what `remote_error/1` says for
+      # the vendored envelope's error arm. Rendering both the same way is the
+      # point: an upstream address and one of ours now fail a guard identically.
+      {:error, {:live_error, message}} ->
+        {:error, remote_error(message)}
+
       {:error, reason} ->
-        {:error, inspect(reason)}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ -> {:error, guard_timeout_error(subject, hint)}
@@ -4899,10 +4947,12 @@ defmodule Seshat.Tools.Handlers do
 
   # Reissued once already, so this is not one crossed wire: something is steadily
   # answering with another index's data.
-  defp stale_reply_error(subject) do
+  # The consequence is a parameter because a caller reading *after* a mutation
+  # cannot claim nothing was sent — see `read_all_notes/4`. Every other caller
+  # reads before mutating and takes the default.
+  defp stale_reply_error(subject, consequence \\ "Nothing further was sent; try again.") do
     "Ableton's replies when checking #{subject} were not about the track or slot asked for, " <>
-      "twice in a row — they belong to an earlier query that timed out. Nothing further was " <>
-      "sent; try again."
+      "twice in a row — they belong to an earlier query that timed out. " <> consequence
   end
 
   # AbletonOSC sends booleans for some properties and 0/1 for others.
@@ -4987,7 +5037,7 @@ defmodule Seshat.Tools.Handlers do
       # the same dead socket.
       {:error, reason} ->
         {:error,
-         "The hide was sent, but confirming it failed (#{inspect(reason)}), so it is " <>
+         "The hide was sent, but confirming it failed (#{Transport.describe_error(reason)}), so it is " <>
            "unknown whether #{view_label(view)} closed. Check Ableton directly: while " <>
            "this error stands, get_view_state cannot read the panes back either."}
     end
@@ -5030,7 +5080,7 @@ defmodule Seshat.Tools.Handlers do
                "the batch with get_session_state." <> uncertainty}
 
           {:error, reason} ->
-            {:error, inspect(reason)}
+            {:error, Transport.describe_error(reason)}
         end
     end
   end

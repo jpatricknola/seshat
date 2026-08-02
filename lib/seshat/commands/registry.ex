@@ -23,11 +23,14 @@ defmodule Seshat.Commands.Registry do
 
   require Logger
 
-  # A clip-slot index that doesn't exist gets no reply at all (AbletonOSC raises
-  # inside the callback and sends nothing), so this timeout is really "how long
-  # until we call it a bad index". Matches the guard timeout in
-  # `Seshat.Tools.Handlers` rather than Transport's 5s default: a typo shouldn't
-  # stall a write for five seconds.
+  # A clip-slot index that doesn't exist used to get no reply at all — AbletonOSC
+  # raised inside the callback and sent nothing — so this timeout was really "how
+  # long until we call it a bad index". The fork's structured `/live/error` ended
+  # that: the raise now comes back correlated and the query fails in
+  # milliseconds, so a bad index no longer spends this budget. The short timeout
+  # stays for what is left (a dropped datagram, an install predating the fork),
+  # matching the guard timeout in `Seshat.Tools.Handlers` rather than Transport's
+  # 5s default: neither should stall a write for five seconds.
   @slot_query_timeout 2_000
 
   # `/live/return_track/get/count` comes from Seshat's own return_track.py, so an
@@ -114,15 +117,22 @@ defmodule Seshat.Commands.Registry do
            "twice in a row — they belong to an earlier query that timed out. Nothing was " <>
            "written; try again."}
 
+      # Rendered here rather than passed through: the string a handler shows the
+      # model must never be an inspected Transport term. A rejected slot lookup
+      # carries the same guarantee as an unanswered one — nothing was written —
+      # so it keeps the timeout branch's consequence sentence.
       {:error, reason} ->
-        {:error, reason}
+        {:error,
+         "#{Transport.describe_error(reason)} — the clip slot could not be read, so no notes " <>
+           "were written. Check the slot with get_clip_slots."}
     end
   catch
     :exit, _ ->
       {:error,
        "Timed out looking up clip slot #{slot} on track #{track}, so no notes were written. A " <>
-         "slot index that doesn't exist gets no reply from Ableton at all, so check the slot " <>
-         "with get_clip_slots."}
+         "bad slot index is normally rejected outright rather than met with silence, so this " <>
+         "points at Ableton — check it is running with AbletonOSC enabled, then re-check the " <>
+         "slot with get_clip_slots."}
   end
 
   defp add_notes(track, slot, notes) do
@@ -153,7 +163,7 @@ defmodule Seshat.Commands.Registry do
         {:error, "Unexpected reply from /live/return_track/get/count: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -234,7 +244,7 @@ defmodule Seshat.Commands.Registry do
         {:error, "Unexpected reply from /live/song/get/num_tracks: #{inspect(args)}"}
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->

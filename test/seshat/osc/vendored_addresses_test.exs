@@ -627,6 +627,89 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     end
   end
 
+  # The structured /live/error payload has the same failure mode as the boundary
+  # above: lose it in an upstream merge and nothing breaks loudly. Every address
+  # still answers, every error still reaches Log.txt and /live/error, and
+  # `mix test` stays green — Seshat just quietly goes back to paying a full
+  # query timeout for every rejection Live already announced. The payload is
+  # built inside Live, so a grep is again the only guard available here.
+  describe "the structured /live/error payload" do
+    @manager_file "priv/AbletonOSC/manager.py"
+
+    test "osc_server.py catches a raising callback and sends the request with the error" do
+      source = File.read!(@osc_server)
+
+      assert source =~ ~s|self.send("/live/error",| and
+               source =~ ~s|("request", message.address, detail,| and
+               source =~ ~s|len(message.params), *message.params))|,
+             """
+             #{@osc_server} no longer sends the structured
+             /live/error ["request", address, message, arg_count, *args] payload.
+
+             process_message's exact-match branch is the only place the failing
+             request's address and arguments are still in scope — upstream lets the
+             exception unwind to process()'s per-datagram catch, where they are gone.
+             Without this send, Seshat.OSC.Transport cannot correlate a rejection
+             with the query it belongs to, and every rejected query waits out its
+             full timeout again. See SESHAT.md in the fork.
+
+             The tail half of that payload — `len(message.params), *message.params`
+             — is asserted separately and deliberately: correlation is by address
+             *and* every argument, so an upstream merge that kept the "request" tag
+             but dropped the count and the echoed args would leave this test and
+             every pure Transport test green (they synthesize the whole payload
+             themselves) while every real rejection from Live silently stopped
+             matching and went back to paying a full timeout.
+             """
+
+      assert source =~ ~s|extra={"osc_request_error": True}|,
+             """
+             #{@osc_server} no longer marks the error record as already sent.
+
+             manager.py's log relay reads that marker to skip records the structured
+             send has already carried. Without it, one failure produces two
+             /live/error datagrams.
+             """
+    end
+
+    test "manager.py's relay tags its payload and skips already-sent records" do
+      source = File.read!(@manager_file)
+
+      assert source =~ ~s|self.osc_server.send("/live/error", ("log", message))|,
+             """
+             #{@manager_file}'s LiveOSCErrorLogHandler no longer tags its relay payload
+             with "log".
+
+             Seshat.OSC.Transport distinguishes the two /live/error shapes by that
+             first element: a "log" payload is never correlated to a query, while an
+             untagged one-string payload is upstream's and equally uncorrelatable.
+             Dropping the tag makes an uncorrelatable error indistinguishable from a
+             malformed structured one.
+             """
+
+      assert source =~ ~s|getattr(record, "osc_request_error", False)|,
+             """
+             #{@manager_file}'s LiveOSCErrorLogHandler no longer skips records that
+             osc_server.py has already sent structured.
+
+             Without the skip, every handler rejection goes out twice: once as
+             ["request", ...] and once as ["log", ...].
+             """
+    end
+
+    test "SESHAT.md records the divergence" do
+      source = File.read!(@seshat_md)
+
+      assert source =~ "/live/error` carries the request that",
+             """
+             #{@seshat_md} lost the entry recording the structured /live/error payload.
+
+             That file is the only record of what this fork changed and why, and it is
+             what the next upstream merge is read against.
+             """
+    end
+  end
+
   # The browser export writes a file with Live's privileges. It used to write
   # wherever the request said; now the request carries no path at all and Python
   # picks a fresh file inside a fixed root. Like the boundary above this is

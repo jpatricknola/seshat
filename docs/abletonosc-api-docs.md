@@ -50,7 +50,30 @@
 | Address | Response Params | Description |
 |---|---|---|
 | `/live/startup` | | Sent when AbletonOSC starts |
-| `/live/error` | `error_msg` | Sent on error (see `logs/abletonosc.log`) |
+| `/live/error` | `"request", address, error_msg, arg_count, *request_args` | A handler callback raised. Carries the request that produced it, and is sent **instead of** a reply — the request gets no other answer. Fork-only (see `SESHAT.md`); upstream sends only the shape below. |
+| `/live/error` | `"log", error_msg` | An error with no originating OSC request — parse failures, wildcard-branch failures, a handler's own internal error logs. Never correlatable to a request. |
+
+`arg_count` makes the variable tail explicit and keeps a zero-argument request
+from needing a special case; `request_args` are the request's own arguments
+echoed back with their wire types intact (so an OSC `f` is still 32-bit —
+compare against a 32-bit round-trip of what was sent, never a 64-bit float).
+`Seshat.OSC.Transport` is the only place that knows this payload: a `"request"`
+error matching the in-flight query's address *and* every argument fails that
+query immediately instead of letting it wait out its timeout.
+
+Measured on the wire, Live 12.4.3, 2026-08-03 — `get_track_devices` on a track
+index past the end of the set produced exactly one datagram, and no
+`"log"`-tagged duplicate for the same failure:
+
+```
+/live/error ["request", "/live/track/get/devices/name", "Index out of range", 1, 99]
+```
+
+The whole rejection, client call to tool result, took 212ms against a 5,000ms
+query timeout. The raising address is the one that actually raised, which is not
+always the address the tool is named for: `get_clip_notes` on a bad index raises
+at its `/live/clip_slot/get/has_clip` guard, never reaching
+`/live/clip/get/notes`.
 
 ---
 

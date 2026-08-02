@@ -151,18 +151,26 @@ Two gotchas that don't show in the address tables:
 
 ## Queries that raise instead of replying
 
-Some queries make AbletonOSC raise internally, which on UDP looks identical to
-a wrong address: **no reply at all**, then a timeout. Guard rather than diagnose
-after the fact:
+Some queries make AbletonOSC raise internally. **As of `mix abletonosc.install`
+2026-08-03, that fails fast, not silently:** the fork's `osc_server.py` sends a
+structured `/live/error ["request", address, message, arg_count,
+...request_args]` naming the request that raised, and `Seshat.OSC.Transport`
+matches it against the in-flight query and returns `{:error, {:live_error,
+message}}` in roughly one AbletonOSC tick instead of waiting out
+`@query_timeout` (5,000ms) — see Transport's "Failed-query correlation"
+section for the matching rules and their residual collision classes. A caller
+still gets *no distinguishing value back* — `describe_error/1`'s message says
+Ableton rejected the request, not which guard to add — so guard rather than
+diagnose after the fact:
 
 - **An index that doesn't exist** — a track, slot, or scene index past the end
-  of the set raises `IndexError` inside the callback and nothing is sent. This is
-  the single most common cause of a query timeout, so guard error messages should
-  lead with "check the index", not "is Ableton running".
+  of the set raises `IndexError` inside the callback. This is the single most
+  common cause of a rejected query, so guard error messages should lead with
+  "check the index", not "is Ableton running".
 - **Clip queries against an empty slot** (`.clip` is `None` upstream) — check
   `/live/clip_slot/get/has_clip` first, as `get_clip_notes` and
   `Registry.ensure_clip/3` do. Notes queries against an *audio* clip likewise
-  never answer — check `/live/clip/get/is_midi_clip`.
+  raise — check `/live/clip/get/is_midi_clip`.
 - **`/live/clip/get/notes` range args are all-or-nothing** — the handler raises
   unless it gets exactly 0 or 4 of `start_pitch, pitch_span, start_time,
   time_span`. If any is given, fill all four (`Handlers.note_range_args/1`).
@@ -170,6 +178,10 @@ after the fact:
   `warp_mode`, `warping` raise on a MIDI clip (`Clip` has no such attribute
   upstream). Check `/live/clip/get/is_midi_clip` first, as
   `get_clip_properties`/`set_clip_properties` do.
+
+A install still running the pre-2026-08-03 copy (no `mix abletonosc.install`
+since, or a Live restart still pending) is unaffected by any of the above and
+keeps the old behaviour: no reply at all, then a full timeout.
 
 Guards that exist only to turn a silent failure into an error use a **2s
 timeout** (`@guard_timeout` in `Handlers`, `@slot_query_timeout` in `Registry`),

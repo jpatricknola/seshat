@@ -350,6 +350,184 @@ defmodule Seshat.OSC.TransportTest do
     end
   end
 
+  # AbletonOSC sends no reply at all when a handler callback raises — the fork
+  # sends the failing request back on /live/error instead, so the query can fail
+  # now rather than after its full timeout. Everything here feeds those payloads
+  # from the sink; nothing needs a live Ableton.
+  #
+  # The "not delivered" tests all prove the negative the same way: send the
+  # non-matching error, then send the query's *real* reply and assert the caller
+  # got that. A delivered error would have failed the query before the reply
+  # arrived.
+  describe "failed-query correlation" do
+    setup do
+      sink = start_supervised!({OSCSink, forward_to: self()})
+      start_transport(sink)
+      {:ok, sink: sink}
+    end
+
+    test "a structured error for the in-flight request fails it at once", %{sink: sink} do
+      # 2s timeout with no reply ever sent: were correlation to stop working,
+      # this exits on the timeout instead of quietly returning two seconds later.
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      live_error(sink, "/live/track/get/name", [5], "Index out of range")
+
+      assert {:error, {:live_error, "Index out of range"}} = Task.await(a)
+    end
+
+    test "the queue advances as soon as a query fails", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      b = Task.async(fn -> Transport.query("/live/song/get/tempo", [], 2000) end)
+      await_queue_depth(1)
+      refute_received {:osc_out, "/live/song/get/tempo", []}
+
+      live_error(sink, "/live/track/get/name", [5], "Index out of range")
+      assert {:error, {:live_error, _}} = Task.await(a)
+
+      assert_receive {:osc_out, "/live/song/get/tempo", []}
+      reply(sink, "/live/song/get/tempo", [120.0])
+      assert {:ok, {"/live/song/get/tempo", [120.0]}} = Task.await(b)
+    end
+
+    test "a structured error for another address is broadcast, not delivered", %{sink: sink} do
+      :ok = Phoenix.PubSub.subscribe(Seshat.PubSub, "osc:in")
+
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      live_error(sink, "/live/clip/get/name", [5, 0], "Index out of range")
+      assert_receive {:osc_message, "/live/error", ["request", "/live/clip/get/name" | _]}
+
+      reply(sink, "/live/track/get/name", [5, "Bass"])
+      assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
+    end
+
+    # The straggler case from the roadmap entry: the same getter, a different
+    # index. Address alone would fail the wrong caller here, which is why
+    # correlation compares every argument.
+    test "a structured error with different arguments is not delivered", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      live_error(sink, "/live/track/get/name", [9], "Index out of range")
+
+      reply(sink, "/live/track/get/name", [5, "Bass"])
+      assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
+    end
+
+    test "a structured error whose arg_count disagrees with its tail is not delivered", %{
+      sink: sink
+    } do
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      # Right address, right argument, wrong count: a malformed structured
+      # payload is a non-match, never a guess.
+      raw_error(sink, ["request", "/live/track/get/name", "Index out of range", 2, 5])
+
+      reply(sink, "/live/track/get/name", [5, "Bass"])
+      assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
+    end
+
+    test "a structured error whose arg_count is not an integer is not delivered", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      # Right address, right argument, but `arg_count` came back as a string —
+      # the `is_integer(arg_count)` guard must reject this rather than let
+      # `length(echoed) == arg_count` coerce it into a false match.
+      raw_error(sink, ["request", "/live/track/get/name", "Index out of range", "1", 5])
+
+      reply(sink, "/live/track/get/name", [5, "Bass"])
+      assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
+    end
+
+    test "an echoed argument of a different wire type never matches", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      # Same address and count, but the echoed argument is a float where an
+      # integer was sent — `wire_arg_match?/2`'s type-checked clauses must fall
+      # through to the catch-all non-match rather than comparing across types.
+      raw_error(sink, ["request", "/live/track/get/name", "Index out of range", 1, 5.0])
+
+      reply(sink, "/live/track/get/name", [5, "Bass"])
+      assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
+    end
+
+    test "legacy and log-tagged error payloads are never delivered", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      # Upstream's one-string payload, and the fork's tag for an error with no
+      # originating request. Neither carries an address to correlate on.
+      raw_error(sink, ["Error handling OSC message: Index out of range"])
+      raw_error(sink, ["log", "Error handling OSC message: Index out of range"])
+
+      reply(sink, "/live/track/get/name", [5, "Bass"])
+      assert {:ok, {_, [5, "Bass"]}} = Task.await(a)
+    end
+
+    test "an error with no query in flight leaves the transport untouched", %{sink: sink} do
+      :ok = Phoenix.PubSub.subscribe(Seshat.PubSub, "osc:in")
+
+      live_error(sink, "/live/track/get/name", [5], "Index out of range")
+      assert_receive {:osc_message, "/live/error", ["request" | _]}
+      assert :sys.get_state(Transport).in_flight == nil
+
+      a = Task.async(fn -> Transport.query("/live/song/get/tempo", [], 2000) end)
+      assert_receive {:osc_out, "/live/song/get/tempo", []}
+      reply(sink, "/live/song/get/tempo", [120.0])
+      assert {:ok, {_, [120.0]}} = Task.await(a)
+    end
+
+    # OSC `f` is 32-bit and an Elixir float is 64-bit, so what Live echoes back
+    # for 0.1 is not `0.1`. The sink hands the test the round-tripped value the
+    # decoder produced, which is exactly what a real echo would carry — a naive
+    # `==` matcher fails this test and nothing else.
+    test "a float argument matches after its 32-bit round-trip", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/clip/get/notes", [0, 0, 0.1], 2000) end)
+      assert_receive {:osc_out, "/live/clip/get/notes", [0, 0, echoed]}
+      assert echoed != 0.1
+
+      live_error(sink, "/live/clip/get/notes", [0, 0, echoed], "Index out of range")
+
+      assert {:error, {:live_error, "Index out of range"}} = Task.await(a)
+    end
+
+    test "a matched error is still broadcast", %{sink: sink} do
+      :ok = Phoenix.PubSub.subscribe(Seshat.PubSub, "osc:in")
+
+      a = Task.async(fn -> Transport.query("/live/track/get/name", [5], 2000) end)
+      assert_receive {:osc_out, "/live/track/get/name", [5]}
+
+      live_error(sink, "/live/track/get/name", [5], "Index out of range")
+      assert {:error, {:live_error, _}} = Task.await(a)
+
+      assert_receive {:osc_message, "/live/error",
+                      ["request", "/live/track/get/name", "Index out of range", 1, 5]}
+    end
+  end
+
+  describe "describe_error/1" do
+    test "renders a live error as a sentence and everything else as before" do
+      assert Transport.describe_error({:live_error, "Index out of range"}) ==
+               "Ableton rejected the request: Index out of range"
+
+      assert Transport.describe_error(:reply_port_unavailable) == ":reply_port_unavailable"
+    end
+  end
+
+  defp live_error(sink, address, args, message) do
+    raw_error(sink, ["request", address, message, length(args) | args])
+  end
+
+  defp raw_error(sink, args), do: reply(sink, "/live/error", args)
+
   # A query issued from a process that is expected to *exit* on its timeout.
   # `Task.async/1` is a trap for those: the exit propagates over the link and
   # kills the test process.
