@@ -1,6 +1,6 @@
 ---
 name: pr-review
-description: Review a PR or branch against its implementation plan — plan conformance, correctness, test coverage, style, and ripple effects. Use when the user asks to review a PR, a branch, or the current changes before merging.
+description: Review a PR or branch against its implementation plan — plan conformance, correctness, pure and agent-runnable live test coverage, style, and ripple effects. Use when the user asks to review a PR, a branch, or the current changes before merging.
 argument-hint: [PR number or branch; defaults to current branch vs main]
 ---
 
@@ -70,31 +70,74 @@ that are *absent* from the diff, which no amount of staring at hunks reveals.
    (needs live Ableton — test the pure layer instead). Then run `mix test`
    yourself; never take the PR's word that tests pass.
 
-6. **Review style and readability.** Naming that lies or mumbles, functions
+6. **Run the plan's zero-user smoke tests.** Read
+   [.claude/skills/smoke-test/SKILL.md](.claude/skills/smoke-test/SKILL.md) in
+   full for its preflight, execution, judgment, and cleanup rules. From the
+   plan's `## Live verification` section, resolve every cited
+   `smoke-tests/<file>.md § <Title>` to its exact heading and inspect its
+   `Run mode` line:
+   - `*Run mode: agent*` → run the complete cited test against Live.
+   - `*Run mode: user — <reason>*` → do not run it and do not substitute for
+     it; list it under **User-required** with that reason.
+   - Missing citation, heading, or run-mode tag → a plan/test-catalog finding.
+
+   This is the plan-scoped zero-user subset, **not** `/smoke-test agent`'s
+   repository-wide sweep. Use that skill's zero-user preflight semantics:
+   never reinstall the bridge, restart Live, restart Seshat, click or type in
+   Live, route hardware, use eyes or ears, or open another client. If bridge
+   drift or another environmental precondition prevents a test, mark it
+   **skipped by environment** and state exactly what is missing.
+
+   The running Seshat instance must be serving the checkout under review. If
+   that cannot be established without user action, do not treat its results as
+   PR verification; mark the affected tests as skipped by environment.
+
+   Temporarily mutate only scratch Live state needed by a test and restore it
+   immediately. Then follow the smoke-test skill's **Recording the results**
+   rules for the plan: directly beneath each executed citation, write dated,
+   concrete evidence of what was observed (including failures, substitutions,
+   or a condition that was not provoked), not merely "passed". This plan update
+   is the one intentional repository mutation made by a review. Do not update
+   smoke-test `Last run` lines, API docs, ROADMAP, or the PR body as part of PR
+   review. Do not write a result for a user-required or environment-skipped test
+   that was not executed; identify it in the review report instead.
+
+   A failed smoke test is a blocking correctness finding. A test that was
+   unavailable, skipped, or did not provoke its condition is **incomplete**,
+   never passed, but is not by itself proof that the code is wrong. If there is
+   no plan or no `## Live verification` section, report that no plan-scoped live
+   tests were available; do not invent them during review.
+
+7. **Review style and readability.** Naming that lies or mumbles, functions
    doing two jobs, duplication of something that already exists in the
    codebase (grep before assuming it's new), comments that narrate instead of
    explaining a constraint, inconsistency with how neighbouring code does the
    same thing. Keep this proportionate — style notes are suggestions, not
    blockers, and say so.
 
-7. **Check ripple effects — what *else* should have changed.** New module →
+8. **Check ripple effects — what *else* should have changed.** New module →
    CLAUDE.md module map. Shipped roadmap item → ROADMAP.md (or note that
    `/ship` should run after merge). Changed tool-adding flow or new OSC
    gotcha → [.claude/docs/](.claude/docs/). New tool → does its description
    in `Definitions` read as usable prompt text for a model that can't see
    the code? Stale references anywhere to renamed/moved things.
 
-8. **Verify and report.** Verify *without mutating the tree* — you're
-   reviewing, not fixing. Run `mix compile --warnings-as-errors`, `mix test`,
-   and `mix format --check-formatted`. Do **not** run `mix precommit` here:
+9. **Verify and report.** Aside from recording smoke evidence in the plan,
+   verify without mutating the tree — you're reviewing, not fixing. Record the
+   initial working-tree state, then run `mix compile --warnings-as-errors`,
+   `mix test`, and `mix format --check-formatted`. Do **not** run `mix precommit` here:
    its `format` and `deps.unlock --unused` steps rewrite files, and a
    formatting change made during a review either gets absorbed into someone
    else's commit or is left behind uncommitted while the branch ships
    unformatted. An unformatted file is a *finding*, not something you silently
-   correct. If something does end up modified, restore it with
-   `git checkout --` before reporting. Then write the review:
+   correct. If a verification command changes anything outside the intended
+   plan evidence, restore only that command's changes before reporting; never
+   discard changes that existed before the review. Then write the review:
    - **Verdict first** — one of: approve, approve with nits, needs changes —
      with a one-sentence reason.
+   - **Live verification next** — one of: passed, failed, incomplete, not
+     applicable. Name every agent test run and its observed result, every
+     environment-skipped or unprovoked test, and every User-required test.
    - **Findings ranked by severity** (bugs → plan gaps → test gaps → ripple
      effects → style), each with a `file:line` reference and, for bugs, the
      concrete scenario in which it misbehaves. A finding you can't state a

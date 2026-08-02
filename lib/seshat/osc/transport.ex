@@ -54,8 +54,9 @@ defmodule Seshat.OSC.Transport do
   answers nobody — not suppressed, because the mirror turns those into free
   freshness.
 
-  `MIX_ENV=test` points both keys at throwaway ports (`config/test.exs`), so the
-  suite cannot reach a running Ableton.
+  `MIX_ENV=test` uses port `0` as a safe fallback and injects OS-assigned
+  ephemeral ports into each supervised Transport, so concurrent test BEAMs
+  cannot collide and the suite cannot reach a running Ableton.
 
   All OSC traffic goes through here — nothing sends UDP directly.
   """
@@ -146,10 +147,12 @@ defmodule Seshat.OSC.Transport do
 
   # Both ports are resolved once, here, and carried in state: a config change
   # mid-run must not split a running transport's behaviour across two ports.
+  # Explicit options are primarily test seams; production starts with no opts
+  # and therefore keeps the configured AbletonOSC ports.
   @impl true
-  def init(_opts) do
-    send_port = send_port()
-    reply_port = reply_port()
+  def init(opts) do
+    send_port = Keyword.get_lazy(opts, :send_port, &send_port/0)
+    reply_port = Keyword.get_lazy(opts, :reply_port, &reply_port/0)
 
     case :gen_udp.open(reply_port, @socket_opts) do
       {:ok, socket} ->
@@ -163,7 +166,7 @@ defmodule Seshat.OSC.Transport do
            queue: :queue.new(),
            deaf: false,
            send_port: send_port,
-           reply_port: reply_port
+           reply_port: port
          }}
 
       {:error, :eaddrinuse} ->

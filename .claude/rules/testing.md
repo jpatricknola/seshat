@@ -8,15 +8,14 @@ paths:
 ## Seshat-specific
 
 - **Never let a test send OSC to a real Ableton.** The suite must be safe to
-  run with Live open and unsaved work. In `MIX_ENV=test`, `Transport` sends to
-  `config :seshat, :osc_send_port` and binds `:osc_reply_port`
-  ([config/test.exs](../../config/test.exs)) — deliberately not AbletonOSC's
-  11000/11001 — so any test that starts `Seshat.OSC.Transport` reaches a
-  test-local socket. Don't hardcode 11000 or 11001 in a test, don't override
-  those config keys, and start
-  [`Seshat.Test.OSCSink`](../../test/support/osc_sink.ex) alongside Transport
-  so mutations are asserted at the wire (`assert_receive {:osc_out, address,
-  args}`) rather than only through the handler's reply string.
+  run with Live open and unsaved work. In `MIX_ENV=test`, the configured ports
+  are `0` (the safe OS-assigned fallback). A wire-reaching setup starts
+  [`Seshat.Test.OSCSink`](../../test/support/osc_sink.ex) first, reads its
+  ephemeral `port/1`, then starts `Seshat.OSC.Transport` with
+  `send_port: OSCSink.port(sink), reply_port: 0`. This keeps concurrent test
+  BEAMs isolated and cannot reach AbletonOSC's 11000/11001. Assert mutations at
+  the wire (`assert_receive {:osc_out, address, args}`), not only through the
+  handler's reply string.
 - **Never write tests that reach `Transport.query/3`** — they need a live
   Ableton and will time out (5s default, 15s browsing, 30s device loading).
   Test the pure layer instead: OSC encoding, definitions, handler dispatch

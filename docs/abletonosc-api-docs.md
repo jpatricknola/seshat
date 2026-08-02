@@ -106,6 +106,28 @@ call is exactly one undo step. Measured on Live 12.4.3 (2026-08-01): an empty
 pair leaves the history untouched, an unmatched `end` is harmless, and `begin`
 does not refcount.
 
+**`can_undo` / `can_redo`, measured on Live 12.4.3 (2026-08-02, probe rig).**
+`Seshat.Tools.Handlers`'s `history_guard/2` reads one of these before sending an
+`undo` or `redo`, and `/live/song/undo` and `/live/song/redo` never reply — so
+what these two properties actually do is the only thing that can turn "off the
+end of the history" into an honest refusal rather than a fabricated success.
+
+- **Both are plain `bool` attributes** — `type=bool`, `callable=False`, and
+  neither raises. A reply is therefore always encodable; a `getattr` yielding
+  something unencodable is not a failure mode here.
+- **Not hardwired true.** In a set reading `can_undo=True can_redo=True`, one
+  new edit (a `create_midi_track`) flipped `can_redo` to **False** — so the
+  guard's refusal branch is reachable on real hardware.
+- **They track availability independently and in both directions.** Undoing
+  that edit flipped `can_redo` back to `True` while `can_undo` never moved. A
+  `false` reading therefore means the stack is genuinely empty, not that the
+  property is stuck.
+- ⚠️ **`can_undo=False` at a genuinely empty history is still unmeasured** — it
+  needs File → New Live Set, which no probe can reach without discarding the
+  open set. Tracked as measurement tripwire 5 in
+  [smoke-tests/undo.md](smoke-tests/undo.md) as *`can_undo=False` is reachable
+  at an empty history*; fold the reading in here once made.
+
 ### Song Getters
 
 Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<property>`.
@@ -114,8 +136,8 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 |---|---|---|
 | `/live/song/get/arrangement_overdub` | `arrangement_overdub` | Arrangement overdub state |
 | `/live/song/get/back_to_arranger` | `back_to_arranger` | "Back to arranger" lit state |
-| `/live/song/get/can_redo` | `can_redo` | Redo available? |
-| `/live/song/get/can_undo` | `can_undo` | Undo available? |
+| `/live/song/get/can_redo` | `can_redo` | Redo available? Plain `bool` attribute — see the measured semantics below |
+| `/live/song/get/can_undo` | `can_undo` | Undo available? Plain `bool` attribute — see the measured semantics below |
 | `/live/song/get/clip_trigger_quantization` | `clip_trigger_quantization` | Clip trigger quantization level |
 | `/live/song/get/current_song_time` | `current_song_time` | Current song time (beats) |
 | `/live/song/get/groove_amount` | `groove_amount` | Groove Pool amount (0.0-1.3; 1.0 = the dial's 100%, 1.3 = its 130% maximum); scales how strongly each clip's *assigned* groove applies — no effect on clips without one |

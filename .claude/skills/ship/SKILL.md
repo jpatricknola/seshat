@@ -33,7 +33,24 @@ are often no-ops, but check rather than assume.
    an out-of-file rank reference is a bug in that file, not renumbering work you
    owe. If you notice one, rewrite it to name the item's title instead.
 
-3. **Archive the plan doc, if one exists.** If the feature had a detailed plan
+3. **Check the plan's `## Live verification` section before archiving.** The
+   tests themselves live in [docs/smoke-tests/](docs/smoke-tests/) and stay there
+   — nothing is promoted or retired, because a smoke test guards a *silent*
+   failure mode that outlasts the feature shipping. What archives is the plan's
+   record of what a run observed, which is why it matters that the record is
+   there. So:
+
+   - **Every citation must carry a result**, written by `/smoke-test`. A
+     citation with nothing under it means the test never ran — say so in the
+     summary, name it, and leave the section as it is. Archiving a plan whose
+     checks are blank is fine; *implying they passed* is not.
+   - **If any test still reads `*Last run: —*`** in `docs/smoke-tests/`, mention
+     it. Shipping with unrun tests is a decision the user is allowed to make,
+     but not one they should discover later.
+   - A test whose behaviour this feature **removed** gets deleted from its file.
+     That is the only reason to delete one.
+
+4. **Archive the plan doc, if one exists.** If the feature had a detailed plan
    in [docs/](docs/) (outside `archive/`), move it to
    [docs/archive/](docs/archive/) and prepend the banner style the other
    archived docs use:
@@ -54,11 +71,11 @@ are often no-ops, but check rather than assume.
    plan is how the reasoning behind a shipped decision stops being findable,
    which is the entire reason the plan is kept.
 
-4. **Sync [CLAUDE.md](CLAUDE.md).** New module → add it to the module map.
+5. **Sync [CLAUDE.md](CLAUDE.md).** New module → add it to the module map.
    Changed flow or conventions → fix the relevant section. No changes needed
    is a fine answer, but look.
 
-5. **Check [.claude/docs/](.claude/docs/)** — if the feature changed how
+6. **Check [.claude/docs/](.claude/docs/)** — if the feature changed how
    tools are added, how commands flow, or added OSC gotchas, update the
    matching doc.
 
@@ -70,6 +87,8 @@ are often no-ops, but check rather than assume.
    addresses) — an address added under a prefix upstream owns, like
    `/live/clip/quantize`, is documented by hand or not at all.
 
-6. **Verify** with `mix precommit` if anything outside `docs/` changed, then
-   summarize: what was removed from the roadmap, what was archived, what
-   follow-ups were added.
+7. **Verify** with `mix precommit` if anything outside `docs/` changed, then
+   summarize: what was removed from the roadmap, what was archived, which live
+   tests the plan cited and which of those actually ran, how many tests in
+   `docs/smoke-tests/` still read `*Last run: —*`, and what follow-ups were
+   added.

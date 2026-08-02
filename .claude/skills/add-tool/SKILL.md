@@ -46,5 +46,7 @@ Do **not** create a module under `lib/seshat/mcp/` — MCP components are
 generated from the definitions at compile time.
 
 Report which OSC address you used and what you'd need Ableton running to
-actually confirm. If the tool is user-facing enough to smoke-test, suggest
-running `/smoke-test` with Ableton open.
+actually confirm. Then run `/smoke-write` — a new tool always needs live
+checks written, since nothing in `mix test` reaches past the pure layer, and a
+send-only setter fails silently — and suggest `/smoke-test` to run them with
+Ableton open.

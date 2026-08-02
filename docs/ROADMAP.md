@@ -407,7 +407,34 @@ the interception entirely: an absent `"arguments"` key and a non-map value
   [test/seshat/mcp/server_test.exs](../test/seshat/mcp/server_test.exs)
   alongside the existing non-map-`arguments` (array) case.
 
-## #12 · Search eval harness — numbers before opinions
+## #12 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+
+**Goal:** setting `looping` *and* the loop points in one call produces the
+intended brace on a clip whose stored loop points differ from its play markers.
+
+**Why:** recorded as a known wart by the 07/2026 review of the clip property
+tools, and carried since then as a caveat inside the smoke-test checklist —
+which is the wrong home for a defect, since a checklist item that says "if it
+misbehaves, the fix is…" is a bug report nobody triaged. With looping off,
+Live aliases the loop points onto the play markers. `set_clip_properties`
+reads that pair *before* the `looping` toggle goes out, so on such a clip both
+the write ordering and the single-sided validation can run against stale
+values, and the resulting brace is not the one asked for.
+
+**Planner notes:**
+- The fix is stated in the original review: send `looping` first, then read the
+  pair context, then order the loop-point writes. Confirm the read really is
+  ordered before the toggle in `Seshat.Tools.Handlers` before assuming it.
+- Ordering logic is pure-testable — the existing write-ordering tests in
+  `handlers_test.exs` are the place. What is not pure-testable is whether Live
+  aliases as described; that is a measurement, and it belongs in
+  [abletonosc-api-docs.md](abletonosc-api-docs.md) once made.
+- The live check already exists as
+  `smoke-tests/clips.md § The loop pair with looping off`, where a failure is
+  currently the *expected* result. Cite it from the plan, and when this ships,
+  rewrite that test so a failure means a regression again.
+
+## #13 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -432,7 +459,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
-## #13 · Widen the search slate at tied score bands
+## #14 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -447,7 +474,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #14 · Accepted-search memory
+## #15 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -465,7 +492,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #15 · Browser preview audition
+## #16 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -486,7 +513,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #16 · Opt-in `samples` index
+## #17 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -504,7 +531,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #17 · LLM enrichment at reindex
+## #18 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an external model service or an MCP-client-driven tagging
@@ -524,7 +551,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #18 · User XMP tags
+## #19 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -539,7 +566,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #19 · Read-only audio input display — warn before a silent take
+## #20 · Read-only audio input display — warn before a silent take
 
 **Goal:** surface a track's audio input routing, read-only, so `record_clip`
 can warn when an audio take is about to record nothing.
@@ -568,7 +595,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #20 · Device list per track in session state
+## #21 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -587,7 +614,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #21 · Modify a note in place
+## #22 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -600,7 +627,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #22 · Clip grid in session state — only if usage demands it
+## #23 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -614,7 +641,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #23 · Small OSC breadth — grab bag
+## #24 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -635,7 +662,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #24 · Adopt MCP `2026-07-28` when Anubis supports it
+## #25 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.

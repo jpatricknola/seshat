@@ -7,11 +7,14 @@ defmodule Seshat.OSC.TransportTest do
   alias Seshat.OSC.Transport
   alias Seshat.Test.OSCSink
 
-  # The reply port Transport binds in this env — never AbletonOSC's 11001.
-  # `compile_env!/2` rather than `fetch_env!/2` because this is a module
-  # attribute: a runtime config read in a module body is a warning, and
-  # `mix precommit` compiles with --warnings-as-errors in :test.
-  @reply_port Application.compile_env!(:seshat, :osc_reply_port)
+  defp start_transport(sink, opts \\ []) do
+    opts = Keyword.merge([send_port: OSCSink.port(sink), reply_port: 0], opts)
+    start_supervised!({Transport, opts})
+  end
+
+  defp transport_reply_port do
+    :sys.get_state(Transport).reply_port
+  end
 
   # The deaf-mode setup: occupy the reply port so Transport cannot bind it.
   #
@@ -20,28 +23,22 @@ defmodule Seshat.OSC.TransportTest do
   # and says so immediately instead of waiting out a timeout for a reply another
   # process is receiving.
   #
-  # The port only has to be occupied, by this socket or by a concurrent `mix
-  # test` on the machine, which is why binding it is allowed to fail.
-  #
   # Load-bearing for the isolation, not just for the port-contention message:
-  # a Transport still binding 11001 fails here either way — free, it never goes
-  # deaf and both tests below break; held, it goes deaf but logs 11001 instead
-  # of the configured port.
+  # a Transport still binding 11001 never goes deaf and both tests below break.
   #
   # It lives in the describes that need it, not at module level: the
   # accepted-source tests below need Transport to bind the port for real.
   defp start_deaf(_context) do
-    case :gen_udp.open(@reply_port, [:binary, active: false]) do
-      {:ok, socket} -> on_exit(fn -> :gen_udp.close(socket) end)
-      {:error, :eaddrinuse} -> :ok
-    end
+    {:ok, socket} = :gen_udp.open(0, [:binary, active: false, ip: {127, 0, 0, 1}])
+    {:ok, occupied_port} = :inet.port(socket)
+    on_exit(fn -> :gen_udp.close(socket) end)
 
     # The sink absorbs the send below, so nothing goes at whatever holds 11000.
-    start_supervised!({OSCSink, forward_to: self()})
+    sink = start_supervised!({OSCSink, forward_to: self()})
 
-    log = capture_log(fn -> start_supervised!(Transport) end)
+    log = capture_log(fn -> start_transport(sink, reply_port: occupied_port) end)
 
-    {:ok, log: log}
+    {:ok, log: log, occupied_port: occupied_port}
   end
 
   describe "test-environment isolation" do
@@ -50,17 +47,17 @@ defmodule Seshat.OSC.TransportTest do
     # back to its production defaults and drove a real set. Exact equality also
     # catches a partial change — one port moved, the other left on Ableton's.
     test "the suite never targets AbletonOSC's ports" do
-      assert Application.fetch_env!(:seshat, :osc_send_port) == 31000
-      assert Application.fetch_env!(:seshat, :osc_reply_port) == 31001
+      assert Application.fetch_env!(:seshat, :osc_send_port) == 0
+      assert Application.fetch_env!(:seshat, :osc_reply_port) == 0
     end
   end
 
   describe "when the OSC reply port belongs to another process" do
     setup :start_deaf
 
-    test "it says so loudly at startup", %{log: log} do
+    test "it says so loudly at startup", %{log: log, occupied_port: occupied_port} do
       assert log =~ "already bound by another process"
-      assert log =~ "#{@reply_port}"
+      assert log =~ "#{occupied_port}"
     end
 
     test "queries fail immediately rather than stalling on a reply that cannot arrive" do
@@ -82,20 +79,17 @@ defmodule Seshat.OSC.TransportTest do
   # the configured send port, it is the only socket in the suite whose source
   # endpoint Transport accepts.
   #
-  # Known accepted risk: these need the configured reply port actually free, so a
-  # concurrent `mix test` on the same machine forces deaf mode and fails them.
-  # One committer, one machine — acceptable.
   describe "receiving datagrams" do
     setup do
       sink = start_supervised!({OSCSink, forward_to: self()})
-      start_supervised!(Transport)
+      start_transport(sink)
       :ok = Phoenix.PubSub.subscribe(Seshat.PubSub, "osc:in")
       {:ok, sink: sink}
     end
 
     test "a well-formed datagram from AbletonOSC's endpoint is broadcast", %{sink: sink} do
       packet = Message.encode("/live/song/get/tempo", [120.0])
-      assert :ok = OSCSink.send_datagram(sink, @reply_port, packet)
+      assert :ok = OSCSink.send_datagram(sink, transport_reply_port(), packet)
 
       assert_receive {:osc_message, "/live/song/get/tempo", [120.0]}
     end
@@ -105,12 +99,13 @@ defmodule Seshat.OSC.TransportTest do
       # down with it and orphaning any pending query to its full timeout.
       log =
         capture_log(fn ->
-          assert :ok = OSCSink.send_datagram(sink, @reply_port, "/live/song/get/tempo")
+          assert :ok =
+                   OSCSink.send_datagram(sink, transport_reply_port(), "/live/song/get/tempo")
 
           # Same source socket, so it is queued behind the garbage: receiving
           # this proves the transport processed both, with no sleeping.
           packet = Message.encode("/live/song/get/tempo", [120.0])
-          assert :ok = OSCSink.send_datagram(sink, @reply_port, packet)
+          assert :ok = OSCSink.send_datagram(sink, transport_reply_port(), packet)
 
           assert_receive {:osc_message, "/live/song/get/tempo", [120.0]}
         end)
@@ -126,12 +121,12 @@ defmodule Seshat.OSC.TransportTest do
       log =
         capture_log(fn ->
           spoofed = Message.encode("/live/song/get/tempo", [666.0])
-          :ok = :gen_udp.send(foreign, {127, 0, 0, 1}, @reply_port, spoofed)
+          :ok = :gen_udp.send(foreign, {127, 0, 0, 1}, transport_reply_port(), spoofed)
 
           # A datagram from the accepted endpoint, sent after it: its arrival is
           # the synchronisation point for asserting the spoof never arrived.
           legit = Message.encode("/live/song/get/tempo", [120.0])
-          :ok = OSCSink.send_datagram(sink, @reply_port, legit)
+          :ok = OSCSink.send_datagram(sink, transport_reply_port(), legit)
 
           assert_receive {:osc_message, "/live/song/get/tempo", [120.0]}
         end)
@@ -152,7 +147,7 @@ defmodule Seshat.OSC.TransportTest do
   describe "query serialization" do
     setup do
       sink = start_supervised!({OSCSink, forward_to: self()})
-      start_supervised!(Transport)
+      start_transport(sink)
       {:ok, sink: sink}
     end
 
@@ -363,7 +358,8 @@ defmodule Seshat.OSC.TransportTest do
   end
 
   defp reply(sink, address, args) do
-    :ok = OSCSink.send_datagram(sink, @reply_port, Message.encode(address, args))
+    :ok =
+      OSCSink.send_datagram(sink, transport_reply_port(), Message.encode(address, args))
   end
 
   # "Accepted but not yet sent" is a state assertion, not a message: the query
