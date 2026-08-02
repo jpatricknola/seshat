@@ -118,8 +118,9 @@ them, each with its one-line reason:
   the undo-orchestration probe, which is the one that failed on 2026-08-01.
 - **Bridge integrity item 4 in its real form** — the listener rebind performed
   by hand in Live's UI. The substitution covers the LOM path only.
-- **Measurement tripwire 2** — reading the Groove Pool's Amount dial needs eyes
-  on Live's UI, and assigning a groove needs hands.
+- **Measurement tripwires 2 and 5** — reading the Groove Pool's Amount dial
+  needs eyes on Live's UI and assigning a groove needs hands; `can_undo` at an
+  empty history needs File → New Live Set, which discards the open set.
 - **Everything else by ear** — sound choice, levels, bypass audibility,
   quantize feel, glitches on mid-playback deletes.
 
@@ -138,9 +139,10 @@ Ordering exists to keep state changes from invalidating later checks:
    the cheap breadth pass that catches a tool that stopped answering at all.
 5. **Catalog ranking** — all four, judged as conversations.
 6. **Measurement tripwires** — item 4 (`Device On`) on a stock device and a
-   rack; item 5 (stray-track guard); item 1 (quantize spacing) numerically per
+   rack; item 6 (stray-track guard); item 1 (quantize spacing) numerically per
    the substitution above; item 3 (`hide_view`), which self-checks. Item 2
-   (groove dial) is excluded outright.
+   (groove dial) and item 5 (`can_undo` at an empty history, which needs File →
+   New Live Set) are excluded outright.
 7. **OSC network boundary** — item 1 (`lsof`, already done in preflight), item 3
    (obsolete export form, Log.txt tail as the observable), item 4 (the
    listener/decoder traffic pass). Item 2 needs Seshat stopped: substituted.

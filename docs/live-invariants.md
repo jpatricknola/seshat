@@ -232,7 +232,21 @@ future "fix" toward an older doc gets caught.
    spells the display differently, `bypass_device` refuses on *every* device and
    its error prints the actual string; the fix is widening the accepted set in
    `ensure_on_off_switch`.
-5. **The stray-track guard fires.** Load an *instrument* (Operator) with
+5. **`can_undo=False` is reachable at an empty history.** ⚠️ **Unmeasured.**
+   File → New Live Set (hold Command and press N), touch nothing, then call
+   `undo`. Expect the error — "Live reported no undo step available, so no undo
+   was sent" — and **not** a success string. `Song.can_undo` and `Song.can_redo`
+   were measured on 2026-08-02 (Live 12.4.3) to be plain `bool` attributes that
+   track availability independently and in both directions, so the guard's
+   `false` branch is reachable for *redo*; the empty-history reading for *undo*
+   is the one the probe could not reach without spending the open set's history.
+   If `undo` reports the request as sent instead, `can_undo` alone is always
+   true, and the finding is that the **undo guard should be dropped rather than
+   widened** — say so in the report. The redo guard stands on the 2026-08-02
+   measurement either way. Delete this item once it has been run: it is a
+   one-time measurement, and once made it belongs in
+   [abletonosc-api-docs.md](abletonosc-api-docs.md).
+6. **The stray-track guard fires.** Load an *instrument* (Operator) with
    `target: "return"`, then again with `target: "master"`. Both must **error**,
    naming the stray MIDI track Live created; nothing may be claimed as loaded;
    and the stray track must still be there afterwards — the tool never deletes it.
