@@ -18,14 +18,35 @@ Implement the plan for: **$ARGUMENTS**
      stop and ask now, before code makes the choice by accident.
    - Questions marked *needs live Ableton / the AbletonOSC source*: resolve
      them **first**, before the parts that depend on them — read the source
-     in [priv/AbletonOSC](priv/AbletonOSC), or test the address against a
-     running Live. Read the **submodule**, never the copy under
+     in [priv/AbletonOSC](priv/AbletonOSC), or measure against a running
+     Live. Read the **submodule**, never the copy under
      `~/Music/Ableton/User Library/Remote Scripts/AbletonOSC`: that copy is
      an *output* of `mix abletonosc.install` and may be older than the fork,
      so a question resolved against it can be answered by code we no longer
-     ship. If a question truly can't be resolved yet, implement the plan's
-     recorded assumption and carry the ⚠️ into your final report — never
-     silently pick something else.
+     ship.
+
+     **Check whether Live is running (`ps aux | grep -i "[A]bleton Live"`)
+     before accepting any question as unresolvable.** The plan's own reason
+     for leaving it open is *not* binding on you — it was written in another
+     session, and a planner that had no Live, or that refused to touch the
+     one it had, hands you a question that is trivially answerable in yours.
+     If Live is running, measure. For an address that already ships, `mix run`
+     a one-off script against `Seshat.OSC.Transport` and read the reply; for
+     one that doesn't exist yet, use the probe rig under "Measuring the Live
+     API without building the feature first" in
+     [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md).
+     Prefer the non-destructive form of a measurement — the same property
+     read at a boundary you can reach without spending the user's open set —
+     and where only a destructive form exists (a new set, an exhausted undo
+     history, a deleted track), say exactly what you need and ask for it
+     rather than assuming.
+
+     Only a question that *no* available resource can answer may stay open:
+     implement the plan's recorded assumption, carry the ⚠️ into your final
+     report, and name the resource that was missing. Never silently pick
+     something else, and never let an assumption a running Live could have
+     settled reach the reviewer as settled — a whole part built on an
+     unmeasured property is a part nobody downstream can check.
 
 3. **Set up the branch.** If on `main`, create a feature branch named after
    the feature. Never implement directly on `main`.
@@ -83,7 +104,8 @@ Implement the plan for: **$ARGUMENTS**
 
 7. **Report per plan item.** Walk the plan's parts and mark each one
    **done**, **deviated** (what and why), or **blocked** (on what). Then:
-   open questions resolved vs. still carried, what only Ableton can confirm,
+   open questions resolved vs. still carried — and for each still carried,
+   whether Live was running and what you measured — what only Ableton can confirm,
    and the suggested next step — `/pr-review` once the branch is pushed as a
    PR. Leave committing and pushing to the user unless they've said
    otherwise.

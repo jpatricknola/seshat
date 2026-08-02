@@ -939,15 +939,24 @@ Nothing in `mix test` settles the live half: the suite supplies the guard's
 reply itself, so it proves how Seshat *reacts* to a `false`, never that Live
 ever says `false`.
 
-1. **The boundary, in a brand-new empty set.** File → New Live Set (hold Command
-   and press N), touch nothing, then call `undo`. Expect the error — "Live
-   reported no undo step available, so no undo was sent" — and **not** a success
-   string. This is the one check that proves `Song.can_undo` really reports
-   `false` at the bottom of the history. If `undo` reports the request as sent
-   instead, `can_undo` is always true, the guard buys nothing, and the finding is
-   that the guard should be dropped rather than widened — say so in the report.
-   Call `redo` in that same fresh set to answer the matching question for the
-   redo stack.
+**Already measured — don't re-derive it (2026-08-02, Live 12.4.3, probe rig).**
+`Song.can_undo` and `Song.can_redo` are plain `bool` attributes, not methods and
+not raising, so a reply is always encodable. They track availability
+*independently and in both directions*: in a set reading `can_undo=True
+can_redo=True`, one new edit (a `create_midi_track`) flipped `can_redo` to
+**False** while `can_undo` stayed `True`, and undoing that edit flipped
+`can_redo` back to `True`. So the property is not hardwired true, and the
+guard's `false` branch is reachable. What remains unmeasured is only
+`can_undo=False` at a genuinely empty history — check 1 below.
+
+1. **The `can_undo` boundary, in a brand-new empty set.** File → New Live Set
+   (hold Command and press N), touch nothing, then call `undo`. Expect the error
+   — "Live reported no undo step available, so no undo was sent" — and **not** a
+   success string. This is the one reading the probe above could not reach
+   without spending the open set's history. If `undo` reports the request as sent
+   instead, `can_undo` alone is always true, and the finding is that the *undo*
+   guard should be dropped rather than widened — say so in the report; the redo
+   guard stands on the measurement above either way.
 2. **An ordinary undo still works and still moves exactly one step.**
    `create_track`, then `undo`: the track disappears, and the reply says the
    request was sent rather than claiming history moved. Then `redo` once and
