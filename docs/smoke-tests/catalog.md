@@ -7,6 +7,7 @@ right. **Judge the conversation, not the first tool call.**
 
 ## A plain ask in words reaches a good candidate
 
+*Run mode: user — requires an unprompted conversation to judge model behaviour*
 *Last run: —*
 
 "Find me a warm guitar". `Warm` is not a real tag in a stock library, which is
@@ -18,6 +19,7 @@ is the designed cost; **a dead end is the failure**, even though nothing errored
 
 ## `nearest real tags` stays quiet for a word the library has no spelling of
 
+*Run mode: agent*
 *Last run: —*
 
 Don't expect that list for a word like `Warm`. It is string similarity — it
@@ -28,6 +30,7 @@ correct behaviour, not a gap.
 
 ## The slate spans devices, and its facets narrow
 
+*Run mode: user — includes judging how the model presents choices in conversation*
 *Last run: —*
 
 Not 15 neighbours from one folder. A truncated reply lists real tags with counts
@@ -36,6 +39,7 @@ you can narrow by — try one and confirm it narrows. Confirm the model presents
 
 ## Usage counts survive a reindex
 
+*Run mode: agent*
 *Last run: —*
 
 Load a candidate, then search again and confirm `search_library` favours it
@@ -43,6 +47,7 @@ slightly.
 
 ## Browser preview sounds without touching the set
 
+*Run mode: user — requires audible cue routing and judgment by ear*
 *Last run: —*
 
 `/live/browser/preview_item` and `/live/browser/stop_preview` are served by the

@@ -10,6 +10,7 @@ the ones that must pass before anyone trusts the pair.
 
 ## Fixed-length take
 
+*Run mode: agent*
 *Last run: —*
 
 Empty slot, armed MIDI track, transport stopped, `record_clip bars: 2` →
@@ -22,6 +23,7 @@ property on anything beyond "armed track, empty slot", `record_clip` errors on
 
 ## Auto-arm
 
+*Run mode: agent*
 *Last run: —*
 
 The same on a **disarmed** track → the tool arms it and the reply says "Armed the
@@ -33,6 +35,7 @@ lie.
 
 ## Audio take — the headline
 
+*Run mode: user — requires routed audio input and judgment by ear*
 *Last run: —*
 
 An audio track with an input routed, 4 bars → audible material in the clip. This
@@ -42,6 +45,7 @@ fix.
 
 ## Open-ended take and the re-fire
 
+*Run mode: agent*
 *Last run: —*
 
 ⚠️ `stop_recording` assumes that firing a recording slot ends the take at the next
@@ -53,6 +57,7 @@ and a different reply.
 
 ## Echo wording
 
+*Run mode: agent*
 *Last run: —*
 
 ⚠️ Fire with the transport **playing** → the reply must say "Queued". That depends
@@ -62,6 +67,7 @@ the transport **stopped** → "Recording now."
 
 ## Two bars is two bars in 6/8
 
+*Run mode: agent*
 *Last run: —*
 
 Set 6/8 with `set_time_signature`, then `get_session_state` **without**
@@ -72,6 +78,7 @@ regardless of signature (6/8 × 2 bars = 6.0 beats), confirmed against Live
 
 ## Each guard produces its own error with nothing fired
 
+*Run mode: user — includes a group track and input-routing state no tool can create*
 *Last run: —*
 
 An occupied slot (names `delete_clip`), a group track (`can_be_armed` false), and
@@ -80,6 +87,7 @@ needs a routing no tool can create).
 
 ## `stop_recording` boundaries
 
+*Run mode: agent*
 *Last run: —*
 
 On a fixed-length take it ends it early. On a slot that is merely *playing* it
@@ -91,6 +99,7 @@ to be worth a better message.
 
 ## Recording follow cam
 
+*Run mode: user — requires visual confirmation of Live's selected clip and editor*
 *Last run: —*
 
 `record_clip` lands the view on the reddening slot in Session with the detail pane

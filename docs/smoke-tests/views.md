@@ -10,6 +10,7 @@ fork, so [bridge.md](bridge.md)'s reinstall precondition still applies.
 
 ## The visibility matrix
 
+*Run mode: user — includes checking derived view labels against Live's screen*
 *Last run: —*
 
 For each of `Browser`, `Arranger`, `Session`, `Detail`, `Detail/Clip`,
@@ -24,6 +25,7 @@ detail panel's named tab comes from the `Detail/*` flags.
 
 ## `hide_view` hides exactly two panes
 
+*Run mode: agent*
 *Last run: —*
 
 For each name in `hide_view`'s enum (`Browser`, `Detail`): `get_view_state`,
@@ -39,6 +41,7 @@ it reports one, that *is* the finding.
 
 ## Show-first sequencing
 
+*Run mode: user — requires a fresh conversational request and manual starting view*
 *Last run: —*
 
 Start in Arrangement, ask naturally to launch a named Session clip. Expect
@@ -52,6 +55,7 @@ Expect `show_view(Arranger)` before `set_loop`.
 
 ## No redundant pre-show
 
+*Run mode: user — requires a fresh conversational request and manual starting view*
 *Last run: —*
 
 Start in Session, ask to change a clip's loop brace or notes. Expect no
@@ -60,6 +64,7 @@ edited clip on screen right after the write.
 
 ## The selected-track pane
 
+*Run mode: user — requires manual selection and an unprompted conversation*
 *Last run: —*
 
 With a *different* track selected, ask to change a device parameter on a named
@@ -69,6 +74,7 @@ it, so a skipped pre-show here shows the wrong track's chain.
 
 ## Pure navigation and hiding in words
 
+*Run mode: user — requires an unprompted conversation to judge model behaviour*
 *Last run: —*
 
 Ask only "show me the timeline" and "show me the notes again." Expect `show_view`

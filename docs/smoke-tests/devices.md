@@ -11,6 +11,7 @@ one return track, and a send from the track into it.
 
 ## Parameter 0 is the `Device On` switch, displaying `On`/`Off`
 
+*Run mode: agent*
 *Last run: —*
 
 Both `delete_device` and `bypass_device` stand on this, and it comes from the
@@ -25,6 +26,7 @@ and its error prints the actual string; the fix is widening the accepted set in
 
 ## Bypass is audible and idempotent
 
+*Run mode: user — requires visual and audible confirmation in Live*
 *Last run: —*
 
 `bypass_device enabled: false` on an effect is audible and the device's power
@@ -34,6 +36,7 @@ Off" without writing.
 
 ## Delete removes the right device and says what shifted
 
+*Run mode: user — requires Live UI confirmation and listening for playback glitches*
 *Last run: —*
 
 `delete_device` removes the device you meant (confirm in Live's UI), its reply's
@@ -47,6 +50,7 @@ ugly, the fix is a description sentence advising to stop the clip first).
 
 ## Device error paths are errors, not stalls
 
+*Run mode: agent*
 *Last run: —*
 
 An out-of-range device index errors immediately (Elixir-side bounds check — no 2s
@@ -55,6 +59,7 @@ deleting from an empty chain errors cleanly.
 
 ## The audition loop works as a conversation
 
+*Run mode: user — requires musical judgment by ear in a natural conversation*
 *Last run: —*
 
 `search_library` for electric pianos → load one on a MIDI track with a clip →
@@ -63,6 +68,7 @@ winner. Then an effect A/B via `bypass_device`.
 
 ## Loading onto a return, and onto the master
 
+*Run mode: user — requires visual and audible confirmation in Live*
 *Last run: —*
 
 `create_return_track "Room Reverb"`, then `load_device target: "return", track:
@@ -77,6 +83,7 @@ the view lands on the master's device chain, and the whole mix is affected.
 
 ## The stray-track guard fires
 
+*Run mode: agent*
 *Last run: —*
 
 Load an *instrument* (Operator) with `target: "return"`, then again with
@@ -87,6 +94,7 @@ either reports success, `browser.py`'s `_verify_landed` is not running.
 
 ## The read/write surface works on both chains
 
+*Run mode: user — includes audible parameter and bypass checks in Live*
 *Last run: —*
 
 With `target: "return"` and `target: "master"`:
@@ -106,6 +114,7 @@ With `target: "return"` and `target: "master"`:
 
 ## A slow-loading plugin doesn't read as a failed load
 
+*Run mode: user — requires a suitable third-party plugin installed in Live*
 *Last run: —*
 
 If a third-party VST3/AU **effect** is installed, load it (not an instrument) with
@@ -118,6 +127,7 @@ regression to chase.
 
 ## The return and master mixer setters move the right control
 
+*Run mode: user — requires visual and audible mixer confirmation in Live*
 *Last run: —*
 
 Each of `set_return_track_volume`, `set_return_track_pan`, `set_return_track_mute`,
@@ -133,6 +143,7 @@ itself "shown as Main in Live 12".
 
 ## The return and master mixer listeners push
 
+*Run mode: user — requires moving controls and deleting a return in Live's UI*
 *Last run: —*
 
 Move each of those controls **by hand in Live** and confirm `get_session_state`
@@ -146,6 +157,7 @@ return — a stale binding writes one return's state onto another.
 
 ## Cue volume is audible
 
+*Run mode: user — requires cue routing and judgment by ear*
 *Last run: —*
 
 Preview a preset (see [catalog.md](catalog.md)), change `set_cue_volume`, preview

@@ -12,7 +12,8 @@ on this branch; check `git diff` against `main` and recent commits).
 fire-and-forget, so a wrong address fails **silently**. The tests in
 [docs/smoke-tests/](docs/smoke-tests/) are the only thing standing behind that
 whole surface. You are not running them; you are deciding which ones this change
-needs, and writing any it needs that don't exist yet.
+needs, and writing any it needs that don't exist yet. Every new test must carry
+the relevant `Run mode` tag defined below.
 
 **Needs no Ableton.** This is a desk job: the diff, the OSC contract, and the
 rules below. If you find yourself wanting to try something in Live to decide what
@@ -96,7 +97,18 @@ a hang. For anything mutating, include the read-back that would catch a refusal
 which quietly *did* send — that's the case most worth catching and the one a reply
 string can never show you.
 
-Give it a `*Last run: —*` line. Someone else's run stamps it, not you.
+Give it exactly one run-mode line, followed immediately by `*Last run: —*`.
+Someone else's run stamps the latter, not you:
+
+- `*Run mode: agent*` when one agent can perform and judge the complete test
+  without a click, keystroke, restart, routed hardware, ears, eyes, or another
+  client/conversation.
+- `*Run mode: user — <short reason>*` otherwise. State the missing action or
+  observation, not merely "manual".
+
+If a proposed test mixes an agent-checkable guarantee with a user-only one,
+split it into two titled tests. Run mode describes the whole test; an agent tag
+must never mean "the agent can run most of it."
 
 **Cite measurements, never restate them.** The numbers behind these tests live in
 [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md), dated and
@@ -118,10 +130,11 @@ misbehaves, the fix is…" is a defect nobody triaged; file it instead.
 
 ## Report
 
-Which tests you cited, which you wrote from scratch and into which file, which
-rows of the table the diff tripped, and what you left uncovered. If you wrote
-tests for behaviour the plan didn't describe — the diff outgrew its plan — say
-that plainly; it is a finding about the plan, not just about the tests.
+Which tests you cited, which you wrote from scratch and into which file, the run
+mode assigned to every new test, which rows of the table the diff tripped, and
+what you left uncovered. If you wrote tests for behaviour the plan didn't
+describe — the diff outgrew its plan — say that plainly; it is a finding about
+the plan, not just about the tests.
 
 Then recommend `/smoke-test` to run them, which needs what this skill did not:
 Ableton open, and a bridge matching the repo.

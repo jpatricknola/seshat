@@ -13,6 +13,7 @@ applies before anything below means anything.
 
 ## The bind is loopback-only
 
+*Run mode: agent*
 *Last run: —*
 
 `lsof -nP -iUDP:11000`. The only AbletonOSC line must read `127.0.0.1:11000`;
@@ -20,6 +21,7 @@ applies before anything below means anything.
 
 ## The default reply route is fixed, not last-sender
 
+*Run mode: user — requires stopping and restarting the Seshat server*
 *Last run: —*
 
 `manager.py`'s `test_callback` replies with a bare `self.osc_server.send(...)`
@@ -50,6 +52,7 @@ that you substituted it rather than reporting this as run.
 
 ## Callback replies and listener pushes both land on 11001
 
+*Run mode: user — requires changing a control by hand in Live*
 *Last run: —*
 
 `get_session_state(refresh: true)`, then change tempo or a track's volume **by
@@ -60,6 +63,7 @@ exactly what moved.
 
 ## The obsolete path-taking export form is rejected
 
+*Run mode: agent*
 *Last run: —*
 
 `/live/browser/export` takes no argument. Send the old form with
@@ -77,6 +81,7 @@ observable outcome — by design, since nothing else confirms the obsolete form 
 
 ## Stale-export cleanup, with real fixtures
 
+*Run mode: agent*
 *Last run: —*
 
 Before running `reindex_library`, plant two files in `~/.seshat/browser-exports/`
@@ -91,6 +96,7 @@ this system will ever do that for you.
 
 ## The Elixir listener and decoder accept real traffic
 
+*Run mode: user — requires a manual rename and Live restart*
 *Last run: —*
 
 `@socket_opts` binds the reply port loopback-only, `handle_info/2` accepts a

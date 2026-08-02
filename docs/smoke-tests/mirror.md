@@ -21,6 +21,7 @@ reports success while doing it.
 
 ## Nothing is fabricated when Ableton stops answering
 
+*Run mode: user — requires quitting or disabling Ableton and starting it again*
 *Last run: —*
 
 With the Seshat server running, quit Ableton Live (or toggle AbletonOSC off in
@@ -53,6 +54,7 @@ starting.
 
 ## A degraded rebuild is honest
 
+*Run mode: user — requires comparison against Live's visible track headers*
 *Last run: —*
 
 Needs Live **running**. Ask for several tracks to be created and then removed
@@ -74,6 +76,7 @@ the same burst are expected — don't read one as contradicting the degraded rea
 
 ## A degraded rebuild recovers without `refresh: true`
 
+*Run mode: user — depends on first provoking and visually confirming a degraded rebuild*
 *Last run: —*
 
 After a degraded read, make no further tool call, wait ~3s, then read plainly
@@ -89,6 +92,7 @@ Either way, the check is the list being correct on the follow-up read.
 
 ## A genuine disagreement still brakes
 
+*Run mode: user — can only be observed while running the user-required degraded-rebuild scenario*
 *Last run: —*
 
 Not reproducible on demand and not required to pass — but if a `did not reproduce
@@ -98,6 +102,7 @@ failed/disagreed split must not have loosened it for the disagreed case.
 
 ## The settling marker appears and clears
 
+*Run mode: agent*
 *Last run: —*
 
 Creates plus a plain read **in one model response** → the reply carries "A
@@ -107,6 +112,7 @@ rebuilding).
 
 ## The scalar mixer setters no longer trigger a refresh
 
+*Run mode: agent*
 *Last run: —*
 
 Issue the four return mixer setters (volume, pan, mute, solo) and the three
@@ -121,6 +127,7 @@ inferred from the master ones, never measured.
 
 ## A burst of creates collapses into one refresh
 
+*Run mode: agent*
 *Last run: —*
 
 On scratch material, create several tracks with a distinct final name, **with the
@@ -138,6 +145,7 @@ afterwards.
 
 ## `refresh: true` absorbs the pending timer
 
+*Run mode: agent*
 *Last run: —*
 
 While an asynchronous refresh is pending, call `get_session_state(refresh: true)`
@@ -148,6 +156,7 @@ later**.
 
 ## The last request is never dropped
 
+*Run mode: agent*
 *Last run: —*
 
 Make one more structural mutation while a rebuild is already running (it lasts

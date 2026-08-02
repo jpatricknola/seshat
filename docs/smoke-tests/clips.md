@@ -13,6 +13,7 @@ least one pair of same-pitch notes close together.
 
 ## A loop brace edit lands and reads back
 
+*Run mode: user — requires visual and playback confirmation in Live*
 *Last run: —*
 
 Capture or write an 8-beat MIDI clip, then "loop beats 4–8": the brace visibly
@@ -21,6 +22,7 @@ moves in the note editor, playback loops that section, and the reply echoes
 
 ## Write ordering and invalid states
 
+*Run mode: agent*
 *Last run: —*
 
 Move a brace entirely past the old one in one call (the end-first path) and
@@ -31,6 +33,7 @@ point.
 
 ## The loop pair with looping off
 
+*Run mode: agent*
 *Last run: —*
 
 With looping off, `get_clip_properties` should show the loop points tracking the
@@ -45,6 +48,7 @@ treating it as new.
 
 ## Audio clip properties
 
+*Run mode: user — requires a prepared audio clip and visual confirmation in Live*
 *Last run: —*
 
 Set `gain` — the echo shows a plausible dB from `gain_display_string`. Change
@@ -59,6 +63,7 @@ nothing is sent.
 
 ## The clip reader
 
+*Run mode: user — includes visual confirmation of selection and the note editor*
 *Last run: —*
 
 `get_clip_properties` on a freshly captured clip reports the length and brace Live
@@ -68,6 +73,7 @@ open.
 
 ## Quantize lands on 1/16ths, not 1/32nds
 
+*Run mode: agent*
 *Last run: —*
 
 `"1/16"` at amount 1.0. Notes land on the grid in the note editor and the reply's
@@ -82,6 +88,7 @@ schema. The corrected table, measured 2026-07-31, is in
 
 ## Partial strength moves notes toward the grid
 
+*Run mode: agent*
 *Last run: —*
 
 `undo`, then the same grid at amount 0.5. Notes move *toward* the grid, not onto
@@ -90,6 +97,7 @@ with a 1.25 target lands at 1.31.
 
 ## An already-tight clip reports no change without reading as an error
 
+*Run mode: agent*
 *Last run: —*
 
 Quantize the same clip twice at 1.0. The second call reports "no note changed" —
@@ -98,6 +106,7 @@ because here silence is normal.
 
 ## Triplet grids reach values the old docs wrote off
 
+*Run mode: agent*
 *Last run: —*
 
 `"1/8T"` and `"1/16T"` on a straight part: notes land on thirds and sixths of a
@@ -105,6 +114,7 @@ beat. The old docs claimed triplet grids did not exist.
 
 ## Collisions are reported as what they were
 
+*Run mode: agent*
 *Last run: —*
 
 A full quantize that stacks two same-pitch notes. Expect the count-change wording:
@@ -114,6 +124,7 @@ are Live's behaviour, measured — the reply should say which happened.
 
 ## Quantize refusals cost nothing
 
+*Run mode: user — includes visual confirmation that the clip is selected*
 *Last run: —*
 
 `amount: 0` errors immediately (0% strength moves nothing), and an empty slot
@@ -124,6 +135,7 @@ open — the notes snapping on screen *is* the confirmation.
 
 ## Quantize in an odd meter
 
+*Run mode: agent*
 *Last run: —*
 
 The mapping measured identical in 4/4 and 6/8, so a quantize in an odd meter is a

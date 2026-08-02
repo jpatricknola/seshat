@@ -15,6 +15,7 @@ division argued in `Seshat.Instructions`'s moduledoc, not just about wording.
 
 ## The instructions arrive, and arrive whole
 
+*Run mode: user — requires a fresh local Claude Desktop conversation*
 *Last run: —*
 
 Check this first; it is silent when it fails. Instructions reach the model only
@@ -32,6 +33,7 @@ it stops early, everything past the cut is being written for nobody.
 
 ## Out of reach
 
+*Run mode: user — requires a fresh conversation that received server instructions*
 *Last run: —*
 
 (instructions) "Switch my audio output to the headphones." Says plainly it can't,
@@ -39,6 +41,7 @@ names where the setting lives in Live, offers no improvised workaround.
 
 ## Manual steps
 
+*Run mode: user — requires a fresh conversation that received server instructions*
 *Last run: —*
 
 (instructions) A "why can't I see X?" question. The shortest complete path, keys
@@ -47,6 +50,7 @@ what appears on screen. Not a lecture, and no assumed Live fluency.
 
 ## The view follows you
 
+*Run mode: user — requires a fresh conversation and visual setup in Live*
 *Last run: —*
 
 (instructions) Both halves. **Post-action:** after a `write_midi_notes`, ask
@@ -59,6 +63,7 @@ nothing, so its own test passes whether or not this rule survives.
 
 ## Reading before re-showing
 
+*Run mode: user — requires a fresh conversation and manual view setup in Live*
 *Last run: —*
 
 (instructions) With the browser already open, ask "show me the browser." Expect
@@ -67,6 +72,7 @@ re-show policy the previous test deliberately excludes; both must hold at once.
 
 ## Speak music, not plumbing
 
+*Run mode: user — requires an unprompted conversation to judge model language*
 *Last run: —*
 
 (instructions + `get_session_state`) Any multi-track exchange. Track names or
@@ -76,6 +82,7 @@ that is what would show the rule being read too narrowly since it moved.
 
 ## Directive acts, open offers
 
+*Run mode: user — requires an unprompted conversation to judge model behaviour*
 *Last run: —*
 
 (`search_library`) "Load me a warm pad" loads the closest match, says why in a
@@ -84,6 +91,7 @@ with a musical reason each. Two shapes from one tool.
 
 ## Diagnostics stay internal
 
+*Run mode: user — requires an unprompted conversation to judge model language*
 *Last run: —*
 
 (`search_library` reply) A search with a vocabulary miss ("warm electric piano").
@@ -91,6 +99,7 @@ Musical choices reach the user; tags, tag counts and "no such tag" do not.
 
 ## One undo call per tool call that changed Live
 
+*Run mode: user — requires a fresh conversation to test undo orchestration*
 *Last run: 2026-08-01 — **failed**; the model read state between undos*
 
 (`undo` + `get_session_state` descriptions) Ask for three named tracks in **one**

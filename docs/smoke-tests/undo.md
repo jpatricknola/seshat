@@ -18,6 +18,7 @@ addresses are upstream properties that already ship.
 
 ## One tool call is one undo step
 
+*Run mode: agent*
 *Last run: —*
 
 `create_track` (name it), then `write_midi_notes` into it, then **one** `undo`.
@@ -33,6 +34,7 @@ timed-out call landed as two. Unpredictable, not merely coarse.
 
 ## Read-only tools cost nothing
 
+*Run mode: agent*
 *Last run: —*
 
 `get_session_state`, then `search_library`, then `undo`. The undo reverts the last
@@ -42,6 +44,7 @@ mutating-tool list.
 
 ## A multi-message tool is still one step
 
+*Run mode: agent*
 *Last run: —*
 
 `create_return_track`, or a `write_midi_notes` over an existing clip, undone in one
@@ -51,6 +54,7 @@ than each datagram.
 
 ## An error path still closes its step
 
+*Run mode: agent*
 *Last run: —*
 
 Call something that fails cleanly — `fire_clip` on an empty slot, `quantize_clip`
@@ -60,6 +64,7 @@ grouped.
 
 ## An ordinary undo reports the request, not the outcome
 
+*Run mode: agent*
 *Last run: —*
 
 `create_track`, then `undo`: the track disappears, and the reply says the request
@@ -69,6 +74,7 @@ asserting movement would be a fabrication.
 
 ## `can_undo=False` is reachable at an empty history
 
+*Run mode: user — requires creating a new Live Set with a keyboard shortcut*
 *Last run: — ⚠️ unmeasured*
 
 File → New Live Set (hold Command and press N), touch nothing, then call `undo`.
@@ -86,7 +92,11 @@ the API docs.
 
 ## A refusal is not a dead end
 
+*Run mode: agent*
 *Last run: —*
 
 After a refusal, make any real change and `undo` it: the refusal must not have
 left the guard stuck — the next call reads Live again, not a remembered answer.
+The agent form is non-destructive: make a scratch edit to clear the redo stack,
+call `redo` to obtain the measured `can_redo=False` refusal, then make another
+scratch edit and undo it.

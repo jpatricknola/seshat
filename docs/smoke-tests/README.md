@@ -8,6 +8,17 @@ wire. These files are the only thing standing behind that whole surface.
 One file per subsystem. Read the one you need; nothing here is meant to be read
 in full.
 
+Every test carries one machine-readable execution tag:
+
+- `*Run mode: agent*` — one agent can perform and judge the complete test with
+  Live and Seshat already running, without user action.
+- `*Run mode: user — reason*` — the test needs a click, keystroke, restart,
+  routed hardware, eyes, ears, or another client/conversation.
+
+Run the complete zero-user subset with **`/smoke-test agent`**. It never
+substitutes an automated approximation for a user-marked test; its report names
+those tests and their reasons instead.
+
 | File | Covers |
 |---|---|
 | [bridge.md](bridge.md) | the fork answering at all, the reply envelope, the listener rebind |
@@ -66,6 +77,9 @@ Three parts, and a test missing any of them decays into a tick-box within two
 runs: **what to do**, concretely enough to follow without re-reading the diff;
 **what you'd see if it worked**, stated as an observation rather than "verify it
 works"; and **what its failure means, and the fix it implies**.
+
+Put exactly one `Run mode` line immediately before `Last run`. Split a test whose
+machine-checkable and human-only assertions would otherwise need different tags.
 
 `*Last run: —*` means nobody has ever run it. Leave it alone if you substituted
 something for the check — the substitution goes in the run report, not here.

@@ -9,6 +9,7 @@ signature's denominator is a schema enum rather than a bounded integer.
 
 ## Groove and swing read as numbers, not unknowns
 
+*Run mode: agent*
 *Last run: —*
 
 `get_session_state` shows numeric groove *and* swing values, not "unknown". Live
@@ -18,6 +19,7 @@ Fix that before anything else here; every test below depends on it.
 
 ## Swing reaches the mirror by push
 
+*Run mode: agent*
 *Last run: —*
 
 `set_swing_amount 0.25`, then `get_session_state` **without** `refresh: true` —
@@ -25,6 +27,7 @@ the mirror shows 0.25 via the listener echo, not a fresh query.
 
 ## Swing plus quantize actually swings
 
+*Run mode: user — includes judging the amount of swing by ear*
 *Last run: —*
 
 Set swing, then `quantize_clip` at `"1/8"` on a straight clip — notes land *off*
@@ -34,6 +37,7 @@ Judge by ear whether 0.10–0.20 reads as "subtle"; if not, the fix is
 
 ## The groove dial reads 130% at 1.3
 
+*Run mode: user — requires assigning a groove in Live and reading its dial*
 *Last run: —*
 
 With a groove assigned to a clip **by hand in Live**, `set_groove_amount 0.0`,
@@ -47,6 +51,7 @@ apiref's understated 0.0–1.0 — is recorded on the `groove_amount` rows in
 
 ## Groove with nothing assigned says so
 
+*Run mode: user — requires confirming the set has no assigned grooves and judging model wording*
 *Last run: —*
 
 `set_groove_amount` with **no** grooves assigned anywhere in the set — nothing
@@ -55,6 +60,7 @@ rather than promising swing.
 
 ## The time signature lands and pushes
 
+*Run mode: agent*
 *Last run: —*
 
 `set_time_signature` to 6/8, then `get_session_state` **without** `refresh: true`

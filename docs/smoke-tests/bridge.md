@@ -5,14 +5,17 @@ served by the fork at [priv/AbletonOSC/](../../priv/AbletonOSC/). `mix test`
 greps the submodule in the repo; Live runs the copy in Remote Scripts. Nothing
 else in this project can tell you those two agree.
 
-**Precondition for every test in this file, and for anything else that touches
-`priv/AbletonOSC`:** run `mix abletonosc.install` and **restart Live** (or toggle
-AbletonOSC off and on under Preferences > Link/Tempo/MIDI — `/live/api/reload`
-does not pick these up). Without it every result anywhere is right for the wrong
-reason.
+**Change-verification precondition for every test in this file, and for anything
+else that touches `priv/AbletonOSC`:** run `mix abletonosc.install` and **restart
+Live** (or toggle AbletonOSC off and on under Preferences > Link/Tempo/MIDI —
+`/live/api/reload` does not pick these up). Without it every result anywhere is
+right for the wrong reason. The zero-user `/smoke-test agent` sweep never restarts
+Live; it first compares the installed copy with the repo and skips fork-dependent
+tests when they differ.
 
 ## The extension is answering at all
 
+*Run mode: agent*
 *Last run: —*
 
 `get_session_state` prints return tracks and master volume when `return_track.py`
@@ -22,6 +25,7 @@ and Live restart — check this before diagnosing anything else.
 
 ## A bad index errors immediately, not after ~2s
 
+*Run mode: agent*
 *Last run: —*
 
 These handlers always reply, including on an out-of-range index, and the reply
@@ -36,6 +40,7 @@ parameter index was echoed as `-1` instead of the value actually asked for.
 
 ## A stale install is distinguishable from a broken tool
 
+*Run mode: agent*
 *Last run: —*
 
 Before reinstalling during implementation — or against an older Remote Scripts
@@ -47,6 +52,7 @@ bypasses the handler wording this test exists to verify.
 
 ## Live's `Log.txt` stays clean during ordinary work
 
+*Run mode: agent*
 *Last run: —*
 
 Baseline its byte size before the run and read only the tail. Upstream raised a
@@ -57,6 +63,7 @@ old AbletonOSC is still installed.
 
 ## The listener rebind, by hand in Live's UI
 
+*Run mode: user — requires deleting and renaming tracks in Live's UI*
 *Last run: —*
 
 Delete a track, then rename a *different* one, then `get_session_state`. Every
