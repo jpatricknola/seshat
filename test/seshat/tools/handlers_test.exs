@@ -3043,6 +3043,102 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  # `quantize_clip` reads the notes either side of a fire-and-forget quantize, so
+  # the two reads cannot make the same claim when they fail. Before the datagram
+  # goes out "nothing further was sent" is true; after it, the mutation is on the
+  # wire and may have landed. The tool's `catch :exit` clause has always drawn
+  # that line by hand — these pin it for the rejection path, which only became
+  # reachable when a correlated `/live/error` started failing a read in
+  # milliseconds instead of never.
+  #
+  # Answering the sink's queries in order is what the no-`Transport.query/3` rule
+  # permits (testing.md): nothing waits on Ableton, and the guards *are* the
+  # behaviour under test.
+  describe "quantize_clip when a read is rejected" do
+    setup :osc_sink
+
+    defp reply(sink, address, args) do
+      reply_datagram(sink, Message.encode(address, args))
+    end
+
+    defp quantize_task do
+      Task.async(fn ->
+        Handlers.call("quantize_clip", %{
+          "track" => 0,
+          "clip_slot" => 0,
+          "grid" => "1/16",
+          "amount" => 1.0
+        })
+      end)
+    end
+
+    defp answer_quantize_guards(sink) do
+      assert_receive {:osc_out, "/live/clip_slot/get/has_clip", [0, 0]}
+      reply(sink, "/live/clip_slot/get/has_clip", [0, 0, 1])
+
+      assert_receive {:osc_out, "/live/clip/get/is_midi_clip", [0, 0]}
+      reply(sink, "/live/clip/get/is_midi_clip", [0, 0, 1])
+
+      assert_receive {:osc_out, "/live/clip/get/name", [0, 0]}
+      reply(sink, "/live/clip/get/name", [0, 0, "Keys"])
+    end
+
+    # The failure the reviewer of the /live/error work found: the clip survives
+    # every guard, the quantize goes out, and only then does the track vanish.
+    test "the after-read never claims nothing was sent", %{sink: sink} do
+      task = quantize_task()
+      answer_quantize_guards(sink)
+
+      assert_receive {:osc_out, "/live/clip/get/notes", [0, 0]}
+      reply(sink, "/live/clip/get/notes", [0, 0, 60, 0.0, 1.0, 100, 0])
+
+      assert_receive {:osc_out, "/live/clip/quantize", [0, 0, 5, 1.0]}
+
+      assert_receive {:osc_out, "/live/clip/get/notes", [0, 0]}
+
+      reply(sink, "/live/error", [
+        "request",
+        "/live/clip/get/notes",
+        "Index out of range",
+        2,
+        0,
+        0
+      ])
+
+      assert {:error, message} = Task.await(task)
+
+      assert message =~ "Index out of range"
+      assert message =~ "The quantize was already sent"
+      assert message =~ "get_clip_notes on track 0, slot 0"
+
+      refute message =~ "Nothing further was sent",
+             "the quantize datagram was already on the wire: #{message}"
+    end
+
+    # The other side of the same line — here the claim is true and must survive.
+    test "the before-read still says nothing further was sent", %{sink: sink} do
+      task = quantize_task()
+      answer_quantize_guards(sink)
+
+      assert_receive {:osc_out, "/live/clip/get/notes", [0, 0]}
+
+      reply(sink, "/live/error", [
+        "request",
+        "/live/clip/get/notes",
+        "Index out of range",
+        2,
+        0,
+        0
+      ])
+
+      assert {:error, message} = Task.await(task)
+
+      assert message =~ "Index out of range"
+      assert message =~ "Nothing further was sent"
+      refute_receive {:osc_out, "/live/clip/quantize", _}, 0
+    end
+  end
+
   describe "format_quantize_result/7" do
     # note/1 is the shared builder from "format_clip_notes/5" above.
     test "reports how many of the clip's notes moved, and names the clip" do

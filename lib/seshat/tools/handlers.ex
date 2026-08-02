@@ -52,24 +52,36 @@ defmodule Seshat.Tools.Handlers do
   @diagnostics_internal "(Diagnostics are for refining your search — present results musically; " <>
                           "don't mention tags to the user.)"
 
-  # Advice appended to a guard timeout, per address family. A timeout means "no
-  # reply at all", which for an upstream address is nearly always a bad index and
-  # for one of Seshat's own is that plus "the extension was never installed".
-  @clip_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
-                     "track and slot indices with get_clip_slots first; failing that, check " <>
-                     "Ableton is running with AbletonOSC enabled."
+  # Advice appended to a guard timeout, per address family.
+  #
+  # These used to say a bad index gets no reply at all, and a timeout therefore
+  # nearly always meant a bad index. The fork's structured `/live/error` inverted
+  # that: Live raises, AbletonOSC now sends the request back with the error, and
+  # `Seshat.OSC.Transport` fails the query in milliseconds with the rejection
+  # wording. A bad index is the one thing a guard timeout no longer means. What
+  # is left is Ableton unreachable, AbletonOSC not enabled, a dropped datagram,
+  # or a Remote Scripts copy predating the fork — and since that last one is
+  # indistinguishable from here and re-reading indices is cheap, the index advice
+  # stays, as the second thing to check rather than the first.
+  @clip_index_hint "A bad index is normally rejected outright rather than met with silence, so " <>
+                     "silence points at Ableton — check it is running with AbletonOSC enabled. " <>
+                     "If it is, re-check the track and slot indices with get_clip_slots: a " <>
+                     "Remote Scripts copy older than `mix abletonosc.install` still answers a " <>
+                     "bad index with nothing."
 
-  @send_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
-                     "track index (get_session_state) and send index (get_track_sends; sends are " <>
-                     "0-based, send A = 0)."
+  @send_index_hint "A bad index is normally rejected outright rather than met with silence, so " <>
+                     "silence points at Ableton — check it is running with AbletonOSC enabled. " <>
+                     "If it is, re-check the track index (get_session_state) and send index " <>
+                     "(get_track_sends; sends are 0-based, send A = 0)."
 
-  @track_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check the " <>
-                      "track index with get_session_state; failing that, check Ableton is " <>
-                      "running with AbletonOSC enabled."
+  @track_index_hint "A bad index is normally rejected outright rather than met with silence, so " <>
+                      "silence points at Ableton — check it is running with AbletonOSC enabled. " <>
+                      "If it is, re-check the track index with get_session_state."
 
-  @device_index_hint "An index that doesn't exist gets no reply from Ableton at all, so check " <>
-                       "the track and device indices with get_track_devices first; failing " <>
-                       "that, check Ableton is running with AbletonOSC enabled."
+  @device_index_hint "A bad index is normally rejected outright rather than met with silence, " <>
+                       "so silence points at Ableton — check it is running with AbletonOSC " <>
+                       "enabled. If it is, re-check the track and device indices with " <>
+                       "get_track_devices."
 
   # The return/master addresses are Seshat's own, and they always reply — a bad
   # index comes back as an error envelope, not silence. So unlike the upstream
@@ -2569,10 +2581,10 @@ defmodule Seshat.Tools.Handlers do
          :ok <- ensure_clip(track, slot),
          :ok <- ensure_midi_clip(track, slot),
          clip_name = read_clip_name(track, slot),
-         {:ok, before_notes} <- read_all_notes(track, slot),
+         {:ok, before_notes} <- read_all_notes(track, slot, :before_quantize),
          :ok <- ensure_notes_to_quantize(before_notes, track, slot),
          :ok <- send_quantize(track, slot, grid, amount),
-         {:ok, after_notes} <- read_all_notes(track, slot) do
+         {:ok, after_notes} <- read_all_notes(track, slot, :after_quantize) do
       FollowCam.steer("quantize_clip", %{track: track, slot: slot})
 
       {:ok,
@@ -4788,7 +4800,17 @@ defmodule Seshat.Tools.Handlers do
   # answer to the *before* read satisfying the *after* read carries the same
   # indices, passes this check, and reads as "nothing moved". Only the hedged
   # nothing-moved wording stands against that.
-  defp read_all_notes(track, slot, reissued? \\ false) do
+  #
+  # `phase` decides the *consequence* sentence, never the diagnosis. This helper
+  # reads either side of `send_quantize/4`, and the two sides can afford
+  # different claims: before the datagram goes out "nothing further was sent" is
+  # true and actionable, while after it the mutation is already on the wire and
+  # Live may well have applied it. Saying nothing was sent there would be the
+  # same lie the `catch :exit` clause in `quantize_clip` is written to avoid —
+  # and this became reachable when a rejection started arriving in milliseconds
+  # instead of never, so the failure the exit clause guards against by hand now
+  # has a fast sibling that has to make the same distinction.
+  defp read_all_notes(track, slot, phase, reissued? \\ false) do
     case Transport.query("/live/clip/get/notes", [track, slot]) do
       {:ok, {_addr, [echoed_track, echoed_slot | fields]}}
       when echoed_track == track and echoed_slot == slot ->
@@ -4796,21 +4818,34 @@ defmodule Seshat.Tools.Handlers do
 
       {:ok, {_addr, _mismatched}} ->
         if reissued? do
-          {:error, stale_reply_error("the notes in slot #{slot} on track #{track}")}
+          {:error,
+           stale_reply_error(
+             "the notes in slot #{slot} on track #{track}",
+             notes_read_consequence(phase, track, slot)
+           )}
         else
-          read_all_notes(track, slot, true)
+          read_all_notes(track, slot, phase, true)
         end
 
       # As in `query_echoed/5`: a rejected read of this clip means the track or
-      # slot isn't there, so it gets the same wording the vendored envelope's
-      # error arm gets.
+      # slot isn't there. Before the quantize that carries the same consequence
+      # as the vendored envelope's error arm; after it, only the diagnosis
+      # survives.
       {:error, {:live_error, message}} ->
-        {:error, remote_error(message)}
+        {:error, "#{message}. " <> notes_read_consequence(phase, track, slot)}
 
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
     end
   end
+
+  defp notes_read_consequence(:before_quantize, _track, _slot),
+    do: "Nothing further was sent — check get_session_state for the indices that actually exist."
+
+  defp notes_read_consequence(:after_quantize, track, slot),
+    do:
+      "The quantize was already sent, so it may or may not have been applied — read the clip " <>
+        "back with get_clip_notes on track #{track}, slot #{slot}."
 
   # `query_echoed/4` for the boolean properties, normalising AbletonOSC's mix of
   # `true`/`false` and 1/0.
@@ -4912,10 +4947,12 @@ defmodule Seshat.Tools.Handlers do
 
   # Reissued once already, so this is not one crossed wire: something is steadily
   # answering with another index's data.
-  defp stale_reply_error(subject) do
+  # The consequence is a parameter because a caller reading *after* a mutation
+  # cannot claim nothing was sent — see `read_all_notes/4`. Every other caller
+  # reads before mutating and takes the default.
+  defp stale_reply_error(subject, consequence \\ "Nothing further was sent; try again.") do
     "Ableton's replies when checking #{subject} were not about the track or slot asked for, " <>
-      "twice in a row — they belong to an earlier query that timed out. Nothing further was " <>
-      "sent; try again."
+      "twice in a row — they belong to an earlier query that timed out. " <> consequence
   end
 
   # AbletonOSC sends booleans for some properties and 0/1 for others.

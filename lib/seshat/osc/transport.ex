@@ -32,7 +32,7 @@ defmodule Seshat.OSC.Transport do
   correlation is still by address alone — there is no request id on the wire and
   none is coming: adding one means a wire-format divergence on every address,
   carried against upstream forever, to solve what this queue already solves.
-  That was settled when the queue was built; do not resurrect it. Two residual
+  That was settled when the queue was built; do not resurrect it. Three residual
   classes remain:
 
   1. **A straggler on the in-flight address answers the wrong query.** Query A
@@ -44,7 +44,6 @@ defmodule Seshat.OSC.Transport do
   2. **Listener pushes share the getter's address.** A push on
      `/live/track/get/volume` can satisfy an in-flight query for the same
      property. No queue can remove that.
-
   3. **A structured `/live/error` delayed past a timeout fails the next
      identical request.** Same shape as class 1, and strictly safer: the caller
      gets a refusal it can retry rather than wrong data that looks right. It
@@ -151,7 +150,7 @@ defmodule Seshat.OSC.Transport do
 
   A reply whose address does not match the in-flight request is broadcast
   without answering anyone. That is not the same as "late replies never reach a
-  caller" — see the module's "Query serialization" section for the two residual
+  caller" — see the module's "Query serialization" section for the three residual
   collision classes that survive.
   """
   @spec query(String.t(), list(), non_neg_integer()) ::

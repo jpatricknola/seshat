@@ -640,7 +640,8 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       source = File.read!(@osc_server)
 
       assert source =~ ~s|self.send("/live/error",| and
-               source =~ ~s|("request", message.address, detail,|,
+               source =~ ~s|("request", message.address, detail,| and
+               source =~ ~s|len(message.params), *message.params))|,
              """
              #{@osc_server} no longer sends the structured
              /live/error ["request", address, message, arg_count, *args] payload.
@@ -651,6 +652,14 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              Without this send, Seshat.OSC.Transport cannot correlate a rejection
              with the query it belongs to, and every rejected query waits out its
              full timeout again. See SESHAT.md in the fork.
+
+             The tail half of that payload — `len(message.params), *message.params`
+             — is asserted separately and deliberately: correlation is by address
+             *and* every argument, so an upstream merge that kept the "request" tag
+             but dropped the count and the echoed args would leave this test and
+             every pure Transport test green (they synthesize the whole payload
+             themselves) while every real rejection from Live silently stopped
+             matching and went back to paying a full timeout.
              """
 
       assert source =~ ~s|extra={"osc_request_error": True}|,
