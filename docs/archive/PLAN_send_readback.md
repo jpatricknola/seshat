@@ -7,11 +7,12 @@
 > now reads `/live/track/get/send` back through the shared `confirm_send/5`
 > helper and reports confirmed, mismatch, or unconfirmed rather than
 > asserting success. The live verification this plan called for
-> (`smoke_tests/auto/sends.md`) was blocked by the environment that shipped
-> it — a running Seshat instance held the OSC reply port on stale code — and
-> was not run before archiving; it remains a pre-merge gate, tracked in the
-> PR. No follow-up beyond what this plan already named in its Out of scope
-> section.
+> (`smoke_tests/auto/sends.md`) was blocked at archiving time by the
+> environment that shipped it — a running Seshat instance held the OSC reply
+> port on stale code. **It was run on 2026-08-04 once the server was
+> restarted on the branch, and both checks passed**; the results are recorded
+> under Live verification below, and Open question 1 is resolved there. No
+> follow-up beyond what this plan already named in its Out of scope section.
 
 Roadmap item: **"`set_track_send` reports a request, not an outcome"**
 (currently #1).

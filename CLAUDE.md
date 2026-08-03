@@ -259,14 +259,23 @@ or `Definitions` change — both addresses were already upstream and already
 in use by this clause, and the tool description asserts nothing about
 confirmation for the new reply wording to contradict. Plan archived at
 [docs/archive/PLAN_send_readback.md](docs/archive/PLAN_send_readback.md).
-**Live verification was not run before this shipped** — the environment
-that implemented and reviewed it found the fixed OSC reply port (11001)
-already held by a Seshat instance running pre-change code, and restarting
-it was judged out of scope for those phases — so
+**Live verification ran 2026-08-04 and both checks passed.** The phases that
+implemented and reviewed it had found the fixed OSC reply port (11001)
+already held by a Seshat instance running pre-change code, and restarting it
+was out of scope for them; once the server was restarted on the branch,
 `docs/smoke_tests/auto/sends.md`'s two checks (`A send set is confirmed by
-its own read-back`, `A bad send index is refused before the set`) both still
-read `*Last run: —*` and remain a pre-merge gate on the PR, not a shipped
-guarantee. Echo checks at every raw reply decode shipped 2026-08-03, closing what had
+its own read-back`, `A bad send index is refused before the set`) both ran
+green. Five consecutive sets (`0.37`, `1.0`, `0.0`, then `0.37` twice) each
+came back confirmed with the right "was" value, and a `send: 9` was refused
+in 0.144s carrying Live's own "Index out of range" with nothing mutated —
+Live's log shows the raise landing on `/live/track/get/send`, the guard
+address rather than the setter. That settles the one question the plan left
+open: at in-process spacing AbletonOSC really does process set-then-get in
+arrival order, so the read-back never races the set, and Live applies no
+quantization for the 4-decimal comparison to trip over. Those three
+measurements are now in
+[docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) beside the
+Track-listener note. Echo checks at every raw reply decode shipped 2026-08-03, closing what had
 been the queue's top item. `Seshat.OSC.Transport` correlates replies by
 address alone, so a reply abandoned by an earlier timeout can still answer
 the next query on the same address — the only defence is caller-side, and
