@@ -1,7 +1,21 @@
 # Seshat ↔ AbletonOSC integration review (2026-08-03)
 
+> **Provenance and corrections.** This review was written from the *fork
+> repo's* working tree (jpatricknola/AbletonOSC), so "this repo" below means
+> the fork, and the fork-side documents it cites — `IMPLEMENTATION_PLAN.md`,
+> `HANDOFF.md`, `issues.md` (and their issue numbers, #1–#23) — exist only in
+> the fork repo's tree, not in Seshat and not at the submodule pin. In Seshat
+> the fork's files live under `priv/AbletonOSC/`. It was moved here because
+> its findings drive Seshat-side work. Corrections were applied 2026-08-03
+> after a counter-review of PR #62, marked **Correction** inline: the §2
+> echo-gap list was incomplete, §2's "only lever" claim was overstated, §1's
+> Tier B justification was wrong for sends, the §2 latency evidence is now
+> attributed to the measurement that supports it, and §4a's clip listener
+> count was 70, not 68. The 19 doc gaps in §4a were closed by PR #62 the same
+> day; §4a stands as the record of the diff.
+
 An architecture review of how the Seshat repo (`~/seshat`) consumes this fork,
-prompted by reviewer feedback on [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md):
+prompted by reviewer feedback on the fork repo's `IMPLEMENTATION_PLAN.md`:
 structured `/live/error` improves diagnostics but cannot make fire-and-forget
 mutations honestly report failure, because Seshat's `Transport.send_message/2`
 returns once UDP transmission succeeds. This review asks the broader questions
@@ -82,9 +96,14 @@ Seshat's roadmap items #21/#23 acknowledge this as a latency/token cost.
   was sent, not that history moved").
 - **Tier B — guard before, no read-back after.** Sends, return/master mixer
   setters: the pre-read proves the index exists and yields the "was" value,
-  but the reply presents the *requested* value as achieved. Justified because
-  those properties have listeners — Live pushes its accepted value into the
-  mirror. The tool result the LLM reads does not wait for that push.
+  but the reply presents the *requested* value as achieved. For the
+  return/master mixer setters this is softened by listeners — Live pushes its
+  accepted value into the mirror (though the tool result the LLM reads does
+  not wait for that push). **Correction (2026-08-03): the original
+  justification is false for sends** — `track.py` registers only `get/send`
+  and `set/send`, no send listener exists, and sends are outside the mirror
+  (see the boundary note above) — so a rejected `set_track_send` is never
+  corrected anywhere. Sends are Tier A with a guard, not Tier B.
 - **Tier C — verified.** `set_device_parameter` (reads `value_string` back),
   `delete_device` (count sandwich; the vendored variant *replies* with the
   remaining count), `bypass_device`, `set_clip_properties` (full write-back
@@ -144,44 +163,72 @@ fire-and-forget mutations honestly report failure") is the right framing.
 Seshat's own artifacts contain two irreconcilable per-round-trip figures.
 Several N+1 patterns are justified by comments claiming "sub-millisecond
 loopback round trips" (`handlers.ex:35`, `:2308`, `:4724`), while the repo's
-measurements show **~75–100ms per round trip**: `has_clip` false at +0ms and
-true at +99ms (`docs/smoke_tests/auto/recording.md:96`), a 9-track mirror
-rebuild of ~73 serialized queries measured at **4.6s**
-(`docs/smoke_tests/auto/mirror.md:145`), 1.0–1.8s independently cited in
-`state.ex:29`. At real latency:
+measurements support **roughly 100ms per serialized round trip**: a 9-track
+mirror rebuild measured at **4.6s** over its `Song:` → `Loaded` log window
+(`docs/smoke_tests/auto/mirror.md:145`), and 1.0–1.8s independently cited in
+`state.ex:29`. **Correction (2026-08-03):** this paragraph originally also
+cited `recording.md:96`'s `has_clip` transition (+0ms → +99ms) as a
+round-trip measurement — that test measures Live materialising a clip after
+a fire, not OSC RTT — and labelled the 4.6s as covering all ~73 of the
+rebuild's queries, when the measured window spans roughly 46 of them
+(`num_tracks` + 5 × 9 tracks; returns and master fall outside it). The
+~100ms-per-serialized-query conclusion survives both corrections. At real
+latency:
 
 | Pattern | Cost |
 |---|---|
-| `Session.State.do_refresh/1` — 5 queries per track, serial, inside the GenServer | 73 queries / 4.6s on 9 tracks; blocks every mirror read and queues every other tool's queries behind it (measured head-of-line stall on `create_track` during a rebuild) |
+| `Session.State.do_refresh/1` — 5 queries per track, serial, inside the GenServer | ~73 queries on 9 tracks, of which the measured 4.6s window covers ~46; blocks every mirror read and queues every other tool's queries behind it (measured head-of-line stall on `create_track` during a rebuild) |
 | `get_clip_properties` — 13 (MIDI) / 17 (audio) queries per clip | ~1–1.7s per clip; 400+ round trips to survey an 8×4 grid |
 | `get_track_devices` / `get_device_parameters`, regular tracks — 3 / 5 separate list queries | 3–5× the vendored equivalents, plus the correctness gap below |
 | `get_track_sends` — 1 + 2 per return | up to 25 round trips at 12 returns |
 | `query_scene_names/1` — one query per scene | N round trips beside a bulk endpoint that already exists (see §4) |
 
-Head-of-line blocking is a property of Seshat's serialized transport, but
-relaxing serialization would require wire-level correlation — which loops back
-to the settled no-request-ID decision. **Reducing query counts is the only
-lever compatible with every settled constraint, and it lives in this repo.**
+Head-of-line blocking is a property of Seshat's serialized transport.
+**Correction (2026-08-03):** this section originally claimed relaxing
+serialization would require wire-level correlation, making bulk endpoints
+"the only lever compatible with every settled constraint". That is
+overstated. Replies already carry their address and structured errors echo
+the failing request, so Transport could hold one in-flight request per
+*exact address* — serializing only same-address requests — and let
+different-address queries overlap without any wire-format change. The 13–17
+different-address clip reads and the 3–5 device reads would pipeline;
+same-address stragglers and listener pushes remain exactly as hazardous as
+today and still need echo checks. Bulk endpoints may still win — fewer
+datagrams, an atomic-ish snapshot, no per-lane bookkeeping — but the two
+approaches should be compared and benchmarked, not the lanes declared
+impossible. Reducing query counts remains the lever that needs no Transport
+redesign at all.
 
 ### One genuine correctness gap (Seshat side)
 
 `get_track_devices` and `get_device_parameters` for **regular tracks**
 (`handlers.ex:2821-2827`, `:2861-2871`) assemble parallel lists from 3–5
-separate replies and **discard the echoed index** — the only multi-index reads
-in the file that skip the echo check, on a transport that correlates by
-address alone. A straggler from an earlier timed-out query can supply another
-track's names, and the separate replies can describe two different devices.
-This is precisely the hazard Seshat's own API docs cite as the reason this
-fork's combined return/master endpoints exist
+separate replies and **discard the echoed index**, on a transport that
+correlates by address alone. A straggler from an earlier timed-out query can
+supply another track's names, and the separate replies can describe two
+different devices. This is precisely the hazard Seshat's own API docs cite as
+the reason this fork's combined return/master endpoints exist
 (`docs/abletonosc-api-docs.md:1020-1032`). The fix already exists for
 returns/master; regular tracks never got it.
+
+**Correction (2026-08-03):** this section originally called those two "the
+only multi-index reads in the file that skip the echo check". They are not.
+At least these also discard correlation data: `get_clip_notes` (track/slot
+echoes across three replies), `set_device_parameter`'s confirming
+`value_string` read (all three indices — it can present another parameter's
+display value as verification), `query_scene_names/1` (the scene-index
+echo), and `list_browser_items` (the echoed category/filter, on the widest
+timeout in the file). Each site now carries a TODO!, and the durable fix is
+a systematic audit of every raw `Transport.query/3` call with shared
+echo-aware reply decoding — the combined endpoints close only the device
+pair.
 
 ---
 
 ## 3. Recommended fork work: bulk endpoints and replying mutators
 
 The pattern is already established in this repo and documented in
-[SESHAT.md](SESHAT.md): `return_track.py`'s `get/devices` collapses three
+[SESHAT.md](../../priv/AbletonOSC/SESHAT.md): `return_track.py`'s `get/devices` collapses three
 upstream round trips into one reply, `device/get/parameters` collapses five,
 and its `delete_device` *replies* (`[…, "ok", remaining]`) where upstream's is
 silent, "because it is a method with a real failure path." Extend that
@@ -234,7 +281,7 @@ Recorded here so they are not misfiled as fork work; they belong in Seshat's
 backlog.
 
 1. **`/live/song/get/scenes/name [min,max]` already exists**
-   ([abletonosc/song.py:239](abletonosc/song.py#L239)) and returns every scene
+   ([abletonosc/song.py:239](../../priv/AbletonOSC/abletonosc/song.py#L239)) and returns every scene
    name in one reply. Seshat's `query_scene_names/1` (`handlers.ex:3417-3429`)
    does one query per scene beside a comment asserting "No bulk scene-name
    address exists." The endpoint is also missing from
@@ -274,7 +321,9 @@ against the doc. The doc documents listeners generically per family
 clip_slot, and scene**, so listener addresses in those families count as
 documented when their getter is. Applying that convention:
 
-**Registered but absent from the doc — 19 non-listener addresses:**
+**Registered but absent from the doc — 19 non-listener addresses** *(all
+documented 2026-08-03 in PR #62; this table stands as the record of the
+diff)*:
 
 | Address | Notes |
 |---|---|
@@ -303,7 +352,8 @@ also undocumented (same Link gap).
 
 **Families with no generic listener statement:**
 
-- **clip** — 68 listen addresses (34 properties × start/stop) are invisible;
+- **clip** — 70 listen addresses (35 properties × start/stop — 15 read-only
+  plus 20 read/write; this doc originally said 68/34) are invisible;
   only `playing_position`'s pair is listed explicitly. One "Listen via
   `/live/clip/start_listen/<property> <track_id> <clip_id>`" line fixes all
   of them.
@@ -316,7 +366,7 @@ deliberately documented outbound addresses (`/live/error`, `/live/startup`,
 `/live/song/get/beat`, and the push-only `/live/song/get/tracks` /
 `return_tracks`), every remaining doc-side string is a prose fragment or
 family prefix, not a phantom endpoint. The doc's `beat` entry was verified
-against [song.py:286-295](abletonosc/song.py#L286-L295): pushes really do go
+against [song.py:286-295](../../priv/AbletonOSC/abletonosc/song.py#L286-L295): pushes really do go
 out on `/live/song/get/beat`.
 
 **Why the guard missed all of this:** the "every registered address is in the
@@ -354,8 +404,9 @@ For the next reader who wonders why the "obvious" fixes are absent:
 
 ## Sources
 
-Fork side: [SESHAT.md](SESHAT.md), [HANDOFF.md](HANDOFF.md),
-[issues.md](issues.md), [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+Fork side: [SESHAT.md](../../priv/AbletonOSC/SESHAT.md), plus `HANDOFF.md`,
+`issues.md` and `IMPLEMENTATION_PLAN.md` (fork repo only — not present at the
+submodule pin).
 Seshat side (at submodule pin `4584e13`): `lib/seshat/osc/transport.ex`,
 `lib/seshat/osc/message.ex`, `lib/seshat/session/state.ex`,
 `lib/seshat/tools/handlers.ex`, `lib/seshat/commands/registry.ex`,

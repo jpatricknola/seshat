@@ -380,6 +380,13 @@ Volume, panning, send, mute, solo, devices, clips.
 Listen via `/live/track/start_listen/<property> <track_index>`, responses on `/live/track/get/<property>` with `<track_index> <value>`. `*` in place of the
 index subscribes every track.
 
+⚠️ Listener pairs exist for the **scalar** properties only (the property loops
+in `track.py`, plus `volume` and `panning`). The composite getters — `send`,
+the routing properties, `clips/*`, `arrangement_clips/*`, `devices/*`,
+`num_devices` — register no listeners: `/live/track/start_listen/send` is an
+unknown address and fails silently, which also means **nothing pushes a
+send's accepted value into the mirror** after `/live/track/set/send`.
+
 > ⚠️ **These listeners are fixed in the fork**, in `AbletonOSCHandler._stop_listen`
 > and `TrackHandler`'s mixer-listener pair. Same addresses, same arguments, same
 > pushes — nothing calling them can tell the difference, which is exactly why the
@@ -617,9 +624,10 @@ listed explicitly only because it is the one Seshat uses.
 ### `/live/clips/*` — experimental upstream pair, do not use
 
 Two more addresses are registered in `clip.py` under the plural prefix
-`/live/clips/`: `filter [note_name, ...]` mutes every session clip whose notes
-fall outside the given set, and `unfilter [track_start, track_end]` unmutes
-clips again (no arguments = every track). They are upstream experiments, not
+`/live/clips/`: `/live/clips/filter [note_name, ...]` mutes every session clip
+whose notes fall outside the given set, and
+`/live/clips/unfilter [track_start, track_end]` unmutes clips again (no
+arguments = every track). They are upstream experiments, not
 API: `filter` infers a clip's notes from a suffix in its **name** (regex
 `[_-][A-G]...$`), builds a whole-set cache on first use that is **never
 invalidated** — clips added, deleted or renamed later are judged by stale
@@ -792,8 +800,16 @@ trusting it blind.
 
 Every `get/` property in the table below (`name`, `type`, `class_name`) also
 has `/live/device/start_listen/<property> <track_id> <device_id>` and
-`stop_listen/<property> <track_id> <device_id>`; pushes arrive on the matching
-`get/` address as `track_id, device_id, value`.
+`stop_listen/<property> <track_id> <device_id>` — but ⚠️ **these three pairs
+are hobbled as registered** (verified against `device.py` at the current pin,
+2026-08-03). The registration strips both indices before they reach
+`_start_listen`, so the push arrives on the `get/` address carrying the
+**bare value only** — no track or device echo — and the listener is keyed per
+*property*, not per device, so subscribing a second device to the same
+property silently replaces the first. One subscription per property at a
+time, and a push cannot say which device it describes. Don't build on these
+three until the fork registers them with `include_ids=True` (the flag
+`parameter/value` below already uses correctly).
 
 Listen for parameter changes via
 `/live/device/start_listen/parameter/value <track_index> <device_index> <parameter_index>`,
