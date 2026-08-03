@@ -1,5 +1,18 @@
 # Plan: `set_track_send` reports an outcome it observed
 
+> **Archived 2026-08-03 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The read-back path landed as
+> planned — `do_call("set_track_send", …)` in
+> [../../lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
+> now reads `/live/track/get/send` back through the shared `confirm_send/5`
+> helper and reports confirmed, mismatch, or unconfirmed rather than
+> asserting success. The live verification this plan called for
+> (`smoke_tests/auto/sends.md`) was blocked by the environment that shipped
+> it — a running Seshat instance held the OSC reply port on stale code — and
+> was not run before archiving; it remains a pre-merge gate, tracked in the
+> PR. No follow-up beyond what this plan already named in its Out of scope
+> section.
+
 Roadmap item: **"`set_track_send` reports a request, not an outcome"**
 (currently #1).
 
@@ -12,8 +25,8 @@ Roadmap item: **"`set_track_send` reports a request, not an outcome"**
   {:ok, "Set send #{send_letter(send_index)}… on track #{track} to #{value} (was #{format_number(old)})"}
 ```
 
-([handlers.ex:2010-2027](../lib/seshat/tools/handlers.ex#L2010-L2027), TODO! at
-[2003](../lib/seshat/tools/handlers.ex#L2003).) The pre-read
+([handlers.ex:2010-2027](../../lib/seshat/tools/handlers.ex#L2010-L2027), TODO! at
+[2003](../../lib/seshat/tools/handlers.ex#L2003).) The pre-read
 (`query_echoed/4` on `/live/track/get/send`) proves the track and send indices
 exist and supplies the "was" value; nothing accounts for the *after*. The
 setter is silent, and — the 2026-08-03 integration review's counter-review
@@ -72,9 +85,9 @@ exact clause.
 | `/live/track/get/send` | `track_id, send_id` | `track_id, send_id, value` | upstream `track.py` `track_get_send` |
 | `/live/track/set/send` | `track_id, send_id, value` | **none, ever** | upstream `track.py` `track_set_send` |
 
-Verified in [docs/abletonosc-api-docs.md](abletonosc-api-docs.md) (Track
+Verified in [docs/abletonosc-api-docs.md](../abletonosc-api-docs.md) (Track
 Properties / Track Setters tables) and against the fork source at
-[priv/AbletonOSC/abletonosc/track.py:94-103](../priv/AbletonOSC/abletonosc/track.py#L94-L103):
+[priv/AbletonOSC/abletonosc/track.py:94-103](../../priv/AbletonOSC/abletonosc/track.py#L94-L103):
 the getter returns `(send_id, value)` and `create_track_callback` prefixes
 `track_id`, so the reply echoes **both** indices and the payload behind the
 echo is the bare `[value]` — exactly the shape `read_back_value/2` already
@@ -88,13 +101,13 @@ Ordering is the one wire property this leans on: the read-back datagram leaves
 after the set and AbletonOSC processes datagrams in arrival order — the same
 property `delete_device`'s count re-read and `set_device_parameter`'s
 read-back already rely on (comment at
-[handlers.ex:2635](../lib/seshat/tools/handlers.ex#L2635); the latter's happy
+[handlers.ex:2635](../../lib/seshat/tools/handlers.ex#L2635); the latter's happy
 path was live-verified in the echo-checks work, 2026-08-03). See Open
 questions for the residual.
 
 ## Part 1 — the read-back in `Handlers`
 
-[lib/seshat/tools/handlers.ex:2003-2027](../lib/seshat/tools/handlers.ex#L2003-L2027)
+[lib/seshat/tools/handlers.ex:2003-2027](../../lib/seshat/tools/handlers.ex#L2003-L2027)
 — the single `do_call("set_track_send", …)` clause. The guard stays exactly as
 it is (it pre-validates both indices with Live's own rejection wording and
 supplies `old`); after the send, read the level back and branch three ways:
@@ -114,7 +127,7 @@ end
   `"Set send A (\"Reverb\") on track 0 to 0.37 (was 0.0), confirmed by reading
   it back."`
   The 4-decimal comparison is `clip_value_matches?/3`'s shipped precedent
-  ([handlers.ex:4817-4818](../lib/seshat/tools/handlers.ex#L4817-L4818)) and
+  ([handlers.ex:4817-4818](../../lib/seshat/tools/handlers.ex#L4817-L4818)) and
   absorbs the float32 wire truncation (OSC `f` is 32-bit; `0.37` returns as
   `0.3700000047683716`) without a new float32 helper — do not compare with
   `==`.
@@ -130,22 +143,22 @@ end
   timeout, or any error): `{:error, "The set was sent but reading send A on
   track 0 back did not confirm it — verify with get_track_sends."}` — the
   `set_vendored_parameter/7` wording
-  ([handlers.ex:4192-4195](../lib/seshat/tools/handlers.ex#L4192-L4195)).
+  ([handlers.ex:4192-4195](../../lib/seshat/tools/handlers.ex#L4192-L4195)).
 
 `read_back_value/2`
-([handlers.ex:4216-4223](../lib/seshat/tools/handlers.ex#L4216-L4223)) is used
+([handlers.ex:4216-4223](../../lib/seshat/tools/handlers.ex#L4216-L4223)) is used
 as-is: it already carries the echo check (both indices must come back), the
 reissue-once stale defence, its own `catch :exit`, and the post-mutation
 framing ("was not verified", never "nothing was sent"). No new query helper.
 
 Keep a residual `catch :exit` on the clause mirroring `set_device_parameter`'s
-([handlers.ex:3065-3073](../lib/seshat/tools/handlers.ex#L3065-L3073)): the
+([handlers.ex:3065-3073](../../lib/seshat/tools/handlers.ex#L3065-L3073)): the
 guard and the read-back each catch their own exits, so what is left is the
 send itself losing the transport — word it "The set was sent but reading the
 level back timed out — verify with get_track_sends."
 
 Replace the TODO! comment block at
-[handlers.ex:2003-2009](../lib/seshat/tools/handlers.ex#L2003-L2009) with a
+[handlers.ex:2003-2009](../../lib/seshat/tools/handlers.ex#L2003-L2009) with a
 comment stating why this one mixer setter reads back when its siblings don't
 (no send listener, sends outside the mirror — nothing else ever corrects it).
 
@@ -158,7 +171,7 @@ say the set *was sent* and route to `get_track_sends`.
 
 `test/seshat/tools/handlers_test.exs`, using the existing test-local `OSCSink`
 pattern (the narrow handler-test exception in
-[.claude/rules/testing.md](../.claude/rules/testing.md) — the sink supplies
+[.claude/rules/testing.md](../../.claude/rules/testing.md) — the sink supplies
 every reply, nothing waits on Ableton). The `scripted_trace`/`guarded_trace`
 helpers from the echo-checks tests are the shape to copy.
 
@@ -177,7 +190,7 @@ helpers from the echo-checks tests are the shape to copy.
    `{:error, message}` ("was sent … did not confirm"), never the straggler's
    value in an ok.
 6. **Existing guard-rejection test**
-   ([handlers_test.exs:709-739](../test/seshat/tools/handlers_test.exs#L709-L739))
+   ([handlers_test.exs:709-739](../../test/seshat/tools/handlers_test.exs#L709-L739))
    must stay green unchanged — nothing before the set moved.
 
 The unanswered-read-back path (2s `@guard_timeout` wait) is deliberately not
@@ -198,7 +211,7 @@ Stated so the diff is checkable against it:
 - **No `Session.State` change** — sends stay outside the mirror; that boundary
   is roadmap territory ("Bulk reads vs. per-address queries", "Device list per
   track in session state").
-- **No docs change** — [abletonosc-api-docs.md](abletonosc-api-docs.md)'s
+- **No docs change** — [abletonosc-api-docs.md](../abletonosc-api-docs.md)'s
   "nothing pushes a send's accepted value into the mirror" note (Track API
   intro) remains true and is the reason for the read-back.
 
@@ -254,10 +267,10 @@ shared with stale-twice, which Part 2 pins).
    value on real AbletonOSC?** Effectively yes, on three converging pieces of
    evidence, but only for the sibling mechanism, not this clause itself:
    documented in-order datagram processing
-   ([handlers.ex:2635](../lib/seshat/tools/handlers.ex#L2635));
+   ([handlers.ex:2635](../../lib/seshat/tools/handlers.ex#L2635));
    `set_device_parameter`'s identical in-process set-then-read, **live-verified
    2026-08-03** in the echo-checks PR review ("Dry/Wet → 0.75 replied 'it now
-   reads 75 %'", [archive/PLAN_echo_checks.md](archive/PLAN_echo_checks.md)
+   reads 75 %'", [PLAN_echo_checks.md](PLAN_echo_checks.md)
    Live verification) — and sends *are* `DeviceParameter`s on
    `mixer_device.sends`, the same LOM object kind; and today's own measurement,
    which confirmed set-then-read returns the new value at ~1s spacing.

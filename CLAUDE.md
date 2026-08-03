@@ -235,7 +235,38 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
-Echo checks at every raw reply decode shipped 2026-08-03, closing what had
+`set_track_send` now reports an outcome it observed, shipped 2026-08-03,
+closing what had been the queue's top item. Unlike volume/pan/mute/solo,
+sends have no listener in `track.py` and sit outside `Session.State`'s
+mirror, so a rejected or dropped `/live/track/set/send` used to be
+unaccounted for anywhere — the reply asserted success the instant
+`:gen_udp.send/4` returned. The pre-existing guard (`query_echoed/4` on
+`/live/track/get/send`, unchanged) still validates both indices and supplies
+the "was" value; a new private `confirm_send/5` now follows the silent set
+with a read-back through the shared `read_back_value/2` (the same reissue-
+once stale defence and echo check `set_device_parameter` already uses) and
+reports one of three outcomes: confirmed (both values agree at 4 decimals,
+the precision `clip_value_matches?/3` already established, which absorbs OSC
+`f`'s 32-bit wire truncation), mismatch (an answered, correlated read that
+disagrees — names both the requested and observed value, `set_track_send`'s
+own "was" alongside them), or unconfirmed (stale twice, timeout, or any
+other non-numeric read — states the set *was sent* and routes to
+`get_track_sends`). Twenty-two new tests were not needed here; five new ones
+pin the happy path (with a wire-order assertion: get, set, get), float32
+truncation still confirming, the mismatch wording, and both the straggler-
+then-answered and stale-twice paths against `Seshat.Test.OSCSink`. No fork
+or `Definitions` change — both addresses were already upstream and already
+in use by this clause, and the tool description asserts nothing about
+confirmation for the new reply wording to contradict. Plan archived at
+[docs/archive/PLAN_send_readback.md](docs/archive/PLAN_send_readback.md).
+**Live verification was not run before this shipped** — the environment
+that implemented and reviewed it found the fixed OSC reply port (11001)
+already held by a Seshat instance running pre-change code, and restarting
+it was judged out of scope for those phases — so
+`docs/smoke_tests/auto/sends.md`'s two checks (`A send set is confirmed by
+its own read-back`, `A bad send index is refused before the set`) both still
+read `*Last run: —*` and remain a pre-merge gate on the PR, not a shipped
+guarantee. Echo checks at every raw reply decode shipped 2026-08-03, closing what had
 been the queue's top item. `Seshat.OSC.Transport` correlates replies by
 address alone, so a reply abandoned by an earlier timeout can still answer
 the next query on the same address — the only defence is caller-side, and
@@ -296,7 +327,8 @@ re-measure before deciding whether to build it. The 2026-08-03 integration
 review (below) then queued three items above `start_new_project`: the
 echo-check audit ("Echo checks at every raw reply decode"),
 `set_track_send`'s honest reply, and the bulk-reads-vs-per-address-queries
-decision.
+decision. The first two are both shipped now (above); the third is the
+queue's current top item.
 `undo`/`redo` stop reporting success they never observed, shipped 2026-08-02,
 closing what had been the queue's top item. `Seshat.Tools.Handlers`'s
 `undo`/`redo` clauses used to return `{:ok, "Undone"}`/`{:ok, "Redone"}` the
@@ -490,9 +522,10 @@ items, not competing queues:
 - [docs/evaluating/abletonosc-integration-review.md](docs/evaluating/abletonosc-integration-review.md) —
   the 2026-08-03 architecture review of how Seshat consumes the AbletonOSC
   fork, with the PR #62 counter-review's corrections applied inline. It is
-  the evidence behind the three items at the top of the queue (the
-  echo-check audit, `set_track_send`'s honest reply, the bulk-endpoint
-  decision) and behind the `TODO!` markers in `Handlers`/`State`. Read it
+  the evidence behind the three items it originally put at the top of the
+  queue (the echo-check audit and `set_track_send`'s honest reply have since
+  shipped, above; the bulk-endpoint decision is now the queue's top item)
+  and behind the `TODO!` markers in `Handlers`/`State`. Read it
   before re-judging any design decision that rests on OSC round-trip cost,
   reply correlation, or what the fork's listeners actually push.
 
