@@ -237,9 +237,27 @@ both addresses are upstream and already installed.
   through `get_track_sends` afterwards. Every confirmed reply is also the
   proof of Open question 1 (same-tick set-then-get ordering on real
   AbletonOSC), which no pure test can supply.
+
+  **Run 2026-08-04 against Live 12.4.3 — passed.** All five sets (0.37, 1.0,
+  0.0, 0.37, 0.37) replied "confirmed by reading it back" and named the right
+  "was" value at each step, the idempotent repeat included ("was 0.37").
+  `get_track_sends` independently read 0.37 afterwards. **Open question 1 is
+  resolved:** no reply ever fell to the mismatch or unconfirmed branch, so at
+  microsecond spacing AbletonOSC does process set-then-get in arrival order,
+  and the 4-decimal comparison absorbs the wire's float32 widening. Live
+  applied no quantization at either boundary.
 - `smoke_tests/auto/sends.md § A bad send index is refused before the set` —
   the guard path against real Live's structured `/live/error`: fast, in
   Live's own words, nothing mutated.
+
+  **Run 2026-08-04 against Live 12.4.3 — passed.** `send: 9` against a
+  one-return set returned "Index out of range. Nothing further was sent — check
+  get_session_state for the indices that actually exist", timed at **0.144s**
+  over a full HTTP handshake (the ~2s guard timeout was nowhere near reached).
+  Live's `Log.txt` recorded the `IndexError` raised on `/live/track/get/send` —
+  the guard address, not the setter — and `get_track_sends` still read 0.37, so
+  nothing was mutated. The rejection reached the client as `result` with
+  `isError: true`, not a bare protocol error.
 
 **Uncovered:** the mismatch branch (no way to make real Live drop exactly one
 loopback datagram on demand — pinned pure in Part 2, wording asserted there),
@@ -263,7 +281,13 @@ shared with stale-twice, which Part 2 pins).
 
 ## Open questions
 
-1. ⚠️ **Does the read-back issued microseconds after the set return the new
+1. ✅ **RESOLVED 2026-08-04 — yes.** Answered by running
+   `smoke_tests/auto/sends.md § A send set is confirmed by its own read-back`
+   against Live 12.4.3: five consecutive sets through this exact clause all
+   confirmed, none falling to the mismatch or unconfirmed branch. The original
+   reasoning, which the run bore out, follows.
+
+   **Does the read-back issued microseconds after the set return the new
    value on real AbletonOSC?** Effectively yes, on three converging pieces of
    evidence, but only for the sibling mechanism, not this clause itself:
    documented in-order datagram processing

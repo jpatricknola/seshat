@@ -14,7 +14,13 @@ at the end.
 
 ## A send set is confirmed by its own read-back
 
-*Last run: —*
+*Last run: 2026-08-04 — all five sets confirmed. 0.37, 1.0, 0.0, then 0.37
+twice; every reply read "confirmed by reading it back" and named the right
+"was" (0.0 → 0.37 → 1.0 → 0.0 → 0.37, the idempotent repeat reporting "was
+0.37"). `get_track_sends` agreed at 0.37 afterwards. No reply ever said "did
+not land" or "did not confirm it", so at microsecond spacing AbletonOSC does
+process set-then-get in arrival order, and the 4-decimal comparison absorbs the
+float32 widening (0.37 → 0.3700000047683716).*
 
 `set_track_send` reads `/live/track/get/send` back after the silent set and
 only reports success it observed. The in-process read-back follows the set by
@@ -40,7 +46,13 @@ is gone.
 
 ## A bad send index is refused before the set
 
-*Last run: —*
+*Last run: 2026-08-04 — refused fast. `send: 9` against one return returned
+"Index out of range. Nothing further was sent…"; timed over a full HTTP
+handshake at 0.144s total, nowhere near the ~2s guard timeout. Live's log
+recorded the raise on `/live/track/get/send` — the guard address, not the
+setter — and `get_track_sends` still read 0.37, so nothing mutated. The
+rejection arrives as `result` with `isError: true`, not a bare protocol
+error.*
 
 The pre-set guard reads the send first, so an index Live doesn't have is
 rejected in Live's own words with nothing mutated — and since the `/live/error`

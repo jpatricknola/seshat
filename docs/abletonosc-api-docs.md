@@ -391,6 +391,25 @@ the routing properties, `clips/*`, `arrangement_clips/*`, `devices/*`,
 `num_devices` — register no listeners: `/live/track/start_listen/send` is an
 unknown address and fails silently, which also means **nothing pushes a
 send's accepted value into the mirror** after `/live/track/set/send`.
+Reading the value back is therefore the only way to observe that a send
+landed, which is what `set_track_send` does.
+
+**Measured against Live 12.4.3 on 2026-08-04** (`smoke_tests/auto/sends.md`),
+for that read-back:
+
+- **A `/live/track/get/send` issued immediately after `/live/track/set/send`
+  returns the new value.** Five consecutive set-then-get pairs at
+  in-process spacing (microseconds apart, well inside one AbletonOSC tick)
+  all reported the value just written — AbletonOSC processes the two
+  datagrams in arrival order at that spacing, never the stale value.
+- **Live applies no quantization to a send value.** `0.0`, `0.37` and `1.0`
+  each round-tripped to themselves; the only distortion is the OSC wire's
+  32-bit float (`0.37` returns as `0.3700000047683716`), so a comparison
+  rounded to 4 decimals matches exactly across the whole 0.0–1.0 range.
+- **A send index Live doesn't have raises on the *getter*.** `send_id` 9
+  against a one-return set raises `IndexError: Index out of range` on
+  `/live/track/get/send`, arriving via the structured `/live/error` in
+  ~0.14s (measured end-to-end through an MCP HTTP call), not as a timeout.
 
 > ⚠️ **These listeners are fixed in the fork**, in `AbletonOSCHandler._stop_listen`
 > and `TrackHandler`'s mixer-listener pair. Same addresses, same arguments, same
