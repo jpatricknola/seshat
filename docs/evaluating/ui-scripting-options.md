@@ -9,16 +9,20 @@ _Evaluation note · 31 Jul 2026 · decides no roadmap priority by itself._
 
 ## Current position
 
-Run one narrow spike against Live's Audio Settings before proposing a feature.
-Live 12 explicitly supports macOS screen readers and documents keyboard access
-to its Settings controls, so a useful Accessibility (AX) tree is more likely
-than an opaque one. What remains unverified is the part Seshat needs: whether a
-small helper can find the audio-output chooser, enumerate its choices, select
-one by name, and read the result back.
+The narrow spike against Live's Audio Settings succeeded on 2026-08-03. A
+direct Accessibility (AX) helper found the audio-output chooser, enumerated its
+named choices, selected MacBook Pro Speakers, read the new value back, restored
+the original system-device selection, and verified that value too. The full
+native-helper change-and-restore run took 1.55 seconds; AX is therefore viable
+for this target, subject to the constraints recorded below. That is not an
+end-to-end conversational measurement: the implementation plan separately
+requires the user-visible request to complete within 10 seconds.
 
-Until that succeeds, only the LOM-over-OSC path is validated in Seshat. No AX
-read or synthetic keystroke has yet been observed reaching Live from this
-machine; the attempts on 2026-07-31 stopped at macOS permissions.
+Implementation plan: [AX-backed audio-output selection](../PLAN_audio_output.md).
+
+This validates a particular UI-scripting operation, not a general second
+control surface. No synthetic keystroke has yet been observed reaching Live
+from this machine.
 
 The architectural rule is:
 
@@ -77,7 +81,8 @@ input—not against every possible use of a keystroke.
 
 ## Mechanism ladder
 
-Use the highest applicable rung. Only rung 1 is validated in Seshat today.
+Use the highest applicable rung. Rung 1 is Seshat's established control path;
+rung 2 is now validated for the specific audio-output target, not generically.
 
 1. **LOM via the AbletonOSC fork.** The default for everything the installed
    LOM exposes.
@@ -185,15 +190,77 @@ helper process is the likely implementation, but the spike should establish
 that shape rather than treating the absence of an Elixir binding as proof of
 it.
 
+### Permission result — 3 Aug 2026
+
+A tiny Objective-C command-line helper linked directly against AppKit and
+ApplicationServices called `AXIsProcessTrustedWithOptions`, with the prompt
+option enabled, from a stable executable at
+`_build/ax-spike/ax-probe`. macOS 15.7.4 granted Accessibility access to that
+helper as `ax-probe`. Neither Automation / Apple Events nor Screen & System
+Audio Recording permission was requested, and neither Live nor the helper
+needed a restart.
+
+With Ableton Live 12.4.3 running, the same executable then found the process by
+its stable bundle identifier, `com.ableton.live`, and successfully read this
+top-level AX excerpt:
+
+```text
+AX trusted: true
+Live: Live pid=3708 bundle=com.ableton.live
+Application role: AXApplication
+Application title: Live
+Application children: 1
+```
+
+The process-discovery detail matters: the installed application's bundle and
+executable names are `Live`, not `Ableton Live`; matching the visible product
+name falsely reported that Live was not running. Use the bundle identifier in
+future helpers.
+
+### Audio-output round trip — 3 Aug 2026
+
+The helper used a bounded path rather than walking Live's full AX tree:
+
+1. Find the running application by bundle identifier `com.ableton.live`.
+2. Activate Live, because Live 12.4.3 exposes only its menu bar and reports zero
+   AX windows while it is not the active application.
+3. Read `AXWindows`, select the `Settings` window, then find the group with
+   identifier `audio` and its direct `Audio Output Device` popup child.
+4. Press the popup and select a named item from the temporary window whose
+   group identifier is `ChooserPopUp`.
+5. Read the popup's value after each selection.
+
+The available choices during the run were `No Device`, `Use System Device`,
+`MacBook Pro Speakers (0 In, 2 Out)`, and `25 AirPods (0 In, 2 Out)`. The
+verified result was:
+
+```text
+Original: Use System: 25 AirPods (0 In, 2 Out)
+Selected: MacBook Pro Speakers (0 In, 2 Out) (AX error 0)
+Changed value: MacBook Pro Speakers (0 In, 2 Out)
+Selected: Use System Device (AX error 0)
+Restored value: Use System: 25 AirPods (0 In, 2 Out)
+real 1.55
+```
+
+A targeted current-value lookup completed in 0.95 seconds and enumerating the
+already-open popup window took 0.09 seconds. The earlier multi-minute
+exploration was caused by repeatedly compiling the probe and recursively
+printing more than 2,000 unrelated AX elements; that is not an acceptable or
+necessary runtime design. A production helper should use this bounded path,
+short messaging timeouts, and value read-back, and should account explicitly
+for bringing Live to the foreground.
+
 References: [macOS Privacy & Security settings](https://support.apple.com/guide/mac-help/change-privacy-security-settings-on-mac-mchl211c911f/mac),
 [AXUIElement API](https://developer.apple.com/documentation/applicationservices/axuielement_h).
 
-## The spike that decides it
+## Spike protocol and result
 
-This is an evidence-gathering spike, not an implementation plan. Prefer a tiny
-direct `AXUIElement` walker over System Events so the result tests AX itself
-without also testing Apple Events. Preserve the tree excerpts, Live version,
-macOS version, permission steps, and errors in this document.
+This evidence-gathering spike is complete; it is not the implementation plan.
+It used a tiny direct `AXUIElement` walker rather than System Events so the
+result tested AX itself without also testing Apple Events. The protocol remains
+here with the preserved tree excerpts, Live version, macOS version, permission
+steps, and errors.
 
 Answer these questions:
 

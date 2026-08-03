@@ -32,6 +32,7 @@ those tests and their reasons instead.
 | [recording.md](recording.md) | `record_clip` / `stop_recording` |
 | [views.md](views.md) | `show_view` / `hide_view` / `get_view_state` and the follow cam |
 | [transport.md](transport.md) | tempo, time signature, swing and groove |
+| [audio-output.md](audio-output.md) | macOS AX audio-output listing, switching, UI restoration and latency |
 | [undo.md](undo.md) | undo granularity and the `can_undo` / `can_redo` guards |
 
 ## How a test gets run

@@ -35,7 +35,10 @@ Bounds *inside* `oneOf` branches were the untested combination.
 ## A rejected call comes back readable, not as a protocol error
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. Came back as `result` with `"isError": true` and
+the text "Invalid parameters for set_track_pan — nothing was sent to Ableton:\n-
+value: must be at most 1.0 (got 2.0) — Pan position. -1.0 = full left, 0.0 =
+center, 1.0 = full right". No `error` key, no `-32602`, no Peri internals.*
 
 `mcp_call.py call set_track_pan '{"track": 0, "value": 2.0}'` must return a
 `result` with `"isError": true` whose text names the bound and the value
@@ -62,7 +65,10 @@ protocol errors.
 ## The rejected value never reached Live
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. Track 0's pan read 0.0 before the rejected
+`value: 2.0` call and still read 0.0 afterwards via
+`get_session_state(refresh: true)` — a fresh read from Live, not the mirror. Had
+the write gone out, Live would have clamped it to 1.0.*
 
 After the rejection above, read the target back. A refusal that silently *did*
 send is the thing worth catching, and no reply string can show it to you.

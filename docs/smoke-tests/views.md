@@ -26,7 +26,13 @@ detail panel's named tab comes from the `Detail/*` flags.
 ## `hide_view` hides exactly two panes
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed, both names. From "Main view: Session. Live's
+browser: open. Detail panel: open, showing the clip editor":
+`hide_view(Browser)` → "Live's browser: **closed**", detail panel untouched; then
+`hide_view(Detail)` → "Detail panel: **closed**". Each pane went present →
+absent, and `hide_view`'s own read-back reported success rather than a stuck-pane
+error, so Live's hide set has not moved on 12.4.3. Both panes restored
+afterwards.*
 
 For each name in `hide_view`'s enum (`Browser`, `Detail`): `get_view_state`,
 `hide_view(name)`, `get_view_state` again. The pane must go from present to

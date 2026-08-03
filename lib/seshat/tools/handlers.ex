@@ -1932,9 +1932,9 @@ defmodule Seshat.Tools.Handlers do
          {:ok, beats} <- record_length(bars),
          :ok <- ensure_slot_empty(track, slot),
          {:ok, just_armed?} <- ensure_armed(track),
-         :ok <- ensure_will_record(track, slot, just_armed?),
+         {:ok, input_doubt} <- check_will_record(track, slot),
          :ok <- fire_for_record(track, slot, beats) do
-      report_record_started(track, slot, bars, beats, just_armed?)
+      report_record_started(track, slot, bars, beats, just_armed?, input_doubt)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
@@ -3551,36 +3551,45 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # The definitive precondition, and the last one before anything is sent: Live
-  # itself answering "would firing this slot record?". `just_armed?` is threaded
-  # through so the false branch can disclose an arm this same call just made —
-  # `ensure_armed/1`'s `/live/track/set/arm` already reached Live, so the track
-  # is left armed (and monitoring possibly live) even though the fire never was.
-  defp ensure_will_record(track, slot, just_armed?) do
+  # Advisory, not a precondition — and it used to be the latter, which made
+  # `record_clip` refuse every call it was ever asked to make.
+  #
+  # `will_record_on_start` reads as the answer to "would firing this slot
+  # record?" and is not. Measured 2026-08-03 on Live 12.4.3: on an armed MIDI
+  # track with an empty slot it returns `False` while `/live/clip_slot/fire` on
+  # that exact track and slot starts recording immediately. It stayed `False`
+  # across every state worth trying — transport stopped and playing,
+  # `session_record` off and on, MIDI track with an instrument, bare MIDI track
+  # and audio track — with `arm`, `can_be_armed` and `has_midi_input` all true
+  # and monitoring on Auto. Whatever it answers, it is not this question, and no
+  # substitute precondition turned up, so nothing is gated on it any more.
+  #
+  # The reading is still worth surfacing, because the case it was meant to catch
+  # is real: an audio track with no input routed records silence. That is a
+  # recoverable, self-evident outcome, so it belongs in the reply rather than in
+  # a refusal. The fire's own confirmation (`record_echo/2`) remains the thing
+  # that decides whether the take actually started.
+  defp check_will_record(track, slot) do
     case query_flag(
            "/live/clip_slot/get/will_record_on_start",
            [track, slot],
            "whether firing slot #{slot} on track #{track} would record"
          ) do
       {:ok, true} ->
-        :ok
+        {:ok, nil}
 
       {:ok, false} ->
-        {:error,
-         "Live reports that firing slot #{slot} on track #{track} would not record, so no " <>
-           "take was fired. The track is armed, so this is usually the track's input: check " <>
-           "its input routing and monitoring in Live.#{armed_disclosure(just_armed?)}"}
+        {:ok,
+         "Live reported this slot might not capture input. That reading is unreliable, so the " <>
+           "take was fired anyway — if it comes back silent, check the track's input routing " <>
+           "and monitoring in Live."}
 
+      # A failed *read* still blocks, unchanged: it means Ableton isn't
+      # answering, which the fire is about to discover more expensively.
       {:error, message} ->
         {:error, message}
     end
   end
-
-  defp armed_disclosure(true) do
-    " This call armed the track on the way in — disarm it with set_track_arm if that isn't wanted."
-  end
-
-  defp armed_disclosure(false), do: ""
 
   defp ensure_recording(track, slot) do
     case query_flag(
@@ -3602,11 +3611,11 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp report_record_started(track, slot, bars, beats, just_armed?) do
+  defp report_record_started(track, slot, bars, beats, just_armed?, input_doubt) do
     case record_echo(track, slot) do
       {:ok, status} ->
         FollowCam.steer("record_clip", %{track: track, slot: slot})
-        {:ok, record_reply(track, slot, bars, beats, just_armed?, status)}
+        {:ok, record_reply(track, slot, bars, beats, just_armed?, status, input_doubt)}
 
       {:error, message} ->
         # `record_echo/2` shares its guard helpers with the pre-fire checks, so
@@ -3626,15 +3635,35 @@ defmodule Seshat.Tools.Handlers do
   # `is_triggered`. Deliberately no `playing_status`: its enum is documented
   # nowhere. Live handles datagrams in arrival order, so all three reads see a
   # session in which the fire has already been processed.
-  defp record_echo(track, slot) do
+  defp record_echo(track, slot, reread? \\ false) do
     case query_flag(
            "/live/clip_slot/get/has_clip",
            [track, slot],
            "whether slot #{slot} on track #{track} holds a clip"
          ) do
-      {:ok, true} -> recording_or_queued(track, slot)
-      {:ok, false} -> queued_or_nothing(track, slot)
-      {:error, message} -> {:error, message}
+      {:ok, true} ->
+        recording_or_queued(track, slot)
+
+      # Measured 2026-08-03, Live 12.4.3: the clip does not exist the instant the
+      # fire is processed. Polling straight after `/live/clip_slot/fire` with
+      # launch quantization set to None, `has_clip` read `False` on the first
+      # query and `True` 99ms later, with `is_recording` already true by then.
+      # Datagram ordering (which the comment above relies on) is preserved; what
+      # it does not buy is the engine state the fire *triggers*, which lands
+      # asynchronously. Without this re-read, a take that started immediately
+      # reports "Queued" — the whole point of the echo, inverted.
+      #
+      # One re-read is enough because the round trip is itself ~100ms. A take
+      # genuinely waiting for a boundary has no clip for up to a bar, so it still
+      # reads `false` twice and is still correctly reported as queued.
+      {:ok, false} when not reread? ->
+        record_echo(track, slot, true)
+
+      {:ok, false} ->
+        queued_or_nothing(track, slot)
+
+      {:error, message} ->
+        {:error, message}
     end
   end
 
@@ -3672,11 +3701,12 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp record_reply(track, slot, bars, beats, just_armed?, status) do
+  defp record_reply(track, slot, bars, beats, just_armed?, status, input_doubt) do
     [
       record_headline(track, slot, bars, beats),
       record_status_line(status),
-      if(just_armed?, do: "Armed the track first.")
+      if(just_armed?, do: "Armed the track first."),
+      input_doubt
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" ")

@@ -23,28 +23,54 @@ moves in the note editor, playback loops that section, and the reply echoes
 ## Write ordering and invalid states
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed, and the open question is now answered. On an
+8-beat clip braced 0.0–2.0, one call asking for 4.0–8.0 landed, and the reply
+showed the reorder directly — `loop_end` echoed **before** `loop_start`. The
+single-sided invalid write (`loop_start` 9.0 against the current `loop_end` 8.0)
+errored "loop_start 9.0 is not before the current loop_end 8.0 — pass loop_end
+too to move the whole range. Nothing was set," and a re-read confirmed the brace
+still at 4.0–8.0. **Live ignores an inverted loop point; it does not clamp** —
+measured by sending `/live/clip/set/loop_start 1 2 9.0` raw past the guard, after
+which the brace was unchanged and `Log.txt` carried `ERROR:abletonosc:613 - Error
+setting clip.loop_start: Cannot set LoopStart behind LoopEnd`. Live raises,
+AbletonOSC catches and logs, and the setter is a silent no-op on the wire — which
+is what the Elixir-side guard exists to replace.*
 
 Move a brace entirely past the old one in one call (the end-first path) and
 confirm it lands. Then make a single-sided invalid write (`loop_start` beyond the
 current `loop_end`) and confirm it errors naming the current value with Live
-untouched. Note for the record whether Live clamps or ignores an inverted loop
-point.
+untouched.
 
 ## The loop pair with looping off
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — **defect reproduced, but its blast radius is smaller than
+this test assumed; both are recorded below.** With looping off and play markers
+at 0.0–2.0, the loop pair read **0.0–8.0** — the clip extent, *not* the markers
+(the earlier reading that looked like marker-tracking was a coincidence: the
+markers were 0.0–8.0 then too). The test text above is corrected accordingly.
+Setting `looping: true` with `loop_start: 2, loop_end: 6` in one call produced
+exactly 2.0–6.0. The stale read is real: with looping off, a single-sided
+`looping: true` + `loop_start: 4.0` validated against the pre-toggle `loop_end`
+of 8.0 while the true post-toggle end was 6.0. Pushing that further —
+`loop_start: 7.0`, which passes validation against the stale 8.0 but Live rejects
+against the real 6.0 — did **not** produce a false success: the per-write re-read
+caught it and reported "loop_start: Live reports 4.0, not the 7.0 that was sent
+(was 0.0)".*
 
-With looping off, `get_clip_properties` should show the loop points tracking the
-play markers. Then set `looping` *and* the loop points in one call and confirm the
-intended brace results.
+With looping off, `get_clip_properties` shows the loop points spanning the whole
+clip (0.0 to the clip length), regardless of where the play markers sit. Then set
+`looping` *and* the loop points in one call and confirm the intended brace
+results.
 
-This is the known defect tracked as ROADMAP #12 — `set_clip_properties` reads the
+This is the known defect tracked in [../ROADMAP.md](../ROADMAP.md) as
+"`set_clip_properties` reads the loop pair before the `looping` toggle lands" —
+`set_clip_properties` reads the
 pair before the `looping` toggle goes out, so on such a clip both the write
 ordering and the single-sided validation can run against stale values. Until that
-ships, a failure here is the expected result; record what you saw rather than
-treating it as new.
+ships, expect the *validation* to be wrong while the *report* stays honest: the
+post-write re-read is what stops a stale-read pass from becoming a claimed
+success. Record what you saw rather than treating it as new.
 
 ## Audio clip properties
 
@@ -74,7 +100,11 @@ open.
 ## Quantize lands on 1/16ths, not 1/32nds
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. A 7-note sloppy clip quantized `"1/16"` at 1.0
+landed on 0.0, 0.5, 1.0, 1.25, 2.0, 2.5 — every position a 0.25-beat multiple,
+no 0.125 spacing. The decisive one is 1.37 → **1.25**; a 1/32 grid would have
+given 1.375. The table in
+[../abletonosc-api-docs.md](../abletonosc-api-docs.md) still holds.*
 
 `"1/16"` at amount 1.0. Notes land on the grid in the note editor and the reply's
 counts match what visibly moved. **Confirm the landing positions are 0.25-beat
@@ -89,7 +119,11 @@ schema. The corrected table, measured 2026-07-31, is in
 ## Partial strength moves notes toward the grid
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed, exactly on the predicted number. Same clip at
+`"1/16"` amount 0.5: **1.37 → 1.31** against a 1.25 target. Every other note
+moved half way too — 0.03→0.015, 0.48→0.49, 1.06→1.03, 1.97→1.985, 2.52→2.51,
+2.58→2.54 — and the count stayed at 7, so they moved toward the grid rather than
+onto it. The reply still counted them ("7 of 7 note(s) … at 50% strength").*
 
 `undo`, then the same grid at amount 0.5. Notes move *toward* the grid, not onto
 it, and the reply still counts them. Live interpolates linearly: a note at 1.37
@@ -98,16 +132,28 @@ with a 1.25 target lands at 1.31.
 ## An already-tight clip reports no change without reading as an error
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. The second call replied "Quantize sent, but no
+note changed — … may already sit on the 1/16 grid at 100% strength. If the timing
+audibly didn't change, the installed AbletonOSC may predate /live/clip/quantize…"
+The benign reading leads and the stale-install hint is conditional on an audible
+symptom, so it does not read as a failure. **Noted separately: the no-op quantize
+still creates an Ableton undo step** — getting back to the sloppy take took two
+`undo` calls, not one.*
 
 Quantize the same clip twice at 1.0. The second call reports "no note changed" —
 read that reply and confirm its stale-install hint doesn't read as a failure,
 because here silence is normal.
 
+A quantize that changes nothing still costs an undo step, so a later `undo` back
+past it needs one call per quantize sent, not per quantize that moved a note.
+
 ## Triplet grids reach values the old docs wrote off
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. A straight 4-note clip (0.2, 0.45, 1.4, 2.1) at
+`"1/8T"` amount 1.0 landed on 0.3333, 0.3333, 1.3333, 2.0 — thirds of a beat.
+Undone and re-quantized at `"1/16T"` it landed on 0.1667, 0.5, 1.3333, 2.1667 —
+sixths. Both grids reach real values; the old docs were wrong to write them off.*
 
 `"1/8T"` and `"1/16T"` on a straight part: notes land on thirds and sixths of a
 beat. The old docs claimed triplet grids did not exist.
@@ -115,7 +161,15 @@ beat. The old docs claimed triplet grids did not exist.
 ## Collisions are reported as what they were
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed, **both arms provoked in one sitting.** *Merge:* a
+full `"1/16"` quantize put C4 at 2.52 and C4 at 2.58 both on 2.5; the clip went
+from 7 notes to 6, the survivor kept the **later** velocity (110, not 70), and
+the reply said so — "1 same-pitch note(s) landed on a spot already taken and
+merged into the note there, keeping the later velocity." *Trim:* the same pair at
+amount 0.5 landed on 2.51 and 2.54 instead — no merge, count still 7, and the
+earlier note's duration was cut to 0.03 so it ends exactly where the later one
+starts, with the reply reporting "Live trimmed the earlier one to end where the
+later one starts." The reply named which happened in both cases.*
 
 A full quantize that stacks two same-pitch notes. Expect the count-change wording:
 same-point collisions **merge** into one note keeping the *later* velocity, while
@@ -136,7 +190,10 @@ open — the notes snapping on screen *is* the confirmation.
 ## Quantize in an odd meter
 
 *Run mode: agent*
-*Last run: —*
+*Last run: 2026-08-03 — passed. `set_time_signature 6/8`, then the same sloppy
+clip at `"1/16"` amount 1.0 produced landing positions identical to the 4/4 run
+note for note — 0.0, 0.5, 1.0, 1.25, 2.0, 2.5, with the same 7→6 merge keeping
+velocity 110. Nothing meter-dependent has crept in. 4/4 restored afterwards.*
 
 The mapping measured identical in 4/4 and 6/8, so a quantize in an odd meter is a
 cheap confirmation nothing meter-dependent crept in.

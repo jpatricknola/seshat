@@ -572,6 +572,62 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/get/end_marker` | `track_id, clip_id` | `track_id, clip_id, end_marker` | End marker |
 | `/live/clip/set/end_marker` | `track_id, clip_id, end_marker` | | Set end marker (beats) |
 
+### A fired slot's clip does not exist yet
+
+Measured 2026-08-03, Live 12.4.3. `/live/clip_slot/fire` is processed in
+datagram order like anything else, but the clip it creates lands
+**asynchronously**. Polling immediately after the fire with launch quantization
+set to None, `/live/clip_slot/get/has_clip` answered `False` on the first query
+and `True` 99ms later — with `/live/clip/get/is_recording` already `True` by
+that second read.
+
+So datagram ordering does not buy you the engine state a fire *triggers*. Any
+read-back that treats an immediate `has_clip: false` as "nothing was created"
+will misreport a take that started fine; `Handlers.record_echo/3` re-reads once
+for exactly this reason. A slot genuinely waiting for a boundary has no clip for
+up to a full bar, so the two cases are still distinguishable — just not on one
+read.
+
+### `clip_trigger_quantization` is not the `launch_quantization` enum
+
+Measured 2026-08-03, Live 12.4.3, and an easy way to silently change a global
+setting while thinking you restored it. The **song** property
+`/live/song/set/clip_trigger_quantization` is offset from the **clip** property
+`launch_quantization` used by `set_clip_properties`, because the clip enum
+starts with `0=Global` and the song enum has no such entry:
+
+| Value | `clip_trigger_quantization` (song) | `launch_quantization` (clip) |
+|---|---|---|
+| 0 | None | Global |
+| 1 | 8 bars | None |
+| 4 | **1 bar** (`q_bar`, Live's default) | 2 bars |
+| 5 | 1/2 (`q_half`) | **1 bar** |
+
+Read it back with `/live/song/get/clip_trigger_quantization`, which answers with
+a name (`q_bar`, `q_half`) rather than the integer — the only cheap way to be
+sure which enum you just wrote into.
+
+### The loop pair rejects an inversion, silently
+
+Measured 2026-08-03, Live 12.4.3. `/live/clip/set/loop_start` with a value at or
+past the current `loop_end` **does nothing** — Live does not clamp it to a legal
+value, and nothing comes back on the wire. Live raises
+`Cannot set LoopStart behind LoopEnd`, `AbletonOSCHandler` catches it and writes
+`ERROR:abletonosc:… - Error setting clip.loop_start: …` to Live's `Log.txt`, and
+the property keeps its old value. (`/live/clip/set/loop_end` is symmetric.)
+
+That is why `set_clip_properties` validates the pair caller-side and orders the
+two writes end-first when a brace moves entirely past its old position: without
+both, moving a brace forward would silently half-apply.
+
+Also measured the same day: **with `looping` off, `loop_start`/`loop_end` read
+`0.0` and the clip length** — they do not track `start_marker`/`end_marker`. A
+clip with markers at 0.0–2.0 and an 8-beat length reports a loop pair of
+0.0–8.0. Reading the pair to decide anything while looping is off therefore
+reads the clip extent, not the brace Live will restore when looping goes back on
+(that brace survives independently — measured by toggling looping off and on
+around a 2.0–6.0 brace, which came back as 2.0–6.0).
+
 ### Quantization grid
 
 `/live/clip/quantize`'s `grid` argument is Live's `GridQuantization` enum, which
