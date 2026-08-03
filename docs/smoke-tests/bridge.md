@@ -49,11 +49,14 @@ parameter index was echoed as `-1` instead of the value actually asked for.
 
 ## A stale install is distinguishable from a broken tool
 
-*Run mode: agent*
-*Last run: 2026-08-03 — **not reproduced**. `diff -rq` of `priv/AbletonOSC`
-against the installed Remote Scripts copy showed no divergence (only the
-installed `logs/` and the repo's `tests/`), so the stale state was unreachable
-without downgrading, which this test forbids.*
+*Run mode: user — only reachable against a stale Remote Scripts copy, which the agent sweep must never create and skips fork-dependent tests when it finds*
+*Last run: —*
+
+*Retagged 2026-08-03: this was marked `agent` and can never pass in a sweep.
+Either the install matches the repo and the state is unreachable, or it differs
+and the sweep is required to skip fork-dependent tests. Its natural window is
+mid-implementation, before `mix abletonosc.install` — cite it from a plan's
+`## Live verification`, not from the sweep.*
 
 Before reinstalling during implementation — or against an older Remote Scripts
 copy — every vendored tool must fail with the `mix abletonosc.install` hint
@@ -117,12 +120,14 @@ send, the payload shape, or the Transport matcher.
 
 ## One rejection, one error datagram
 
-*Run mode: agent*
+*Run mode: user — the count of `OSC in: /live/error` lines is only visible in the Seshat server's debug log, which goes to the server's own terminal*
 *Last run: 2026-08-03 — passed. One rejection produced exactly one
 `OSC in: /live/error ["request", "/live/track/get/devices/name",
-"Index out of range", 1, 99]` and no `"log"`-tagged copy. Note the server's
-debug log is the only place this is observable; it goes to the server's
-terminal, so an agent with no access to that tty must ask.*
+"Index out of range", 1, 99]` and no `"log"`-tagged copy.*
+
+*Retagged 2026-08-03: it was marked `agent` while its own stamp conceded an
+agent "must ask" for the tty. Same reason as the log-read tests in
+[mirror.md](mirror.md).*
 
 While provoking the rejection above, the Seshat server's debug log shows
 exactly **one** `OSC in: /live/error` for it, with a `"request"`-tagged
