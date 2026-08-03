@@ -23,13 +23,14 @@ in full.
 | [transport.md](transport.md) | tempo, time signature, swing and groove |
 | [audio-output.md](audio-output.md) | the unavailable-output failure path |
 | [undo.md](undo.md) | undo granularity and the `can_undo` / `can_redo` guards |
+| [sends.md](sends.md) | `set_track_send`'s read-back confirmation and its guard rejection |
 
 Several subsystems have a human-judged half as well — the same feature's ear,
 eye and conversation checks live in [../manual/](../manual/), grouped by what
 the run demands rather than by subsystem. `bridge.md`, `mirror.md`,
 `devices.md`, `views.md`, `catalog.md`, `transport.md`, `recording.md`,
 `network-boundary.md`, `clips.md`, `mcp-surface.md` and `audio-output.md` all
-have one; only `undo.md` is very nearly self-contained.
+have one; `undo.md` and `sends.md` are self-contained.
 
 ## Two habits that decide whether a run is worth anything
 
