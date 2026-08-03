@@ -240,7 +240,8 @@ and names come from `/live/return_track/get/count` and
 `/live/song/get/scenes/name` differs from `track_names` in three ways worth
 knowing before relying on it: the range is half-open (`[min, max)`, so
 `0 num_scenes` reads everything), `-1` is **not** accepted as "to the end"
-(`track_names` special-cases it; this handler indexes with it raw), and the
+(`track_names` special-cases it; here `range(min, -1)` is simply empty, so the
+reply is an empty list that looks exactly like a set with no scenes), and the
 reply carries **names only — the range is not echoed back**, so on a transport
 that correlates by address alone a straggler from an earlier ranged query is
 indistinguishable from the current reply by content.

@@ -262,8 +262,11 @@ milliseconds instead of seconds. Plan archived at
 [docs/archive/PLAN_live_error_correlation.md](docs/archive/PLAN_live_error_correlation.md).
 "Monitored refresh worker for `Session.State`" — gated on this fix, since it
 may have removed that item's whole motivation — is now the item to
-re-measure before deciding whether to build it; `start_new_project` is now
-the queue's top unconditional item.
+re-measure before deciding whether to build it. The 2026-08-03 integration
+review (below) then queued three items above `start_new_project`: the
+echo-check audit ("Echo checks at every raw reply decode"),
+`set_track_send`'s honest reply, and the bulk-reads-vs-per-address-queries
+decision.
 `undo`/`redo` stop reporting success they never observed, shipped 2026-08-02,
 closing what had been the queue's top item. `Seshat.Tools.Handlers`'s
 `undo`/`redo` clauses used to return `{:ok, "Undone"}`/`{:ok, "Redone"}` the
@@ -444,8 +447,8 @@ unknown rather than a guess (shipped 2026-07-30). The OSC network boundary
 itself is now fully hardened — AbletonOSC's loopback bind, the browser-export
 path restriction, and the Elixir listener/decoder hardening (loopback bind,
 source validation, a strict non-crashing decoder in `Seshat.OSC.Message`) all
-shipped 2026-07-30. One sibling doc holds the *evidence* behind the remaining
-security items, not a competing queue:
+shipped 2026-07-30. Two sibling docs hold *evidence* behind queued and dormant
+items, not competing queues:
 
 - [docs/evaluating/SECURITY_BACKLOG.md](docs/evaluating/SECURITY_BACKLOG.md) — network exposure. Its
   three open items (HTTP auth, production binding, rate limiting) are all
@@ -454,6 +457,14 @@ security items, not a competing queue:
   work that was reachable before any deployment shipped 2026-07-30 and is
   summarised there under Resolved. Check it before loosening a bind or adding
   an entry point.
+- [docs/evaluating/abletonosc-integration-review.md](docs/evaluating/abletonosc-integration-review.md) —
+  the 2026-08-03 architecture review of how Seshat consumes the AbletonOSC
+  fork, with the PR #62 counter-review's corrections applied inline. It is
+  the evidence behind the three items at the top of the queue (the
+  echo-check audit, `set_track_send`'s honest reply, the bulk-endpoint
+  decision) and behind the `TODO!` markers in `Handlers`/`State`. Read it
+  before re-judging any design decision that rests on OSC round-trip cost,
+  reply correlation, or what the fork's listeners actually push.
 
 ## Framework rules
 

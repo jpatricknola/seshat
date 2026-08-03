@@ -37,10 +37,12 @@ defmodule Seshat.Tools.Handlers do
   # ~46 serialized queries), not the sub-millisecond loopback suggests.
   # A bad index sends no reply on the queried address
   # (AbletonOSC raises inside the callback), but since the structured
-  # /live/error correlation shipped (2026-08-03) Transport fails that query in
-  # ~200ms — so this timeout is the backstop for a lost datagram or a missing
-  # install, no longer the usual bad-index path. The house 5s default would
-  # turn that backstop into a five-second stall.
+  # /live/error correlation shipped (2026-08-03) Transport fails that query
+  # almost at once (212ms measured end-to-end through the MCP harness, Python
+  # startup included — docs/smoke_tests/auto/bridge.md; the Transport-level
+  # wait is a fraction of that) — so this timeout is the backstop for a lost
+  # datagram or a missing install, no longer the usual bad-index path. The
+  # house 5s default would turn that backstop into a five-second stall.
   @guard_timeout 2_000
 
   @default_max_results 25
@@ -2328,7 +2330,7 @@ defmodule Seshat.Tools.Handlers do
   # clip-properties endpoint in the fork — one reply carrying every property
   # with the indices echoed, the same aggregate-with-count shape as the
   # vendored /live/return_track/device/get/parameters — then one query here.
-  # See INTEGRATION_REVIEW.md (2026-08-03), §3.3.
+  # See docs/evaluating/abletonosc-integration-review.md (2026-08-03), §3.3.
   #
   # `ensure_clip/3` first so an empty slot costs one timeout-free error rather
   # than fourteen guard timeouts.

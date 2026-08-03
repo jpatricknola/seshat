@@ -249,7 +249,10 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
       # The extraction reads Python lists with a regex; if the fork
       # restructures registration this floor fails loudly instead of the check
-      # quietly covering nothing. ~490 at the 2026-08-03 pin.
+      # quietly covering nothing. 462 at the 2026-08-03 pin (an earlier
+      # version of this comment said ~490 — that run had swept in the
+      # vendored files' literals). The count grows as the fork gains
+      # addresses; the floor, not the census, is what's load-bearing.
       assert length(addresses) >= 400,
              "expected 400+ upstream addresses, got #{length(addresses)} — " <>
                "the list extraction in upstream_registered_addresses/1 no longer " <>

@@ -64,7 +64,8 @@ send port 11000, reply port 11001, 64KB socket buffers (a truncated
   matches by value and wire type, floats compared after a 32-bit round trip.
   `("log", …)` and legacy payloads never resolve anything — broadcast only.
   Strictness rationale: a false negative costs a timeout (status quo ante); a
-  false positive fails the wrong caller's query. Ten transport tests pin this.
+  false positive fails the wrong caller's query. A dozen transport tests pin
+  this.
 - Every inbound datagram, matched or not, is also broadcast on Phoenix PubSub
   topic `"osc:in"`, so the state mirror gets free freshness from query replies.
 
@@ -84,7 +85,8 @@ fork's `_stop_listen`-through-`listener_objects` fix, grep-guarded).
 **The mirror's boundary is the expensive stuff.** Clips (existence, names,
 notes, all properties), device chains and parameters, scenes, sends, and view
 state are *not* mirrored — re-queried from scratch on every tool call.
-Seshat's roadmap items #21/#23 acknowledge this as a latency/token cost.
+Seshat's roadmap acknowledges this as a latency/token cost ("Device list per
+track in session state", "Clip grid in session state").
 
 ### Write patterns — three tiers
 
@@ -148,9 +150,9 @@ alternatives were genuinely evaluated and correctly declined:
   dropped packet, dead Ableton all look identical) but costs Suite-only
   dependency and a rewrite; declined, revisit only if a Remote Script
   fundamentally cannot do something.
-- **Structured acks from every setter** — declined in Seshat's roadmap (#4):
-  adds a round trip to every mutation on a queue that serializes every OSC
-  request.
+- **Structured acks from every setter** — declined in Seshat's roadmap
+  ("Verify destructive mutations before reporting success"): adds a round
+  trip to every mutation on a queue that serializes every OSC request.
 
 The reviewer's fire-and-forget observation is therefore correct **and already
 a recorded, deliberate policy** on the Seshat side — not an oversight this
@@ -243,8 +245,8 @@ philosophy, prioritized by Seshat's measured hotspots:
    `song/get/track_data` if needed) returning name/volume/pan/mute/solo for
    all tracks plus returns and master. Turns the roughly 73-query rebuild into
    two or three queries (the measured 4.6s window covers roughly 46 of those)
-   and softens Seshat's roadmap #6 (rebuild blocking)
-   without Seshat restructuring anything. Note: `track_data` already reaches
+   and softens Seshat's roadmap item "Monitored refresh worker for
+   `Session.State`" (rebuild blocking) without Seshat restructuring anything. Note: `track_data` already reaches
    `track.name`/`mute`/`solo` via `getattr`, but volume/panning live on
    `mixer_device`, so a purpose-built endpoint is cleaner than contorting
    `track_data`.
@@ -279,7 +281,12 @@ philosophy, prioritized by Seshat's measured hotspots:
 ## 4. Seshat-side findings (no fork change needed)
 
 Recorded here so they are not misfiled as fork work; they belong in Seshat's
-backlog.
+backlog. **Queued 2026-08-03:** the deferred work now sits at the top of
+ROADMAP.md as "Echo checks at every raw reply decode", "`set_track_send`
+reports a request, not an outcome" and "Bulk reads vs. per-address queries —
+benchmark, then pick the lever"; item 6's two setters are named in "Verify
+destructive mutations before reporting success". This doc stays the
+evidence, not the queue.
 
 1. **`/live/song/get/scenes/name [min,max]` already exists**
    ([abletonosc/song.py:239](../../priv/AbletonOSC/abletonosc/song.py#L239)) and returns every scene
@@ -301,8 +308,9 @@ backlog.
 5. **Add echo checks (or adopt the future combined endpoints) in
    `get_track_devices` / `get_device_parameters`** for regular tracks (§2's
    correctness gap).
-6. **Two Tier-A setters sit inside the spirit of roadmap #4's accepted
-   subset but are not called out there:** `set_track_arm` returns
+6. **Two Tier-A setters sit inside the spirit of the accepted subset of
+   roadmap item "Verify destructive mutations before reporting success" but
+   were not called out there:** `set_track_arm` returns
    "Armed track N" unverified while `record_clip`'s internal `arm_track/1`
    exists precisely because Live can refuse to arm; `set_time_signature`
    fires two independent messages and can report a plain error with the
@@ -317,7 +325,9 @@ backlog.
 
 A static AST extraction of every `add_handler` registration in this fork
 (literal calls plus the `properties_r`/`properties_rw`/`methods` loop
-expansions — 567 unique addresses, zero unresolved call sites) was diffed
+expansions — 567 unique addresses, zero unresolved call sites; measured on
+the fork repo's working tree, which is ahead of the submodule pin — at the
+pin the fork-wide count is 540, 462 upstream + 78 vendored) was diffed
 against the doc. The doc documents listeners generically per family
 ("Listen via `/live/<family>/start_listen/<property>`") for **song, track,
 clip_slot, and scene**, so listener addresses in those families count as

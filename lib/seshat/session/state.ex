@@ -903,8 +903,8 @@ defmodule Seshat.Session.State do
       ends.
 
   Per-index reads over the bulk `/live/song/get/track_names` is a decision,
-  not an oversight (INTEGRATION_REVIEW 2026-08-03 flagged the bulk address as
-  unused). One query instead of N is tempting at the measured ~100ms per
+  not an oversight (docs/evaluating/abletonosc-integration-review.md,
+  2026-08-03, flagged the bulk address as unused). One query instead of N is tempting at the measured ~100ms per
   serialized round trip, but the bulk reply is a bare name list — it echoes neither an
   index nor the requested range, so on a transport that correlates replies by
   address alone a straggler from an earlier query is indistinguishable by
