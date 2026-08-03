@@ -40,9 +40,9 @@ describe two different chains), `get_clip_notes` (one clip's name with
 another clip's notes), `set_device_parameter`'s confirming read (can present
 another parameter's display value as verification of this write — a
 fabricated confirmation, the exact thing the read-back exists to prevent),
-`query_scene_names/1` (discards the per-scene echo that was the loop's whole
-justification), and `list_browser_items` (category/filter echoes, on the 15s
-browse timeout — the widest straggler window in the file).
+`query_scene_names/1` (discards the per-scene echo it could have verified),
+and `list_browser_items` (category/filter echoes, on the 15s browse timeout —
+a wide straggler window).
 
 **User stories:**
 - As a producer, when a slow reply from an earlier request finally lands,
