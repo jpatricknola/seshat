@@ -404,7 +404,7 @@ values, and the resulting brace is not the one asked for.
   aliases as described; that is a measurement, and it belongs in
   [abletonosc-api-docs.md](abletonosc-api-docs.md) once made.
 - The live check already exists as
-  `smoke-tests/clips.md § The loop pair with looping off`, where a failure is
+  `smoke_tests/auto/clips.md § The loop pair with looping off`, where a failure is
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
@@ -692,7 +692,7 @@ was bad and which `get_*` tool resolves it, instead of the bare "Ableton
 rejected the request: Index out of range".
 
 **Why:** found running the never-run agent smoke tests on 2026-08-03
-([smoke-tests/devices.md](smoke-tests/devices.md) § Device error paths are
+([smoke_tests/auto/devices.md](smoke_tests/auto/devices.md) § Device error paths are
 errors, not stalls). The guidance was never deleted — it was stranded. The
 helpful wording ("Check both indices with `get_track_devices` first") lives on
 `do_call`'s `catch :exit` timeout branch

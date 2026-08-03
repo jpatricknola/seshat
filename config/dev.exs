@@ -45,7 +45,7 @@ config :logger, :default_formatter, format: "[$level] $message\n"
 # everything it always did.
 #
 # This exists for the smoke tests. Several checks in
-# docs/smoke-tests/mirror.md are read out of the server log rather than out of
+# docs/smoke_tests/auto/mirror.md are read out of the server log rather than out of
 # state, because a debounced refresh that ran and one that didn't leave an
 # identical mirror — only the `Song:` / `Loaded N tracks:` lines distinguish
 # them. With console-only logging those tests could be run by a human reading

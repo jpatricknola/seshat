@@ -148,7 +148,7 @@ end of the history" into an honest refusal rather than a fabricated success.
 - ⚠️ **`can_undo=False` at a genuinely empty history is still unmeasured** — it
   needs File → New Live Set, which no probe can reach without discarding the
   open set. Tracked as measurement tripwire 5 in
-  [smoke-tests/undo.md](smoke-tests/undo.md) as *`can_undo=False` is reachable
+  [smoke_tests/auto/undo.md](smoke_tests/auto/undo.md) as *`can_undo=False` is reachable
   at an empty history*; fold the reading in here once made.
 
 ### Song Getters

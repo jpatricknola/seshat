@@ -74,19 +74,24 @@ that are *absent* from the diff, which no amount of staring at hunks reveals.
    [.claude/skills/smoke-test/SKILL.md](.claude/skills/smoke-test/SKILL.md) in
    full for its preflight, execution, judgment, and cleanup rules. From the
    plan's `## Live verification` section, resolve every cited
-   `smoke-tests/<file>.md § <Title>` to its exact heading and inspect its
-   `Run mode` line:
-   - `*Run mode: agent*` → run the complete cited test against Live.
-   - `*Run mode: user — <reason>*` → do not run it and do not substitute for
-     it; list it under **User-required** with that reason.
-   - Missing citation, heading, or run-mode tag → a plan/test-catalog finding.
+   `smoke_tests/<folder>/<file>.md § <Title>` to its exact heading. **The
+   folder it resolves into decides what you do with it:**
+   - in `smoke_tests/auto/` → run the complete cited test against Live.
+   - in `smoke_tests/manual/` → do not run it and do not substitute for it;
+     list it under **User-required** with its `*Why manual:*` reason.
+   - Missing citation or heading → a plan/test-catalog finding.
 
-   This is the plan-scoped zero-user subset, **not** `/smoke-test agent`'s
-   repository-wide sweep. Use that skill's zero-user preflight semantics:
-   never reinstall the bridge, restart Live, restart Seshat, click or type in
-   Live, route hardware, use eyes or ears, or open another client. If bridge
-   drift or another environmental precondition prevents a test, mark it
-   **skipped by environment** and state exactly what is missing.
+   Resolve the path rather than judging the test's content: a citation whose
+   steps *look* automatable but sits in `manual/` is still user-required, and
+   deciding otherwise mid-review is how a human-judged check gets quietly
+   approximated by an agent.
+
+   This is the plan-scoped subset, **not** `/smoke-test`'s full run over
+   `auto/`. Use that skill's preflight semantics either way: never reinstall the
+   bridge, restart Live, restart Seshat, click or type in Live, route hardware,
+   use eyes or ears, or open another client. If bridge drift or another
+   environmental precondition prevents a test, mark it **skipped by
+   environment** and state exactly what is missing.
 
    The running Seshat instance must be serving the checkout under review. If
    that cannot be established without user action, do not treat its results as

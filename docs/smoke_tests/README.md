@@ -5,41 +5,30 @@ a running Ableton, and every OSC setter is fire-and-forget — success, a value
 Live rejected, and a Remote Scripts copy predating the fork are identical on the
 wire. These files are the only thing standing behind that whole surface.
 
-One file per subsystem. Read the one you need; nothing here is meant to be read
-in full.
+## Adding tests - pick the correct folder
 
-Every test carries one machine-readable execution tag:
+**[auto/](auto/) — an agent can run and judge it alone**, with Live and Seshat
+already running and no user action.  Prefer auto tests when possible.
 
-- `*Run mode: agent*` — one agent can perform and judge the complete test with
-  Live and Seshat already running, without user action.
-- `*Run mode: user — reason*` — the test needs a click, keystroke, restart,
-  routed hardware, eyes, ears, or another client/conversation.
+ **[manual/](manual/) — a person is
+required**: a click, a keystroke, a restart, routed hardware, eyes, ears, or a
+conversation whose replies are the thing being judged. Each `manual/` test also carries a one-line `*Why manual:*` reason. 
 
-Run the complete zero-user subset with **`/smoke-test agent`**. It never
-substitutes an automated approximation for a user-marked test; its report names
-those tests and their reasons instead.
+## Running them
 
-| File | Covers |
-|---|---|
-| [bridge.md](bridge.md) | the fork answering at all, the reply envelope, the listener rebind |
-| [network-boundary.md](network-boundary.md) | the loopback bind, the fixed reply route, browser exports, the Elixir decoder |
-| [mirror.md](mirror.md) | `Session.State` — unknowns, degraded rebuilds, refresh coalescing |
-| [mcp-surface.md](mcp-surface.md) | the advertised tool list and how a rejection reaches a client |
-| [model-behaviour.md](model-behaviour.md) | what the model *says* — `Seshat.Instructions` and tool descriptions |
-| [catalog.md](catalog.md) | `search_library` ranking as a conversation, browser preview |
-| [devices.md](devices.md) | the device tools, on regular, return and master chains |
-| [clips.md](clips.md) | clip properties and `quantize_clip` |
-| [recording.md](recording.md) | `record_clip` / `stop_recording` |
-| [views.md](views.md) | `show_view` / `hide_view` / `get_view_state` and the follow cam |
-| [transport.md](transport.md) | tempo, time signature, swing and groove |
-| [audio-output.md](audio-output.md) | macOS AX audio-output listing, switching, UI restoration and latency |
-| [undo.md](undo.md) | undo granularity and the `can_undo` / `can_redo` guards |
+- **`/smoke-test agent`** runs everything in `auto/`. It never substitutes an
+  automated approximation for a `manual/` test; its report names those instead.
+- `manual/` is run by a person, grouped by what the run demands — see
+  [manual/README.md](manual/README.md).
+
+Both stamp the same way. `*Last run:*` is the only record anywhere that the live
+layer was actually exercised; `*Last run: —*` means nobody ever has.
 
 ## How a test gets run
 
 1. **`/plan` writes a `## Live verification` section** listing the tests that
-   change needs, each cited as `smoke-tests/<file>.md § <Title>`. It uses
-   `/smoke-write`, which owns the rules for which properties of a change
+   change needs, each cited as `smoke_tests/<folder>/<file>.md § <Title>`. It
+   uses `/smoke-write`, which owns the rules for which properties of a change
    imply which tests. If nothing here fits, that skill writes a new test into
    the right file and cites it like any other.
 2. **`/smoke-test` runs them** against live Ableton and records the result in
@@ -79,8 +68,9 @@ runs: **what to do**, concretely enough to follow without re-reading the diff;
 **what you'd see if it worked**, stated as an observation rather than "verify it
 works"; and **what its failure means, and the fix it implies**.
 
-Put exactly one `Run mode` line immediately before `Last run`. Split a test whose
-machine-checkable and human-only assertions would otherwise need different tags.
+Split a test whose machine-checkable and human-only halves would otherwise pull
+it into different folders — put each half where it belongs and cross-link them.
+A test that is half-judgeable by an agent is not an `auto/` test.
 
 `*Last run: —*` means nobody has ever run it. Leave it alone if you substituted
 something for the check — the substitution goes in the run report, not here.

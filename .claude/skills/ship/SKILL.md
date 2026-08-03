@@ -34,7 +34,7 @@ are often no-ops, but check rather than assume.
    owe. If you notice one, rewrite it to name the item's title instead.
 
 3. **Check the plan's `## Live verification` section before archiving.** The
-   tests themselves live in [docs/smoke-tests/](docs/smoke-tests/) and stay there
+   tests themselves live in [docs/smoke_tests/](docs/smoke_tests/) and stay there
    — nothing is promoted or retired, because a smoke test guards a *silent*
    failure mode that outlasts the feature shipping. What archives is the plan's
    record of what a run observed, which is why it matters that the record is
@@ -44,7 +44,7 @@ are often no-ops, but check rather than assume.
      citation with nothing under it means the test never ran — say so in the
      summary, name it, and leave the section as it is. Archiving a plan whose
      checks are blank is fine; *implying they passed* is not.
-   - **If any test still reads `*Last run: —*`** in `docs/smoke-tests/`, mention
+   - **If any test still reads `*Last run: —*`** in `docs/smoke_tests/`, mention
      it. Shipping with unrun tests is a decision the user is allowed to make,
      but not one they should discover later.
    - A test whose behaviour this feature **removed** gets deleted from its file.
@@ -90,5 +90,5 @@ are often no-ops, but check rather than assume.
 7. **Verify** with `mix precommit` if anything outside `docs/` changed, then
    summarize: what was removed from the roadmap, what was archived, which live
    tests the plan cited and which of those actually ran, how many tests in
-   `docs/smoke-tests/` still read `*Last run: —*`, and what follow-ups were
+   `docs/smoke_tests/` still read `*Last run: —*`, and what follow-ups were
    added.

@@ -30,90 +30,8 @@ floor — after the timer has already fired. Where a test says to ask for the wh
 sequence in a single instruction, one message per step silently tests nothing and
 reports success while doing it.
 
-## Nothing is fabricated when Ableton stops answering
-
-*Run mode: user — requires quitting or disabling Ableton and starting it again*
-*Last run: —*
-
-With the Seshat server running, quit Ableton Live (or toggle AbletonOSC off in
-Live's MIDI preferences). Steps 1 and 2 are timing-coupled — read both before
-starting.
-
-1. `get_session_state` with `refresh: true` → the timeout error from
-   `maybe_refresh/1`. The GenServer is still refreshing when that error arrives:
-   against a dead Ableton `do_refresh/1` takes roughly 47s (eight song queries at
-   5s each, the 5s `num_tracks` probe, the 2s returns probe) while the caller
-   gives up at 30s, so about 17s of it remain.
-2. **Read again inside those ~17s**, plain, no refresh → "The session mirror did
-   not answer — it may be mid-refresh against an unresponsive Ableton. Try again
-   shortly". This is the only live exercise of that message, and it must never
-   read as an empty session. Miss the window and the call simply succeeds; retry
-   from 1 rather than counting that as a pass.
-3. **Wait ≥10s, read again**, plain → tempo, time signature, key, playing state,
-   groove and swing all reported unknown; the track list reported
-   unknown-**not**-empty; the trailing explanation sentence present exactly once.
-   **It must not say 120 BPM, 4/4, C Major, or list the previous set's tracks.**
-   Those four fabrications are what this behaviour exists to remove, and any of
-   them appearing is the whole test failing.
-4. **Still with Live closed**, `record_clip bars: 4` → the
-   time-signature-unknown error naming `refresh: true`, not an `ArithmeticError`
-   from a `nil` numerator and not a generic timeout.
-5. **Start Live again.** `/live/startup` fires a refresh on its own; wait, then
-   read plain → real values, no unknown remnants, no trailing sentence. Listener
-   re-subscription pushes the current value of everything, so anything a lost
-   datagram nil'd repopulates without a manual refresh.
-
-## A degraded rebuild is honest
-
-*Run mode: user — requires comparison against Live's visible track headers*
-*Last run: —*
-
-Needs Live **running**. Ask for several tracks to be created and then removed
-**in one model response** — creates and deletes in the same instruction, so they
-land inside one debounce window and race the rebuild. Then read state once,
-plainly. Either the list is correct, or it reports the track list unknown — **it
-must never name a track that is not in Live's UI**. Compare the reply against
-Live's own track headers by eye; that comparison is the check.
-
-The race is timing-dependent and may take several attempts to provoke; a run that
-never degrades is **not a pass**, it is a run that did not test this.
-
-The log signature of a degraded rebuild is a `Song: …` line followed by
-`the read stopped at index …`, with **no `Loaded N tracks` line between them**:
-`Song:` is emitted before every rebuild's `num_tracks` probe, while `Loaded …`
-and the stopped-index warning are the two arms of one `case` and can never both
-describe the same rebuild. Healthy `Loaded …` lines from neighbouring rebuilds in
-the same burst are expected — don't read one as contradicting the degraded read.
-
-## A degraded rebuild recovers without `refresh: true`
-
-*Run mode: user — depends on first provoking and visually confirming a degraded rebuild*
-*Last run: —*
-
-After a degraded read, make no further tool call, wait ~3s, then read plainly
-again: the list is correct. This is the single retry doing what the narrowed
-`refresh: true` no longer lets the model do for itself.
-
-If a structure push was still pending when the rebuild ran, the log shows it as a
-second `Song:` / `Loaded …` sequence following the informational `could not read
-the track list — retrying once` line, and **exactly one** such retry; if nothing
-was pending, recovery instead comes from the re-subscription echo (`Track list
-changed in Live — scheduling a session refresh`) and that line never appears.
-Either way, the check is the list being correct on the follow-up read.
-
-## A genuine disagreement still brakes
-
-*Run mode: user — can only be observed while running the user-required degraded-rebuild scenario*
-*Last run: —*
-
-Not reproducible on demand and not required to pass — but if a `did not reproduce
-it` warning appears in the log during any of the above, confirm it is followed by
-no further refresh for that list. The brake is what stops the flood, and the
-failed/disagreed split must not have loosened it for the disagreed case.
-
 ## The settling marker appears and clears
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, all three clauses. Two `create_track` calls plus
 a plain read in one model response: the read carried "A structural change is
 still settling…" and showed the pre-create layout (track 0 alone). A plain read
@@ -129,7 +47,6 @@ rebuilding).
 
 ## The scalar mixer setters no longer trigger a refresh
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, **both halves, for the first time.** All seven
 setters issued in one model response against a scratch return, then a plain
 `get_session_state`: it carried every pushed value — return volume 0.7, pan
@@ -156,7 +73,6 @@ inferred from the master ones, never measured.
 
 ## A burst of creates collapses into one refresh
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, the refresh **count** included. Three
 `create_track` calls plus a plain read in one model response. The log shows the
 three structural pushes at 02:20:30.740, :31.144 and :31.850, each logging
@@ -188,7 +104,6 @@ afterwards.
 
 ## `refresh: true` absorbs the pending timer
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, the duplicate-refresh half included.
 `create_track` and `get_session_state(refresh: true)` issued in one model
 response. The log shows the structural push scheduling a refresh at 02:21:19.023
@@ -205,7 +120,6 @@ later**.
 
 ## The last request is never dropped
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, mid-rebuild condition genuinely provoked on the
 third attempt. A rebuild ran 02:23:08.218 → :12.819; the `delete_track` issued
 during it landed inside that window, proved by the rebuild's own read returning

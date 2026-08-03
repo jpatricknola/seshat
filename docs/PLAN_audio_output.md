@@ -378,22 +378,22 @@ No result may present the first clock as though it were the third.
 Nothing in `mix test` reaches AX, Live’s Settings, macOS foreground behavior,
 routed audio hardware, or a real client’s model loop. Run with `/smoke-test`.
 
-- `smoke-tests/audio-output.md § The available outputs and current selection agree with Live`
+- `smoke_tests/auto/audio-output.md § The available outputs and current selection agree with Live`
   — semantic discovery, bounded direct-tool latency, and preservation of both
   initially closed and initially open Settings state.
-- `smoke-tests/audio-output.md § A named output changes, verifies, and restores`
+- `smoke_tests/auto/audio-output.md § A named output changes, verifies, and restores`
   — exact-name set, audible hardware movement, independent read-back, 5-second
   tool budget, and foreground/window cleanup.
-- `smoke-tests/audio-output.md § An unavailable output fails quickly and changes nothing`
+- `smoke_tests/auto/audio-output.md § An unavailable output fails quickly and changes nothing`
   — agent-runnable exact-match error, fresh recovery choices, unchanged state,
   and bounded failure.
-- `smoke-tests/model-behaviour.md § Headphones resolve and switch within the user-visible budget`
+- `smoke_tests/manual/conversation.md § Headphones resolve and switch within the user-visible budget`
   — the acceptance criterion: one fresh-conversation request, model resolution
   through both tools, three runs at no more than 10 seconds each, and no
   separate cleanup action.
-- `smoke-tests/mcp-surface.md § The tool list survives a real handshake` — the
+- `smoke_tests/auto/mcp-surface.md § The tool list survives a real handshake` — the
   two generated components reach an actual MCP client.
-- `smoke-tests/mcp-surface.md § A changed property carries what you intended`
+- `smoke_tests/auto/mcp-surface.md § A changed property carries what you intended`
   — `set_audio_output.device` is a required string on the advertised wire
   schema.
 

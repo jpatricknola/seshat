@@ -135,5 +135,5 @@ Two places, and the choice is not a matter of taste:
    is free there and scarce here.
 
 Nothing in `mix test` checks what any of this makes the model *say* —
-[docs/smoke-tests/model-behaviour.md](../../docs/smoke-tests/model-behaviour.md)
+[docs/smoke_tests/manual/conversation.md](../../docs/smoke_tests/manual/conversation.md)
 has the behavioural checks, one per rule.
