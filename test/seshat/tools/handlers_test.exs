@@ -738,6 +738,130 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  # `/live/track/set/send` is silent and no listener anywhere pushes a send's
+  # accepted value, so the read-back below is the only account of the outcome
+  # there is. These pin that no `{:ok, …}` leaves the clause without an
+  # answered, correlated read agreeing with what was sent.
+  describe "set_track_send's confirming read-back" do
+    setup :osc_sink
+
+    test "reports the level as confirmed, after reading it back", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_track_send", %{"track" => 0, "send" => 0, "value" => 0.37})
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/track/get/send", [0, 0, 0.0]},
+          {"/live/track/get/send", [0, 0, 0.37]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Set send A on track 0 to 0.37"
+      assert message =~ "(was 0.0)"
+      assert message =~ "confirmed by reading it back"
+
+      # Guard, then the set, then the read-back — in that order. The read-back
+      # only means anything if it followed the set onto the wire.
+      assert Enum.flat_map(trace, fn {address, _args} ->
+               if String.starts_with?(address, "/live/track/"), do: [address], else: []
+             end) == [
+               "/live/track/get/send",
+               "/live/track/set/send",
+               "/live/track/get/send"
+             ]
+
+      assert [{_address, [0, 0, sent]}] =
+               Enum.filter(trace, fn {address, _args} -> address == "/live/track/set/send" end)
+
+      assert Float.round(sent, 4) == 0.37
+    end
+
+    # OSC's `f` is 32 bits and Elixir's floats are not, so a value that isn't
+    # exactly representable comes back widened — here spelled out literally,
+    # though `Message.encode/2` does the same thing to the reply above. An `==`
+    # comparison would call this a failed set.
+    test "the wire's float32 widening still confirms", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_track_send", %{"track" => 0, "send" => 0, "value" => 0.37})
+        end)
+
+      scripted_trace(sink, [
+        {"/live/track/get/send", [0, 0, 0.0]},
+        {"/live/track/get/send", [0, 0, 0.3700000047683716]}
+      ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "confirmed by reading it back"
+    end
+
+    # The dropped-datagram case: the read-back answers, correlates, and reports
+    # the value the send had all along.
+    test "a level that did not move is an error naming both values", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_track_send", %{"track" => 0, "send" => 0, "value" => 0.37})
+        end)
+
+      scripted_trace(sink, [
+        {"/live/track/get/send", [0, 0, 0.0]},
+        {"/live/track/get/send", [0, 0, 0.0]}
+      ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "0.37"
+      assert message =~ "Live reports 0.0"
+      assert message =~ "did not land"
+      refute message =~ "Set send"
+    end
+
+    test "a read-back echoing another send is reissued, not believed", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_track_send", %{"track" => 0, "send" => 0, "value" => 0.37})
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/track/get/send", [0, 0, 0.0]},
+          {"/live/track/get/send", [9, 0, 0.9]},
+          {"/live/track/get/send", [0, 0, 0.37]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "confirmed by reading it back"
+      refute message =~ "0.9"
+
+      # Guard plus the read-back plus its reissue.
+      assert count_queries(trace, "/live/track/get/send") == 3
+    end
+
+    test "two mis-echoed read-backs are unconfirmed, never an ok", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_track_send", %{"track" => 0, "send" => 0, "value" => 0.37})
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/track/get/send", [0, 0, 0.0]},
+          {"/live/track/get/send", [9, 0, 0.9]},
+          {"/live/track/get/send", [9, 0, 0.9]}
+        ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "The set was sent"
+      assert message =~ "did not confirm it"
+      assert message =~ "get_track_sends"
+      refute message =~ "0.9"
+
+      # The honest wording is about a set that really is on the wire.
+      assert Enum.any?(trace, fn {address, _args} -> address == "/live/track/set/send" end)
+    end
+  end
+
   # The six reads that used to discard the correlation data Live handed them.
   # Each test plays AbletonOSC's side twice on one address: once with an echo
   # belonging to somebody else, then — where the point is the reissue — once

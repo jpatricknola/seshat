@@ -2000,14 +2000,18 @@ defmodule Seshat.Tools.Handlers do
   # the target exists and supplies the old value; it does not verify that Live
   # subsequently accepted the fire-and-forget setter.
 
-  # TODO! The reply asserts an outcome ("Set send A … to X") after a
-  # fire-and-forget send — and unlike volume/pan/mute/solo there is no send
-  # listener in track.py to push Live's accepted value into the mirror, so a
-  # rejected or lost set is never corrected anywhere. Either hedge the
-  # wording the way undo/redo do ("requested … confirms the request was
-  # sent"), or read the value back after the send the way
-  # set_device_parameter does. (PR #62 review, 2026-08-03.)
+  # The one mixer setter that reads its own value back. Volume, pan, mute and
+  # solo can stay fire-and-forget because each has a listener pushing Live's
+  # accepted value into the mirror, so a lost or refused set is corrected there
+  # within a beat. A send has neither — `track.py` registers no send listener
+  # and sends are outside `Session.State` entirely — so nothing anywhere ever
+  # corrects this one, and a reply that merely asserted "Set send A … to X"
+  # would be the model's only, unchecked account of a silent setter. Hence the
+  # read-back: the guard proves the indices and supplies the "was" value, the
+  # read-back is what makes the outcome observed rather than assumed.
   defp do_call("set_track_send", %{"track" => track, "send" => send_index, "value" => value}) do
+    subject = "send #{send_letter(send_index)}#{return_track_label(send_index)} on track #{track}"
+
     with {:ok, old} <-
            query_echoed(
              "/live/track/get/send",
@@ -2017,13 +2021,18 @@ defmodule Seshat.Tools.Handlers do
            ),
          :ok <-
            Transport.send_message("/live/track/set/send", [track, send_index, value / 1.0]) do
-      {:ok,
-       "Set send #{send_letter(send_index)}#{return_track_label(send_index)} on track " <>
-         "#{track} to #{value} (was #{format_number(old)})"}
+      confirm_send(track, send_index, value, old, subject)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
+  catch
+    # The guard and the read-back each catch their own exit, so what is left
+    # here is the send itself losing the transport — after which the level may
+    # or may not have moved.
+    :exit, _ ->
+      {:error,
+       "The set was sent but reading the level back timed out — verify with get_track_sends."}
   end
 
   defp do_call("get_track_sends", %{"track" => track}) do
@@ -4067,6 +4076,37 @@ defmodule Seshat.Tools.Handlers do
              @send_index_hint
            ) do
       {:ok, %{index: index, return: name, value: value}}
+    end
+  end
+
+  # The post-set read of a send level, and the three things it can say. The
+  # comparison rounds to 4 decimals because OSC's `f` is 32-bit and Elixir's
+  # floats are not: `0.37` goes out and comes back as `0.3700000047683716`, so
+  # `==` would report every non-representable value as a mismatch. Same
+  # precision, same reason as `clip_value_matches?/3`, and the same as
+  # `format_number/1` prints at — so the numbers in the reply are the numbers
+  # that were compared.
+  defp confirm_send(track, send_index, value, old, subject) do
+    case read_back_value("/live/track/get/send", [track, send_index]) do
+      {:ok, got} when is_number(got) ->
+        if Float.round(value / 1.0, 4) == Float.round(got / 1.0, 4) do
+          {:ok,
+           "Set #{subject} to #{value} (was #{format_number(old)}), confirmed by reading it back."}
+        else
+          {:error,
+           "Sent #{subject} the value #{value}, but Live reports #{format_number(got)} " <>
+             "(was #{format_number(old)}) — the set did not land. Try once more, and if it " <>
+             "still does not land, tell the user."}
+        end
+
+      # `:unconfirmed` (stale twice, a timeout, an error), or a reply shaped
+      # like nothing this code can compare. Either way the set is already on
+      # the wire, so the report is that it wasn't verified — never that nothing
+      # was sent.
+      _other ->
+        {:error,
+         "The set was sent but reading #{subject} back did not confirm it — verify with " <>
+           "get_track_sends."}
     end
   end
 
