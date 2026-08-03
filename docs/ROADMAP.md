@@ -51,6 +51,7 @@ a wide straggler window).
   knob.
 
 **Planner notes:**
+- [Implementation plan: echo checks at every raw reply decode](PLAN_echo_checks.md).
 - The device pair could instead collapse onto vendored combined endpoints
   (see "Bulk reads vs. per-address queries" below) — but the shared decode
   fixes all six sites and any future one, so build it first or fold the pair
