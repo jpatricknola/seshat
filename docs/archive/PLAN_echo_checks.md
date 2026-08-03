@@ -1,22 +1,34 @@
 # Plan: Echo checks at every raw reply decode
 
+> **Archived 2026-08-03 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. All seven parts landed —
+> shared echo-aware decoding (`query_correlated/4` and the length-check
+> variant `query_scene_names/2` uses) now covers all six sites this plan
+> named, `query_scene_names/1` moved onto the bulk
+> `/live/song/get/scenes/name` address, and the remaining verified sites each
+> carry the comment Part 7 asked for. PR review surfaced one follow-up outside
+> this plan's scope — a regular-track `set_device_parameter` call now loses
+> Live's real rejection message behind a generic "did not confirm it" — queued
+> in [../ROADMAP.md](../ROADMAP.md) as "`set_device_parameter` on a regular
+> track loses Live's rejection message".
+
 Roadmap item: **"Echo checks at every raw reply decode — a straggler must not
-impersonate an answer"** (currently #1).
+impersonate an answer"**.
 
 ## Context
 
 `Seshat.OSC.Transport` serializes queries but correlates replies **by address
 alone** — request IDs on the wire are settled-rejected
-([transport.ex:31-55](../lib/seshat/osc/transport.ex#L31-L55)). A reply
+([transport.ex:31-55](../../lib/seshat/osc/transport.ex#L31-L55)). A reply
 abandoned by an earlier timeout can therefore answer the next query on the
 same address, and the *only* defence is caller-side: compare the indices the
 reply echoes against the request that was made. Transport's own doc names the
 echo checks in `Seshat.Tools.Handlers.query_echoed/5` as that defence — but
 the 2026-08-03 integration review
-([abletonosc-integration-review.md](evaluating/abletonosc-integration-review.md)
+([abletonosc-integration-review.md](../evaluating/abletonosc-integration-review.md)
 §2, corrected by the PR #62 counter-review) found six call sites that receive
 echoed correlation data and **discard it**, each now `TODO!`-marked in
-[handlers.ex](../lib/seshat/tools/handlers.ex):
+[handlers.ex](../../lib/seshat/tools/handlers.ex):
 
 1. **`get_track_devices`** (regular tracks, handlers.ex:2875) — three list
    replies assembled into parallel lists, echoed track discarded three times.
@@ -64,7 +76,7 @@ registered and documented.
 
 ## OSC contract
 
-All verified against [docs/abletonosc-api-docs.md](abletonosc-api-docs.md)
+All verified against [docs/abletonosc-api-docs.md](../abletonosc-api-docs.md)
 (line refs below) **and** against the fork source in `priv/AbletonOSC` at the
 current pin. The load-bearing column is **Echoed prefix** — what the shared
 decode must compare, which is *not always the full request*.
@@ -82,9 +94,9 @@ decode must compare, which is *not always the full request*.
 | `/live/device/get/parameter/value_string` | `track, device, parameter` | `track, device, parameter, string` | `[track, device, parameter]` | docs:841 |
 | `/live/clip/get/name` | `track, slot` | `track, slot, name` | `[track, slot]` | docs:576 |
 | `/live/clip/get/length` | `track, slot` | `track, slot, length` | `[track, slot]` | docs:581 |
-| `/live/clip/get/notes` | `track, slot[, start_pitch, pitch_span, start_time, time_span]` | `track, slot, (pitch, start, dur, vel, mute)…` | `[track, slot]` — **the range args are not echoed** | docs:568; verified in [clip.py:37-62](../priv/AbletonOSC/abletonosc/clip.py#L37-L62), `create_clip_callback` returns `(track_index, clip_index, *rv)` |
-| `/live/browser/get/items` | `category, filter, max_results` | `category, filter, "ok", returned, total, (name, path, uri)…` or `category, filter, "error", message` | `[category, filter]` — **string echoes, verbatim; `max_results` is not echoed**, and the error arm echoes both too | docs:868-869; verified in [browser.py:185-218](../priv/AbletonOSC/abletonosc/browser.py#L185-L218) |
-| `/live/song/get/scenes/name` | *(none)* or `index_min, index_max` (half-open) | `name…` | **nothing** — the reply is names only | docs:231, 240-247; verified in [song.py:233-239](../priv/AbletonOSC/abletonosc/song.py#L233-L239): no args → full range, names in index order |
+| `/live/clip/get/notes` | `track, slot[, start_pitch, pitch_span, start_time, time_span]` | `track, slot, (pitch, start, dur, vel, mute)…` | `[track, slot]` — **the range args are not echoed** | docs:568; verified in [clip.py:37-62](../../priv/AbletonOSC/abletonosc/clip.py#L37-L62), `create_clip_callback` returns `(track_index, clip_index, *rv)` |
+| `/live/browser/get/items` | `category, filter, max_results` | `category, filter, "ok", returned, total, (name, path, uri)…` or `category, filter, "error", message` | `[category, filter]` — **string echoes, verbatim; `max_results` is not echoed**, and the error arm echoes both too | docs:868-869; verified in [browser.py:185-218](../../priv/AbletonOSC/abletonosc/browser.py#L185-L218) |
+| `/live/song/get/scenes/name` | *(none)* or `index_min, index_max` (half-open) | `name…` | **nothing** — the reply is names only | docs:231, 240-247; verified in [song.py:233-239](../../priv/AbletonOSC/abletonosc/song.py#L233-L239): no args → full range, names in index order |
 | `/live/scene/get/name` | `scene` | `scene, name` | `[scene]` | docs:768 — **removed from `lib/` by Part 6**; this is its only call site |
 
 Two wire-type facts the decode relies on, both already proven by the existing
@@ -95,7 +107,7 @@ identity for the schema-validated strings Seshat sends.
 
 ## Part 1 — the shared correlated decode
 
-[lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex), next to
+[lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex), next to
 `query_echoed/5` (:4999).
 
 Two pieces, split so the decision is pure and testable without a socket:
@@ -318,7 +330,7 @@ changes only on failure paths (new stale errors, generalized
 ## Testing
 
 All pure — nothing here needs Ableton, per
-[.claude/rules/testing.md](../.claude/rules/testing.md); the sink-answered
+[.claude/rules/testing.md](../../.claude/rules/testing.md); the sink-answered
 handler-test exception (the `undo`/`redo` guard and `hide_view` precedents)
 covers the wire-shaped cases.
 
@@ -469,8 +481,8 @@ and covered pure.
   item, which should be decided with measurements. The echo checks here don't
   preclude it; if it lands, Parts 2's call sites collapse onto
   `query_vendored_list` and the shared decode still verifies the echoes.
-- **`set_track_send`'s asserted outcome** — its own roadmap item (#2 today);
-  the `TODO!` at handlers.ex:1987 stays.
+- **`set_track_send`'s asserted outcome** — its own roadmap item, "`set_track_send`
+  reports a request, not an outcome"; the `TODO!` at handlers.ex:1987 stays.
 - **`read_sends`' redundant name queries** (handlers.ex:3923) — already
   echo-checked via `query_echoed`; the mirror-reuse optimisation belongs to
   the bulk-reads item.
@@ -494,17 +506,17 @@ rather than deferred:
 
 1. **Does `/live/song/get/scenes/name` return the full range with no args, in
    index order?** Closed by reading the fork source
-   ([song.py:233-239](../priv/AbletonOSC/abletonosc/song.py#L233-L239)): zero
+   ([song.py:233-239](../../priv/AbletonOSC/abletonosc/song.py#L233-L239)): zero
    params → `0, len(song.scenes)`, names generated in `range()` order. The
    installed Remote Scripts copy matches the pin (last installed and
    smoke-verified 2026-08-03), and the address predates the fork upstream, so
    even a stale install serves it.
 2. **Does `/live/clip/get/notes` echo its range arguments?** Closed the same
-   way ([clip.py:37-62](../priv/AbletonOSC/abletonosc/clip.py#L37-L62)): the
+   way ([clip.py:37-62](../../priv/AbletonOSC/abletonosc/clip.py#L37-L62)): the
    callback wrapper echoes exactly `(track_index, clip_index)` regardless of
    extra args — hence Part 3's explicit `echo:` option.
 3. **Are the browser's category/filter echoes verbatim?** Closed at
-   [browser.py:185-218](../priv/AbletonOSC/abletonosc/browser.py#L185-L218):
+   [browser.py:185-218](../../priv/AbletonOSC/abletonosc/browser.py#L185-L218):
    both arms return `str()` round-trips of the request's own strings, and
    `max_results` is never echoed.
 

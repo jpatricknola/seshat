@@ -183,7 +183,7 @@ latency:
 | `get_clip_properties` — 13 (MIDI) / 17 (audio) queries per clip | ~1–1.7s per clip; 400+ round trips to survey an 8×4 grid |
 | `get_track_devices` / `get_device_parameters`, regular tracks — 3 / 5 separate list queries | 3–5× the vendored equivalents, plus the correctness gap below |
 | `get_track_sends` — 1 + 2 per return | up to 25 round trips at 12 returns |
-| `query_scene_names/1` — one query per scene | N round trips beside a bulk endpoint that already exists (see §4) |
+| `query_scene_names/1` — one query per scene | N round trips beside a bulk endpoint that already exists (see §4). **Resolved 2026-08-03** by "Echo checks at every raw reply decode": now one query against that endpoint. |
 
 Head-of-line blocking is a property of Seshat's serialized transport.
 **Correction (2026-08-03):** this section originally claimed relaxing
@@ -224,6 +224,19 @@ timeout in the file). Each site now carries a TODO!, and the durable fix is
 a systematic audit of every raw `Transport.query/3` call with shared
 echo-aware reply decoding — the combined endpoints close only the device
 pair.
+
+**Resolved 2026-08-03:** all six sites named above — the device pair,
+`get_clip_notes`, `set_device_parameter`'s read-back, `query_scene_names/1`,
+and `list_browser_items` — now go through shared echo-aware decoding
+(`query_correlated/4` plus the length-check variant `query_scene_names/2`
+uses), each with the reissue-once stale defence. Shipped as "Echo checks at
+every raw reply decode"; plan archived at
+[archive/PLAN_echo_checks.md](../archive/PLAN_echo_checks.md). The `echo-checks`
+PR review surfaced one residual gap this fix did not cover — a regular-track
+`set_device_parameter` call now reports a generic "did not confirm it"
+instead of Live's real rejection message on a bad index — queued separately
+in ROADMAP.md as "`set_device_parameter` on a regular track loses Live's
+rejection message".
 
 ---
 
@@ -281,10 +294,13 @@ philosophy, prioritized by Seshat's measured hotspots:
 ## 4. Seshat-side findings (no fork change needed)
 
 Recorded here so they are not misfiled as fork work; they belong in Seshat's
-backlog. **Queued 2026-08-03:** the deferred work now sits at the top of
-ROADMAP.md as "Echo checks at every raw reply decode", "`set_track_send`
-reports a request, not an outcome" and "Bulk reads vs. per-address queries —
-benchmark, then pick the lever"; item 6's two setters are named in "Verify
+backlog. **Queued 2026-08-03, resolved 2026-08-03:** the deferred echo-check
+work was queued to the top of ROADMAP.md as "Echo checks at every raw reply
+decode" and shipped the same day (plan archived at
+[archive/PLAN_echo_checks.md](../archive/PLAN_echo_checks.md)) — see the
+correction on this in §2 below. "`set_track_send` reports a request, not an
+outcome" and "Bulk reads vs. per-address queries — benchmark, then pick the
+lever" remain open in ROADMAP.md; item 6's two setters are named in "Verify
 destructive mutations before reporting success". This doc stays the
 evidence, not the queue.
 
@@ -295,6 +311,10 @@ evidence, not the queue.
    address exists." The endpoint is also missing from
    `docs/abletonosc-api-docs.md`, which is presumably how the comment
    survived. **Resolved in PR #62:** the endpoint is now documented.
+   **Resolved 2026-08-03:** "Echo checks at every raw reply decode" switched
+   `query_scene_names/1` itself onto this address — one query, length-checked
+   against `num_scenes`, reissued once when stale — closing the gap this
+   finding describes.
 2. **`/live/song/get/track_names` is registered and documented but used
    nowhere in Seshat** — `read_tracks/2` queries `/live/track/get/name` per
    track instead.
@@ -307,7 +327,9 @@ evidence, not the queue.
    `get_clip_properties` design.
 5. **Add echo checks (or adopt the future combined endpoints) in
    `get_track_devices` / `get_device_parameters`** for regular tracks (§2's
-   correctness gap).
+   correctness gap). **Resolved 2026-08-03** — see the resolution note on §2
+   above; combined endpoints for regular tracks remain a separate, undecided
+   lever (ROADMAP.md "Bulk reads vs. per-address queries").
 6. **Two Tier-A setters sit inside the spirit of the accepted subset of
    roadmap item "Verify destructive mutations before reporting success" but
    were not called out there:** `set_track_arm` returns
