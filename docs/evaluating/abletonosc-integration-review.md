@@ -119,8 +119,8 @@ mutating-tool list must be kept in sync, and measured to be harmless).
 ### Vendoring and merge guards
 
 Git submodule at `priv/AbletonOSC`; `mix abletonosc.install` replaces the
-Remote Scripts install wholesale. `vendored_addresses_test.exs` (818 lines, no
-Ableton needed) checks both directions (every address Seshat sends is
+Remote Scripts install wholesale. `vendored_addresses_test.exs` (no Ableton
+needed) checks both directions (every address Seshat sends is
 registered here; every address registered here is documented), pins exact
 endpoint counts per module, and greps for every merge hazard SESHAT.md names:
 the loopback bind, the removed reply retargeting, the structured-error payload
@@ -241,8 +241,9 @@ philosophy, prioritized by Seshat's measured hotspots:
    value-to-effort.
 2. **A bulk mirror-snapshot endpoint** — one query (chunked like
    `song/get/track_data` if needed) returning name/volume/pan/mute/solo for
-   all tracks plus returns and master. Turns the 73-query, 4.6s rebuild into
-   two or three queries and softens Seshat's roadmap #6 (rebuild blocking)
+   all tracks plus returns and master. Turns the roughly 73-query rebuild into
+   two or three queries (the measured 4.6s window covers roughly 46 of those)
+   and softens Seshat's roadmap #6 (rebuild blocking)
    without Seshat restructuring anything. Note: `track_data` already reaches
    `track.name`/`mute`/`solo` via `getattr`, but volume/panning live on
    `mixer_device`, so a purpose-built endpoint is cleaner than contorting
@@ -286,7 +287,7 @@ backlog.
    does one query per scene beside a comment asserting "No bulk scene-name
    address exists." The endpoint is also missing from
    `docs/abletonosc-api-docs.md`, which is presumably how the comment
-   survived — and a documentation gap this fork should close (issue #14).
+   survived. **Resolved in PR #62:** the endpoint is now documented.
 2. **`/live/song/get/track_names` is registered and documented but used
    nowhere in Seshat** — `read_tracks/2` queries `/live/track/get/name` per
    track instead.
@@ -294,7 +295,7 @@ backlog.
    push-fresh; `return_track_label/1` reads them from the mirror a few lines
    away. Up to 12 redundant round trips per full send read.
 4. **Correct the "sub-millisecond" latency claims** (`handlers.ex:35`,
-   `:2308`, `:4724`) to the measured ~75–100ms before re-judging any design
+   `:2308`, `:4724`) to the measured ~100ms before re-judging any design
    decision that rests on them — in particular the 13–17-query
    `get_clip_properties` design.
 5. **Add echo checks (or adopt the future combined endpoints) in
@@ -306,10 +307,11 @@ backlog.
    exists precisely because Live can refuse to arm; `set_time_signature`
    fires two independent messages and can report a plain error with the
    signature half-applied.
-7. **One stale comment:** `vendored_addresses_test.exs:766-769` justifies the
+7. **Resolved in PR #62:** `vendored_addresses_test.exs` justified the
    browser-export stale-sweep age gate with "Transport does not serialize
-   queries," which contradicts the current serialized design. The assertion
-   it justifies is still fine; the rationale is stale.
+   queries," which contradicted the current serialized design. The assertion
+   remains; its rationale now describes the serialized query followed by the
+   caller's file read.
 
 ### 4a. Full doc-coverage diff (`docs/abletonosc-api-docs.md` vs. registered addresses)
 

@@ -158,7 +158,9 @@ end of the history" into an honest refusal rather than a fabricated success.
 
 ### Song Getters
 
-Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<property>`.
+Listen via `/live/song/start_listen/<property>`, stop via
+`/live/song/stop_listen/<property>`, and receive responses on
+`/live/song/get/<property>`.
 
 | Address | Response Params | Description |
 |---|---|---|
@@ -377,7 +379,9 @@ Seshat's return_track extension (see below); sends, being a property of a
 
 Volume, panning, send, mute, solo, devices, clips.
 
-Listen via `/live/track/start_listen/<property> <track_index>`, responses on `/live/track/get/<property>` with `<track_index> <value>`. `*` in place of the
+Listen via `/live/track/start_listen/<property> <track_index>`, stop via
+`/live/track/stop_listen/<property> <track_index>`, and receive responses on
+`/live/track/get/<property>` with `<track_index> <value>`. `*` in place of the
 index subscribes every track.
 
 ⚠️ Listener pairs exist for the **scalar** properties only (the property loops
@@ -522,7 +526,8 @@ Container for clips. Create, delete, and query clip existence.
 | `/live/clip_slot/duplicate_clip_to` | `track_index, clip_index, target_track, target_clip` | | Duplicate clip to target slot |
 
 Every `get/` property above also has
-`/live/clip_slot/start_listen/<property>` and `stop_listen/<property>`.
+`/live/clip_slot/start_listen/<property>` and
+`/live/clip_slot/stop_listen/<property>`.
 
 > ℹ️ **`fire` takes an optional `record_length`, and that is fixed-length
 > recording.** The handler passes everything after the two indices straight
@@ -549,9 +554,9 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 
 Every `get/` property below also has
 `/live/clip/start_listen/<property> <track_id> <clip_id>` and
-`stop_listen/<property> <track_id> <clip_id>`; pushes arrive on the matching
-`get/` address as `track_id, clip_id, value`. The `playing_position` pair is
-listed explicitly only because it is the one Seshat uses.
+`/live/clip/stop_listen/<property> <track_id> <clip_id>`; pushes arrive on the
+matching `get/` address as `track_id, clip_id, value`. The `playing_position`
+pair is listed explicitly only because it is the one Seshat uses.
 
 | Address | Query Params | Response Params | Description |
 |---|---|---|---|
@@ -749,7 +754,9 @@ Trigger a row of clips simultaneously. Set/query name, color, tempo, time signat
 
 ### Scene Getters
 
-Listen via `/live/scene/start_listen/<property> <scene_index>`, responses on `/live/scene/get/<property>`.
+Listen via `/live/scene/start_listen/<property> <scene_index>`, stop via
+`/live/scene/stop_listen/<property> <scene_index>`, and receive responses on
+`/live/scene/get/<property>`.
 
 | Address | Query Params | Response Params | Description |
 |---|---|---|---|
@@ -800,7 +807,7 @@ trusting it blind.
 
 Every `get/` property in the table below (`name`, `type`, `class_name`) also
 has `/live/device/start_listen/<property> <track_id> <device_id>` and
-`stop_listen/<property> <track_id> <device_id>` — but ⚠️ **these three pairs
+`/live/device/stop_listen/<property> <track_id> <device_id>` — but ⚠️ **these three pairs
 are hobbled as registered** (verified against `device.py` at the current pin,
 2026-08-03). The registration strips both indices before they reach
 `_start_listen`, so the push arrives on the `get/` address carrying the

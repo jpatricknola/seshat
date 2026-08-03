@@ -112,6 +112,36 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     "priv/AbletonOSC/manager.py"
   ]
 
+  # Listener routes are documented once per family rather than once per
+  # property. Keep the exact start/stop templates here so a getter alone cannot
+  # make its listeners look documented after that family-level prose is removed.
+  @listener_doc_markers %{
+    "song" => [
+      "/live/song/start_listen/<property>",
+      "/live/song/stop_listen/<property>"
+    ],
+    "track" => [
+      "/live/track/start_listen/<property>",
+      "/live/track/stop_listen/<property>"
+    ],
+    "clip_slot" => [
+      "/live/clip_slot/start_listen/<property>",
+      "/live/clip_slot/stop_listen/<property>"
+    ],
+    "clip" => [
+      "/live/clip/start_listen/<property>",
+      "/live/clip/stop_listen/<property>"
+    ],
+    "scene" => [
+      "/live/scene/start_listen/<property>",
+      "/live/scene/stop_listen/<property>"
+    ],
+    "device" => [
+      "/live/device/start_listen/<property>",
+      "/live/device/stop_listen/<property>"
+    ]
+  }
+
   @docs "docs/abletonosc-api-docs.md"
 
   describe "vendored OSC addresses" do
@@ -935,14 +965,24 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   end
 
   # An address is documented when it appears literally, or — for a
-  # start_listen/stop_listen pair — when its family's getter does: the docs
-  # state each family's listener addresses once, generically ("Listen via
-  # /live/<family>/start_listen/<property>"), rather than as 200-odd rows.
+  # start_listen/stop_listen pair — when its getter and both family-level
+  # listener templates do. The docs state listener addresses once per family,
+  # generically, rather than as 200-odd rows.
   defp documented?(docs, address) do
     String.contains?(docs, address) or
       case Regex.run(~r{^/live/([a-z_]+)/(?:start|stop)_listen/(.+)$}, address) do
-        [_, family, property] -> String.contains?(docs, "/live/#{family}/get/#{property}")
-        nil -> false
+        [_, family, property] ->
+          case Map.fetch(@listener_doc_markers, family) do
+            {:ok, markers} ->
+              String.contains?(docs, "/live/#{family}/get/#{property}") and
+                Enum.all?(markers, &String.contains?(docs, &1))
+
+            :error ->
+              false
+          end
+
+        nil ->
+          false
       end
   end
 

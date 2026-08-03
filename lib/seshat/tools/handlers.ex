@@ -1978,8 +1978,9 @@ defmodule Seshat.Tools.Handlers do
   # upstream's /live/track/get|set/send. Everything about the returns themselves
   # and the master comes from the fork's return_track.py — a Seshat extension, so
   # an un-run `mix abletonosc.install` means no reply at all rather than an
-  # error. Each mutation therefore reads its own value back first: the guard is
-  # the difference between an error and a lie.
+  # error. Each mutation therefore reads its own value first. That guard proves
+  # the target exists and supplies the old value; it does not verify that Live
+  # subsequently accepted the fire-and-forget setter.
 
   # TODO! The reply asserts an outcome ("Set send A … to X") after a
   # fire-and-forget send — and unlike volume/pan/mute/solo there is no send
