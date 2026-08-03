@@ -3635,15 +3635,35 @@ defmodule Seshat.Tools.Handlers do
   # `is_triggered`. Deliberately no `playing_status`: its enum is documented
   # nowhere. Live handles datagrams in arrival order, so all three reads see a
   # session in which the fire has already been processed.
-  defp record_echo(track, slot) do
+  defp record_echo(track, slot, reread? \\ false) do
     case query_flag(
            "/live/clip_slot/get/has_clip",
            [track, slot],
            "whether slot #{slot} on track #{track} holds a clip"
          ) do
-      {:ok, true} -> recording_or_queued(track, slot)
-      {:ok, false} -> queued_or_nothing(track, slot)
-      {:error, message} -> {:error, message}
+      {:ok, true} ->
+        recording_or_queued(track, slot)
+
+      # Measured 2026-08-03, Live 12.4.3: the clip does not exist the instant the
+      # fire is processed. Polling straight after `/live/clip_slot/fire` with
+      # launch quantization set to None, `has_clip` read `False` on the first
+      # query and `True` 99ms later, with `is_recording` already true by then.
+      # Datagram ordering (which the comment above relies on) is preserved; what
+      # it does not buy is the engine state the fire *triggers*, which lands
+      # asynchronously. Without this re-read, a take that started immediately
+      # reports "Queued" — the whole point of the echo, inverted.
+      #
+      # One re-read is enough because the round trip is itself ~100ms. A take
+      # genuinely waiting for a boundary has no clip for up to a bar, so it still
+      # reads `false` twice and is still correctly reported as queued.
+      {:ok, false} when not reread? ->
+        record_echo(track, slot, true)
+
+      {:ok, false} ->
+        queued_or_nothing(track, slot)
+
+      {:error, message} ->
+        {:error, message}
     end
   end
 

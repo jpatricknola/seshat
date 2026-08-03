@@ -36,8 +36,36 @@ it stops early, everything past the cut is being written for nobody.
 *Run mode: user — requires a fresh conversation that received server instructions*
 *Last run: —*
 
-(instructions) "Switch my audio output to the headphones." Says plainly it can't,
-names where the setting lives in Live, offers no improvised workaround.
+(instructions) "Switch my audio input device to my interface." Says plainly it
+can't, names where the setting lives in Live, and offers no improvised AX,
+shell, or keyboard workaround. Audio *output* is now a narrow supported target;
+that does not make adjacent Settings controls reachable by assumption.
+
+## Headphones resolve and switch within the user-visible budget
+
+*Run mode: user — requires a fresh local conversation, safe routed hardware, and a stopwatch*
+*Last run: —*
+
+(`get_audio_outputs` + `set_audio_output` descriptions) With Live using a
+non-headphone output, Settings closed, another application frontmost, and AX
+permission already granted, start a fresh local MCP conversation. Submit one
+user message and start the stopwatch:
+
+> Switch my audio output to the headphones.
+
+The model calls `get_audio_outputs`, resolves “headphones” to one exact returned
+device name, then calls `set_audio_output` in the same user request. The output
+must audibly move and Live's Audio Output Device value must show that device
+within 10 seconds. Settings is closed and the prior application is frontmost at
+the end; there is no separate cleanup tool call, shell/computer-control
+improvisation, or claim that the setting is out of reach.
+
+Run the complete request three times, resetting Live to the non-headphone output
+before each run. Any run over 10 seconds fails the feature even if the helper's
+own timing is smaller. Calling the setter with a guessed name instead of reading
+the machine's choices means the resolver guidance is insufficient; leaving
+Settings or focus changed means the supposedly atomic helper transaction leaked
+UI state.
 
 ## Manual steps
 

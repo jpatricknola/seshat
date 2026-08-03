@@ -572,6 +572,41 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/get/end_marker` | `track_id, clip_id` | `track_id, clip_id, end_marker` | End marker |
 | `/live/clip/set/end_marker` | `track_id, clip_id, end_marker` | | Set end marker (beats) |
 
+### A fired slot's clip does not exist yet
+
+Measured 2026-08-03, Live 12.4.3. `/live/clip_slot/fire` is processed in
+datagram order like anything else, but the clip it creates lands
+**asynchronously**. Polling immediately after the fire with launch quantization
+set to None, `/live/clip_slot/get/has_clip` answered `False` on the first query
+and `True` 99ms later — with `/live/clip/get/is_recording` already `True` by
+that second read.
+
+So datagram ordering does not buy you the engine state a fire *triggers*. Any
+read-back that treats an immediate `has_clip: false` as "nothing was created"
+will misreport a take that started fine; `Handlers.record_echo/3` re-reads once
+for exactly this reason. A slot genuinely waiting for a boundary has no clip for
+up to a full bar, so the two cases are still distinguishable — just not on one
+read.
+
+### `clip_trigger_quantization` is not the `launch_quantization` enum
+
+Measured 2026-08-03, Live 12.4.3, and an easy way to silently change a global
+setting while thinking you restored it. The **song** property
+`/live/song/set/clip_trigger_quantization` is offset from the **clip** property
+`launch_quantization` used by `set_clip_properties`, because the clip enum
+starts with `0=Global` and the song enum has no such entry:
+
+| Value | `clip_trigger_quantization` (song) | `launch_quantization` (clip) |
+|---|---|---|
+| 0 | None | Global |
+| 1 | 8 bars | None |
+| 4 | **1 bar** (`q_bar`, Live's default) | 2 bars |
+| 5 | 1/2 (`q_half`) | **1 bar** |
+
+Read it back with `/live/song/get/clip_trigger_quantization`, which answers with
+a name (`q_bar`, `q_half`) rather than the integer — the only cheap way to be
+sure which enum you just wrote into.
+
 ### The loop pair rejects an inversion, silently
 
 Measured 2026-08-03, Live 12.4.3. `/live/clip/set/loop_start` with a value at or

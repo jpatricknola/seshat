@@ -63,7 +63,9 @@ clip (0.0 to the clip length), regardless of where the play markers sit. Then se
 `looping` *and* the loop points in one call and confirm the intended brace
 results.
 
-This is the known defect tracked as ROADMAP #11 — `set_clip_properties` reads the
+This is the known defect tracked in [../ROADMAP.md](../ROADMAP.md) as
+"`set_clip_properties` reads the loop pair before the `looping` toggle lands" —
+`set_clip_properties` reads the
 pair before the `looping` toggle goes out, so on such a clip both the write
 ordering and the single-sided validation can run against stale values. Until that
 ships, expect the *validation* to be wrong while the *report* stays honest: the

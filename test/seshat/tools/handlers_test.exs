@@ -41,7 +41,8 @@ defmodule Seshat.Tools.HandlersTest do
     "/live/clip_slot/get/has_clip",
     "/live/track/get/arm",
     "/live/clip_slot/get/will_record_on_start",
-    "/live/clip/get/is_recording"
+    "/live/clip/get/is_recording",
+    "/live/clip_slot/get/is_triggered"
   ]
 
   # Datagrams in arrival order, playing AbletonOSC for the guard as they go by.
@@ -2066,6 +2067,47 @@ defmodule Seshat.Tools.HandlersTest do
       assert {"/live/clip_slot/fire", [2, 0]} in trace
       refute message =~ "might not capture input"
       refute message =~ "input routing"
+    end
+  end
+
+  # Measured 2026-08-03 on Live 12.4.3: `has_clip` reads `False` the instant the
+  # fire is processed and `True` 99ms later. The echo used to take that first
+  # `False` at face value and report a take that had already started as
+  # "Queued" — provable because it did so even with launch quantization set to
+  # None, where there is no boundary to be queued for.
+  describe "record_clip echo and the has_clip materialisation race" do
+    setup :osc_sink
+
+    test "a clip that appears on the re-read reports recording, not queued", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("record_clip", %{"track" => 2, "clip_slot" => 0}) end)
+
+      # Pre-fire: slot empty, armed, will_record true. Post-fire echo: has_clip
+      # **0 then 1** — the race — then is_recording 1.
+      trace =
+        guarded_trace(sink, [[2, 0, 0], [2, 1], [2, 0, 1], [2, 0, 0], [2, 0, 1], [2, 0, 1]])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/clip_slot/fire", [2, 0]} in trace
+      assert message =~ "Recording now."
+      refute message =~ "Queued"
+    end
+
+    # The re-read must not paper over a genuine wait: a take fired into a playing
+    # transport has no clip for up to a bar, so `has_clip` stays false across
+    # both reads and `is_triggered` is what says it is coming.
+    test "a slot with no clip on either read is still reported as queued", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("record_clip", %{"track" => 2, "clip_slot" => 0}) end)
+
+      # has_clip 0, 0 (both reads), then is_triggered 1.
+      trace =
+        guarded_trace(sink, [[2, 0, 0], [2, 1], [2, 0, 1], [2, 0, 0], [2, 0, 0], [2, 0, 1]])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/clip_slot/fire", [2, 0]} in trace
+      assert message =~ "Queued"
+      refute message =~ "Recording now."
     end
   end
 

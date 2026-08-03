@@ -96,22 +96,25 @@ and a different reply.
 ## Echo wording
 
 *Run mode: agent*
-*Last run: 2026-08-03 — **run after the guard fix; half matches, half does not.**
-The feared failure did **not** occur: `is_triggered` read true between the fire
-and the boundary in every case, so `queued_or_nothing/2` never mislabelled a
-healthy take as a hard failure. But **"Recording now." was never produced** —
-five takes, transport verified stopped (`stop_playing` immediately before) and
-transport playing, all replied "Queued: it starts at the next
-launch-quantization boundary, usually the next bar." Every one of them then
-recorded correctly.*
+*Last run: 2026-08-03 — **found broken, fixed, now passes both cases.** The
+feared failure never occurred: `is_triggered` read true in the window every
+time, so a healthy take was never called a hard failure. But "Recording now."
+was unreachable — five takes with the transport verified stopped all replied
+"Queued". Proved a defect rather than a wrong expectation by setting
+`/live/song/set/clip_trigger_quantization 0` (None), leaving **no boundary to be
+queued for**: the reply still said "Queued" while `get_clip_slots` showed the
+slot `[recording]`.*
 
-*The likely cause is that the echo is honest and the expectation is wrong: from a
-stopped transport the fire also starts the transport, and at the instant
-`record_echo/2` reads, the slot is triggered but `is_recording` is not yet true —
-so "Queued" describes the moment accurately. What it contradicts is
-`record_clip`'s own description ("from a stopped transport it starts
-immediately"). Cosmetic, not a correctness problem, and out of scope for the
-guard fix — tracked in [../ROADMAP.md](../ROADMAP.md).*
+*Root cause measured, and it was not where it looked. Polling straight after the
+fire, **`has_clip`** — `record_echo/2`'s *first* read — returned `False` at
++0ms and `True` at +99ms, with `is_recording` already true by then. The echo
+raced Live materialising the clip and took the false `has_clip` as "no clip yet,
+so it must be waiting". `record_echo/2` now re-reads `has_clip` once before
+concluding queued; two regression tests in `handlers_test.exs` pin both arms.*
+
+*After the fix: quantization None, transport stopped → **"Recording now."**;
+quantization 1 bar, transport playing → **"Queued"**, and that take landed at
+8.0 beats. Global quantization restored to `q_bar`.*
 
 ⚠️ Fire with the transport **playing** → the reply must say "Queued". That depends
 on `is_triggered` reading true between the fire and the boundary; if it reads

@@ -274,7 +274,42 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #8 · `screenshot_live` — let Seshat see the screen
+## #8 · AX-backed audio output — the first narrow UI workflow
+
+**Goal:** `get_audio_outputs` and `set_audio_output` tools that let a user say
+“switch Live to the headphones,” resolve the installed device name, change
+Live's application-wide output through semantic macOS Accessibility elements,
+verify the result, and restore the UI within a user-visible latency budget.
+
+**Why:** audio-device selection is absent from Live 12.4.3's LOM, so OSC cannot
+reach it. The 2026-08-03 spike succeeded without coordinates, keystrokes,
+AppleScript, or screenshots: it enumerated the named choices, selected a second
+device, read the value back, and restored the original. The native round trip
+took 1.55 seconds, but an exploratory conversational turn took 37 seconds while
+code was compiled on demand — shipping value depends on moving compilation and
+permission setup out of the request path and measuring what the user waits for.
+
+**User stories:**
+- As a producer whose sound is coming from the laptop, I can say “switch Live
+  to the headphones” and hear it move promptly without opening Settings myself.
+- As a producer, a successful reply means Live's selected output was read back,
+  not merely that a UI action was attempted.
+- As a producer, Live's Settings and application focus return to how I had them;
+  changing output does not leave cleanup work on screen.
+
+**Planner notes:**
+- [Implementation plan: AX-backed audio-output selection](PLAN_audio_output.md).
+- LOM-first remains absolute. The reusable AX boundary is available only to a
+  concrete, independently verified LOM gap with named elements and read-back;
+  this is not a generic UI-control tool.
+- Acceptance: three fresh local-client “headphones” requests each change Live's
+  verified value within 10 seconds; the setter's own MCP call finishes within 5
+  seconds. Permission onboarding is one-time and outside that normal path.
+- The tool definition must opt out of OSC undo wrapping. Audio preferences are
+  outside the Live Set's LOM undo history, and the tool must work without
+  emitting unrelated begin/end datagrams.
+
+## #9 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -298,7 +333,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #9 · Restart the MCP supervisor after abnormal failure
+## #10 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -317,7 +352,7 @@ healthy — the tools simply stop existing, with nothing saying why.
 - Raised as a speculative risk by the 2026-07-29 external review — the failure
   has not been reproduced, only reasoned from the child spec.
 
-## #10 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
+## #11 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
 
 **Goal:** a `tools/call` whose `"arguments"` is JSON `null` gets a
 model-readable rejection — same channel as any other invalid call — instead
@@ -346,7 +381,7 @@ the interception entirely: an absent `"arguments"` key and a non-map value
   [test/seshat/mcp/server_test.exs](../test/seshat/mcp/server_test.exs)
   alongside the existing non-map-`arguments` (array) case.
 
-## #11 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #12 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Goal:** setting `looping` *and* the loop points in one call produces the
 intended brace on a clip whose stored loop points differ from its play markers.
@@ -373,7 +408,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #12 · Search eval harness — numbers before opinions
+## #13 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -398,7 +433,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
-## #13 · Widen the search slate at tied score bands
+## #14 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -413,7 +448,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #14 · Accepted-search memory
+## #15 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -431,7 +466,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #15 · Browser preview audition
+## #16 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -452,7 +487,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #16 · Opt-in `samples` index
+## #17 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -470,7 +505,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #17 · LLM enrichment at reindex
+## #18 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an external model service or an MCP-client-driven tagging
@@ -490,7 +525,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #18 · User XMP tags
+## #19 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -505,7 +540,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #19 · Read-only audio input display — warn before a silent take
+## #20 · Read-only audio input display — warn before a silent take
 
 **Goal:** surface a track's audio input routing, read-only, so `record_clip`
 can warn when an audio take is about to record nothing.
@@ -534,7 +569,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #20 · Device list per track in session state
+## #21 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -553,7 +588,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #21 · Modify a note in place
+## #22 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -566,7 +601,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #22 · Clip grid in session state — only if usage demands it
+## #23 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -580,7 +615,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #23 · Small OSC breadth — grab bag
+## #24 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -601,7 +636,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #24 · Adopt MCP `2026-07-28` when Anubis supports it
+## #25 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
@@ -650,36 +685,6 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #25 · `record_clip` says "Queued" for a take that starts immediately
-
-**Goal:** a take fired from a stopped transport reports "Recording now.", not
-"Queued".
-
-**Why:** found running the never-run agent smoke tests on 2026-08-03
-([smoke-tests/recording.md](smoke-tests/recording.md) § Echo wording). Across
-five takes with the transport verified stopped immediately beforehand, every
-reply said "Queued: it starts at the next launch-quantization boundary, usually
-the next bar." All five then recorded correctly, so this is cosmetic — but it
-contradicts `record_clip`'s own description ("from a stopped transport it starts
-immediately") and tells the user to expect a wait that isn't happening.
-
-The echo is probably not lying: firing from a stopped transport also *starts* the
-transport, and at the instant `record_echo/2` reads, the slot is triggered while
-`is_recording` is still false, so `queued_or_nothing/2` correctly labels the
-moment it sampled. The reply is describing the echo's timing rather than the
-user's experience.
-
-**Planner notes:**
-- Decide which is wrong, the wording or the read. Re-reading `is_recording` once
-  after a short delay would resolve it but adds latency to every take; treating
-  "transport was stopped when we fired" as sufficient to say "Recording now." is
-  cheaper and needs no extra round trip.
-- Whatever changes, keep `queued_or_nothing/2`'s real job intact — distinguishing
-  a queued take from a fire that did nothing at all. The smoke test confirms
-  `is_triggered` does read true in the window, so that half works.
-- Small. The pure layer can cover the wording; the timing claim needs the live
-  test above re-run.
-
 ## #26 · A rejected index says which index, and what to call next
 
 **Goal:** a tool call Live rejects for a bad index tells the model which index
@@ -698,6 +703,11 @@ for a bad index: Live's rejection now arrives in ~0.19s and renders through
 fast-fail is the right behaviour and is not in question; the regression is that
 the model went from a slow, actionable message to a fast, generic one, on
 exactly the path a model is most likely to hit by guessing an index.
+
+**User stories:**
+- As a producer, when I name a track that isn't there, Seshat re-checks and
+  corrects itself in the same breath instead of telling me Ableton rejected
+  something and stopping.
 
 **Planner notes:**
 - The information is present at the rejection site — `/live/error`'s structured

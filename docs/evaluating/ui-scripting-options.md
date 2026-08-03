@@ -13,8 +13,12 @@ The narrow spike against Live's Audio Settings succeeded on 2026-08-03. A
 direct Accessibility (AX) helper found the audio-output chooser, enumerated its
 named choices, selected MacBook Pro Speakers, read the new value back, restored
 the original system-device selection, and verified that value too. The full
-change-and-restore run took 1.55 seconds; AX is therefore viable for this
-target, subject to the constraints recorded below.
+native-helper change-and-restore run took 1.55 seconds; AX is therefore viable
+for this target, subject to the constraints recorded below. That is not an
+end-to-end conversational measurement: the implementation plan separately
+requires the user-visible request to complete within 10 seconds.
+
+Implementation plan: [AX-backed audio-output selection](../PLAN_audio_output.md).
 
 This validates a particular UI-scripting operation, not a general second
 control surface. No synthetic keystroke has yet been observed reaching Live
@@ -77,7 +81,8 @@ input—not against every possible use of a keystroke.
 
 ## Mechanism ladder
 
-Use the highest applicable rung. Only rung 1 is validated in Seshat today.
+Use the highest applicable rung. Rung 1 is Seshat's established control path;
+rung 2 is now validated for the specific audio-output target, not generically.
 
 1. **LOM via the AbletonOSC fork.** The default for everything the installed
    LOM exposes.
@@ -249,12 +254,13 @@ for bringing Live to the foreground.
 References: [macOS Privacy & Security settings](https://support.apple.com/guide/mac-help/change-privacy-security-settings-on-mac-mchl211c911f/mac),
 [AXUIElement API](https://developer.apple.com/documentation/applicationservices/axuielement_h).
 
-## The spike that decides it
+## Spike protocol and result
 
-This is an evidence-gathering spike, not an implementation plan. Prefer a tiny
-direct `AXUIElement` walker over System Events so the result tests AX itself
-without also testing Apple Events. Preserve the tree excerpts, Live version,
-macOS version, permission steps, and errors in this document.
+This evidence-gathering spike is complete; it is not the implementation plan.
+It used a tiny direct `AXUIElement` walker rather than System Events so the
+result tested AX itself without also testing Apple Events. The protocol remains
+here with the preserved tree excerpts, Live version, macOS version, permission
+steps, and errors.
 
 Answer these questions:
 

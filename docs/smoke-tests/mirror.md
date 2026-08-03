@@ -12,6 +12,16 @@ redundant ones leave the same mirror. Those tests are read from the **server
 log**, where a full rebuild prints a `Song: …` line followed by
 `Loaded N tracks: …`.
 
+**Every log-read test in this file is `Run mode: user`, and that is why.** The
+Seshat server logs to the terminal it was started in, so an agent running the
+zero-user sweep has no way to see a `Song:` line, let alone count them. Four
+tests here were tagged `agent` until 2026-08-03 and were retagged after a sweep
+found none of them judgeable; one of the four was split so its state-visible
+half could stay `agent`. Read the log from the terminal running
+`iex -S mix phx.server`. If that server is ever given a file log handler, these
+become agent-runnable again and should be retagged back — the tests themselves
+need no change.
+
 **How the calls are issued is part of several tests here, not a detail.**
 Measured 2026-07-31: tool calls emitted **in one model response** arrive ~0.5s
 apart, while calls needing **separate model rounds** arrive ~2.1s apart at the
@@ -116,38 +126,44 @@ structural change is still settling…". A later plain read, after the window, d
 not. `refresh: true` never carries it (`refresh_sync/0` cancels the timer before
 rebuilding).
 
-## The scalar mixer setters no longer trigger a refresh
+## The scalar mixer setters reach the mirror by push
 
 *Run mode: agent*
-*Last run: 2026-08-03 — **state half passed, log half not checked.** All seven
-setters issued in one model response, then a plain `get_session_state`: it
-answered carrying every pushed value — return volume 0.7, pan −0.3, muted,
-soloed; master volume 0.8, pan 0.2, cue 0.6. **The four return listener pushes
-this test flags as "inferred from the master ones, never measured" are hereby
-measured: all four arrive.** The `no Song:/Loaded …` assertion was not checked —
-the Seshat server's log goes to its own tty (`/dev/ttys005`), which the agent
-cannot read; re-run this half from the terminal running the server.*
+*Last run: 2026-08-03 — passed. All seven setters issued in one model response,
+then a plain `get_session_state`: it answered carrying every pushed value —
+return volume 0.7, pan −0.3, muted, soloed; master volume 0.8, pan 0.2, cue 0.6.
+**The four return listener pushes this test flags as "inferred from the master
+ones, never measured" are hereby measured: all four arrive.** Values restored
+immediately afterwards.*
 
 Issue the four return mixer setters (volume, pan, mute, solo) and the three
 master ones (volume, pan, cue volume) in a burst, then `get_session_state`
-**without** `refresh: true`: it answers and carries the pushed final values. The
-log shows **no** full-refresh `Song:` / `Loaded …` sequence caused by those
-setters.
+**without** `refresh: true`: it answers and carries the pushed final values.
 
 If the four return values are the ones that don't arrive, the fix is to restore
 `State.refresh()` in those four handlers only — their listener pushes were
 inferred from the master ones, never measured.
 
+## The scalar mixer setters no longer trigger a refresh
+
+*Run mode: user — the check is a `Song:` / `Loaded …` absence in the Seshat server's log, which goes to the server's own terminal*
+*Last run: —*
+
+The other half of the test above, split from it 2026-08-03 because the two need
+different tags: with the same burst issued, the log shows **no** full-refresh
+`Song:` / `Loaded …` sequence caused by those setters. State correctness cannot
+see this — a refresh that ran and a refresh that didn't leave the same mirror,
+which is the whole reason this is checked in the log.
+
 ## A burst of creates collapses into one refresh
 
-*Run mode: agent*
-*Last run: 2026-08-03 — **blocked, not run.** The check is the log timestamps of
-every tool call against every `Song:` / `Loaded …` sequence, and the Seshat
-server's log goes to its own tty (`/dev/ttys005`), unreadable by an agent. The
-state-visible half was seen incidentally while running the settling-marker test
-above (burst of creates → snapshot window → convergence) but proves nothing
-about the refresh *count*, which is this test. Re-run from the terminal running
-the server.*
+*Run mode: user — the check is log timestamps in the Seshat server's log, which goes to the server's own terminal*
+*Last run: —*
+
+*Retagged 2026-08-03: this was marked `agent` and cannot be. An agent sweep
+reached the state-visible half incidentally (burst of creates → snapshot window
+→ convergence) but that proves nothing about the refresh **count**, which is the
+whole test.*
 
 On scratch material, create several tracks with a distinct final name, **with the
 creates and the read in one model response**. An ordinary read during the quiet
@@ -164,12 +180,13 @@ afterwards.
 
 ## `refresh: true` absorbs the pending timer
 
-*Run mode: agent*
-*Last run: 2026-08-03 — **blocked, not run.** The "rebuilds immediately" half was
-observed (create + `refresh: true` in one model response returned the new track
-at once), but the discriminating half — **no duplicate refresh a second later** —
-is a log reading, and the server's log goes to its own tty (`/dev/ttys005`).
-Re-run from the terminal running the server.*
+*Run mode: user — "no duplicate refresh a second later" is only visible in the Seshat server's log, which goes to the server's own terminal*
+*Last run: —*
+
+*Retagged 2026-08-03: this was marked `agent` and cannot be. An agent sweep
+confirmed the "rebuilds immediately" half (create + `refresh: true` in one model
+response returned the new track at once); the duplicate-refresh half, which is
+what this test is for, needs the log.*
 
 While an asynchronous refresh is pending, call `get_session_state(refresh: true)`
 — issue the mutation and the refreshing read **in one model response**, or the
@@ -179,13 +196,12 @@ later**.
 
 ## The last request is never dropped
 
-*Run mode: agent*
-*Last run: 2026-08-03 — **blocked, not run.** Confirming the mutation landed
-*mid*-rebuild requires the log timestamps, and the server's log goes to its own
-tty (`/dev/ttys005`). Running only the final-state half would not distinguish a
-mid-rebuild mutation from the just-after one this test names as the likely
-near-miss, so it was not attempted. Re-run from the terminal running the
-server.*
+*Run mode: user — confirming the mutation landed mid-rebuild needs log timestamps from the Seshat server's log, which goes to the server's own terminal*
+*Last run: —*
+
+*Retagged 2026-08-03: this was marked `agent` and cannot be. The final-state
+half alone cannot distinguish a mid-rebuild mutation from the just-after one
+this test names as the likely near-miss, so an agent has nothing to judge.*
 
 Make one more structural mutation while a rebuild is already running (it lasts
 1.0–1.8s, so again from the same model response), and confirm one trailing
