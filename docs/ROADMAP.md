@@ -35,6 +35,7 @@ correction: sends are Tier A with a guard, not "softened by listeners").
 Small, contained fix.
 
 **Planner notes:**
+- [Implementation plan: `set_track_send` reports an outcome it observed](PLAN_send_readback.md).
 - Two shipped patterns to pick between: hedge the wording the way
   `undo`/`redo` do ("…confirms the request was sent"), or read the value
   back after the send the way `set_device_parameter` does (one ~100ms query;
