@@ -315,11 +315,14 @@ evidence, not the queue.
    exists precisely because Live can refuse to arm; `set_time_signature`
    fires two independent messages and can report a plain error with the
    signature half-applied.
-7. **Resolved in PR #62:** `vendored_addresses_test.exs` justified the
-   browser-export stale-sweep age gate with "Transport does not serialize
-   queries," which contradicted the current serialized design. The assertion
-   remains; its rationale now describes the serialized query followed by the
-   caller's file read.
+7. **One stale fork comment remains:** `abletonosc/browser.py` justifies the
+   browser-export stale-sweep age gate with "the transport does not serialize
+   queries," which contradicts the current serialized design. PR #62 corrected
+   the corresponding rationale in `vendored_addresses_test.exs`; the fork
+   comment should receive the same wording correction the next time that
+   submodule changes. The assertion itself remains valid: the caller reads the
+   file after its serialized export query resolves, so a later export and sweep
+   can overlap that read.
 
 ### 4a. Full doc-coverage diff (`docs/abletonosc-api-docs.md` vs. registered addresses)
 
