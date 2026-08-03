@@ -31,12 +31,15 @@ defmodule Seshat.Tools.Handlers do
   @browse_timeout 15_000
   @load_timeout 30_000
 
-  # Guards that run before a mutation read a single track/slot property, which
-  # is sub-millisecond over loopback. A bad index never replies at all
-  # (AbletonOSC raises IndexError inside the callback and nothing is sent), so
-  # the timeout is really "how long until we call it a bad index" — the house
-  # 5s default would turn a typo into a five-second stall on the happy path's
-  # own error branch.
+  # Guards that run before a mutation read a single track/slot property —
+  # measured at ~75-100ms per round trip through the serialized query queue
+  # (docs/smoke_tests/auto/recording.md, mirror.md), not the sub-millisecond
+  # loopback suggests. A bad index sends no reply on the queried address
+  # (AbletonOSC raises inside the callback), but since the structured
+  # /live/error correlation shipped (2026-08-03) Transport fails that query in
+  # ~200ms — so this timeout is the backstop for a lost datagram or a missing
+  # install, no longer the usual bad-index path. The house 5s default would
+  # turn that backstop into a five-second stall.
   @guard_timeout 2_000
 
   @default_max_results 25
@@ -2305,7 +2308,18 @@ defmodule Seshat.Tools.Handlers do
   # Fourteen single-value getters rather than one bulk read: the bulk
   # `/live/song/get/track_data` reply is a bare value list with no index echo,
   # so it can't be checked against the clip we asked about (same reasoning as
-  # `ensure_midi_track/1`), and these are sub-millisecond loopback round trips.
+  # `ensure_midi_track/1`). This comment used to call these "sub-millisecond
+  # loopback round trips"; measured, a round trip is ~75-100ms through the
+  # serialized queue, so this read costs ~1-1.7s per clip and 400+ round trips
+  # to survey an 8x4 grid (docs/smoke_tests/auto/recording.md, mirror.md).
+  #
+  # TODO! This 13-17-query design was judged acceptable on that wrong latency
+  # figure. The fix that keeps the echo-check guarantee is a bulk
+  # clip-properties endpoint in the fork — one reply carrying every property
+  # with the indices echoed, the same aggregate-with-count shape as the
+  # vendored /live/return_track/device/get/parameters — then one query here.
+  # See INTEGRATION_REVIEW.md (2026-08-03), §3.3.
+  #
   # `ensure_clip/3` first so an empty slot costs one timeout-free error rather
   # than fourteen guard timeouts.
   defp do_call("get_clip_properties", %{"track" => track, "clip_slot" => slot}) do
@@ -2469,9 +2483,11 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # Six sequential reads, ~milliseconds each over loopback. The first failure
-  # ends the call: a summary assembled from a partial read looks exactly as
-  # confident as a complete one, which is the thing this tool exists not to do.
+  # Six sequential reads at ~75-100ms each measured — about half a second for
+  # the full sweep, not the near-free loopback read this comment once implied.
+  # The first failure ends the call: a summary assembled from a partial read
+  # looks exactly as confident as a complete one, which is the thing this tool
+  # exists not to do.
   defp do_call("get_view_state", _params) do
     Enum.reduce_while(@view_names, {:ok, %{}}, fn view, {:ok, acc} ->
       case query_view_visible(view) do
@@ -2818,6 +2834,18 @@ defmodule Seshat.Tools.Handlers do
     read_vendored_chain("/live/master/get/devices", [], :master)
   end
 
+  # TODO! These three list queries discard the echoed track index (`_track`) —
+  # the only multi-index reads in this file that skip the echo check, on a
+  # transport that correlates replies by address alone. A straggler abandoned
+  # by an earlier timeout can supply another track's names, and the three
+  # parallel lists can describe two different chains. This is exactly the
+  # hazard the vendored combined return/master endpoints exist to close (see
+  # docs/abletonosc-api-docs.md, Return Track & Master device chains). Fix:
+  # match each echo against `track` with a reissue-once stale defence like
+  # `read_device_names/2` below — or better, grow a combined
+  # /live/track/get/devices endpoint in the fork mirroring the vendored reply
+  # shape and collapse this to one query. INTEGRATION_REVIEW.md (2026-08-03),
+  # §2 and §3.1.
   defp do_call("get_track_devices", %{"track" => track}) do
     with {:ok, {_addr, [_track | names]}} <-
            Transport.query("/live/track/get/devices/name", [track]),
@@ -2858,6 +2886,12 @@ defmodule Seshat.Tools.Handlers do
     )
   end
 
+  # TODO! Same echo-check gap as get_track_devices above, at worse odds: five
+  # separate replies assembled into parallel lists with the echoed track and
+  # device indices discarded (`_t`, `_d`). Verify the echoes with a
+  # reissue-once defence, or collapse to one query on a vendored combined
+  # endpoint shaped like /live/return_track/device/get/parameters.
+  # INTEGRATION_REVIEW.md (2026-08-03), §2 and §3.1.
   defp do_call("get_device_parameters", %{"track" => track, "device" => device}) do
     with {:ok, {_addr, [_t, _d, device_name]}} <-
            Transport.query("/live/device/get/name", [track, device]),
@@ -3414,8 +3448,19 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # No bulk scene-name address exists, so one query per scene — tiny replies,
-  # fine at real-world scene counts.
+  # One query per scene. This comment used to claim no bulk scene-name address
+  # exists; that was wrong — /live/song/get/scenes/name returns every name in
+  # one reply (upstream all along, documented in docs/abletonosc-api-docs.md
+  # 2026-08-03). Its reply does not echo the requested range, though, so on a
+  # transport that correlates by address alone a straggler from an earlier
+  # ranged query is indistinguishable by content.
+  #
+  # TODO! This N+1 was chosen on the false premise above. At the measured
+  # ~75-100ms per round trip it costs N round trips beside a one-reply
+  # alternative. Switch to /live/song/get/scenes/name (full-range, no-argument
+  # form) with a length check against num_scenes and a reissue-once stale
+  # defence — or record here why keeping the per-scene index echo outweighs
+  # N-1 round trips. See INTEGRATION_REVIEW.md (2026-08-03), §4.1.
   defp query_scene_names(num_scenes) do
     result =
       Enum.reduce_while(0..(num_scenes - 1), {:ok, []}, fn index, {:ok, acc} ->
@@ -3838,8 +3883,15 @@ defmodule Seshat.Tools.Handlers do
       "retrying blind could load a second copy."
   end
 
-  # One name query per return plus one send query per return. Tiny replies, and
-  # the return count is capped at 12 by Live.
+  # One name query per return plus one send query per return — up to 24 round
+  # trips at the measured ~75-100ms each (~2s at Live's 12-return cap), a real
+  # cost this comment used to wave off as "tiny replies".
+  #
+  # TODO! The name half of each pair is redundant: Session.State mirrors
+  # return names push-fresh, and return_track_label/1 below already reads them
+  # from the mirror. Take names from the mirror and keep the query only as the
+  # fallback for a nil (unknown) mirror entry — halving the round trips.
+  # INTEGRATION_REVIEW.md (2026-08-03), §4.3.
   #
   # With no returns there are no sends to read, but the track index still gets
   # checked: otherwise a typo'd track comes back as "this set has no return
@@ -4721,8 +4773,9 @@ defmodule Seshat.Tools.Handlers do
   #
   # Two queries rather than one `/live/song/get/track_data` carrying both
   # properties: that reply is a bare value list with no index echo, so it cannot
-  # be checked against the track we asked about. A second sub-millisecond
-  # loopback round trip is the cheaper thing to spend.
+  # be checked against the track we asked about. A second round trip
+  # (~75-100ms measured, not the sub-millisecond this comment once claimed) is
+  # still the right spend — the echo check is what it buys.
   defp ensure_midi_track(track) do
     case query_flag("/live/track/get/has_midi_input", [track], "the type of track #{track}") do
       {:ok, true} ->

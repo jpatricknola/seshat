@@ -764,9 +764,11 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              """
              #{@browser_file}'s stale-export age gate changed.
 
-             It is load-bearing, not hygiene: Transport does not serialize queries, so
-             an unconditional sweep can delete a finished export before an overlapping
-             caller has read it. Ten minutes is well past the 120s query timeout.
+             It is load-bearing, not hygiene: Transport serializes queries, but the
+             file read happens *after* the query resolves — a second export (and the
+             sweep that precedes it) can run while the first export's caller is still
+             reading its file. Ten minutes is well past the 120s query timeout plus
+             any plausible read.
              """
 
       assert source =~ "info.st_mtime > cutoff",

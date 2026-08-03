@@ -26,6 +26,7 @@
 |---|---|---|---|
 | `/live/test` | | `'ok'` | Confirmation message in Live + OSC reply |
 | `/live/application/get/version` | | `major_version, minor_version` | Live's version |
+| `/live/application/get/average_process_usage` | | `average_process_usage` | Live's average CPU load. ⚠️ `application.py` also *sends* one argument-less datagram on this address every time AbletonOSC initialises — a stray sibling of `/live/startup`, not a reply to anything; ignore it |
 | `/live/api/reload` | | | Live reload of AbletonOSC server code (dev only — see the warning below) |
 | `/live/api/get/log_level` | | `log_level` | Current log level (default: `info`) |
 | `/live/api/set/log_level` | `log_level` | | Set log level: `debug`, `info`, `warning`, `error`, `critical` |
@@ -87,6 +88,7 @@ Top-level Song object. Playback control, scene/track creation, cue points, globa
 |---|---|---|
 | `/live/song/begin_undo_step` | | ⚠️ **Seshat fork addition** — open an explicit undo step. Everything changed before the matching `end` collapses into one entry in Live's undo history |
 | `/live/song/end_undo_step` | | ⚠️ **Seshat fork addition** — close the open undo step. Harmless when none is open; `begin` does not refcount, so the first `end` closes |
+| `/live/song/capture_and_insert_scene` | | Capture the currently playing clips into a new scene inserted below the selected one (Live's "Capture and Insert Scene" command) |
 | `/live/song/capture_midi` | | Capture MIDI |
 | `/live/song/continue_playing` | | Resume session playback |
 | `/live/song/create_audio_track` | `index` | Create audio track at index (-1 = end) |
@@ -101,10 +103,13 @@ Top-level Song object. Playback control, scene/track creation, cue points, globa
 | `/live/song/delete_track` | `track_index` | Delete track |
 | `/live/song/duplicate_scene` | `scene_index` | Duplicate scene |
 | `/live/song/duplicate_track` | `track_index` | Duplicate track |
+| `/live/song/force_link_beat_time` | | Force Ableton Link to adopt Live's current beat time |
 | `/live/song/jump_by` | `time` | Jump song position by beats |
 | `/live/song/jump_to_next_cue` | | Jump to next cue marker |
 | `/live/song/jump_to_prev_cue` | | Jump to previous cue marker |
+| `/live/song/re_enable_automation` | | Re-enable automation that manual tweaks have overridden (Live's "Re-Enable Automation" button) |
 | `/live/song/redo` | | Redo last undone operation |
+| `/live/song/set_or_delete_cue` | | Toggle a cue point at the playhead — the same LOM method `/live/song/cue_point/add_or_delete` above calls; two addresses, one behaviour |
 | `/live/song/start_playing` | | Start session playback |
 | `/live/song/stop_playing` | | Stop session playback |
 | `/live/song/stop_all_clips` | | Stop all clips |
@@ -164,6 +169,7 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 | `/live/song/get/clip_trigger_quantization` | `clip_trigger_quantization` | Clip trigger quantization level |
 | `/live/song/get/current_song_time` | `current_song_time` | Current song time (beats) |
 | `/live/song/get/groove_amount` | `groove_amount` | Groove Pool amount (0.0-1.3; 1.0 = the dial's 100%, 1.3 = its 130% maximum); scales how strongly each clip's *assigned* groove applies — no effect on clips without one |
+| `/live/song/get/is_ableton_link_enabled` | `is_ableton_link_enabled` | Ableton Link on? (1=on, 0=off) |
 | `/live/song/get/is_playing` | `is_playing` | Song playing? |
 | `/live/song/get/loop` | `loop` | Looping? |
 | `/live/song/get/loop_length` | `loop_length` | Loop length |
@@ -194,6 +200,7 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 | `/live/song/set/clip_trigger_quantization` | `clip_trigger_quantization` | Set clip trigger quantization |
 | `/live/song/set/current_song_time` | `current_song_time` | Set song time (beats) |
 | `/live/song/set/groove_amount` | `groove_amount` | Set Groove Pool amount (0.0-1.3); 0 = assigned grooves off |
+| `/live/song/set/is_ableton_link_enabled` | `is_ableton_link_enabled` | Enable/disable Ableton Link (1=on, 0=off) |
 | `/live/song/set/loop` | `loop` | Set looping (1=on, 0=off) |
 | `/live/song/set/loop_length` | `loop_length` | Set loop length |
 | `/live/song/set/loop_start` | `loop_start` | Set loop start |
@@ -204,6 +211,8 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 | `/live/song/set/punch_in` | `punch_in` | Set punch in |
 | `/live/song/set/punch_out` | `punch_out` | Set punch out |
 | `/live/song/set/record_mode` | `record_mode` | Set record mode |
+| `/live/song/set/root_note` | `root_note` | Set the song's root note (int; pairs with the documented getter) |
+| `/live/song/set/scale_name` | `scale_name` | Set the song's scale by name (string; pairs with the documented getter) |
 | `/live/song/set/session_record` | `session_record` | Set session record (1=on, 0=off) |
 | `/live/song/set/signature_denominator` | `signature_denominator` | Set time sig denominator |
 | `/live/song/set/signature_numerator` | `signature_numerator` | Set time sig numerator |
@@ -217,19 +226,41 @@ Listen via `/live/song/start_listen/<property>`, responses on `/live/song/get/<p
 | `/live/song/get/cue_points` | | `name, time, ...` | List cue points |
 | `/live/song/get/num_scenes` | | `num_scenes` | Number of scenes |
 | `/live/song/get/num_tracks` | | `num_tracks` | Number of regular tracks (excludes return and master tracks) |
+| `/live/song/get/scenes/name` | `[index_min, index_max]` | `[names...]` | All scene names in one reply, in index order (optional half-open range — see below) |
 | `/live/song/get/track_names` | `[index_min, index_max]` | `[names...]` | Regular track names, in index order (optional range) |
 | `/live/song/get/track_data` | `start_track, end_track, properties...` | `[values...]` | Bulk track/clip data query (regular tracks only) |
 
-All three iterate `song.tracks`, so return tracks and the master track are
-absent from their counts and their index space. Return-track count and names
-come from `/live/return_track/get/count` and `/live/return_track/get/name` —
-see the Return Track & Master API below.
+The three track queries iterate `song.tracks`, so return tracks and the master
+track are absent from their counts and their index space. Return-track count
+and names come from `/live/return_track/get/count` and
+`/live/return_track/get/name` — see the Return Track & Master API below.
+
+`/live/song/get/scenes/name` differs from `track_names` in three ways worth
+knowing before relying on it: the range is half-open (`[min, max)`, so
+`0 num_scenes` reads everything), `-1` is **not** accepted as "to the end"
+(`track_names` special-cases it; this handler indexes with it raw), and the
+reply carries **names only — the range is not echoed back**, so on a transport
+that correlates by address alone a straggler from an earlier ranged query is
+indistinguishable from the current reply by content.
 
 #### Bulk Track Data
 
 `/live/song/get/track_data` queries multiple tracks/clips at once. Properties use format `track.property_name`, `clip.property_name`, or `clip_slot.property_name`.
 
 Example: `/live/song/get/track_data 0 12 track.name clip.name clip.length` queries tracks 0–11.
+
+#### Legacy structure export — do not use
+
+`/live/song/export/structure` (no arguments, replies `1`) dumps every track's
+clips, devices and parameters to a JSON file. ⚠️ It predates the hardened
+export pattern `/live/browser/export` uses and keeps everything that pattern
+was built to remove: it writes to a **fixed, world-guessable path** in the
+global temp directory (`abletonosc-song-structure.json`) with Live's
+privileges, and on macOS it first blanks `TMPDIR` **for the whole Live
+process** so that path is discoverable — redirecting every temp file Live
+creates afterwards. Upstream code, kept only to avoid an unforced divergence;
+Seshat never calls it. Read structure through the per-address queries or
+`track_data` instead.
 
 ### Beat Events
 
@@ -378,6 +409,7 @@ index subscribes every track.
 
 | Address | Query Params | Description |
 |---|---|---|
+| `/live/track/delete_clip` | `track_id, clip_index` | Delete the clip in slot `clip_index`. No reply — same address family as `/live/clip_slot/delete_clip`, which Seshat uses instead |
 | `/live/track/delete_device` | `track_id, device_id` | Delete a device from the track's chain. **No reply, ever** — `_call_method` returns nothing, and a bad index raises inside the callback, so success and failure look identical on the wire. Callers must verify by re-reading `/live/track/get/num_devices` |
 | `/live/track/stop_all_clips` | `track_id` | Stop all clips on track |
 
@@ -457,6 +489,7 @@ index subscribes every track.
 | `/live/track/get/devices/name` | `track_id` | `track_id, [name, ...]` | All device names |
 | `/live/track/get/devices/type` | `track_id` | `track_id, [type, ...]` | All device types |
 | `/live/track/get/devices/class_name` | `track_id` | `track_id, [class, ...]` | All device class names |
+| `/live/track/get/devices/can_have_chains` | `track_id` | `track_id, [can_have_chains, ...]` | Per device: is it a rack (can hold chains)? |
 
 ---
 
@@ -507,6 +540,12 @@ Every `get/` property above also has
 
 Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/position.
 
+Every `get/` property below also has
+`/live/clip/start_listen/<property> <track_id> <clip_id>` and
+`stop_listen/<property> <track_id> <clip_id>`; pushes arrive on the matching
+`get/` address as `track_id, clip_id, value`. The `playing_position` pair is
+listed explicitly only because it is the one Seshat uses.
+
 | Address | Query Params | Response Params | Description |
 |---|---|---|---|
 | `/live/clip/fire` | `track_id, clip_id` | | Start clip |
@@ -516,6 +555,7 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/get/notes` | `track_id, clip_id, [start_pitch, pitch_span, start_time, time_span]` | `track_id, clip_id, pitch, start_time, duration, velocity, mute, ...` | Query notes (optional range) |
 | `/live/clip/add/notes` | `track_id, clip_id, pitch, start_time, duration, velocity, mute, ...` | | Add MIDI notes |
 | `/live/clip/remove/notes` | `[start_pitch, pitch_span, start_time, time_span]` | | Remove notes (no params = all) |
+| `/live/clip/remove_notes_by_id` | `track_id, clip_id, note_id, ...` | | Remove notes by Live note id. ⚠️ Of limited use here: `get/notes` replies carry no ids, so nothing in this API yields an id to pass |
 | `/live/clip/get/color` | `track_id, clip_id` | `track_id, clip_id, color` | Clip color |
 | `/live/clip/set/color` | `track_id, clip_id, color` | | Set clip color |
 | `/live/clip/get/color_index` | `track_id, clip_id` | `track_id, clip_id, color_index` | Color index (0-69) |
@@ -528,6 +568,7 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/get/length` | `track_id, clip_id` | `track_id, clip_id, length` | Clip length |
 | `/live/clip/get/sample_length` | `track_id, clip_id` | `track_id, clip_id, sample_length` | Sample length |
 | `/live/clip/get/start_time` | `track_id, clip_id` | `track_id, clip_id, start_time` | Start time |
+| `/live/clip/get/end_time` | `track_id, clip_id` | `track_id, clip_id, end_time` | End time (beats) |
 | `/live/clip/get/pitch_coarse` | `track_id, clip_id` | `track_id, clip_id, semitones` | Coarse pitch |
 | `/live/clip/set/pitch_coarse` | `track_id, clip_id, semitones` | | Set coarse pitch |
 | `/live/clip/get/pitch_fine` | `track_id, clip_id` | `track_id, clip_id, cents` | Fine pitch |
@@ -538,6 +579,7 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/get/is_playing` | `track_id, clip_id` | `track_id, clip_id, is_playing` | Is playing? |
 | `/live/clip/get/is_overdubbing` | `track_id, clip_id` | `track_id, clip_id, is_overdubbing` | Is overdubbing? |
 | `/live/clip/get/is_recording` | `track_id, clip_id` | `track_id, clip_id, is_recording` | Is recording? |
+| `/live/clip/get/is_triggered` | `track_id, clip_id` | `track_id, clip_id, is_triggered` | Fired and waiting on quantization? (clip-level twin of the clip_slot/scene property) |
 | `/live/clip/get/will_record_on_start` | `track_id, clip_id` | `track_id, clip_id, will_record_on_start` | Will record on start? |
 | `/live/clip/get/playing_position` | `track_id, clip_id` | `track_id, clip_id, playing_position` | Playing position |
 | `/live/clip/start_listen/playing_position` | `track_id, clip_id` | | Listen for playing position |
@@ -571,6 +613,19 @@ Audio or MIDI clip. Start/stop, notes, name, gain, pitch, color, playing state/p
 | `/live/clip/set/start_marker` | `track_id, clip_id, start_marker` | | Set start marker (beats) |
 | `/live/clip/get/end_marker` | `track_id, clip_id` | `track_id, clip_id, end_marker` | End marker |
 | `/live/clip/set/end_marker` | `track_id, clip_id, end_marker` | | Set end marker (beats) |
+
+### `/live/clips/*` — experimental upstream pair, do not use
+
+Two more addresses are registered in `clip.py` under the plural prefix
+`/live/clips/`: `filter [note_name, ...]` mutes every session clip whose notes
+fall outside the given set, and `unfilter [track_start, track_end]` unmutes
+clips again (no arguments = every track). They are upstream experiments, not
+API: `filter` infers a clip's notes from a suffix in its **name** (regex
+`[_-][A-G]...$`), builds a whole-set cache on first use that is **never
+invalidated** — clips added, deleted or renamed later are judged by stale
+data — and both silently rewrite `muted` across the entire set with no reply.
+Documented so the addresses aren't mistaken for gaps; nothing in Seshat calls
+them and nothing should.
 
 ### A fired slot's clip does not exist yet
 
@@ -651,8 +706,8 @@ not depend on the time signature.
 
 Notes on the measurements, because they contradict what this file said until
 2026-07-31 (previously: `1=8 bars … 5=1/2, 6=1/4, 7=1/8, 8=1/16, 9=1/32`, every
-row of it wrong, and the same claim still appears in a comment in the fork's
-`abletonosc/clip.py`):
+row of it wrong; the fork's `abletonosc/clip.py` carried the same wrong table
+until its comment was corrected to the measured one):
 
 - **Triplet grids exist** — 1/8T and 1/16T. The old claim that there are none,
   and that swing instead comes from the song's `swing_amount`, is wrong in its
@@ -735,7 +790,16 @@ from the Live Object Model, not from a smoke test; `bypass_device` reads
 parameter 0's `value_string` and refuses unless it reads On/Off rather than
 trusting it blind.
 
-Listen for parameter changes via `/live/device/start_listen/parameter/value <track_index> <device_index> <parameter_index>`.
+Every `get/` property in the table below (`name`, `type`, `class_name`) also
+has `/live/device/start_listen/<property> <track_id> <device_id>` and
+`stop_listen/<property> <track_id> <device_id>`; pushes arrive on the matching
+`get/` address as `track_id, device_id, value`.
+
+Listen for parameter changes via
+`/live/device/start_listen/parameter/value <track_index> <device_index> <parameter_index>`,
+and stop with `stop_listen/parameter/value` (same three arguments). Each change
+pushes **two** datagrams: one on `/live/device/get/parameter/value` and one on
+`/live/device/get/parameter/value_string`, both echoing all three indices.
 
 | Address | Query Params | Response Params | Description |
 |---|---|---|---|
@@ -751,6 +815,7 @@ Listen for parameter changes via `/live/device/start_listen/parameter/value <tra
 | `/live/device/set/parameters/value` | `track_id, device_id, value, ...` | | Set all parameter values |
 | `/live/device/get/parameter/value` | `track_id, device_id, parameter_id` | `track_id, device_id, parameter_id, value` | Get single parameter |
 | `/live/device/get/parameter/value_string` | `track_id, device_id, parameter_id` | `track_id, device_id, parameter_id, value` | Get parameter as string (e.g., "2500 Hz") |
+| `/live/device/get/parameter/name` | `track_id, device_id, parameter_id` | `track_id, device_id, parameter_id, name` | Get single parameter's name |
 | `/live/device/set/parameter/value` | `track_id, device_id, parameter_id, value` | | Set single parameter |
 
 ### Device Type Reference
