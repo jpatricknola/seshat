@@ -248,8 +248,8 @@ confirming read (a straggler could present another parameter's display value
 as proof a write landed — a fabricated confirmation, the exact thing the
 read-back exists to prevent), `list_browser_items` (on the file's widest
 timeout), and `query_scene_names/1`. A shared correlated decode
-(`query_correlated/4`, beside the existing `query_echoed/5`) now backs the
-first five, each with the reissue-once stale defence `read_device_names/2`
+(`query_correlated/4`, beside the existing `query_echoed/4`) now backs the
+first five, each with the reissue-once stale defence `read_device_names/1`
 already used; `query_scene_names/1` moved separately onto the bulk
 `/live/song/get/scenes/name` address (one query instead of one per scene),
 whose reply echoes nothing, so a length check against `num_scenes` stands in
