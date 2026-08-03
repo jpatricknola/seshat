@@ -11,7 +11,6 @@ handshake against `http://localhost:4000/mcp`.
 
 ## The tool list survives a real handshake
 
-*Run mode: agent*
 *Last run: 2026-08-02 — 65 tools, matching `Definitions.all()`*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py list`. The count must
@@ -24,7 +23,6 @@ is stale".
 
 ## A changed property carries what you intended
 
-*Run mode: agent*
 *Last run: 2026-08-02 — `set_track_pan.value` carries `minimum`/`maximum`*
 
 `mcp_call.py schema <tool> <property>` for whatever moved. Recorded 2026-07-30,
@@ -34,7 +32,6 @@ Bounds *inside* `oneOf` branches were the untested combination.
 
 ## A rejected call comes back readable, not as a protocol error
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. Came back as `result` with `"isError": true` and
 the text "Invalid parameters for set_track_pan — nothing was sent to Ableton:\n-
 value: must be at most 1.0 (got 2.0) — Pan position. -1.0 = full left, 0.0 =
@@ -55,7 +52,6 @@ the transcript, not as an opaque protocol error.
 
 ## An unknown tool name stays a JSON-RPC `-32602`
 
-*Run mode: agent*
 *Last run: 2026-08-02 — `-32602`, `Tool not found: no_such_tool`*
 
 `mcp_call.py call no_such_tool '{}'`. That is what the MCP spec says an unknown
@@ -64,7 +60,6 @@ protocol errors.
 
 ## The rejected value never reached Live
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. Track 0's pan read 0.0 before the rejected
 `value: 2.0` call and still read 0.0 afterwards via
 `get_session_state(refresh: true)` — a fresh read from Live, not the mirror. Had
@@ -73,11 +68,3 @@ the write gone out, Live would have clamped it to 1.0.*
 After the rejection above, read the target back. A refusal that silently *did*
 send is the thing worth catching, and no reply string can show it to you.
 
-## Claude Desktop lists the tools at all
-
-*Run mode: user — requires a fresh Claude Desktop conversation*
-*Last run: —*
-
-In a fresh conversation. It is the client nothing else here exercises and the one
-with a history of failing quietly; a schema it dislikes shows up as an empty tool
-list, not an error message.

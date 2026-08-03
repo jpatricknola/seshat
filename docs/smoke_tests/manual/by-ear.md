@@ -1,0 +1,94 @@
+# Judged by ear
+
+Five checks where the assertion is a sound. No read-back proves any of them: a
+bypassed device, a preview at the wrong cue level, and a take that recorded
+silence all look identical in every value Seshat can read.
+
+**Set-up, once, for the whole file:** audio output routed somewhere you can hear
+it, cue output routed too (the preview and cue-volume tests need it and are
+silent without it — expected, not a bug), and at least one audio input routed if
+you are doing the recording take.
+
+Worth doing in one sitting for that reason — the routing is the expensive part,
+and it is the same routing for all five.
+
+**A silent result is only a failure once you have confirmed the routing.** Every
+test here can fail for a reason that has nothing to do with Seshat, so rule that
+out before recording a finding.
+
+## Bypass is audible and idempotent
+
+*Why manual: requires visual and audible confirmation in Live*
+*Last run: —*
+
+`bypass_device enabled: false` on an effect is audible and the device's power
+button visibly dims in Live; `enabled: true` restores it with settings intact;
+bypassing an instrument silences its track; repeating a bypass replies "already
+Off" without writing.
+
+## Cue volume is audible
+
+*Why manual: requires cue routing and judgment by ear*
+*Last run: —*
+
+Preview a preset (see [catalog.md](catalog.md)), change `set_cue_volume`, preview
+again — the preview level follows. The scales are already measured (master pan
+−1.0…1.0 shown as `50L`/`C`/`50R`, cue 0.0…1.0 on track volume's dB curve with
+`0.85` = `0.0 dB`), so this is about audibility, not range.
+
+## Browser preview sounds without touching the set
+
+*Why manual: requires audible cue routing and judgment by ear*
+*Last run: —*
+
+`/live/browser/preview_item` and `/live/browser/stop_preview` are served by the
+fork but have no Seshat tool (ROADMAP: browser preview audition), so the MCP
+surface can't reach them. Drive them with
+`.claude/skills/smoke-test/scripts/osc_send.py`, passing a `uri` from
+`search_library`, with Live's cue output routed somewhere audible and the cue
+level up.
+
+Confirm it sounds *without* anything being added to the set (`get_session_state`,
+`get_track_devices`), and that `stop_preview` silences it. A silent preview with
+cue routed nowhere is expected, not a bug — which is exactly why the cue caveat
+has to reach the eventual tool's description.
+
+## Swing plus quantize actually swings
+
+*Why manual: includes judging the amount of swing by ear*
+*Last run: —*
+
+Set swing, then `quantize_clip` at `"1/8"` on a straight clip — notes land *off*
+the straight grid, on swung positions. This is the end-to-end "make it swing".
+Judge by ear whether 0.10–0.20 reads as "subtle"; if not, the fix is
+`set_swing_amount`'s description, not the code.
+
+## Audio take — the headline
+
+*Why manual: requires routed audio input and judgment by ear*
+*Last run: —*
+
+An audio track with an input routed, 4 bars → audible material in the clip. This
+is the capability the whole feature exists for and the one thing `capture_midi`
+can never do. A silent take means the input isn't set, which Seshat cannot see or
+fix.
+
+## A named output changes, verifies, and restores
+
+*Why manual: requires safe routed hardware and hearing the output transition*
+*Last run: —*
+
+Call `get_audio_outputs`, note the current choice, and choose one other safe
+connected output by its exact returned name. With Settings closed and another
+application frontmost, call `set_audio_output` with that exact name over MCP and
+time the call. It must return within 5 seconds, report the observed previous and
+new Live values, move the audible output to the requested hardware, restore the
+previously frontmost application, and leave Settings closed without a second
+cleanup tool call.
+
+Read `get_audio_outputs` again: its current value must name the requested
+device. Then set the original choice back and repeat the read-back so the test
+leaves routing as it found it. A success reply without both audible movement and
+the independent second read means native post-action verification or handler
+reporting is false; a Settings window left behind means one helper invocation no
+longer owns the complete transaction.

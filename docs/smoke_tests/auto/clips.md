@@ -11,18 +11,8 @@ before/after diff and the reply wording only exist in `quantize_clip`. Write a
 deliberately sloppy MIDI clip first — notes a little either side of the beat, at
 least one pair of same-pitch notes close together.
 
-## A loop brace edit lands and reads back
-
-*Run mode: user — requires visual and playback confirmation in Live*
-*Last run: —*
-
-Capture or write an 8-beat MIDI clip, then "loop beats 4–8": the brace visibly
-moves in the note editor, playback loops that section, and the reply echoes
-4.0–8.0 plus the new length.
-
 ## Write ordering and invalid states
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, and the open question is now answered. On an
 8-beat clip braced 0.0–2.0, one call asking for 4.0–8.0 landed, and the reply
 showed the reorder directly — `loop_end` echoed **before** `loop_start`. The
@@ -43,7 +33,6 @@ untouched.
 
 ## The loop pair with looping off
 
-*Run mode: agent*
 *Last run: 2026-08-03 — **defect reproduced, but its blast radius is smaller than
 this test assumed; both are recorded below.** With looping off and play markers
 at 0.0–2.0, the loop pair read **0.0–8.0** — the clip extent, *not* the markers
@@ -72,34 +61,8 @@ ships, expect the *validation* to be wrong while the *report* stays honest: the
 post-write re-read is what stops a stale-read pass from becoming a claimed
 success. Record what you saw rather than treating it as new.
 
-## Audio clip properties
-
-*Run mode: user — requires a prepared audio clip and visual confirmation in Live*
-*Last run: —*
-
-Set `gain` — the echo shows a plausible dB from `gain_display_string`. Change
-`warp_mode`/`warping` and see it in clip view. Confirm `velocity_amount` and
-`legato` read and write without timeouts: they are **assumed** present on audio
-clips and never measured, so if a read stalls, the fix is moving them to the
-MIDI-only branch of `@clip_common_reads`. On an **unwarped** audio clip, confirm
-the reply says "seconds" rather than "beats".
-
-Then the MIDI guard from the other side: `gain` on a MIDI clip errors cleanly and
-nothing is sent.
-
-## The clip reader
-
-*Run mode: user — includes visual confirmation of selection and the note editor*
-*Last run: —*
-
-`get_clip_properties` on a freshly captured clip reports the length and brace Live
-inferred; on an empty slot it errors via `ensure_clip` rather than burning
-fourteen timeouts. A brace edit leaves the clip selected with the note editor
-open.
-
 ## Quantize lands on 1/16ths, not 1/32nds
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. A 7-note sloppy clip quantized `"1/16"` at 1.0
 landed on 0.0, 0.5, 1.0, 1.25, 2.0, 2.5 — every position a 0.25-beat multiple,
 no 0.125 spacing. The decisive one is 1.37 → **1.25**; a 1/32 grid would have
@@ -118,7 +81,6 @@ schema. The corrected table, measured 2026-07-31, is in
 
 ## Partial strength moves notes toward the grid
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, exactly on the predicted number. Same clip at
 `"1/16"` amount 0.5: **1.37 → 1.31** against a 1.25 target. Every other note
 moved half way too — 0.03→0.015, 0.48→0.49, 1.06→1.03, 1.97→1.985, 2.52→2.51,
@@ -131,7 +93,6 @@ with a 1.25 target lands at 1.31.
 
 ## An already-tight clip reports no change without reading as an error
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. The second call replied "Quantize sent, but no
 note changed — … may already sit on the 1/16 grid at 100% strength. If the timing
 audibly didn't change, the installed AbletonOSC may predate /live/clip/quantize…"
@@ -149,7 +110,6 @@ past it needs one call per quantize sent, not per quantize that moved a note.
 
 ## Triplet grids reach values the old docs wrote off
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. A straight 4-note clip (0.2, 0.45, 1.4, 2.1) at
 `"1/8T"` amount 1.0 landed on 0.3333, 0.3333, 1.3333, 2.0 — thirds of a beat.
 Undone and re-quantized at `"1/16T"` it landed on 0.1667, 0.5, 1.3333, 2.1667 —
@@ -160,7 +120,6 @@ beat. The old docs claimed triplet grids did not exist.
 
 ## Collisions are reported as what they were
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, **both arms provoked in one sitting.** *Merge:* a
 full `"1/16"` quantize put C4 at 2.52 and C4 at 2.58 both on 2.5; the clip went
 from 7 notes to 6, the survivor kept the **later** velocity (110, not 70), and
@@ -176,20 +135,8 @@ same-point collisions **merge** into one note keeping the *later* velocity, whil
 a post-move same-pitch overlap instead **trims** the earlier note's duration. Both
 are Live's behaviour, measured — the reply should say which happened.
 
-## Quantize refusals cost nothing
-
-*Run mode: user — includes visual confirmation that the clip is selected*
-*Last run: —*
-
-`amount: 0` errors immediately (0% strength moves nothing), and an empty slot
-errors via `ensure_clip` — neither should take a guard timeout. An audio clip is
-rejected cleanly by `ensure_midi_clip`, with no warp markers touched. One `undo`
-restores the take, and the quantized clip is left selected with the note editor
-open — the notes snapping on screen *is* the confirmation.
-
 ## Quantize in an odd meter
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. `set_time_signature 6/8`, then the same sloppy
 clip at `"1/16"` amount 1.0 produced landing positions identical to the 4/4 run
 note for note — 0.0, 0.5, 1.0, 1.25, 2.0, 2.5, with the same 7→6 merge keeping

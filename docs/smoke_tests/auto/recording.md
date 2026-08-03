@@ -10,7 +10,6 @@ the ones that must pass before anyone trusts the pair.
 
 ## Fixed-length take
 
-*Run mode: agent*
 *Last run: 2026-08-03 — **found broken, fixed, now passes.** First run through
 the tool path since the feature shipped 2026-07-29, and `record_clip` refused
 every call: `will_record_on_start` read `False` on a MIDI track with an
@@ -40,7 +39,6 @@ property on anything beyond "armed track, empty slot", `record_clip` errors on
 
 ## Auto-arm
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed after the guard fix above. `record_clip bars: 2`
 on a **disarmed** track armed it and the reply carried "Armed the track first."
 Live's log confirms the sequence: `arm = False`, `can_be_armed = True`,
@@ -62,19 +60,8 @@ silently disarms another track that sentence needs to say so. If `set/arm` doesn
 land at all, the re-read in `arm_track/1` turns it into a loud error rather than a
 lie.
 
-## Audio take — the headline
-
-*Run mode: user — requires routed audio input and judgment by ear*
-*Last run: —*
-
-An audio track with an input routed, 4 bars → audible material in the clip. This
-is the capability the whole feature exists for and the one thing `capture_midi`
-can never do. A silent take means the input isn't set, which Seshat cannot see or
-fix.
-
 ## Open-ended take and the re-fire
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, end to end through the tool after the guard fix.
 `record_clip` with no `bars` replied "Recording into track 1, slot 3 until
 stop_recording"; `stop_recording` then replied "it ends at the next quantization
@@ -95,7 +82,6 @@ and a different reply.
 
 ## Echo wording
 
-*Run mode: agent*
 *Last run: 2026-08-03 — **found broken, fixed, now passes both cases.** The
 feared failure never occurred: `is_triggered` read true in the window every
 time, so a healthy take was never called a hard failure. But "Recording now."
@@ -123,7 +109,6 @@ the transport **stopped** → "Recording now."
 
 ## Two bars is two bars in 6/8
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, both halves, after the guard fix. After
 `set_time_signature 6/8` a plain `get_session_state` with no `refresh: true`
 already reported 6/8 via the listener push. `record_clip bars: 2` then echoed "2
@@ -138,18 +123,8 @@ Set 6/8 with `set_time_signature`, then `get_session_state` **without**
 regardless of signature (6/8 × 2 bars = 6.0 beats), confirmed against Live
 2026-07-31.
 
-## Each guard produces its own error with nothing fired
-
-*Run mode: user — includes a group track and input-routing state no tool can create*
-*Last run: —*
-
-An occupied slot (names `delete_clip`), a group track (`can_be_armed` false), and
-an armable track whose `will_record_on_start` stays false (unroute its input —
-needs a routing no tool can create).
-
 ## `stop_recording` boundaries
 
-*Run mode: agent*
 *Last run: 2026-08-03 — two of three passed after the guard fix; the third was
 not reached. **Early stop:** an 8-bar (24.0 beat) take stopped at 6.0 beats —
 ended early, looping. **Merely playing:** `stop_recording` on a playing clip
@@ -168,11 +143,3 @@ reached) it currently errors with "Slot S on track T is empty… nothing was fir
 which is safe but misleading; note whether that window is long enough in practice
 to be worth a better message.
 
-## Recording follow cam
-
-*Run mode: user — requires visual confirmation of Live's selected clip and editor*
-*Last run: —*
-
-`record_clip` lands the view on the reddening slot in Session with the detail pane
-left alone; `stop_recording` opens the finished take in the note editor (or
-waveform, for audio).

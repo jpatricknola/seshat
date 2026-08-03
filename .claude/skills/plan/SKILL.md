@@ -67,7 +67,7 @@ be able to say yes/no to each one.
      model that can't see the code (index base, value range, resolver tool).
    - **Testing** — what's covered pure (no Ableton). Nothing tests through
      `Transport.query/3`.
-   - **Live verification** — the tests in [docs/smoke-tests/](docs/smoke-tests/)
+   - **Live verification** — the tests in [docs/smoke_tests/](docs/smoke_tests/)
      this change needs, each cited by file and title, plus what they leave
      uncovered. Run `/smoke-write` to derive them: it owns the rules for
      which properties of a change imply which tests, and writes any that don't

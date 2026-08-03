@@ -1,54 +1,53 @@
 ---
 name: smoke-test
-description: Verify a change end-to-end against a live Ableton Live instance using the seshat MCP tools, or run every smoke test that requires no user action with `/smoke-test agent`
-argument-hint: [optional - `agent` for every zero-user test, or what to focus on]
+description: Run the automated live smoke tests against a running Ableton Live instance using the seshat MCP tools — the whole of docs/smoke_tests/auto/, or one named file in it
+argument-hint: [optional - one file in docs/smoke_tests/auto/, e.g. `mirror` or `clips.md`; omit to run them all]
 disable-model-invocation: true
 ---
 
-Smoke-test Seshat against the live Ableton instance. Focus: **$ARGUMENTS**
-(if no focus given, test whatever changed on this branch — check `git diff`
-and recent commits).
+Run Seshat's automated smoke tests against the live Ableton instance.
 
-There are two modes:
+**This skill runs [docs/smoke_tests/auto/](docs/smoke_tests/auto/) and nothing
+else.**
 
-- **Change mode** (no argument, or a feature/plan named): run the tests cited by
-  that change's `## Live verification` section.
-- **Agent sweep** (`$ARGUMENTS` exactly `agent`): run every test in
-  [docs/smoke-tests/](docs/smoke-tests/) marked `*Run mode: agent*`, regardless
-  of branch. Do not require a plan and do not run or substitute a test marked
-  `*Run mode: user — …*`. The command is deliberately `/smoke-test agent`, not a
-  second sweep skill: this file remains the one owner of execution and judgment.
+- **No argument** → every test in `auto/`, in the order listed by its
+  [README](docs/smoke_tests/auto/README.md).
+- **`$ARGUMENTS` names a file** → only that file. Match it loosely — `mirror`,
+  `mirror.md` and `auto/mirror.md` all mean
+  [docs/smoke_tests/auto/mirror.md](docs/smoke_tests/auto/mirror.md). If it
+  matches no file in `auto/`, say so, list what is there, and stop; do not guess
+  at the nearest one, and do not fall back to running everything.
+
+**Never open, run, or substitute for anything in
+[docs/smoke_tests/manual/](docs/smoke_tests/manual/).** The folder is the run
+mode: `auto/` means one agent can run *and judge* the test alone; `manual/`
+means a person is required. There is no per-test tag to read and no judgement
+call to make. A test in `manual/` whose steps look automatable is still
+user-required, because performing is not judging — and approximating one is the
+single failure this split exists to prevent.
 
 The test suite deliberately stops at the pure layer; anything reaching
 `Transport.query/3` needs a live Ableton. This is that missing live layer, run by
 an agent against the running application. Use the `mcp__seshat__*` tools — they
 exercise the exact path a real user's MCP client does.
 
-**You run tests here; you do not invent them.** They live in
-[docs/smoke-tests/](docs/smoke-tests/), one file per subsystem, and the change
-under test names the ones it needs in its plan doc's `## Live verification`
-section — `docs/PLAN_*.md` while the work is in flight,
-[docs/archive/](docs/archive/) once `/ship` has run.
-
-**If the plan has no `## Live verification` section, or it plainly doesn't cover
-the diff, stop and run `/smoke-write` first.** Deriving checks in your head
-and running them in the same breath produces a report nobody can re-run and nobody
+**You run tests here; you do not invent them.** If the behaviour you want to
+check has no test, stop and run `/smoke-write`, which owns the rules for which
+properties of a change imply which checks. Deriving a check in your head and
+running it in the same breath produces a report nobody can re-run and nobody
 reviewed — and it is how the checks once accreted into a single 9,000-word file
-instead of into the plans. Write them down, then come back. A branch whose plan
-predates this split is the common case, not an exception.
+instead of into the plans.
 
-That plan requirement applies only in change mode. In agent-sweep mode, first
-verify that every `##` test heading in `docs/smoke-tests/*.md` has exactly one
-`Run mode` line before its `Last run` line. Any missing or unknown value is a
-catalog error: report it and stop rather than silently choosing whether it is
-safe. Read every agent-marked test in full, run it, and list every user-marked
-test as **User-required** with its recorded reason.
+**Catalog check, before running anything:** every `##` heading in the files you
+are about to run has a `Last run` line, and no file in `auto/` contains a
+`*Why manual:*` line. That second one means a user-required test is sitting in
+the automated folder — a catalog error. Report it and stop rather than deciding
+for yourself whether running it is safe.
 
-Run the files in the order listed by `docs/smoke-tests/README.md`. Reuse scratch
-material within one subsystem, but clean it up before moving to the next. Restore
-global values immediately after the test that changes them; never rely on a final
-batch of `undo` calls, because later cleanup operations would sit above the edit
-you meant to undo.
+Reuse scratch material within one file, but clean it up before moving to the
+next. Restore global values immediately after the test that changes them; never
+rely on a final batch of `undo` calls, because later cleanup operations would
+sit above the edit you meant to undo.
 
 What follows is how to run them honestly.
 
@@ -62,18 +61,22 @@ What follows is how to run them honestly.
    tempo, time signature. You'll restore or clean up afterwards. **If the session
    looks like real work in progress (named tracks, clips), create your own scratch
    tracks rather than modifying existing ones.**
-3. In agent-sweep mode, compare `priv/AbletonOSC/abletonosc` with the installed
-   Remote Scripts copy (ignore `__pycache__`). If they differ, do not reinstall
-   or restart Live: run tests unrelated to the fork, skip fork-dependent ones,
-   and report that the loaded bridge does not match the repo. In change mode,
-   **if the change touches `priv/AbletonOSC` at all: `mix abletonosc.install` and
-   restart Live** (or toggle AbletonOSC off and on under Preferences >
-   Link/Tempo/MIDI — `/live/api/reload` does not pick these up). This is not
-   bookkeeping. `mix test` greps the submodule in the repo; Live runs the copy in
-   Remote Scripts. A green suite says nothing about what Live has actually loaded,
-   so **without this every result below is right for the wrong reason.** Confirm
-   it took before believing anything, per
-   [smoke-tests/bridge.md](docs/smoke-tests/bridge.md).
+3. **Compare `priv/AbletonOSC/abletonosc` with the installed Remote Scripts
+   copy** (ignore `__pycache__`). If they differ, **do not reinstall and do not
+   restart Live** — both are user actions this skill never takes. Run the tests
+   unrelated to the fork, skip the fork-dependent ones, and report that the
+   loaded bridge does not match the repo.
+
+   This matters more than it looks. `mix test` greps the submodule in the repo;
+   Live runs the copy in Remote Scripts. A green suite says nothing about what
+   Live has actually loaded, so **against a stale copy every result below is
+   right for the wrong reason.** When they match, that is what licenses the
+   fork-dependent results — see
+   [smoke_tests/auto/bridge.md](docs/smoke_tests/auto/bridge.md).
+
+   If a change of yours needs the new Python loaded, `mix abletonosc.install`
+   and the Live restart belong to whoever is driving that change, before they
+   invoke this skill.
 4. **Baseline Live's `Log.txt`** — record its current byte size
    (`~/Library/Preferences/Ableton/Live <version>/Log.txt`) so later checks read
    only the tail past that offset and pre-existing noise never masquerades as a
@@ -81,9 +84,9 @@ What follows is how to run them honestly.
 
 ## Running a test
 
-Work the plan's citations in order, opening each test in
-[docs/smoke-tests/](docs/smoke-tests/) as you reach it. Two habits decide whether
-a run is worth anything:
+Work the files in order, opening each test in
+[docs/smoke_tests/auto/](docs/smoke_tests/auto/) as you reach it and reading it
+in full before acting on it. Two habits decide whether a run is worth anything:
 
 - **Verify through a `get_*` tool, never through the tool's own reply.** Every OSC
   setter is fire-and-forget; a wrong address fails silently, and a refusal that
@@ -96,7 +99,7 @@ a run is worth anything:
   that means nothing.
 
 If a test turns out to be wrong, ambiguous, or overtaken by the code, **fix it in
-`docs/smoke-tests/`** as you go, and say you did in the report. A test you
+`docs/smoke_tests/`** as you go, and say you did in the report. A test you
 silently reinterpreted is one nobody can re-run the same way.
 
 Two helpers live beside this file, so nothing has to be retyped from memory:
@@ -134,43 +137,43 @@ coverage. Four rules:
 
 ## Recording the results
 
-In change mode, two places matter:
+**On the test itself**, in `docs/smoke_tests/auto/`: update its `*Last run:*`
+line to today's date (from the `date` command) and a few words on the outcome —
+the value you read back, the wording that came out, what never got provoked, not
+the word "pass". This line is the only record anywhere that the live layer was
+actually exercised, and it is what a later reader uses to decide whether a green
+suite means anything.
 
-1. **Under each citation in the plan doc.** Write what you observed — the value
-   you read back, the wording that came out, what you substituted, what never got
-   provoked — not the word "pass". This is the evidence for *this change*, and
-   `/ship` archives it with the plan, which is what makes "was this verified"
-   answerable after the branch is gone.
-2. **On the test itself**, in `docs/smoke-tests/`: update its `*Last run:*` line
-   to today's date (from the `date` command) and a few words on the outcome. The
-   plan's record answers "was this change verified"; this line answers "has anyone
-   exercised this test lately", which no archived plan can. **Leave it alone for a
-   test you substituted rather than ran** — the substitution belongs in the report,
-   not in the stamp.
+**Leave the stamp alone for a test you substituted rather than ran** — the
+substitution belongs in the report, not in the stamp. A test that **failed**
+keeps a failing stamp, dated: don't blank it and don't soften it, a dated failure
+is the most useful line in the file.
 
-A test that **failed** keeps a failing stamp, dated. Don't blank it and don't
-soften it; a dated failure is the most useful line in the file.
+**If the branch has a plan doc with a `## Live verification` section**, also
+write what you observed under each citation this run covered. That record is the
+evidence for *that change*, and `/ship` archives it with the plan, which is what
+makes "was this verified" answerable after the branch is gone. Citations
+resolving into `manual/` are not yours to fill in — leave them for whoever runs
+them.
 
 ## Clean up and report
 
 1. Delete any scratch tracks/scenes/clips you created (`delete_track`,
    `delete_scene`, `delete_clip`) or `undo` in-place changes. Restore tempo and
    time signature if you moved them. Leave the session as you found it.
-2. Report: what you exercised, what you verified by reading state back, what
-   failed or timed out, what was substituted, and what can only be judged by ear
-   (sound choice, levels, timing feel) — flag those explicitly for the user to
-   check.
-3. **Findings that are real but out of scope for the branch** go into
+2. **Open with counts**: passed, failed, not reproduced, skipped by environment.
+   Then what you exercised, what you verified by reading state back, what failed
+   or timed out, and what was substituted.
+3. **Name what this run could not cover.** A full-`auto/` run should point at
+   [docs/smoke_tests/manual/](docs/smoke_tests/manual/) and say what still needs
+   a person; a single-file run should say which file it was, so nobody reads it
+   as a sweep. A report that lists only successes reads as full coverage and
+   quietly retires the checks nobody ran.
+4. **Findings that are real but out of scope** go into
    [docs/ROADMAP.md](docs/ROADMAP.md) as an issue, cited by title, as well as into
    the report. The report is read once; the roadmap is the queue.
 
-In agent-sweep mode, the report starts with counts: agent tests passed, failed,
-not reproduced, and skipped by environment; then a **User-required** list copied
-from the tags. Update `Last run` only for tests actually exercised, exactly as in
-change mode. There may be no plan or PR, so the plan-record and PR-body steps are
-no-ops unless one already exists specifically for this sweep.
-
-### Writing results into the PR (change mode only)
+### Writing results into the PR, if there is one
 
 **If the branch has an open PR, write the results into its body.** A smoke test is
 the only evidence that the live half works, and it is exactly the evidence a

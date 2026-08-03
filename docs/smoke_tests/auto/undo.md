@@ -18,7 +18,6 @@ addresses are upstream properties that already ship.
 
 ## One tool call is one undo step
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. `create_track "Undo Test"` then
 `write_midi_notes` ("Undo Clip", 2 notes) into it; **one** `undo` left the track
 standing with its slot empty. A second `undo` removed the track. `redo` then
@@ -39,7 +38,6 @@ timed-out call landed as two. Unpredictable, not merely coarse.
 
 ## Read-only tools cost nothing
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. `get_session_state` and `search_library` issued
 between a `write_midi_notes` and its `undo`; the undo still reverted the clip,
 not one of the reads, and the track was untouched. Empty begin/end pairs cost
@@ -52,7 +50,6 @@ mutating-tool list.
 
 ## A multi-message tool is still one step
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, both forms. `create_return_track "Undo Return"`
 (which appeared as return 1 / send B) was gone after a single `undo`. Separately,
 `write_midi_notes` adding two notes to the existing 6-note "Sloppy" clip reverted
@@ -66,7 +63,6 @@ than each datagram.
 
 ## An error path still closes its step
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. Both failing calls were made back to back —
 `quantize_clip amount: 0` ("0% strength, which cannot move any note") and
 `fire_clip` on an empty slot — then **two** real changes: `create_track "Err
@@ -82,7 +78,6 @@ grouped.
 
 ## An ordinary undo reports the request, not the outcome
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed. The track disappeared and the reply claimed
 nothing about history: "Undo requested. Ableton does not acknowledge undo, so
 this confirms the request was sent, not that history moved. Verify once after the
@@ -94,27 +89,8 @@ was *sent* rather than claiming history moved. Then `redo` once and confirm it
 comes back. `/live/song/undo` and `/live/song/redo` never reply, so a reply
 asserting movement would be a fabrication.
 
-## `can_undo=False` is reachable at an empty history
-
-*Run mode: user — requires creating a new Live Set with a keyboard shortcut*
-*Last run: — ⚠️ unmeasured*
-
-File → New Live Set (hold Command and press N), touch nothing, then call `undo`.
-Expect the error — "Live reported no undo step available, so no undo was sent" —
-and **not** a success string.
-
-This is the one reading the 2026-08-02 probe could not reach without discarding
-the open set. What *was* measured about both properties — plain `bool` attributes,
-not hardwired true, tracking availability independently in both directions — is in
-[../abletonosc-api-docs.md](../abletonosc-api-docs.md#song-getters), and the redo
-guard stands on it either way. If `undo` reports the request as sent instead,
-`can_undo` alone is always true, and the finding is that the **undo guard should
-be dropped rather than widened**; say so in the report, and fold the reading into
-the API docs.
-
 ## A refusal is not a dead end
 
-*Run mode: agent*
 *Last run: 2026-08-03 — passed, and the refusal itself is now measured against a
 live `false`. A scratch `write_midi_notes` cleared the redo stack; `redo` then
 errored "Live reported no redo step available, so no redo was sent. Do not retry
