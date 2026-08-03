@@ -31,12 +31,18 @@ defmodule Seshat.Tools.Handlers do
   @browse_timeout 15_000
   @load_timeout 30_000
 
-  # Guards that run before a mutation read a single track/slot property, which
-  # is sub-millisecond over loopback. A bad index never replies at all
-  # (AbletonOSC raises IndexError inside the callback and nothing is sent), so
-  # the timeout is really "how long until we call it a bad index" — the house
-  # 5s default would turn a typo into a five-second stall on the happy path's
-  # own error branch.
+  # Guards that run before a mutation read a single track/slot property —
+  # roughly 100ms per round trip through the serialized query queue (the
+  # 2026-08-03 mirror-rebuild run, docs/smoke_tests/auto/mirror.md: 4.6s over
+  # ~46 serialized queries), not the sub-millisecond loopback suggests.
+  # A bad index sends no reply on the queried address
+  # (AbletonOSC raises inside the callback), but since the structured
+  # /live/error correlation shipped (2026-08-03) Transport fails that query
+  # almost at once (212ms measured end-to-end through the MCP harness, Python
+  # startup included — docs/smoke_tests/auto/bridge.md; the Transport-level
+  # wait is a fraction of that) — so this timeout is the backstop for a lost
+  # datagram or a missing install, no longer the usual bad-index path. The
+  # house 5s default would turn that backstop into a five-second stall.
   @guard_timeout 2_000
 
   @default_max_results 25
@@ -1974,9 +1980,17 @@ defmodule Seshat.Tools.Handlers do
   # upstream's /live/track/get|set/send. Everything about the returns themselves
   # and the master comes from the fork's return_track.py — a Seshat extension, so
   # an un-run `mix abletonosc.install` means no reply at all rather than an
-  # error. Each mutation therefore reads its own value back first: the guard is
-  # the difference between an error and a lie.
+  # error. Each mutation therefore reads its own value first. That guard proves
+  # the target exists and supplies the old value; it does not verify that Live
+  # subsequently accepted the fire-and-forget setter.
 
+  # TODO! The reply asserts an outcome ("Set send A … to X") after a
+  # fire-and-forget send — and unlike volume/pan/mute/solo there is no send
+  # listener in track.py to push Live's accepted value into the mirror, so a
+  # rejected or lost set is never corrected anywhere. Either hedge the
+  # wording the way undo/redo do ("requested … confirms the request was
+  # sent"), or read the value back after the send the way
+  # set_device_parameter does. (PR #62 review, 2026-08-03.)
   defp do_call("set_track_send", %{"track" => track, "send" => send_index, "value" => value}) do
     with {:ok, old} <-
            query_echoed(
@@ -2305,7 +2319,19 @@ defmodule Seshat.Tools.Handlers do
   # Fourteen single-value getters rather than one bulk read: the bulk
   # `/live/song/get/track_data` reply is a bare value list with no index echo,
   # so it can't be checked against the clip we asked about (same reasoning as
-  # `ensure_midi_track/1`), and these are sub-millisecond loopback round trips.
+  # `ensure_midi_track/1`). This comment used to call these "sub-millisecond
+  # loopback round trips"; the measured figure is roughly 100ms per serialized
+  # round trip (docs/smoke_tests/auto/mirror.md, the 2026-08-03 rebuild run),
+  # so this read costs on the order of 1.5s per clip and 400+ round trips to
+  # survey an 8x4 grid.
+  #
+  # TODO! This 13-17-query design was judged acceptable on that wrong latency
+  # figure. The fix that keeps the echo-check guarantee is a bulk
+  # clip-properties endpoint in the fork — one reply carrying every property
+  # with the indices echoed, the same aggregate-with-count shape as the
+  # vendored /live/return_track/device/get/parameters — then one query here.
+  # See docs/evaluating/abletonosc-integration-review.md (2026-08-03), §3.3.
+  #
   # `ensure_clip/3` first so an empty slot costs one timeout-free error rather
   # than fourteen guard timeouts.
   defp do_call("get_clip_properties", %{"track" => track, "clip_slot" => slot}) do
@@ -2469,9 +2495,11 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # Six sequential reads, ~milliseconds each over loopback. The first failure
-  # ends the call: a summary assembled from a partial read looks exactly as
-  # confident as a complete one, which is the thing this tool exists not to do.
+  # Six sequential reads at ~100ms each measured — over half a second for
+  # the full sweep, not the near-free loopback read this comment once implied.
+  # The first failure ends the call: a summary assembled from a partial read
+  # looks exactly as confident as a complete one, which is the thing this tool
+  # exists not to do.
   defp do_call("get_view_state", _params) do
     Enum.reduce_while(@view_names, {:ok, %{}}, fn view, {:ok, acc} ->
       case query_view_visible(view) do
@@ -2530,6 +2558,11 @@ defmodule Seshat.Tools.Handlers do
   # The two guards up front are not politeness: querying notes on an empty slot
   # raises inside AbletonOSC, which means no reply and a 5s timeout instead of
   # an answer.
+  # TODO! Three separate replies with the echoed track/slot discarded (`_t`,
+  # `_s`) — a straggler abandoned by an earlier timeout can pair one clip's
+  # name with another clip's length or notes. Match the echoes against
+  # track/slot with a reissue-once defence (the read_device_names/2 shape).
+  # Surfaced by the PR #62 review, 2026-08-03.
   defp do_call("get_clip_notes", %{"track" => track} = params) do
     slot = Map.get(params, "clip_slot", 0)
 
@@ -2655,6 +2688,12 @@ defmodule Seshat.Tools.Handlers do
   # Both addresses are Seshat extensions to AbletonOSC, served by the fork's
   # browser.py — see `mix abletonosc.install`.
 
+  # TODO! The reply echoes the category and filter searched, and both are
+  # discarded (`_category`, `_filter`) — a late reply to an earlier browser
+  # search (this address runs on the 15s @browse_timeout, so stragglers have
+  # a wide window) can be presented as this search's results. Match both
+  # echoes against the request before formatting. Surfaced by the PR #62
+  # review, 2026-08-03.
   defp do_call("list_browser_items", %{"category" => category} = params) do
     filter = Map.get(params, "filter", "")
     max_results = Map.get(params, "max_results", @default_max_results)
@@ -2818,6 +2857,21 @@ defmodule Seshat.Tools.Handlers do
     read_vendored_chain("/live/master/get/devices", [], :master)
   end
 
+  # TODO! These three list queries discard the echoed track index (`_track`)
+  # on a transport that correlates replies by address alone. A straggler
+  # abandoned by an earlier timeout can supply another track's names, and the
+  # three parallel lists can describe two different chains. This is exactly
+  # the hazard the vendored combined return/master endpoints exist to close
+  # (see docs/abletonosc-api-docs.md, Return Track & Master device chains).
+  # Fix: match each echo against `track` with a reissue-once stale defence
+  # like `read_device_names/2` below — or better, grow a combined
+  # /live/track/get/devices endpoint in the fork mirroring the vendored reply
+  # shape and collapse this to one query. Not the only such site (an earlier
+  # version of this comment claimed it was): get_clip_notes,
+  # set_device_parameter's confirming read, query_scene_names and
+  # list_browser_items all discard correlation data too — each carries its
+  # own TODO!, and the durable fix is echo-aware reply decoding shared by
+  # every raw Transport.query call site, not per-site patches.
   defp do_call("get_track_devices", %{"track" => track}) do
     with {:ok, {_addr, [_track | names]}} <-
            Transport.query("/live/track/get/devices/name", [track]),
@@ -2858,6 +2912,11 @@ defmodule Seshat.Tools.Handlers do
     )
   end
 
+  # TODO! Same echo-check gap as get_track_devices above, at worse odds: five
+  # separate replies assembled into parallel lists with the echoed track and
+  # device indices discarded (`_t`, `_d`). Verify the echoes with a
+  # reissue-once defence, or collapse to one query on a vendored combined
+  # endpoint shaped like /live/return_track/device/get/parameters.
   defp do_call("get_device_parameters", %{"track" => track, "device" => device}) do
     with {:ok, {_addr, [_t, _d, device_name]}} <-
            Transport.query("/live/device/get/name", [track, device]),
@@ -2928,6 +2987,12 @@ defmodule Seshat.Tools.Handlers do
     )
   end
 
+  # TODO! The confirming read discards its echoed indices (`_t`, `_d`, `_p`),
+  # so a straggler on this address can present another parameter's display
+  # value as verification of this write — a fabricated confirmation, the
+  # exact thing the read-back exists to prevent. Check the echoes against
+  # track/device/parameter before trusting `display`. Surfaced by the PR #62
+  # review, 2026-08-03.
   defp do_call("set_device_parameter", %{
          "track" => track,
          "device" => device,
@@ -3414,8 +3479,21 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # No bulk scene-name address exists, so one query per scene — tiny replies,
-  # fine at real-world scene counts.
+  # One query per scene. This comment used to claim no bulk scene-name address
+  # exists; that was wrong — /live/song/get/scenes/name returns every name in
+  # one reply (upstream all along, documented in docs/abletonosc-api-docs.md
+  # 2026-08-03). Its reply does not echo the requested range, though, so on a
+  # transport that correlates by address alone a straggler from an earlier
+  # ranged query is indistinguishable by content.
+  #
+  # TODO! This N+1 was chosen on the false premise above — and the loop below
+  # doesn't even collect the per-scene benefit it could have: the reply's
+  # echoed index is discarded (`_index`), never checked. As written it pays N
+  # round trips (~100ms each, serialized) and gets neither the single-reply
+  # economy nor the echo verification. Either switch to
+  # /live/song/get/scenes/name (full-range form, length-checked against
+  # num_scenes, reissued once when stale) or keep the loop and actually
+  # verify the echo.
   defp query_scene_names(num_scenes) do
     result =
       Enum.reduce_while(0..(num_scenes - 1), {:ok, []}, fn index, {:ok, acc} ->
@@ -3838,8 +3916,19 @@ defmodule Seshat.Tools.Handlers do
       "retrying blind could load a second copy."
   end
 
-  # One name query per return plus one send query per return. Tiny replies, and
-  # the return count is capped at 12 by Live.
+  # One name query per return plus one send query per return — up to 24 round
+  # trips at ~100ms each (~2s at Live's 12-return cap), a real cost this
+  # comment used to wave off as "tiny replies".
+  #
+  # TODO! The name half of each pair duplicates state Session.State already
+  # mirrors — but a blind mirror read is not the fix: the mirror is
+  # trailing-edge debounced, so after a return delete or reorder it can lag
+  # by ~1s and would label a send with the return that *used to* hold that
+  # index. If this is optimised, gate it on freshness — mirror names only
+  # when no structural refresh is pending and the mirror's return count
+  # matches the count just queried, per-index query fallback otherwise.
+  # "Push-fresh" alone is not a sufficient invariant here (PR #62 review,
+  # 2026-08-03).
   #
   # With no returns there are no sends to read, but the track index still gets
   # checked: otherwise a typo'd track comes back as "this set has no return
@@ -4721,8 +4810,9 @@ defmodule Seshat.Tools.Handlers do
   #
   # Two queries rather than one `/live/song/get/track_data` carrying both
   # properties: that reply is a bare value list with no index echo, so it cannot
-  # be checked against the track we asked about. A second sub-millisecond
-  # loopback round trip is the cheaper thing to spend.
+  # be checked against the track we asked about. A second round trip
+  # (~100ms measured, not the sub-millisecond this comment once claimed) is
+  # still the right spend — the echo check is what it buys.
   defp ensure_midi_track(track) do
     case query_flag("/live/track/get/has_midi_input", [track], "the type of track #{track}") do
       {:ok, true} ->

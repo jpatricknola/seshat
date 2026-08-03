@@ -21,7 +21,113 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · `start_new_project` — the setup wizard, and prompt budget back
+## #1 · Echo checks at every raw reply decode — a straggler must not impersonate an answer
+
+**Goal:** every reply decode that receives echoed request indices verifies
+them against the request it made, with the reissue-once stale defence
+`read_device_names/2` already uses — ideally as shared echo-aware decoding
+for every raw `Transport.query/3` call site, not six hand-rolled patches.
+
+**Why:** Transport correlates replies by address alone (request IDs on the
+wire are settled-rejected), so the caller-side echo check is the only thing
+standing between a straggler abandoned by an earlier timeout and a fabricated
+answer. The 2026-08-03 integration review
+([abletonosc-integration-review.md](evaluating/abletonosc-integration-review.md),
+§2) found six sites that discard the echo they are handed, each now
+TODO!-marked in [handlers.ex](../lib/seshat/tools/handlers.ex):
+`get_track_devices` and `get_device_parameters` (parallel lists that can
+describe two different chains), `get_clip_notes` (one clip's name with
+another clip's notes), `set_device_parameter`'s confirming read (can present
+another parameter's display value as verification of this write — a
+fabricated confirmation, the exact thing the read-back exists to prevent),
+`query_scene_names/1` (discards the per-scene echo it could have verified),
+and `list_browser_items` (category/filter echoes, on the 15s browse timeout —
+a wide straggler window).
+
+**User stories:**
+- As a producer, when a slow reply from an earlier request finally lands,
+  Seshat doesn't describe the wrong track's devices to me — or claim a
+  parameter change was verified when what it actually read was a different
+  knob.
+
+**Planner notes:**
+- The device pair could instead collapse onto vendored combined endpoints
+  (see "Bulk reads vs. per-address queries" below) — but the shared decode
+  fixes all six sites and any future one, so build it first or fold the pair
+  in.
+- `query_scene_names/1` has a second option recorded in its TODO!: switch to
+  `/live/song/get/scenes/name` (full range, length-checked against
+  `num_scenes`, reissued once when stale). Its reply echoes nothing, so
+  there the length check stands in for the echo check.
+- Pure-layer testable: `transport_test.exs` already fabricates stragglers
+  with `OSCSink`; the same shape covers a decode helper.
+
+## #2 · `set_track_send` reports a request, not an outcome
+
+**Goal:** `set_track_send` stops asserting "Set send A … to X" after a
+fire-and-forget send.
+
+**Why:** unlike volume/pan/mute/solo there is no send listener in `track.py`
+(verified at the pin, 2026-08-03) and sends are outside the mirror, so a
+rejected or lost set is never corrected anywhere — the reply is the only
+account the model ever gets, and it is asserted, not observed. The
+integration review's counter-review caught this exact misfiling (§1, Tier B
+correction: sends are Tier A with a guard, not "softened by listeners").
+Small, contained fix.
+
+**Planner notes:**
+- Two shipped patterns to pick between: hedge the wording the way
+  `undo`/`redo` do ("…confirms the request was sent"), or read the value
+  back after the send the way `set_device_parameter` does (one ~100ms query;
+  if the read-back, verify its echoes — see the item above).
+- The guard read before the send already proves the target exists and
+  supplies the old value; it is the *after* that is unaccounted for. TODO!
+  sits on the `do_call("set_track_send", …)` clause.
+- Sibling policy item: "Verify destructive mutations before reporting
+  success", whose planner notes now also name `set_track_arm` and
+  `set_time_signature` from the same review finding.
+
+## #3 · Bulk reads vs. per-address queries — benchmark, then pick the lever
+
+**Goal:** decide, with measurements, how the N+1 read patterns get fixed —
+vendored bulk endpoints, per-address query lanes in Transport, or mirror
+reuse — instead of leaving designs that were judged acceptable on a latency
+figure that was wrong by two orders of magnitude.
+
+**Why:** comments used to justify these patterns as "sub-millisecond loopback
+round trips"; the measured figure is ~100ms per serialized round trip
+(4.6s mirror-rebuild window over ~46 queries,
+[mirror.md](smoke_tests/auto/mirror.md)). At real latency:
+`get_clip_properties` is 13–17 queries (~1.5s per clip, 400+ round trips to
+survey an 8×4 grid), `get_track_sends` up to 25, `query_scene_names/1` N
+beside a bulk address that already exists, and everything rides one
+serialized queue, so the cost is head-of-line blocking for every other tool
+too. Each site carries a TODO!; the option space is §2–§3 of
+[abletonosc-integration-review.md](evaluating/abletonosc-integration-review.md).
+
+**Planner notes:**
+- **Any new bulk reply must echo indices** (aggregate-with-count, the
+  vendored `/live/return_track/device/get/parameters` shape) or it trades N
+  small straggler hazards for one big one — `state.ex`'s bulk-`track_names`
+  comment records exactly why the *existing* bulk addresses don't qualify:
+  their replies echo neither index nor range.
+- Candidate levers, to compare rather than assume: fork bulk endpoints
+  (combined regular-track device reads mirroring the return/master shapes; a
+  mirror-snapshot endpoint; bulk clip properties — review §3, priority
+  order); per-exact-address in-flight lanes in Transport (no wire change,
+  different-address queries overlap, same-address stragglers stay exactly as
+  hazardous); mirror reuse gated on freshness for `read_sends` (names only
+  when no structural refresh is pending and the mirror's return count
+  matches the count just queried — "push-fresh" alone is not sufficient).
+- Fork endpoint work is two commits plus `mix abletonosc.install` plus a
+  Live restart ([osc.md](../.claude/rules/osc.md)); replying variants for
+  destructive mutators (review §3.4) belong to "Verify destructive mutations
+  before reporting success", not here.
+- Ranked below the two correctness items: the cost is measured but nothing
+  is *wrong*, and the echo-check audit may change what the decode layer
+  wants from a bulk reply.
+
+## #4 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -73,7 +179,7 @@ asserting a cleanup unconditionally and hoping the model checks.
 - Sequenced above personas: smaller, fixes a named validation finding, and
   frees budget the persona work will want.
 
-## #2 · Make catalog persistence atomic and report write failures
+## #5 · Make catalog persistence atomic and report write failures
 
 **Goal:** a reindex that cannot be persisted says so, and a crash mid-write
 cannot leave a truncated `catalog.json`.
@@ -99,7 +205,7 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
 - From the 2026-07-29 external review; the durability half accepted, the ETS
   generation swap declined above.
 
-## #3 · Catalog staleness check — notice without being asked
+## #6 · Catalog staleness check — notice without being asked
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -135,7 +241,7 @@ atomic".
 - A startup check may log or cache the stale status, but it must not start a
   reindex: no MCP conversation may be connected to receive the warning.
 
-## #4 · Verify destructive mutations before reporting success
+## #7 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -172,8 +278,17 @@ trigger is a stale model-held index.
   explicit), a few lines in `Definitions` + `Handlers`, and small enough to
   ride along here (or as a drive-by before this item is picked up) rather
   than rank on its own.
+- **Two more Tier-A setters named by the 2026-08-03 integration review**
+  ([abletonosc-integration-review.md](evaluating/abletonosc-integration-review.md),
+  §4 item 6): `set_track_arm` returns "Armed track N" unverified while
+  `record_clip`'s internal `arm_track/1` exists precisely because Live can
+  refuse to arm, and `set_time_signature` fires two independent messages and
+  can report a plain error with the signature half-applied. Both belong to
+  this item's surface. (`set_track_send` from the same review is queued
+  separately — it is smaller and its fix may be a wording hedge, not a
+  verify.)
 
-## #5 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #8 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -208,7 +323,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #6 · Monitored refresh worker for `Session.State`
+## #9 · Monitored refresh worker for `Session.State`
 
 **Goal:** move the mirror rebuild off the GenServer's synchronous path and give
 it an overall deadline plus freshness / connection / last-error metadata, so a
@@ -241,7 +356,7 @@ the shipped fix may retire it outright.
 - `@refresh_sync_timeout` already bounds what the *caller* waits, not what the
   refresh costs. That asymmetry is what this item is actually about.
 
-## #7 · Producer personas — switchable musical taste
+## #10 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* onto the base session instructions. 
 Personas live one per file in [priv/producers/](../priv/producers/)
@@ -274,7 +389,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #8 · AX-backed audio output — the first narrow UI workflow
+## #11 · AX-backed audio output — the first narrow UI workflow
 
 **Goal:** `get_audio_outputs` and `set_audio_output` tools that let a user say
 “switch Live to the headphones,” resolve the installed device name, change
@@ -309,7 +424,7 @@ permission setup out of the request path and measuring what the user waits for.
   outside the Live Set's LOM undo history, and the tool must work without
   emitting unrelated begin/end datagrams.
 
-## #9 · `screenshot_live` — let Seshat see the screen
+## #12 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -333,7 +448,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #10 · Restart the MCP supervisor after abnormal failure
+## #13 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -352,7 +467,7 @@ healthy — the tools simply stop existing, with nothing saying why.
 - Raised as a speculative risk by the 2026-07-29 external review — the failure
   has not been reproduced, only reasoned from the child spec.
 
-## #11 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
+## #14 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
 
 **Goal:** a `tools/call` whose `"arguments"` is JSON `null` gets a
 model-readable rejection — same channel as any other invalid call — instead
@@ -381,7 +496,7 @@ the interception entirely: an absent `"arguments"` key and a non-map value
   [test/seshat/mcp/server_test.exs](../test/seshat/mcp/server_test.exs)
   alongside the existing non-map-`arguments` (array) case.
 
-## #12 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #15 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Goal:** setting `looping` *and* the loop points in one call produces the
 intended brace on a clip whose stored loop points differ from its play markers.
@@ -408,7 +523,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #13 · Search eval harness — numbers before opinions
+## #16 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -433,7 +548,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
-## #14 · Widen the search slate at tied score bands
+## #17 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -448,7 +563,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #15 · Accepted-search memory
+## #18 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -466,7 +581,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #16 · Browser preview audition
+## #19 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -487,7 +602,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #17 · Opt-in `samples` index
+## #20 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -505,7 +620,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #18 · LLM enrichment at reindex
+## #21 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an external model service or an MCP-client-driven tagging
@@ -525,7 +640,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #19 · User XMP tags
+## #22 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -540,7 +655,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #20 · Read-only audio input display — warn before a silent take
+## #23 · Read-only audio input display — warn before a silent take
 
 **Goal:** surface a track's audio input routing, read-only, so `record_clip`
 can warn when an audio take is about to record nothing.
@@ -569,7 +684,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #21 · Device list per track in session state
+## #24 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -588,7 +703,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #22 · Modify a note in place
+## #25 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -601,7 +716,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #23 · Clip grid in session state — only if usage demands it
+## #26 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -615,7 +730,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #24 · Small OSC breadth — grab bag
+## #27 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -636,7 +751,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #25 · Adopt MCP `2026-07-28` when Anubis supports it
+## #28 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
@@ -685,7 +800,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #26 · A rejected index says which index, and what to call next
+## #29 · A rejected index says which index, and what to call next
 
 **Goal:** a tool call Live rejects for a bad index tells the model which index
 was bad and which `get_*` tool resolves it, instead of the bare "Ableton

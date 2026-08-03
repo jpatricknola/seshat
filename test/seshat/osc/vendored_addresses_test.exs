@@ -19,8 +19,14 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   rather than literal `add_handler` calls, so neither check above can see them
   at all. They get their own grep-based describes at the bottom of this file.
 
-  Upstream `/live/` addresses are out of scope here — verifying those against
-  the fork's source is what the `audit-osc` workflow is for.
+  Upstream `/live/` addresses get one check of their own: everything upstream's
+  handler files register — including the routes their property/method loops
+  generate — must appear in the canonical address docs ("upstream address doc
+  coverage" below). That direction used to cover only the vendored files, which
+  is how 19 upstream addresses stayed out of the docs until 2026-08-03 and a
+  false "no bulk scene-name address exists" comment grew in `handlers.ex`.
+  Verifying *behaviour* against the fork's source is still the `audit-osc`
+  workflow's job.
 
   There used to be a fourth file, `track_listeners.py`, which registered no new
   addresses: it overrode five of upstream's, whose listeners unbind from the
@@ -89,6 +95,53 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
   @handler_files [@browser_file, @return_track_file, @song_structure_file, @view_file]
 
+  # Upstream's handler files, for the doc-coverage check only. view.py is
+  # already in @handler_files (its registrations are all literal), and
+  # manager.py carries the five /live/test + /live/api literals. The rest
+  # register most of their addresses through property/method loops, which
+  # upstream_registered_addresses/1 expands.
+  @upstream_handler_files [
+    "priv/AbletonOSC/abletonosc/application.py",
+    "priv/AbletonOSC/abletonosc/song.py",
+    "priv/AbletonOSC/abletonosc/track.py",
+    "priv/AbletonOSC/abletonosc/clip.py",
+    "priv/AbletonOSC/abletonosc/clip_slot.py",
+    "priv/AbletonOSC/abletonosc/scene.py",
+    "priv/AbletonOSC/abletonosc/device.py",
+    "priv/AbletonOSC/abletonosc/midimap.py",
+    "priv/AbletonOSC/manager.py"
+  ]
+
+  # Listener routes are documented once per family rather than once per
+  # property. Keep the exact start/stop templates here so a getter alone cannot
+  # make its listeners look documented after that family-level prose is removed.
+  @listener_doc_markers %{
+    "song" => [
+      "/live/song/start_listen/<property>",
+      "/live/song/stop_listen/<property>"
+    ],
+    "track" => [
+      "/live/track/start_listen/<property>",
+      "/live/track/stop_listen/<property>"
+    ],
+    "clip_slot" => [
+      "/live/clip_slot/start_listen/<property>",
+      "/live/clip_slot/stop_listen/<property>"
+    ],
+    "clip" => [
+      "/live/clip/start_listen/<property>",
+      "/live/clip/stop_listen/<property>"
+    ],
+    "scene" => [
+      "/live/scene/start_listen/<property>",
+      "/live/scene/stop_listen/<property>"
+    ],
+    "device" => [
+      "/live/device/start_listen/<property>",
+      "/live/device/stop_listen/<property>"
+    ]
+  }
+
   @docs "docs/abletonosc-api-docs.md"
 
   describe "vendored OSC addresses" do
@@ -150,6 +203,73 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
                That file is the canonical list every tool is written against, and
                .claude/rules/osc.md says an address that isn't in it doesn't exist.
+               """
+      end
+    end
+
+    # Both file lists are hand-maintained, which is its own loophole: a
+    # registering file in neither list is silently outside every doc check —
+    # midimap.py was exactly that until the 2026-08-03 PR #62 counter-review
+    # caught it. This census makes the lists self-verifying: any Python file
+    # in the fork that registers an address must be claimed by one of them.
+    test "every fork file that registers an address is covered by a doc-coverage list" do
+      registering =
+        Path.wildcard("#{@source}/**/*.py")
+        |> Enum.filter(&(File.read!(&1) =~ "osc_server.add_handler("))
+        |> Enum.sort()
+
+      assert registering != [], "no fork file matches osc_server.add_handler( — census broken"
+
+      covered = @handler_files ++ @upstream_handler_files
+
+      for file <- registering do
+        assert file in covered,
+               """
+               #{file} registers OSC addresses but is in neither @handler_files
+               (vendored) nor @upstream_handler_files (upstream doc coverage), so
+               nothing checks its addresses against #{@docs}. Add it to the right
+               list.
+               """
+      end
+    end
+
+    # The loophole this closes: the docs-coverage test above reads only the
+    # vendored files, so an upstream registration — literal or loop-generated —
+    # could stay undocumented forever, and did (19 of them until 2026-08-03).
+    # Listener addresses ride the docs' per-family convention: a
+    # start_listen/stop_listen pair counts as documented when its family's
+    # get/<property> is, which every family section now states generically.
+    test "every address an upstream handler registers is in the canonical address docs" do
+      docs = File.read!(@docs)
+
+      addresses =
+        @upstream_handler_files
+        |> Enum.flat_map(&upstream_registered_addresses/1)
+        |> Enum.uniq()
+
+      # The extraction reads Python lists with a regex; if the fork
+      # restructures registration this floor fails loudly instead of the check
+      # quietly covering nothing. 462 at the 2026-08-03 pin (an earlier
+      # version of this comment said ~490 — that run had swept in the
+      # vendored files' literals). The count grows as the fork gains
+      # addresses; the floor, not the census, is what's load-bearing.
+      assert length(addresses) >= 400,
+             "expected 400+ upstream addresses, got #{length(addresses)} — " <>
+               "the list extraction in upstream_registered_addresses/1 no longer " <>
+               "matches the fork's registration style."
+
+      for address <- addresses do
+        assert documented?(docs, address),
+               """
+               #{address} is registered by an upstream handler in #{@source} but
+               missing from #{@docs}.
+
+               That file is the canonical list every tool is written against, and
+               .claude/rules/osc.md says an address that isn't in it doesn't exist.
+               Document it (a listener pair is covered by documenting the family's
+               get/<property> plus the family's generic listener statement), or —
+               if the extraction misread the Python — fix
+               upstream_registered_addresses/1.
                """
       end
     end
@@ -764,9 +884,11 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              """
              #{@browser_file}'s stale-export age gate changed.
 
-             It is load-bearing, not hygiene: Transport does not serialize queries, so
-             an unconditional sweep can delete a finished export before an overlapping
-             caller has read it. Ten minutes is well past the 120s query timeout.
+             It is load-bearing, not hygiene: Transport serializes queries, but the
+             file read happens *after* the query resolves — a second export (and the
+             sweep that precedes it) can run while the first export's caller is still
+             reading its file. Ten minutes is well past the 120s query timeout plus
+             any plausible read.
              """
 
       assert source =~ "info.st_mtime > cutoff",
@@ -795,6 +917,77 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   end
 
   defp registered_addresses, do: Enum.flat_map(@handler_files, &registered_addresses/1)
+
+  # Upstream files register addresses two ways: literal add_handler calls
+  # (caught by registered_addresses/1) and loops over `methods`,
+  # `properties_r`, `properties_rw` and track.py's `mixer_properties_rw`
+  # lists, expanded here with the pattern every handler shares:
+  # methods → /live/<family>/<m>; readable properties → get + a
+  # start_listen/stop_listen pair; writable ones → those plus set. The
+  # family is the file's basename (song.py → /live/song/...), which holds
+  # for every file in @upstream_handler_files; manager.py has no lists.
+  defp upstream_registered_addresses(file) do
+    source = File.read!(file)
+    family = Path.basename(file, ".py")
+
+    expanded =
+      ~r/^\s*(methods|properties_r|properties_rw|mixer_properties_rw)\s*=\s*\[(.*?)\]/ms
+      |> Regex.scan(source)
+      |> Enum.flat_map(fn [_match, list_name, body] ->
+        entries =
+          body
+          |> String.split("\n")
+          |> Enum.map(&String.replace(&1, ~r/#.*/, ""))
+          |> Enum.flat_map(fn line ->
+            Regex.scan(~r/"([^"]+)"/, line) |> Enum.map(fn [_, entry] -> entry end)
+          end)
+
+        Enum.flat_map(entries, &expand_registration(family, list_name, &1))
+      end)
+
+    # The literal scan also matches the loops' format strings
+    # ("/live/song/%s" % method) — those are the templates the expansion
+    # above already covers, not addresses.
+    literals = Enum.reject(registered_addresses(file), &String.contains?(&1, "%s"))
+
+    literals ++ expanded
+  end
+
+  defp expand_registration(family, "methods", entry), do: ["/live/#{family}/#{entry}"]
+
+  defp expand_registration(family, "properties_r", entry) do
+    [
+      "/live/#{family}/get/#{entry}",
+      "/live/#{family}/start_listen/#{entry}",
+      "/live/#{family}/stop_listen/#{entry}"
+    ]
+  end
+
+  defp expand_registration(family, _rw, entry) do
+    ["/live/#{family}/set/#{entry}" | expand_registration(family, "properties_r", entry)]
+  end
+
+  # An address is documented when it appears literally, or — for a
+  # start_listen/stop_listen pair — when its getter and both family-level
+  # listener templates do. The docs state listener addresses once per family,
+  # generically, rather than as 200-odd rows.
+  defp documented?(docs, address) do
+    String.contains?(docs, address) or
+      case Regex.run(~r{^/live/([a-z_]+)/(?:start|stop)_listen/(.+)$}, address) do
+        [_, family, property] ->
+          case Map.fetch(@listener_doc_markers, family) do
+            {:ok, markers} ->
+              String.contains?(docs, "/live/#{family}/get/#{property}") and
+                Enum.all?(markers, &String.contains?(docs, &1))
+
+            :error ->
+              false
+          end
+
+        nil ->
+          false
+      end
+  end
 
   # Address strings live inline in Handlers/Registry/Session.State by design
   # (osc.md: greppable via `"/live/`), which is exactly what makes this checkable.

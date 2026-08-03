@@ -902,6 +902,18 @@ defmodule Seshat.Session.State do
       well as the index that no longer exists — the same failure seen from two
       ends.
 
+  Per-index reads over the bulk `/live/song/get/track_names` is a decision,
+  not an oversight (docs/evaluating/abletonosc-integration-review.md,
+  2026-08-03, flagged the bulk address as unused). One query instead of N is tempting at the measured ~100ms per
+  serialized round trip, but the bulk reply is a bare name list — it echoes neither an
+  index nor the requested range, so on a transport that correlates replies by
+  address alone a straggler from an earlier query is indistinguishable by
+  content, and one accepted straggler mislabels every track at once instead of
+  yielding a single `nil`. That would defeat the echo check both bullets above
+  lean on, during exactly the structural churn a rebuild runs in. If the fork
+  ever grows the bulk mirror-snapshot endpoint the review recommends (§3.2,
+  indices echoed in the reply), this loop is what it replaces.
+
   Aborting the whole read rather than skipping the one index is deliberate:
   `do_refresh/1` is about to discard the list anyway, so every query after the
   first unanswered name is spent on a result that gets thrown away. A vanished
