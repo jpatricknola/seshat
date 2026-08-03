@@ -144,3 +144,25 @@ velocity 110. Nothing meter-dependent has crept in. 4/4 restored afterwards.*
 
 The mapping measured identical in 4/4 and 6/8, so a quantize in an odd meter is a
 cheap confirmation nothing meter-dependent crept in.
+
+## Scene names ride one bulk reply
+
+*Last run: —*
+
+`get_clip_slots` reads every scene name in a single no-arg
+`/live/song/get/scenes/name` query, length-checked against `num_scenes` —
+the first production use of that address from `lib/` (the per-scene loop it
+replaced is gone; no `/live/scene/get/name` datagram should ever appear).
+
+In a set with at least three scenes, rename one with `set_scene_name` (e.g.
+scene 1 → "Chorus"), then call `get_clip_slots`. The grid must list every
+scene, in index order, with the rename showing on the right row and the
+other names untouched — unnamed scenes render as Live shows them, not as
+errors or holes.
+
+A wrong name on the right row, rows out of order, or a scene count that
+disagrees with Live's own grid means the bulk read's ordering or length
+check is wrong in `query_scene_names`
+([lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)). An
+error advising a re-read on a quiet set means the length check is comparing
+against the wrong count.

@@ -235,6 +235,36 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
+Echo checks at every raw reply decode shipped 2026-08-03, closing what had
+been the queue's top item. `Seshat.OSC.Transport` correlates replies by
+address alone, so a reply abandoned by an earlier timeout can still answer
+the next query on the same address — the only defence is caller-side, and
+the 2026-08-03 integration review found six call sites in
+`Seshat.Tools.Handlers` that received echoed correlation data and discarded
+it: `get_track_devices` and `get_device_parameters` on regular tracks (parallel
+lists that could describe two different chains), `get_clip_notes` (one
+clip's name paired with another clip's notes), `set_device_parameter`'s
+confirming read (a straggler could present another parameter's display value
+as proof a write landed — a fabricated confirmation, the exact thing the
+read-back exists to prevent), `list_browser_items` (on the file's widest
+timeout), and `query_scene_names/1`. A shared correlated decode
+(`query_correlated/4`, beside the existing `query_echoed/4`) now backs the
+first five, each with the reissue-once stale defence `read_device_names/1`
+already used; `query_scene_names/1` moved separately onto the bulk
+`/live/song/get/scenes/name` address (one query instead of one per scene),
+whose reply echoes nothing, so a length check against `num_scenes` stands in
+for the echo there. Twenty-two new tests pin the shared decode's
+`Enum.zip`-truncation trap and every site's stale-then-answered and
+stale-twice paths against `Seshat.Test.OSCSink`; live verification against
+real Ableton confirmed the happy paths and error paths still behave, recorded
+in the archived plan. No fork change. Plan archived at
+[docs/archive/PLAN_echo_checks.md](docs/archive/PLAN_echo_checks.md). PR
+review surfaced one narrower follow-up outside this plan's scope — a
+regular-track `set_device_parameter` call on a bad device or parameter index
+now reports a generic "did not confirm it" instead of Live's real rejection,
+because `read_back_value/2` collapses every non-`{:ok, _}` outcome alike —
+queued as "`set_device_parameter` on a regular track loses Live's rejection
+message".
 A failed query now fails fast instead of waiting out a 5-second timeout,
 shipped 2026-08-03, closing what had been the queue's top item. `/live/error`
 used to carry only a formatted log string, with nothing to say which request

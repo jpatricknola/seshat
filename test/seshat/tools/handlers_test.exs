@@ -75,6 +75,40 @@ defmodule Seshat.Tools.HandlersTest do
 
   defp answer_guard(_sink, _address, replies), do: replies
 
+  # `guarded_trace/3` widened to answer *any* address, which the echo-check tests
+  # need: they play Live's side of a whole tool's read sequence, not just the
+  # pre-mutation guards, and the reply they are about is usually not one of
+  # `@guard_addresses`.
+  #
+  # `replies` is a list of `{address, args}` in the order the answers should be
+  # given; each is spent on the next query for that address, so a reissue after a
+  # stale reply consumes the next entry for the same address — which is exactly
+  # how "wrong once, right on the retry" is expressed here. A query with no entry
+  # left goes unanswered, the same as running `guarded_trace/3` out of replies.
+  defp scripted_trace(sink, replies, timeout \\ 200) do
+    receive do
+      {:osc_out, address, args} ->
+        [{address, args} | scripted_trace(sink, answer_scripted(sink, address, replies), timeout)]
+    after
+      timeout -> []
+    end
+  end
+
+  defp answer_scripted(sink, address, replies) do
+    case Enum.split_while(replies, fn {addr, _args} -> addr != address end) do
+      {_unmatched, []} ->
+        replies
+
+      {unmatched, [{_addr, reply} | rest]} ->
+        reply_datagram(sink, Message.encode(address, reply))
+        unmatched ++ rest
+    end
+  end
+
+  defp count_queries(trace, address) do
+    Enum.count(trace, fn {addr, _args} -> addr == address end)
+  end
+
   defp reply_datagram(sink, binary) do
     reply_port = :sys.get_state(Seshat.OSC.Transport).reply_port
     :ok = OSCSink.send_datagram(sink, reply_port, binary)
@@ -701,6 +735,377 @@ defmodule Seshat.Tools.HandlersTest do
       refute Enum.any?(osc_trace(), fn {address, _args} ->
                address == "/live/track/set/send"
              end)
+    end
+  end
+
+  # The six reads that used to discard the correlation data Live handed them.
+  # Each test plays AbletonOSC's side twice on one address: once with an echo
+  # belonging to somebody else, then — where the point is the reissue — once
+  # correctly. What is being pinned is that a straggler never reaches the reply
+  # the model reads, and that a legitimate reply still sails through unchanged.
+  describe "get_track_devices and the straggler on its address" do
+    setup :osc_sink
+
+    test "reissues the query and reports the reply that answers it", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("get_track_devices", %{"track" => 1}) end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/track/get/devices/name", [0, "Operator"]},
+          {"/live/track/get/devices/name", [1, "Reverb"]},
+          {"/live/track/get/devices/type", [1, 2]},
+          {"/live/track/get/devices/class_name", [1, "Reverb"]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ ~s(Device 0 "Reverb")
+      refute message =~ "Operator"
+      assert count_queries(trace, "/live/track/get/devices/name") == 2
+    end
+
+    test "a second wrong echo is an error, not a chain", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("get_track_devices", %{"track" => 1}) end)
+
+      scripted_trace(sink, [
+        {"/live/track/get/devices/name", [0, "Operator"]},
+        {"/live/track/get/devices/name", [0, "Operator"]}
+      ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "the devices on track 1"
+      assert message =~ "were not about what was asked for"
+      refute message =~ "Operator"
+    end
+
+    test "a correctly echoed chain reads exactly as it did before the check", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("get_track_devices", %{"track" => 1}) end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/track/get/devices/name", [1, "Reverb"]},
+          {"/live/track/get/devices/type", [1, 2]},
+          {"/live/track/get/devices/class_name", [1, "Reverb"]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "1 device(s) on track 1"
+      assert message =~ "Device 0 \"Reverb\" — audio effect (Reverb)"
+      assert count_queries(trace, "/live/track/get/devices/name") == 1
+    end
+  end
+
+  describe "get_device_parameters and the straggler on its address" do
+    setup :osc_sink
+
+    # Five replies assembled into parallel lists: the failure this rules out is
+    # one device's values printed against another device's parameter names.
+    test "a value list echoing another device is reissued, never merged", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("get_device_parameters", %{"track" => 0, "device" => 1})
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/device/get/name", [0, 1, "Reverb"]},
+          {"/live/device/get/parameters/name", [0, 1, "Device On", "Dry/Wet"]},
+          {"/live/device/get/parameters/value", [0, 2, 0.0, 0.25]},
+          {"/live/device/get/parameters/value", [0, 1, 1.0, 0.5]},
+          {"/live/device/get/parameters/min", [0, 1, 0.0, 0.0]},
+          {"/live/device/get/parameters/max", [0, 1, 1.0, 1.0]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Dry/Wet = 0.5"
+      refute message =~ "0.25"
+      assert count_queries(trace, "/live/device/get/parameters/value") == 2
+    end
+
+    test "a second wrong echo is an error naming the device that was asked about", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("get_device_parameters", %{"track" => 0, "device" => 1})
+        end)
+
+      scripted_trace(sink, [
+        {"/live/device/get/name", [0, 2, "Delay"]},
+        {"/live/device/get/name", [0, 2, "Delay"]}
+      ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "device 1 on track 0"
+      assert message =~ "were not about what was asked for"
+      refute message =~ "Delay"
+    end
+  end
+
+  describe "get_clip_notes and the straggler on its address" do
+    setup :osc_sink
+
+    # The clip guards echo too, so the sink has to answer them about the slot
+    # actually asked for before the read under test is even reached.
+    test "a name reply about another slot twice is an error, not a clip", %{sink: sink} do
+      call =
+        Task.async(fn -> Handlers.call("get_clip_notes", %{"track" => 0, "clip_slot" => 1}) end)
+
+      scripted_trace(sink, [
+        {"/live/clip_slot/get/has_clip", [0, 1, 1]},
+        {"/live/clip/get/is_midi_clip", [0, 1, 1]},
+        {"/live/clip/get/name", [0, 2, "Somebody else's clip"]},
+        {"/live/clip/get/name", [0, 2, "Somebody else's clip"]}
+      ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "the clip in slot 1 on track 0"
+      refute message =~ "Somebody else's clip"
+    end
+
+    # The one read in the file whose echo is a strict prefix of its request:
+    # `/live/clip/get/notes` echoes the track and slot and never the range it was
+    # given, so a reply that repeated the range would be the surprise here.
+    test "the ranged notes read verifies the track and slot it echoes", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("get_clip_notes", %{
+            "track" => 0,
+            "clip_slot" => 1,
+            "start_time" => 0,
+            "time_span" => 4
+          })
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip_slot/get/has_clip", [0, 1, 1]},
+          {"/live/clip/get/is_midi_clip", [0, 1, 1]},
+          {"/live/clip/get/name", [0, 1, "Loop"]},
+          {"/live/clip/get/length", [0, 1, 4.0]},
+          {"/live/clip/get/notes", [0, 1, 60, 0.0, 1.0, 100, 0]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ ~s(Clip "Loop" on track 0, slot 1)
+      assert message =~ "C4 (60)"
+
+      # The range really did go out, and really was not echoed back.
+      assert {"/live/clip/get/notes", [0, 1, 0, 128, 0.0, 4.0]} in trace
+    end
+  end
+
+  describe "set_device_parameter's confirming read" do
+    setup :osc_sink
+
+    # The fabricated-confirmation tripwire: a read-back that answers about
+    # another parameter must never be dressed up as proof this write landed.
+    test "an unverified read-back is reported as unconfirmed, never as a value", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_device_parameter", %{
+            "track" => 0,
+            "device" => 1,
+            "parameter" => 2,
+            "value" => 0.5
+          })
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/device/get/parameter/value_string", [0, 1, 3, "-inf dB"]},
+          {"/live/device/get/parameter/value_string", [0, 1, 3, "-inf dB"]}
+        ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "parameter 2 of device 1 on track 0"
+      assert message =~ "did not confirm it"
+      assert message =~ "get_device_parameters"
+      refute message =~ "it now reads"
+      refute message =~ "-inf dB"
+
+      # The set itself is on the wire either way — that is what the honest
+      # wording above is about.
+      assert {"/live/device/set/parameter/value", [0, 1, 2, 0.5]} in trace
+    end
+
+    test "a read-back about the parameter that was written still confirms it", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_device_parameter", %{
+            "track" => 0,
+            "device" => 1,
+            "parameter" => 2,
+            "value" => 0.5
+          })
+        end)
+
+      scripted_trace(sink, [{"/live/device/get/parameter/value_string", [0, 1, 2, "50 %"]}])
+
+      assert {:ok, message} = Task.await(call)
+      assert message == "Set parameter 2 of device 1 on track 0 to 0.5 — it now reads '50 %'"
+    end
+  end
+
+  describe "list_browser_items and the straggler on its address" do
+    setup :osc_sink
+
+    test "results from another category are refused, not presented", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("list_browser_items", %{
+            "category" => "audio_effects",
+            "filter" => "reverb"
+          })
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/browser/get/items",
+           ["instruments", "reverb", "ok", 1, 1, "Operator", "Instruments/Operator", "query:1"]},
+          {"/live/browser/get/items",
+           ["instruments", "reverb", "ok", 1, 1, "Operator", "Instruments/Operator", "query:1"]}
+        ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "the browser search for audio_effects"
+      assert message =~ "run the search again"
+      refute message =~ "Operator"
+      assert count_queries(trace, "/live/browser/get/items") == 2
+    end
+
+    # The echo is verified before the decode fun ever runs, so a stale *error*
+    # envelope is rejected rather than reported as this search's failure — the
+    # same call `load_outcome/2` makes.
+    test "an error envelope about another search is stale, not this search's failure", %{
+      sink: sink
+    } do
+      call =
+        Task.async(fn ->
+          Handlers.call("list_browser_items", %{
+            "category" => "audio_effects",
+            "filter" => "reverb"
+          })
+        end)
+
+      scripted_trace(sink, [
+        {"/live/browser/get/items", ["samples", "reverb", "error", "Unknown category: samples"]},
+        {"/live/browser/get/items", ["samples", "reverb", "error", "Unknown category: samples"]}
+      ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "the browser search for audio_effects"
+      refute message =~ "Unknown category"
+    end
+
+    test "an error envelope about this search is still relayed in Live's words", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("list_browser_items", %{
+            "category" => "audio_effects",
+            "filter" => "reverb"
+          })
+        end)
+
+      scripted_trace(sink, [
+        {"/live/browser/get/items",
+         ["audio_effects", "reverb", "error", "Browser category unavailable"]}
+      ])
+
+      assert Task.await(call) == {:error, "Browser category unavailable"}
+    end
+
+    test "a correctly echoed search reads exactly as it did before the check", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("list_browser_items", %{
+            "category" => "audio_effects",
+            "filter" => "reverb"
+          })
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/browser/get/items",
+           [
+             "audio_effects",
+             "reverb",
+             "ok",
+             1,
+             1,
+             "Reverb",
+             "Audio Effects/Reverb",
+             "query:AudioFx#Reverb"
+           ]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Reverb"
+      assert message =~ "query:AudioFx#Reverb"
+
+      # max_results rides the request and is deliberately absent from the echo.
+      assert {"/live/browser/get/items", ["audio_effects", "reverb", 25]} in trace
+    end
+  end
+
+  describe "get_clip_slots reads every scene name in one reply" do
+    setup :osc_sink
+
+    # One track, two scenes: `track_data` answers 3 + 5 × 2 values for it, and
+    # the scene names then arrive as one bulk reply that echoes nothing at all —
+    # which is why the count it was read against stands in for the echo check.
+    @track_data ["Drums", 1, 0, 1, 0, "Loop", "", 4.0, 0.0, 0, 0, 0, 0]
+
+    test "a reply carrying the wrong number of names is reissued", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("get_clip_slots", %{}) end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/song/get/num_tracks", [1]},
+          {"/live/song/get/num_scenes", [2]},
+          {"/live/song/get/track_data", @track_data},
+          {"/live/song/get/scenes/name", ["Intro"]},
+          {"/live/song/get/scenes/name", ["Intro", "Verse"]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "2 scene(s): 0 \"Intro\", 1 \"Verse\""
+
+      assert count_queries(trace, "/live/song/get/scenes/name") == 2
+      assert count_queries(trace, "/live/scene/get/name") == 0
+    end
+
+    test "a second disagreement says re-read the grid rather than guessing", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("get_clip_slots", %{}) end)
+
+      scripted_trace(sink, [
+        {"/live/song/get/num_tracks", [1]},
+        {"/live/song/get/num_scenes", [2]},
+        {"/live/song/get/track_data", @track_data},
+        {"/live/song/get/scenes/name", ["Intro"]},
+        {"/live/song/get/scenes/name", ["Intro"]}
+      ])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "did not carry 2 names"
+      assert message =~ "get_clip_slots"
+      refute message =~ "Intro"
+    end
+
+    test "the matching reply is read straight through, one query for the lot", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("get_clip_slots", %{}) end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/song/get/num_tracks", [1]},
+          {"/live/song/get/num_scenes", [2]},
+          {"/live/song/get/track_data", @track_data},
+          {"/live/song/get/scenes/name", ["Intro", "Verse"]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Track 0 \"Drums\" (MIDI)"
+      assert message =~ "Loop"
+
+      assert count_queries(trace, "/live/song/get/scenes/name") == 1
+      assert count_queries(trace, "/live/scene/get/name") == 0
     end
   end
 
@@ -2041,7 +2446,7 @@ defmodule Seshat.Tools.HandlersTest do
       call = Task.async(fn -> Handlers.call("record_clip", %{"track" => 2, "clip_slot" => 0}) end)
 
       # Indexed getters must echo the indices they were asked about or
-      # `query_echoed/5` rejects the reply, so these are arg lists rather than
+      # `query_echoed/4` rejects the reply, so these are arg lists rather than
       # the bare `T`/`F` an index-free song property answers with. In order:
       # has_clip 0 (slot empty), arm 1 (already armed), will_record **0**, then
       # the post-fire echo — has_clip 1, is_recording 1.
@@ -2839,6 +3244,57 @@ defmodule Seshat.Tools.HandlersTest do
       compose(%{refresh_pending?: true})
       |> String.split("\n\n")
       |> List.last()
+    end
+  end
+
+  # Transport correlates replies by address alone, so the prefix a reply echoes
+  # is the only thing on the wire separating this call's answer from one
+  # abandoned by an earlier timeout. `correlate_reply/2` is that whole decision,
+  # pure and therefore checkable without a socket.
+  describe "correlate_reply/2" do
+    test "hands back what is behind a matching echo" do
+      assert Handlers.correlate_reply([1, 2, "Reverb"], [1, 2]) == {:ok, ["Reverb"]}
+
+      assert Handlers.correlate_reply([1, "Operator", "Reverb"], [1]) ==
+               {:ok, ["Operator", "Reverb"]}
+    end
+
+    test "rejects a reply that echoes another index" do
+      assert Handlers.correlate_reply([3, 2, "Reverb"], [1, 2]) == :stale
+      assert Handlers.correlate_reply([1, 5, "Reverb"], [1, 2]) == :stale
+    end
+
+    # The `Enum.zip/2` truncation trap, and the reason this function is public:
+    # zipping a one-element reply against a two-index request compares one pair,
+    # finds it equal, and reports a match having checked nothing.
+    test "rejects a reply too short to carry the echo at all" do
+      assert Handlers.correlate_reply([1], [1, 2]) == :stale
+      assert Handlers.correlate_reply([], [0]) == :stale
+    end
+
+    # A float index casts to an int inside Live and echoes back as one, so the
+    # reply really is ours — `==` rather than a pin.
+    test "matches an integer echo against the float index that was sent" do
+      assert Handlers.correlate_reply([1, "Reverb"], [1.0]) == {:ok, ["Reverb"]}
+    end
+
+    # The browser echoes strings rather than indices, as `str()` round-trips of
+    # what it was sent — identity for the schema-validated strings Seshat sends,
+    # so nothing here should be case-folded or trimmed.
+    test "compares string echoes verbatim" do
+      assert Handlers.correlate_reply(
+               ["audio_effects", "reverb", "ok", 1, 1],
+               ["audio_effects", "reverb"]
+             ) == {:ok, ["ok", 1, 1]}
+
+      assert Handlers.correlate_reply(
+               ["audio_effects", "Reverb", "ok", 1, 1],
+               ["audio_effects", "reverb"]
+             ) == :stale
+    end
+
+    test "an empty echo takes the whole reply as payload" do
+      assert Handlers.correlate_reply([1, 2, 3], []) == {:ok, [1, 2, 3]}
     end
   end
 

@@ -1157,7 +1157,7 @@ defmodule Seshat.Session.State do
   # constants are the defect this module is fixing.
   #
   # Every echoed index is checked against the one asked for, the same reason
-  # `Handlers.query_echoed/5` does it: Transport serializes queries — one in
+  # `Handlers.correlate_reply/2` does it: Transport serializes queries — one in
   # flight, the rest queued — but correlates replies by address alone, so a reply
   # abandoned by an earlier timeout can still answer the next query on that same
   # address. Unchecked, that hangs return 0's name on return 1 — a wrong answer

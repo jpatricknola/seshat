@@ -51,9 +51,13 @@ defmodule Seshat.OSC.Transport do
      arguments, since correlation here is by address **and** every argument.
 
   The remaining defense against all three is caller-side: the echo checks in
-  `Seshat.Tools.Handlers.query_echoed/5`, `Seshat.Commands.Registry.ensure_clip/4`
-  and `Seshat.Session.State`'s query helpers compare the indices a reply echoes
-  against the ones asked for, and refuse a mismatch. Keep them.
+  `Seshat.Tools.Handlers.correlate_reply/2` — which every correlated read in
+  `Handlers` rides via its `query_correlated/4` wrapper — plus
+  `Seshat.Commands.Registry.ensure_clip/4` and `Seshat.Session.State`'s query
+  helpers compare the values a reply echoes against the ones asked for, and refuse
+  a mismatch. Keep them. A reply with nothing to echo (an index-free song
+  property, `track_data`) has no caller-side defence available at all; each such
+  site says so where it is written.
 
   A reply whose address does *not* match the in-flight request is broadcast and
   answers nobody — not suppressed, because the mirror turns those into free
