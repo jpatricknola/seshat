@@ -108,6 +108,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     "priv/AbletonOSC/abletonosc/clip_slot.py",
     "priv/AbletonOSC/abletonosc/scene.py",
     "priv/AbletonOSC/abletonosc/device.py",
+    "priv/AbletonOSC/abletonosc/midimap.py",
     "priv/AbletonOSC/manager.py"
   ]
 
@@ -172,6 +173,32 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
                That file is the canonical list every tool is written against, and
                .claude/rules/osc.md says an address that isn't in it doesn't exist.
+               """
+      end
+    end
+
+    # Both file lists are hand-maintained, which is its own loophole: a
+    # registering file in neither list is silently outside every doc check —
+    # midimap.py was exactly that until the 2026-08-03 PR #62 counter-review
+    # caught it. This census makes the lists self-verifying: any Python file
+    # in the fork that registers an address must be claimed by one of them.
+    test "every fork file that registers an address is covered by a doc-coverage list" do
+      registering =
+        Path.wildcard("#{@source}/**/*.py")
+        |> Enum.filter(&(File.read!(&1) =~ "osc_server.add_handler("))
+        |> Enum.sort()
+
+      assert registering != [], "no fork file matches osc_server.add_handler( — census broken"
+
+      covered = @handler_files ++ @upstream_handler_files
+
+      for file <- registering do
+        assert file in covered,
+               """
+               #{file} registers OSC addresses but is in neither @handler_files
+               (vendored) nor @upstream_handler_files (upstream doc coverage), so
+               nothing checks its addresses against #{@docs}. Add it to the right
+               list.
                """
       end
     end
