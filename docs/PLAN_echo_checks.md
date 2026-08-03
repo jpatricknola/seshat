@@ -374,20 +374,86 @@ sent from `lib/` behaves as the source says.
 - `smoke_tests/auto/clips.md § Scene names ride one bulk reply` — **new test,
   written with this plan** — first production use of
   `/live/song/get/scenes/name`; names correct, in order, after a rename.
+
+  *PR review 2026-08-03 — passed.* 8-scene set, all unnamed. `set_scene_name`
+  1 → "Chorus" then 5 → "Outro"; `get_clip_slots` reported
+  `8 scene(s): 0 "", 1 "Chorus", 2 "", 3 "", 4 "", 5 "Outro", 6 "", 7 ""` —
+  every scene present, in index order, both renames on the right rows,
+  unnamed scenes rendered as `""` rather than holes or errors. No re-read
+  advice, so the length check matched `num_scenes` first time. Both names
+  cleared afterwards and re-read as `""`.
+
 - `smoke_tests/auto/devices.md § Browser search echoes the search it ran` —
   **new test, written with this plan** — `list_browser_items` happy path
   through the new envelope decode, plus its clean unknown-category error.
+
+  *PR review 2026-08-03 — passed on the happy path; the unknown-category step
+  did not exercise what it claims.* `audio_effects` + `reverb` returned
+  "Showing 25 of 158 matches" with plausible items and uris — the real echo
+  passed the check and `total` survived the `browser_items_payload/1` decode.
+  The unknown-category step (`sounds_typo`) produced an immediate, clean error
+  listing the valid categories, but from `Seshat.Tools.Validation`'s schema
+  enum, **not** from `browser.py`'s echoed error arm — `category` is an enum in
+  `Definitions`, so no datagram is ever sent. The echo-checked error arm is
+  therefore unreachable from the tool surface and is covered only by the pure
+  test at `handlers_test.exs` ("an error envelope about another search is
+  stale"). The test text should say so.
+
 - `smoke_tests/auto/devices.md § Parameter 0 is the 'Device On' switch,
   displaying 'On'/'Off'` — `get_device_parameters` and `set_device_parameter`'s
   read-back on real replies; a false-positive echo rejection would fail here.
+
+  *PR review 2026-08-03 — passed on all three device kinds.* On a scratch MIDI
+  track: stock Hybrid Reverb (54 params), Instrument Rack preset "E-Piano
+  Basic".adg (18), AU plugin Apple AUDelay (4). Parameter 0 read "Device On"
+  (range 0.0–1.0) on each, and the five correlated replies assembled coherently
+  (names, values, mins, maxes all aligned). `set_device_parameter` on Hybrid
+  Reverb's Dry/Wet (53) → 0.75 replied "it now reads '75 %'", so
+  `read_back_value/2` verified a real echo and produced the confirmation
+  wording unchanged. `bypass_device` off/on on all three, no refusal.
+
 - `smoke_tests/auto/devices.md § Device error paths are errors, not stalls` —
   bad indices through the refitted decode still fail fast and cleanly.
+
+  *PR review 2026-08-03 — passed, all three paths ≤0.27s (whole `mcp_call.py`
+  round trip).* `delete_device` device 7 on a 3-device chain → "There are 3
+  device(s) on track 1 (indices 0–2) — there is no device 7. Chain: 0: E-Piano
+  Basic, 1: Hybrid Reverb, 2: AUDelay." (0.27s). Device 0 on an empty chain →
+  "There are no devices on track 0, so there is nothing to delete…" (0.19s).
+  Track 99 → "Ableton rejected the request: Index out of range" (0.19s) —
+  that one runs through the refitted `read_device_names/1`, so the
+  `{:live_error, _}` passthrough is confirmed on the new core.
+
 - `smoke_tests/auto/bridge.md § A rejected query fails fast, and says rejected`
   — the `{:live_error, _}` passthrough survives the refactor.
+
+  *PR review 2026-08-03 — passed.* `get_track_devices` track 99 → "Ableton
+  rejected the request: Index out of range" in 0.24s. Also checked the two
+  other refitted read paths: `get_device_parameters` track 99 → same wording
+  in 0.19s, and `get_clip_notes` track 99 → "Index out of range. Nothing
+  further was sent…" in 0.19s (its guard rejects first, as this test's own
+  note records). No guard-timeout wording anywhere, no 5s stall.
+
 - `smoke_tests/auto/bridge.md § Live's Log.txt stays clean during ordinary
   work` — the sequence exercises `get_clip_slots` (now the bulk scene read)
   and ranged `get_clip_notes`; a raise from the no-arg `scenes/name` form
   would land in the log.
+
+  *PR review 2026-08-03 — passed.* Baselined `Live 12.4.3/Log.txt` at
+  6,290,538 bytes, then ran create_track → write_midi_notes → get_clip_slots →
+  duplicate_clip → ranged get_clip_notes (start_time 0, time_span 2,
+  start_pitch 60, pitch_span 8 → the expected 2 of 3 notes) → delete_clip ×2 →
+  delete_track. 106 new log lines, **zero** tracebacks, ERROR lines or "Error
+  handling OSC message" lines. The no-arg `/live/song/get/scenes/name` form
+  does not raise in Live.
+
+**Preflight for the runs above:** the installed Remote Scripts copy differs
+from `priv/AbletonOSC/abletonosc` at the pin in exactly one place — a comment
+block in `track.py` — so the loaded bridge is functionally identical and the
+fork-dependent results stand. The running Seshat instance was confirmed to be
+serving this branch (its `set_device_parameter` read-back failure now reads
+"…did not confirm it", wording that exists only here). Session restored: no
+scratch track, scenes back to unnamed, tempo and time signature untouched.
 
 **Uncovered:** the stale/reissue branches against real Ableton — a straggler
 needs a timed-out query immediately followed by a same-address query, which

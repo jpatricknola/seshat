@@ -85,9 +85,16 @@ plausible items. Then search an unknown category (e.g. `sounds_typo`) and
 confirm an immediate clean error listing the valid categories — not a stale
 warning, not a 15s stall.
 
-A valid search erroring with wording about replies "not about the … asked
-for" means the echo comparison is rejecting legitimate replies — check what
-`browser.py` echoes against what the request sent (string round-trip) in
+Note: `category` is a schema enum in `Definitions`, so the unknown-category
+step is rejected by `Seshat.Tools.Validation` before any datagram is sent —
+it exercises Validation's error, not `browser.py`'s echoed error arm. That
+arm (an error envelope about another search is stale) is covered only by the
+pure test in `handlers_test.exs`; this step still confirms a clean immediate
+error, just not the one it names.
+
+A valid search erroring with wording about replies "were not about what was
+asked for" means the echo comparison is rejecting legitimate replies — check
+what `browser.py` echoes against what the request sent (string round-trip) in
 `list_browser_items`'s decode
 ([lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)).
 

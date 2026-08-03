@@ -2446,7 +2446,7 @@ defmodule Seshat.Tools.HandlersTest do
       call = Task.async(fn -> Handlers.call("record_clip", %{"track" => 2, "clip_slot" => 0}) end)
 
       # Indexed getters must echo the indices they were asked about or
-      # `query_echoed/5` rejects the reply, so these are arg lists rather than
+      # `query_echoed/4` rejects the reply, so these are arg lists rather than
       # the bare `T`/`F` an index-free song property answers with. In order:
       # has_clip 0 (slot empty), arm 1 (already armed), will_record **0**, then
       # the post-fire echo — has_clip 1, is_recording 1.

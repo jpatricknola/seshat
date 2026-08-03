@@ -839,6 +839,39 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
+## #30 · `set_device_parameter` on a regular track loses Live's rejection message
+
+**Goal:** an invalid device or parameter index on a **regular-track**
+`set_device_parameter` call reports Live's actual rejection ("Ableton rejected
+the request: Index out of range"), not the generic "did not confirm it" that
+`read_back_value/2` currently produces for every non-`{:ok, _}` outcome.
+
+**Why:** found in the `echo-checks` PR review (2026-08-03,
+[handlers.ex:4216](../lib/seshat/tools/handlers.ex#L4216)). The vendored
+paths (`target: "return"`/`"master"`) pre-guard with `query_echoed/4` before
+sending, so a bad index is diagnosed pre-mutation; the regular-track clause
+has no such guard and relies on `read_back_value/2`'s post-mutation read as
+its only index diagnosis. That helper collapses every failure —
+`{:error, {:live_error, "Index out of range"}}` included — to `:unconfirmed`,
+so the model is told to "verify with `get_device_parameters`", which fails
+the same way instead of surfacing the real error. Same theme as the item
+above (a fast-fail losing a diagnostic it already has), different site.
+
+**User stories:**
+- As a producer, when I name a device or parameter that doesn't exist,
+  Seshat tells me the index was rejected instead of sending me in a circle
+  through `get_device_parameters`.
+
+**Planner notes:**
+- Cheapest fix, per the review: let `read_back_value/2` pass
+  `{:error, {:live_error, _}}` through unchanged so the regular-track clause
+  can render it via `Transport.describe_error/1`, keeping `:unconfirmed` only
+  for a genuine non-answer (mismatch, stale, timeout).
+  `set_vendored_parameter`'s call site already handles a bare `{:error,
+  reason}` alongside `:unconfirmed`, so the pattern exists.
+  Pure-layer testable with the existing `OSCSink` pattern used for the
+  reissue tests around this function.
+
 ---
 
 ## Deliberately not planned
