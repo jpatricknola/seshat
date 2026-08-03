@@ -5,7 +5,7 @@ a running Ableton, and every OSC setter is fire-and-forget — success, a value
 Live rejected, and a Remote Scripts copy predating the fork are identical on the
 wire. These files are the only thing standing behind that whole surface.
 
-## Adding tests - pick the correct folder
+## Adding tests - use the correct folder!
 
 **[auto/](auto/) — an agent can run and judge it alone**, with Live and Seshat
 already running and no user action.  Prefer auto tests when possible.
@@ -16,8 +16,11 @@ conversation whose replies are the thing being judged. Each `manual/` test also 
 
 ## Running them
 
-- **`/smoke-test agent`** runs everything in `auto/`. It never substitutes an
-  automated approximation for a `manual/` test; its report names those instead.
+- **`/smoke-test`** runs everything in `auto/`, or one named file in it
+  (`/smoke-test mirror`). It never substitutes an automated approximation for a
+  `manual/` test; its report names those instead. It also never installs the
+  bridge and never restarts Live — a change that needs new Python loaded does
+  that before invoking it.
 - `manual/` is run by a person, grouped by what the run demands — see
   [manual/README.md](manual/README.md).
 
@@ -31,10 +34,13 @@ layer was actually exercised; `*Last run: —*` means nobody ever has.
    uses `/smoke-write`, which owns the rules for which properties of a change
    imply which tests. If nothing here fits, that skill writes a new test into
    the right file and cites it like any other.
-2. **`/smoke-test` runs them** against live Ableton and records the result in
-   the plan, under each citation — what was observed, what was substituted,
-   what never got provoked. That record is the evidence for *that change*, and
-   it stays with the plan when `/ship` archives it.
+2. **`/smoke-test` runs `auto/`** against live Ableton — the whole folder or
+   one named file, not the plan's list — and, where the branch has a plan,
+   records what it observed under each citation it covered: the value read
+   back, what was substituted, what never got provoked. That record is the
+   evidence for *that change*, and it stays with the plan when `/ship` archives
+   it. Citations resolving into `manual/` are left for the person who runs
+   them.
 3. **It also stamps the test's own `Last run` line here.** The plan's record
    answers "was this change verified"; the `Last run` line answers "has anyone
    exercised this test lately", which no archived plan can.
