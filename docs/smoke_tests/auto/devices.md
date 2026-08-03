@@ -70,3 +70,24 @@ nothing may be claimed as loaded; and the stray track must still be there
 afterwards — the tool never deletes it, the model should offer `delete_track`. If
 either reports success, `browser.py`'s `_verify_landed` is not running.
 
+## Browser search echoes the search it ran
+
+*Last run: —*
+
+`list_browser_items` verifies the category and filter its reply echoes
+against the request before presenting anything — a real reply must pass that
+check, and a stale one must not be presented as this search's results (the
+stale branch is suite-fed; this checks the real replies still get through).
+
+Search a real category with a filter that has matches (e.g. category
+`audio_effects`, filter `reverb`) and confirm results come back naming
+plausible items. Then search an unknown category (e.g. `sounds_typo`) and
+confirm an immediate clean error listing the valid categories — not a stale
+warning, not a 15s stall.
+
+A valid search erroring with wording about replies "not about the … asked
+for" means the echo comparison is rejecting legitimate replies — check what
+`browser.py` echoes against what the request sent (string round-trip) in
+`list_browser_items`'s decode
+([lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)).
+

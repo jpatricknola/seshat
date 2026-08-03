@@ -367,6 +367,22 @@ defmodule Seshat.Tools.Handlers do
   def stringify_keys(value), do: value
 
   @doc """
+  Reads browser.py's ok/error envelope out of a `/live/browser/get/items` reply,
+  once `correlate_reply/2` has stripped the echoed category and filter.
+
+  `returned` is dropped: it counts the triples this reply carries, which the
+  triples themselves say. `total` is the pre-truncation match count, and it is
+  what the formatter needs.
+  """
+  @spec browser_items_payload(list()) ::
+          {:ok, {non_neg_integer(), list()}} | {:error, String.t()} | :unexpected_shape
+  def browser_items_payload(["ok", _returned, total | triples]), do: {:ok, {total, triples}}
+
+  def browser_items_payload(["error", message]) when is_binary(message), do: {:error, message}
+
+  def browser_items_payload(_other), do: :unexpected_shape
+
+  @doc """
   Formats the flat `[name, path, uri, name, path, uri, ...]` tail of a
   `/live/browser/get/items` reply into one line per item.
 
@@ -2558,27 +2574,42 @@ defmodule Seshat.Tools.Handlers do
   # The two guards up front are not politeness: querying notes on an empty slot
   # raises inside AbletonOSC, which means no reply and a 5s timeout instead of
   # an answer.
-  # TODO! Three separate replies with the echoed track/slot discarded (`_t`,
-  # `_s`) — a straggler abandoned by an earlier timeout can pair one clip's
-  # name with another clip's length or notes. Match the echoes against
-  # track/slot with a reissue-once defence (the read_device_names/2 shape).
-  # Surfaced by the PR #62 review, 2026-08-03.
+  # Three replies, all correlated: without the echo check a straggler abandoned
+  # by an earlier timeout could pair one clip's name with another clip's length
+  # or notes. The notes read is the one place in the file where the echo is a
+  # strict *prefix* of the request — `/live/clip/get/notes` echoes only the track
+  # and slot, never the pitch/time range it was given (verified in the fork's
+  # clip.py: `create_clip_callback` returns `(track_index, clip_index, *rv)`) —
+  # hence the explicit `echo:`.
   defp do_call("get_clip_notes", %{"track" => track} = params) do
     slot = Map.get(params, "clip_slot", 0)
 
     with :ok <- ensure_clip(track, slot),
          :ok <- ensure_midi_clip(track, slot),
-         {:ok, {_addr, [_t, _s, clip_name]}} <-
-           Transport.query("/live/clip/get/name", [track, slot]),
-         {:ok, {_addr, [_t, _s, clip_length]}} <-
-           Transport.query("/live/clip/get/length", [track, slot]),
-         {:ok, {_addr, [_t, _s | fields]}} <-
-           Transport.query("/live/clip/get/notes", [track, slot | note_range_args(params)]),
+         {:ok, clip_name} <-
+           query_correlated("/live/clip/get/name", [track, slot], decode: &unwrap_payload/1),
+         {:ok, clip_length} <-
+           query_correlated("/live/clip/get/length", [track, slot], decode: &unwrap_payload/1),
+         {:ok, fields} <-
+           query_correlated(
+             "/live/clip/get/notes",
+             [track, slot | note_range_args(params)],
+             echo: [track, slot]
+           ),
          {:ok, notes} <- parse_clip_notes(fields) do
       {:ok, format_clip_notes(track, slot, clip_name, clip_length, notes)}
     else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
+      {:error, {:stale, _values}} ->
+        {:error, stale_reply_error("the clip in slot #{slot} on track #{track}")}
+
+      {:error, {:remote, message}} ->
+        {:error, remote_error(message)}
+
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
     end
   catch
     # `slot` is bound in the body, which the implicit try can't see — only the
@@ -2688,32 +2719,47 @@ defmodule Seshat.Tools.Handlers do
   # Both addresses are Seshat extensions to AbletonOSC, served by the fork's
   # browser.py — see `mix abletonosc.install`.
 
-  # TODO! The reply echoes the category and filter searched, and both are
-  # discarded (`_category`, `_filter`) — a late reply to an earlier browser
-  # search (this address runs on the 15s @browse_timeout, so stragglers have
-  # a wide window) can be presented as this search's results. Match both
-  # echoes against the request before formatting. Surfaced by the PR #62
-  # review, 2026-08-03.
+  # The reply echoes the category and the filter — as `str()` round-trips of the
+  # strings sent, so identity for the schema-validated ones Seshat sends — but
+  # never `max_results`, hence the explicit `echo:`. This runs on the 15s
+  # @browse_timeout, the widest straggler window in the file, so presenting an
+  # earlier search's results as this one's is the realistic failure here.
+  #
+  # The error arm is echo-checked too, because `query_correlated/4` verifies
+  # before the decode fun ever runs: a stale error envelope would report a
+  # failure that never happened to this search, the same reason `load_outcome/2`
+  # rejects a mismatched error rather than relaying it.
+  #
+  # The reissue can cost a second browse (up to 15s more, worst case). Accepted:
+  # it only happens on a stale reply, browser.py caches its per-category index so
+  # a second walk of an already-indexed category is fast, and the alternative is
+  # showing another search's results.
   defp do_call("list_browser_items", %{"category" => category} = params) do
     filter = Map.get(params, "filter", "")
     max_results = Map.get(params, "max_results", @default_max_results)
 
     query =
-      Transport.query(
+      query_correlated(
         "/live/browser/get/items",
         [category, filter, max_results],
-        @browse_timeout
+        echo: [category, filter],
+        timeout: @browse_timeout,
+        decode: &browser_items_payload/1
       )
 
     case query do
-      {:ok, {_address, [_category, _filter, "ok", _returned, total | pairs]}} ->
+      {:ok, {total, pairs}} ->
         {:ok, format_browser_items(pairs, total)}
 
-      {:ok, {_address, [_category, _filter, "error", message]}} ->
+      {:error, {:remote, message}} ->
         {:error, message}
 
-      {:ok, {_address, args}} ->
-        {:error, "Unexpected reply from Live's browser: #{inspect(args)}"}
+      {:error, {:stale, _values}} ->
+        {:error,
+         stale_reply_error(
+           "the browser search for #{category}",
+           "Nothing in Live was changed — run the search again."
+         )}
 
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
@@ -2857,31 +2903,26 @@ defmodule Seshat.Tools.Handlers do
     read_vendored_chain("/live/master/get/devices", [], :master)
   end
 
-  # TODO! These three list queries discard the echoed track index (`_track`)
-  # on a transport that correlates replies by address alone. A straggler
-  # abandoned by an earlier timeout can supply another track's names, and the
-  # three parallel lists can describe two different chains. This is exactly
-  # the hazard the vendored combined return/master endpoints exist to close
-  # (see docs/abletonosc-api-docs.md, Return Track & Master device chains).
-  # Fix: match each echo against `track` with a reissue-once stale defence
-  # like `read_device_names/2` below — or better, grow a combined
-  # /live/track/get/devices endpoint in the fork mirroring the vendored reply
-  # shape and collapse this to one query. Not the only such site (an earlier
-  # version of this comment claimed it was): get_clip_notes,
-  # set_device_parameter's confirming read, query_scene_names and
-  # list_browser_items all discard correlation data too — each carries its
-  # own TODO!, and the durable fix is echo-aware reply decoding shared by
-  # every raw Transport.query call site, not per-site patches.
+  # Three replies rather than the vendored chains' one, so each of the three
+  # carries its own straggler risk and the three lists could otherwise describe
+  # two different chains — hence `query_correlated/4` on each, verifying the
+  # echoed track index. Collapsing all three onto a combined
+  # /live/track/get/devices endpoint (the shape the vendored return/master
+  # getters already have) is the "bulk reads vs. per-address queries" roadmap
+  # item, and would leave these checks doing the same job on one reply instead of
+  # three. What stays residual either way: three verified replies are still three
+  # snapshots, so a chain edited mid-read is reported as it was at each moment.
   defp do_call("get_track_devices", %{"track" => track}) do
-    with {:ok, {_addr, [_track | names]}} <-
-           Transport.query("/live/track/get/devices/name", [track]),
-         {:ok, {_addr, [_track | types]}} <-
-           Transport.query("/live/track/get/devices/type", [track]),
-         {:ok, {_addr, [_track | classes]}} <-
-           Transport.query("/live/track/get/devices/class_name", [track]) do
+    with {:ok, names} <- query_correlated("/live/track/get/devices/name", [track]),
+         {:ok, types} <- query_correlated("/live/track/get/devices/type", [track]),
+         {:ok, classes} <- query_correlated("/live/track/get/devices/class_name", [track]) do
       {:ok, format_device_chain({:track, track}, names, types, classes)}
     else
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
+      {:error, {:stale, _values}} ->
+        {:error, stale_reply_error("the devices on track #{track}")}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ ->
@@ -2912,22 +2953,19 @@ defmodule Seshat.Tools.Handlers do
     )
   end
 
-  # TODO! Same echo-check gap as get_track_devices above, at worse odds: five
-  # separate replies assembled into parallel lists with the echoed track and
-  # device indices discarded (`_t`, `_d`). Verify the echoes with a
-  # reissue-once defence, or collapse to one query on a vendored combined
-  # endpoint shaped like /live/return_track/device/get/parameters.
+  # `get_track_devices`' hazard at worse odds — five replies rather than three,
+  # each echoing a track *and* a device index — so every one rides
+  # `query_correlated/4`. The name read decodes a single value; the four
+  # parameter reads keep their whole list.
   defp do_call("get_device_parameters", %{"track" => track, "device" => device}) do
-    with {:ok, {_addr, [_t, _d, device_name]}} <-
-           Transport.query("/live/device/get/name", [track, device]),
-         {:ok, {_addr, [_t, _d | names]}} <-
-           Transport.query("/live/device/get/parameters/name", [track, device]),
-         {:ok, {_addr, [_t, _d | values]}} <-
-           Transport.query("/live/device/get/parameters/value", [track, device]),
-         {:ok, {_addr, [_t, _d | mins]}} <-
-           Transport.query("/live/device/get/parameters/min", [track, device]),
-         {:ok, {_addr, [_t, _d | maxes]}} <-
-           Transport.query("/live/device/get/parameters/max", [track, device]) do
+    subject = "device #{device} on track #{track}"
+
+    with {:ok, device_name} <-
+           query_correlated("/live/device/get/name", [track, device], decode: &unwrap_payload/1),
+         {:ok, names} <- query_correlated("/live/device/get/parameters/name", [track, device]),
+         {:ok, values} <- query_correlated("/live/device/get/parameters/value", [track, device]),
+         {:ok, mins} <- query_correlated("/live/device/get/parameters/min", [track, device]),
+         {:ok, maxes} <- query_correlated("/live/device/get/parameters/max", [track, device]) do
       {:ok,
        format_device_parameters(
          {:track, track},
@@ -2939,6 +2977,8 @@ defmodule Seshat.Tools.Handlers do
          maxes
        )}
     else
+      {:error, {:stale, _values}} -> {:error, stale_reply_error(subject)}
+      {:error, {:remote, message}} -> {:error, remote_error(message)}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
@@ -2987,32 +3027,45 @@ defmodule Seshat.Tools.Handlers do
     )
   end
 
-  # TODO! The confirming read discards its echoed indices (`_t`, `_d`, `_p`),
-  # so a straggler on this address can present another parameter's display
-  # value as verification of this write — a fabricated confirmation, the
-  # exact thing the read-back exists to prevent. Check the echoes against
-  # track/device/parameter before trusting `display`. Surfaced by the PR #62
-  # review, 2026-08-03.
+  # The confirming read goes through `read_back_value/2`, the same helper the
+  # vendored paths use for exactly this job. Without its echo check a straggler
+  # on this address could present another parameter's display string as proof
+  # this write landed — a fabricated confirmation, the one thing a read-back
+  # exists to prevent — so an unverified read must reach the reply as
+  # uncertainty and never as "it now reads '…'".
   defp do_call("set_device_parameter", %{
          "track" => track,
          "device" => device,
          "parameter" => parameter,
          "value" => value
        }) do
+    subject = "parameter #{parameter} of device #{device} on track #{track}"
+
     with :ok <-
            Transport.send_message(
              "/live/device/set/parameter/value",
              [track, device, parameter, value / 1.0]
            ),
-         {:ok, {_addr, [_t, _d, _p, display]}} <-
-           Transport.query("/live/device/get/parameter/value_string", [track, device, parameter]) do
-      {:ok,
-       "Set parameter #{parameter} of device #{device} on track #{track} to #{value} — " <>
-         "it now reads '#{display}'"}
+         {:ok, display} <-
+           read_back_value("/live/device/get/parameter/value_string", [
+             track,
+             device,
+             parameter
+           ]) do
+      {:ok, "Set #{subject} to #{value} — it now reads '#{display}'"}
     else
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
+      :unconfirmed ->
+        {:error,
+         "The set was sent but reading #{subject} back did not confirm it — verify with " <>
+           "get_device_parameters."}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
     end
   catch
+    # A residual guard now rather than the read-back's timeout path:
+    # `read_back_value/2` catches its own exit and answers `:unconfirmed`, so
+    # what is left here is the send itself losing the transport.
     :exit, _ ->
       {:error,
        "The set was sent but reading the value back timed out — verify the result with " <>
@@ -3150,7 +3203,7 @@ defmodule Seshat.Tools.Handlers do
 
   # Reads only, so direct Transport.query — no %Command{}/Registry (Registry
   # is for mutation sequences). One bulk track_data query per batch of tracks
-  # plus one tiny query per scene name; parsing and formatting are pure.
+  # plus one bulk query for every scene name; parsing and formatting are pure.
   defp do_call("get_clip_slots", _params) do
     case snapshot_grid() do
       {:ok, %{tracks: []}} ->
@@ -3252,13 +3305,21 @@ defmodule Seshat.Tools.Handlers do
 
   # The clip grid as structured data — shared by `get_clip_slots` (which then
   # reads scene names and formats) and `capture_midi` (which takes two of these
-  # and diffs them). Scene *names* deliberately stay out: they cost one query
-  # per scene, and the capture diff needs occupancy only, so folding them in
-  # here would double a per-scene query burst for strings nobody reads.
+  # and diffs them). Scene *names* deliberately stay out: the capture diff needs
+  # occupancy only, so folding them in here would spend a round trip per snapshot
+  # — and `capture_midi` takes two — for strings nobody reads. (They used to cost
+  # one query *per scene*, which is what this comment was originally weighing;
+  # `query_scene_names/2` is one bulk reply now, so the argument is smaller but
+  # still holds.)
   #
   # An empty session answers `{:ok, %{num_scenes: 0, tracks: []}}` rather than
   # an error — capture on an empty set is a legitimate nothing-appeared, not a
   # failure to read.
+  #
+  # Raw `Transport.query/3`, not `query_correlated/4`: both counts are index-free
+  # song properties, so there is nothing in either reply to echo and nothing to
+  # verify. A straggler on one of these addresses is a count from moments earlier,
+  # which `parse_track_data/3` then length-checks against the data it read.
   defp snapshot_grid do
     with {:ok, {_addr, [num_tracks]}} <- Transport.query("/live/song/get/num_tracks", []),
          {:ok, {_addr, [num_scenes]}} <- Transport.query("/live/song/get/num_scenes", []) do
@@ -3310,6 +3371,11 @@ defmodule Seshat.Tools.Handlers do
 
   # Deliberately total: every failure — timeout, missing extension, a reply shape
   # we don't recognise — means "don't steer", never "fail the tool".
+  #
+  # Raw `Transport.query/3`: these are index-free count addresses, so the reply
+  # echoes nothing and `query_correlated/4` would have nothing to verify. The
+  # race this loses is documented above `steer_after_delete/3`, and losing it
+  # costs a skipped steer, not a wrong index.
   defp remaining_count(address) do
     case Transport.query(address, [], @follow_cam_count_timeout) do
       {:ok, {_addr, [count]}} when is_integer(count) -> {:ok, count}
@@ -3369,6 +3435,12 @@ defmodule Seshat.Tools.Handlers do
 
   # --- capture_midi ---
 
+  # Raw `Transport.query/3`: tempo is an index-free song property, so its reply
+  # echoes nothing for `query_correlated/4` to check. It is also one of the
+  # addresses `Session.State` listens on, so a listener push can satisfy this
+  # query — Transport's residual class 2, which no correlation on this wire can
+  # remove. A tempo from moments earlier is what `capture_midi` is comparing
+  # against anyway.
   defp query_tempo do
     case Transport.query("/live/song/get/tempo", []) do
       {:ok, {_addr, [tempo]}} when is_number(tempo) ->
@@ -3479,35 +3551,54 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # One query per scene. This comment used to claim no bulk scene-name address
-  # exists; that was wrong — /live/song/get/scenes/name returns every name in
-  # one reply (upstream all along, documented in docs/abletonosc-api-docs.md
-  # 2026-08-03). Its reply does not echo the requested range, though, so on a
-  # transport that correlates by address alone a straggler from an earlier
-  # ranged query is indistinguishable by content.
+  # Every scene name in one reply, sent with no arguments — the fork's
+  # `song_get_scene_names` reads that as the full range `0..len(song.scenes)`,
+  # in index order, so the docs' `-1` trap (an empty reply that looks like a set
+  # with no scenes) is unreachable from here.
   #
-  # TODO! This N+1 was chosen on the false premise above — and the loop below
-  # doesn't even collect the per-scene benefit it could have: the reply's
-  # echoed index is discarded (`_index`), never checked. As written it pays N
-  # round trips (~100ms each, serialized) and gets neither the single-reply
-  # economy nor the echo verification. Either switch to
-  # /live/song/get/scenes/name (full-range form, length-checked against
-  # num_scenes, reissued once when stale) or keep the loop and actually
-  # verify the echo.
-  defp query_scene_names(num_scenes) do
-    result =
-      Enum.reduce_while(0..(num_scenes - 1), {:ok, []}, fn index, {:ok, acc} ->
-        case Transport.query("/live/scene/get/name", [index]) do
-          {:ok, {_addr, [_index, name]}} -> {:cont, {:ok, [name | acc]}}
-          {:error, reason} -> {:halt, {:error, reason}}
-        end
-      end)
+  # This reply carries **names only — the range is not echoed back**
+  # (docs/abletonosc-api-docs.md), so it cannot ride `query_correlated/4`: there
+  # is no prefix to verify. The length check against the `num_scenes` the caller
+  # just read stands in for it, with the same reissue-once defence. That is
+  # weaker than an echo but not weaker than the per-scene loop this replaces: an
+  # echoed index cannot see a rename either, so a same-length straggler would
+  # have passed N echo checks too — at N serialized round trips instead of one.
+  #
+  # A second disagreement is reported rather than retried further. If the scene
+  # count genuinely changed mid-read, the `track_data` half of the grid snapshot
+  # is stale as well, and re-reading the whole grid is the only correct advice.
+  #
+  # `num_scenes >= 1` is guaranteed by the caller: `snapshot_tracks/2` answers
+  # the empty grid without ever reaching here.
+  defp query_scene_names(num_scenes, reissued? \\ false) do
+    case Transport.query("/live/song/get/scenes/name", []) do
+      {:ok, {_addr, names}} when length(names) == num_scenes ->
+        {:ok, names}
 
-    with {:ok, names} <- result, do: {:ok, Enum.reverse(names)}
+      {:ok, {_addr, _mismatched}} ->
+        if reissued? do
+          {:error,
+           "Ableton's reply with the scene names did not carry #{num_scenes} names, twice in a " <>
+             "row — either the scene list changed while the grid was being read, or the reply " <>
+             "belongs to an earlier query that timed out. Nothing was changed; read the grid " <>
+             "again with get_clip_slots."}
+        else
+          query_scene_names(num_scenes, true)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   # end_track is exclusive; explicit bounds per batch (never -1) because
   # parsing needs the count anyway.
+  #
+  # Raw `Transport.query/3`: `/live/song/get/track_data` replies with values
+  # only — it echoes neither the range nor the property list — so there is no
+  # prefix for `query_correlated/4` to verify. `parse_track_data/3` length-checks
+  # what came back against the batch it asked for, and `ensure_midi_track/1`
+  # refuses to use this address at all for exactly the missing-echo reason.
   defp query_track_data(num_tracks, num_scenes) do
     per_track = 3 + 5 * num_scenes
     batch_size = max(1, div(@track_data_target_values, per_track))
@@ -3809,6 +3900,11 @@ defmodule Seshat.Tools.Handlers do
 
   # Doubles as the "is return_track.py installed?" probe — the whole extension
   # either answers or it doesn't, so one timeout is enough to say which.
+  #
+  # Raw `Transport.query/3`, like the two index-less master getters below: with
+  # no index to look up there is nothing to echo, and no envelope either (the
+  # vendored-getter rule's stated exception), so `query_correlated/4` would have
+  # no prefix to verify.
   defp return_track_count do
     case Transport.query("/live/return_track/get/count", [], @guard_timeout) do
       {:ok, {_addr, [count]}} when is_integer(count) ->
@@ -3840,9 +3936,10 @@ defmodule Seshat.Tools.Handlers do
   end
 
   # The index-less master getters reply with a bare value and no envelope, so
-  # `query_echoed/4` (which strips echoed indices) doesn't fit them — this is
-  # `master_volume/0`'s shape generalized over the address. A timeout is a
-  # missing install, exactly as there.
+  # neither `query_echoed/4` nor `query_correlated/4` fits them — there is no
+  # echoed prefix to strip or verify. This is `master_volume/0`'s shape
+  # generalized over the address. A timeout is a missing install, exactly as
+  # there.
   defp master_bare_float(address, subject) do
     case Transport.query(address, [], @guard_timeout) do
       {:ok, {_addr, [value]}} when is_number(value) ->
@@ -3887,9 +3984,11 @@ defmodule Seshat.Tools.Handlers do
   from a different chain, and tell the user a device landed somewhere it did not
   — all while the load actually asked for may still be in flight.
 
-  Hence `:stale` rather than the reissue `query_echoed/5` performs on a mismatched
-  getter: a load is a mutation, and reissuing one could load a second device.
-  There is nothing safe to do but report the outcome as unknown.
+  Hence `:stale` rather than the reissue `query_correlated/4` performs on a
+  mismatched getter: a load is a mutation, and reissuing one could load a second
+  device. There is nothing safe to do but report the outcome as unknown — which
+  is also why this verifies by hand rather than riding the shared decode, along
+  with the uri echo and the envelope arms it has to keep apart.
   """
   @spec load_outcome(list(), list()) ::
           {:loaded, list()} | {:remote_error, String.t()} | :stale | :unexpected
@@ -3989,34 +4088,28 @@ defmodule Seshat.Tools.Handlers do
   # --- Device chain guards ---
 
   # The pre-delete read: it validates the track index and captures the chain in
-  # one query. It can't ride `query_echoed/4` — that helper's `unwrap_payload/1`
-  # only reads single-value payloads and this reply is a whole list — so the echo
-  # check and its reissue-once stale defence are spelled out here for exactly the
-  # same reason, and with the same caveat: Transport correlates replies by
-  # address alone, so a reply abandoned by an earlier timeout can still answer
-  # this query with another track's chain, and the reissue is mitigation rather
-  # than a guarantee.
-  defp read_device_names(track, reissued? \\ false) do
-    case Transport.query("/live/track/get/devices/name", [track], @guard_timeout) do
-      {:ok, {_addr, [echoed | names]}} when echoed == track ->
+  # one query. `query_correlated/4` with the default decode, because the payload
+  # behind the echoed track index is a whole list rather than the single value
+  # `query_echoed/4`'s `unwrap_payload/1` reads.
+  defp read_device_names(track) do
+    case query_correlated("/live/track/get/devices/name", [track], timeout: @guard_timeout) do
+      {:ok, names} ->
         {:ok, names}
 
-      {:ok, {_addr, _mismatched}} ->
-        if reissued? do
-          {:error, stale_reply_error("the devices on track #{track}")}
-        else
-          read_device_names(track, true)
-        end
+      {:error, {:stale, _values}} ->
+        {:error, stale_reply_error("the devices on track #{track}")}
 
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
     end
   catch
+    # Only the head's params are in scope in an implicit try's `catch`, so the
+    # subject is rebuilt here rather than bound in the body.
     :exit, _ ->
       {:error, guard_timeout_error("the devices on track #{track}", @device_index_hint)}
   end
 
-  # Floats are tolerated the way `query_echoed/5` documents for indices — 1.0
+  # Floats are tolerated the way `correlate_reply/2` documents for indices — 1.0
   # reaches Ableton as device 1 — so the bounds check normalises rather than
   # rejects, and hands back the index the rest of the sequence should use.
   defp ensure_device_index(chain, device, names) do
@@ -4056,41 +4149,22 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # `query_echoed/5`'s shape, but for a reply whose payload is a whole list
-  # rather than one value — the same reason `read_device_names/2` spells its own
-  # echo check out. Including the reissue-once stale defence: Transport
-  # correlates by address alone, so a reply abandoned by an earlier timeout can
-  # still answer this query with another return's chain.
-  defp query_vendored_list(address, indices, subject, reissued? \\ false) do
-    case Transport.query(address, indices, @guard_timeout) do
-      {:ok, {_addr, values}} ->
-        {echoed, payload} = Enum.split(values, length(indices))
+  # `query_echoed/4`'s shape, but for a reply whose payload is a whole list rather
+  # than one value — the same reason `read_device_names/1` takes the shared core's
+  # default decode. The envelope unwrapping is what makes this its own wrapper:
+  # an index-less master getter carries no envelope at all.
+  defp query_vendored_list(address, indices, subject) do
+    query =
+      query_correlated(address, indices,
+        timeout: @guard_timeout,
+        decode: &unwrap_list_payload(&1, indices)
+      )
 
-        if indices_match?(echoed, indices) do
-          case unwrap_list_payload(payload, indices) do
-            {:ok, list} ->
-              {:ok, list}
-
-            {:error, message} ->
-              {:error, remote_error(message)}
-
-            :unexpected_shape ->
-              if reissued? do
-                {:error, stale_reply_error(subject)}
-              else
-                query_vendored_list(address, indices, subject, true)
-              end
-          end
-        else
-          if reissued? do
-            {:error, stale_reply_error(subject)}
-          else
-            query_vendored_list(address, indices, subject, true)
-          end
-        end
-
-      {:error, reason} ->
-        {:error, Transport.describe_error(reason)}
+    case query do
+      {:ok, list} -> {:ok, list}
+      {:error, {:remote, message}} -> {:error, remote_error(message)}
+      {:error, {:stale, _values}} -> {:error, stale_reply_error(subject)}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
     :exit, _ -> {:error, guard_timeout_error(subject, @return_extension_hint)}
@@ -4128,23 +4202,21 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # Deliberately not `query_echoed/5`: its timeout wording says "nothing further
-  # was sent", which is false once the setter is already on the wire. A
-  # post-mutation read reports uncertainty, not refusal.
+  # The post-mutation read: every failure collapses to `:unconfirmed`, because
+  # after the setter is on the wire the only honest report is that the write was
+  # not verified — never that nothing was sent, which is what `query_echoed/4`'s
+  # wording would claim. That is the one reason this isn't `query_echoed/4`; the
+  # echo check and the reissue-once defence both come from the shared core, so a
+  # straggler can no longer supply another parameter's display value as proof
+  # this write landed.
+  #
+  # The timeout is caught here rather than left to the caller: a read-back that
+  # never answers is exactly as unconfirmed as one that answers wrongly, and the
+  # caller's own message says so.
   defp read_back_value(address, indices) do
-    case Transport.query(address, indices, @guard_timeout) do
-      {:ok, {_addr, values}} ->
-        {echoed, payload} = Enum.split(values, length(indices))
-
-        with true <- indices_match?(echoed, indices),
-             {:ok, value} <- unwrap_payload(payload) do
-          {:ok, value}
-        else
-          _ -> :unconfirmed
-        end
-
-      {:error, _reason} ->
-        :unconfirmed
+    case query_correlated(address, indices, timeout: @guard_timeout, decode: &unwrap_payload/1) do
+      {:ok, value} -> {:ok, value}
+      _other -> :unconfirmed
     end
   catch
     :exit, _ -> :unconfirmed
@@ -4181,6 +4253,11 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # Verifies more than an echo, which is why it doesn't ride `query_correlated/4`:
+  # the payload is the chain length re-read after the delete, so the mismatch and
+  # the not-a-count branches each need their own post-mutation wording ("it is
+  # unknown whether the device was removed"), and a reissue would be a second
+  # confirmation query rather than a second attempt at one answer.
   defp query_vendored_delete(address, args, chain, device) do
     case Transport.query(address, args, @guard_timeout) do
       {:ok, {_addr, values}} ->
@@ -4258,10 +4335,11 @@ defmodule Seshat.Tools.Handlers do
   defp chain_facts(:master), do: %{master: true}
 
   # The only defence the no-reply delete address allows. Raw `Transport.query`
-  # deliberately, not `query_echoed/4`: that helper's timeout wording says
-  # "nothing further was sent", which is false once the delete is on the wire —
-  # a post-mutation confirmation needs its own wording (`set_device_parameter`'s
-  # readback sets the precedent).
+  # deliberately, not `query_echoed/4` or `query_correlated/4`: it verifies more
+  # than an echo — the *expected count* is pattern-matched in the head, so a
+  # correct echo carrying the wrong number is a distinct, reportable outcome —
+  # and every timeout wording here has to say the delete is already on the wire
+  # (`set_device_parameter`'s read-back sets that precedent).
   defp confirm_device_count(track, expected) do
     case Transport.query("/live/track/get/num_devices", [track]) do
       {:ok, {_addr, [echoed, ^expected]}} when echoed == track ->
@@ -4318,7 +4396,8 @@ defmodule Seshat.Tools.Handlers do
   # Numeric readback rather than the display string: "Device On" is quantized to
   # exactly 0.0/1.0, so the comparison is safe, and it can't be confused by
   # however a given device chooses to spell its display value. Raw
-  # `Transport.query` for the same reason as `confirm_device_count/2` — this runs
+  # `Transport.query` for the same reason as `confirm_device_count/2` — it
+  # verifies more than an echo (the value must equal what was written) and runs
   # after the mutation, so a timeout is uncertainty rather than a refusal.
   defp confirm_device_enabled_at(address, indices, chain, device, enabled) do
     expected = if enabled, do: 1.0, else: 0.0
@@ -4907,11 +4986,11 @@ defmodule Seshat.Tools.Handlers do
 
   # No range args: AbletonOSC defaults to the whole clip.
   #
-  # It can't ride `query_echoed/4` for the same reason `read_device_names/2`
-  # can't — `unwrap_payload/1` reads single-value payloads and this reply is a
-  # whole note list — so the echo check and its reissue-once defence are spelled
-  # out here, following that helper rather than `get_clip_notes`'s destructure
-  # (which discards the echoed indices entirely).
+  # It verifies more than `query_correlated/4` can, which is why it spells the
+  # echo check and the reissue-once defence out rather than riding the shared
+  # decode: `phase` changes the *consequence* sentence on every failure path (see
+  # below), and a stale reply after the quantize is already on the wire may not
+  # claim nothing was sent.
   #
   # Be clear about what the check buys: it catches a *cross-clip* straggler — a
   # notes query abandoned by an earlier timeout, plausible here because an
@@ -4947,7 +5026,7 @@ defmodule Seshat.Tools.Handlers do
           read_all_notes(track, slot, phase, true)
         end
 
-      # As in `query_echoed/5`: a rejected read of this clip means the track or
+      # As in `query_echoed/4`: a rejected read of this clip means the track or
       # slot isn't there. Before the quantize that carries the same consequence
       # as the vendored envelope's error arm; after it, only the diagnosis
       # survives.
@@ -4975,41 +5054,141 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # Reads one value, and returns it only if the reply echoed back the indices we
-  # asked about. Transport serializes queries, but it correlates replies by
-  # address alone, so a reply abandoned by an earlier timeout can still answer
-  # the next query on that same address — answering a guard for track 3 with
-  # track 0's data is exactly the silent wrong answer these guards exist to
-  # prevent.
+  # --- Correlated reply decoding ---
   #
-  # A mismatch reissues the query once rather than failing outright: the reissue
-  # asks the same indices, so the straggler's genuine successor usually answers
-  # it. That is mitigation, not a guarantee — the genuine reply can land in the
-  # gap after the mismatch is rejected and before the reissue is in flight, in
-  # which case it is broadcast and the reissue times out. This check earns its
-  # keep by refusing wrong data, not by reliably obtaining right data. Only a
-  # second mismatch is reported.
+  # Transport serializes queries, but it correlates replies by address alone, so
+  # a reply abandoned by an earlier timeout can still answer the next query on
+  # that same address — answering a read of track 3 with track 0's data is
+  # exactly the silent wrong answer these checks exist to prevent. Every
+  # AbletonOSC getter that takes an index echoes it back in front of the payload,
+  # and that echo is the only thing on the wire distinguishing this call's reply
+  # from a straggler's.
   #
-  # Indices are compared with `==` rather than pinned: a float index still reaches
-  # Ableton fine (it casts to int) and comes back as an integer, so pinning would
-  # reject a reply that is in fact ours.
-  #
-  # `hint` is the caller's advice for a timeout — which index to re-check, and
-  # whether the address is one of Seshat's extensions.
-  defp query_echoed(address, indices, subject, hint, reissued? \\ false) do
-    case Transport.query(address, indices, @guard_timeout) do
-      {:ok, {_addr, values}} ->
-        {echoed, payload} = Enum.split(values, length(indices))
+  # `correlate_reply/2` is that whole decision, and `query_correlated/4` wraps it
+  # in the send and the reissue-once policy. Nothing in this module may read an
+  # echoed reply without going through one of them or spelling the same check out
+  # — the handful that do spell it out say why in a comment of their own, and
+  # every raw `Transport.query/3` site left over says why it has no echo to
+  # check.
 
-        if indices_match?(echoed, indices) do
-          case unwrap_payload(payload) do
-            {:ok, value} -> {:ok, value}
-            {:error, message} -> {:error, remote_error(message)}
-            :unexpected_shape -> reissue_or_give_up(address, indices, subject, hint, reissued?)
-          end
-        else
-          reissue_or_give_up(address, indices, subject, hint, reissued?)
+  @doc """
+  Splits a reply into the prefix it echoes back and the payload behind it,
+  verifying that prefix against what was asked.
+
+  `echo` is what the reply must repeat, which is usually the request's own
+  arguments but not always: `/live/clip/get/notes` echoes only the track and slot
+  even when sent a pitch/time range, and `/live/browser/get/items` echoes the
+  category and filter but never `max_results`.
+
+  `:stale` covers both failure modes, because to a caller they mean the same
+  thing — this reply is not an answer to this request. A reply *shorter* than the
+  echo counts as one: `Enum.zip/2` truncates to the shorter list, so a
+  one-element reply would otherwise sail past a two-index comparison having
+  compared nothing. `load_outcome/2` guards that trap by hand for the same
+  reason.
+
+  Values are compared with `==` rather than pinned: a float index still reaches
+  Ableton fine (it casts to int) and comes back as an integer, so pinning would
+  reject a reply that is in fact ours. String echoes — the browser's category and
+  filter, `is_view_visible`'s pane name — compare just as happily.
+  """
+  @spec correlate_reply(list(), list()) :: {:ok, list()} | :stale
+  def correlate_reply(values, echo) do
+    {echoed, payload} = Enum.split(values, length(echo))
+
+    cond do
+      length(echoed) < length(echo) -> :stale
+      not indices_match?(echoed, echo) -> :stale
+      true -> {:ok, payload}
+    end
+  end
+
+  # One correlated query: send it, verify the echoed prefix, decode what is left,
+  # and reissue once when the reply is stale or in a shape this code can't read.
+  #
+  # The reissue asks the identical question, so the straggler's genuine successor
+  # usually answers it. That is mitigation, not a guarantee — the genuine reply
+  # can land in the gap after the mismatch is rejected and before the reissue is
+  # in flight, in which case it is broadcast and the reissue times out. These
+  # checks earn their keep by refusing wrong data, not by reliably obtaining
+  # right data. Only a second failure is reported.
+  #
+  # Options:
+  #   echo:    the prefix the reply must echo (default: `args`)
+  #   timeout: passed to Transport.query/3 (default: Transport's own)
+  #   decode:  applied to the payload behind the echo, returning
+  #            {:ok, term} | {:error, remote_message} | :unexpected_shape
+  #            (default: the payload list as-is)
+  #
+  # Returns `{:ok, decoded}`; `{:error, {:stale, values}}` once a second reply
+  # has failed; `{:error, {:remote, message}}` for a decoded error envelope; or
+  # Transport's own `{:error, reason}` — including `{:live_error, message}` —
+  # untouched. Wording stays at the call site, where the subject and the
+  # consequence of failing are known.
+  #
+  # **Timeouts are deliberately not caught here.** `Transport.query/3` exits the
+  # caller, and each call site already has a `catch :exit` whose wording knows
+  # whether anything was sent. Swallowing it here would flatten "nothing further
+  # was sent" and "the mutation is already on the wire" into one message.
+  defp query_correlated(address, args, opts \\ [], reissued? \\ false) do
+    reply =
+      case Keyword.get(opts, :timeout) do
+        nil -> Transport.query(address, args)
+        timeout -> Transport.query(address, args, timeout)
+      end
+
+    case reply do
+      {:ok, {_addr, values}} ->
+        decode = Keyword.get(opts, :decode, &{:ok, &1})
+
+        case correlate_reply(values, Keyword.get(opts, :echo, args)) do
+          {:ok, payload} ->
+            case decode.(payload) do
+              {:ok, decoded} -> {:ok, decoded}
+              {:error, message} -> {:error, {:remote, message}}
+              :unexpected_shape -> reissue_correlated(address, args, opts, reissued?, values)
+            end
+
+          :stale ->
+            reissue_correlated(address, args, opts, reissued?, values)
         end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp reissue_correlated(address, args, opts, false, _values),
+    do: query_correlated(address, args, opts, true)
+
+  defp reissue_correlated(_address, _args, _opts, true, values),
+    do: {:error, {:stale, values}}
+
+  # Reads one value, and returns it only if the reply echoed back the indices we
+  # asked about — `query_correlated/4` with `unwrap_payload/1` as the decode, on
+  # the guard timeout.
+  #
+  # It keeps a `catch :exit` of its own, which the shared core deliberately does
+  # not have: every caller is a guard that reads *before* a mutation, so a
+  # timeout here really does mean nothing further was sent. `hint` is that
+  # caller's advice for one — which index to re-check, and whether the address is
+  # one of Seshat's extensions.
+  defp query_echoed(address, indices, subject, hint) do
+    query =
+      query_correlated(address, indices,
+        timeout: @guard_timeout,
+        decode: &unwrap_payload/1
+      )
+
+    case query do
+      {:ok, value} ->
+        {:ok, value}
+
+      {:error, {:remote, message}} ->
+        {:error, remote_error(message)}
+
+      {:error, {:stale, _values}} ->
+        {:error, stale_reply_error(subject)}
 
       # Live rejected this exact request — for a guard query that means the
       # index doesn't exist, which is precisely what `remote_error/1` says for
@@ -5048,12 +5227,9 @@ defmodule Seshat.Tools.Handlers do
       "actually exist."
   end
 
-  defp reissue_or_give_up(address, indices, subject, hint, false),
-    do: query_echoed(address, indices, subject, hint, true)
-
-  defp reissue_or_give_up(_address, _indices, subject, _hint, true),
-    do: {:error, stale_reply_error(subject)}
-
+  # Only ever reached with two equal-length lists — `correlate_reply/2` rejects a
+  # short reply before this runs, because `Enum.zip/2` would truncate to the
+  # shorter one and report a match on nothing.
   defp indices_match?(echoed, indices) do
     echoed |> Enum.zip(indices) |> Enum.all?(fn {reply, asked} -> reply == asked end)
   end
@@ -5070,9 +5246,14 @@ defmodule Seshat.Tools.Handlers do
   # The consequence is a parameter because a caller reading *after* a mutation
   # cannot claim nothing was sent — see `read_all_notes/4`. Every other caller
   # reads before mutating and takes the default.
+  # "what was asked for" rather than "the track or slot asked for": the shared
+  # decode now reports stale replies for browser searches (echoing a category and
+  # a filter) and device reads (a track and a device) as well as clip reads, and
+  # naming the wrong pair of indices in the diagnosis is its own small lie.
+  # `subject` has already said what was being read.
   defp stale_reply_error(subject, consequence \\ "Nothing further was sent; try again.") do
-    "Ableton's replies when checking #{subject} were not about the track or slot asked for, " <>
-      "twice in a row — they belong to an earlier query that timed out. " <> consequence
+    "Ableton's replies when checking #{subject} were not about what was asked for, twice in " <>
+      "a row — they belong to an earlier query that timed out. " <> consequence
   end
 
   # AbletonOSC sends booleans for some properties and 0/1 for others.
@@ -5116,14 +5297,15 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # Raw `Transport.query` rather than `query_echoed/4`, for the same reason as
-  # `confirm_device_count/2` and `confirm_device_enabled/3`: that helper's error
-  # wording ends "nothing further was sent", which is true of a guard and false
-  # here — the hide is already on the wire by the time this runs. Every failure
-  # path below therefore says the hide was sent and its effect is unconfirmed.
-  # The echo check and the reissue-once stale defence are spelled out for the
-  # same reason they are in `query_echoed/4`: Transport correlates replies by
-  # address alone.
+  # Raw `Transport.query` rather than `query_echoed/4` or `query_correlated/4`,
+  # for the same reason as `confirm_device_count/2` and
+  # `confirm_device_enabled_at/5`: it verifies more than an echo — the ok/error
+  # envelope's two arms get different post-mutation wording, and the flag itself
+  # decides whether the hide landed — and every failure path here must say the
+  # hide is already on the wire, where the shared helpers say "nothing further
+  # was sent". The echo check and the reissue-once stale defence are spelled out
+  # for the same reason `correlate_reply/2` exists: Transport correlates replies
+  # by address alone.
   defp confirm_view_hidden(view, reissued? \\ false) do
     case Transport.query("/live/view/get/is_view_visible", [view], @guard_timeout) do
       {:ok, {_addr, [echoed, "ok", flag]}} when echoed == view ->
@@ -5208,7 +5390,7 @@ defmodule Seshat.Tools.Handlers do
   # Reads `can_undo` / `can_redo` — upstream `song.py` `properties_r`, so a plain
   # song property with no index and no envelope.
   #
-  # That missing index is why `query_echoed/5` cannot be reused: there is nothing
+  # That missing index is why `query_correlated/4` cannot be used here: there is nothing
   # for a reply to echo, so the caller-side correlation defence Transport's
   # "Query serialization" section insists is not redundant is unavailable, and
   # its two residual collision classes have to be argued instead. Class 2 (a
