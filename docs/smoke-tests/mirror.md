@@ -12,15 +12,16 @@ redundant ones leave the same mirror. Those tests are read from the **server
 log**, where a full rebuild prints a `Song: …` line followed by
 `Loaded N tracks: …`.
 
-**Every log-read test in this file is `Run mode: user`, and that is why.** The
-Seshat server logs to the terminal it was started in, so an agent running the
-zero-user sweep has no way to see a `Song:` line, let alone count them. Four
-tests here were tagged `agent` until 2026-08-03 and were retagged after a sweep
-found none of them judgeable; one of the four was split so its state-visible
-half could stay `agent`. Read the log from the terminal running
-`iex -S mix phx.server`. If that server is ever given a file log handler, these
-become agent-runnable again and should be retagged back — the tests themselves
-need no change.
+**That log is a file, and that is what keeps these tests zero-user.** The server
+logs to its terminal *and* to `log/dev.log` (`config :seshat, :logger` in
+[config/dev.exs](../../config/dev.exs), added 2026-08-03 for exactly this
+reason — before it, an agent sweep could not see a `Song:` line at all, let
+alone count them, and four tests here were briefly retagged `user` for want of
+one). Baseline its byte size before a run and read only the tail past that
+offset, the same discipline [bridge.md](bridge.md) uses for Live's `Log.txt`. It
+rotates at 10MB, so a run that spans a rotation would invalidate an offset taken
+before it — no smoke run comes close, but that is the failure to look for if a
+tail read ever returns nonsense.
 
 **How the calls are issued is part of several tests here, not a detail.**
 Measured 2026-07-31: tool calls emitted **in one model response** arrive ~0.5s
@@ -126,44 +127,51 @@ structural change is still settling…". A later plain read, after the window, d
 not. `refresh: true` never carries it (`refresh_sync/0` cancels the timer before
 rebuilding).
 
-## The scalar mixer setters reach the mirror by push
+## The scalar mixer setters no longer trigger a refresh
 
 *Run mode: agent*
-*Last run: 2026-08-03 — passed. All seven setters issued in one model response,
-then a plain `get_session_state`: it answered carrying every pushed value —
-return volume 0.7, pan −0.3, muted, soloed; master volume 0.8, pan 0.2, cue 0.6.
-**The four return listener pushes this test flags as "inferred from the master
-ones, never measured" are hereby measured: all four arrive.** Values restored
-immediately afterwards.*
+*Last run: 2026-08-03 — passed, **both halves, for the first time.** All seven
+setters issued in one model response against a scratch return, then a plain
+`get_session_state`: it carried every pushed value — return volume 0.7, pan
+−0.3, muted, soloed; master volume 0.8, pan 0.2, cue 0.6. **The four return
+listener pushes this test flags as "inferred from the master ones, never
+measured" are hereby measured: all four arrive.** And past a byte offset taken
+after the return's own create had settled, the log showed **zero** `Song:`
+lines, **zero** `Loaded N tracks` lines and no refresh scheduling at all — so
+the setters triggered no full rebuild. Values restored immediately afterwards.*
 
 Issue the four return mixer setters (volume, pan, mute, solo) and the three
 master ones (volume, pan, cue volume) in a burst, then `get_session_state`
-**without** `refresh: true`: it answers and carries the pushed final values.
+**without** `refresh: true`: it answers and carries the pushed final values. The
+log shows **no** full-refresh `Song:` / `Loaded …` sequence caused by those
+setters.
+
+Baseline the log offset *after* any scratch return you created has settled — a
+`create_return_track` is itself structural and produces exactly the sequence
+this test is looking for the absence of.
 
 If the four return values are the ones that don't arrive, the fix is to restore
 `State.refresh()` in those four handlers only — their listener pushes were
 inferred from the master ones, never measured.
 
-## The scalar mixer setters no longer trigger a refresh
-
-*Run mode: user — the check is a `Song:` / `Loaded …` absence in the Seshat server's log, which goes to the server's own terminal*
-*Last run: —*
-
-The other half of the test above, split from it 2026-08-03 because the two need
-different tags: with the same burst issued, the log shows **no** full-refresh
-`Song:` / `Loaded …` sequence caused by those setters. State correctness cannot
-see this — a refresh that ran and a refresh that didn't leave the same mirror,
-which is the whole reason this is checked in the log.
-
 ## A burst of creates collapses into one refresh
 
-*Run mode: user — the check is log timestamps in the Seshat server's log, which goes to the server's own terminal*
-*Last run: —*
+*Run mode: agent*
+*Last run: 2026-08-03 — passed, the refresh **count** included. Three
+`create_track` calls plus a plain read in one model response. The log shows the
+three structural pushes at 02:20:30.740, :31.144 and :31.850, each logging
+"Track list changed in Live — scheduling a session refresh", followed by
+**exactly one** rebuild — one `Song:` at :33.617 and one
+`Loaded 4 tracks: 1-MIDI, Burst A, Burst B, Burst Final` at :35.718. Three
+pushes, one refresh, no chain left queued. The in-window read carried the
+settling sentence and the pre-create layout, as intended; a later plain read
+listed all four tracks. Scratch tracks deleted afterwards.*
 
-*Retagged 2026-08-03: this was marked `agent` and cannot be. An agent sweep
-reached the state-visible half incidentally (burst of creates → snapshot window
-→ convergence) but that proves nothing about the refresh **count**, which is the
-whole test.*
+*A `did not reproduce it` warning followed at :36.617 — a stale push carrying
+`"4-MIDI"` for the track the rebuild had already recorded as `"Burst Final"`,
+because `create_track` names the track after creating it. The brake held: no
+further refresh followed, which is the check "A genuine disagreement still
+brakes" above asks for.*
 
 On scratch material, create several tracks with a distinct final name, **with the
 creates and the read in one model response**. An ordinary read during the quiet
@@ -180,13 +188,14 @@ afterwards.
 
 ## `refresh: true` absorbs the pending timer
 
-*Run mode: user — "no duplicate refresh a second later" is only visible in the Seshat server's log, which goes to the server's own terminal*
-*Last run: —*
-
-*Retagged 2026-08-03: this was marked `agent` and cannot be. An agent sweep
-confirmed the "rebuilds immediately" half (create + `refresh: true` in one model
-response returned the new track at once); the duplicate-refresh half, which is
-what this test is for, needs the log.*
+*Run mode: agent*
+*Last run: 2026-08-03 — passed, the duplicate-refresh half included.
+`create_track` and `get_session_state(refresh: true)` issued in one model
+response. The log shows the structural push scheduling a refresh at 02:21:19.023
+and the refreshing read rebuilding at :19.787 — **one** `Song:` line in the whole
+window, with `Loaded 5 tracks` at :22.398 naming the just-created track. No
+second rebuild followed, so the pending timer was absorbed rather than left to
+fire. The reply itself carried the new track and no settling sentence.*
 
 While an asynchronous refresh is pending, call `get_session_state(refresh: true)`
 — issue the mutation and the refreshing read **in one model response**, or the
@@ -196,15 +205,32 @@ later**.
 
 ## The last request is never dropped
 
-*Run mode: user — confirming the mutation landed mid-rebuild needs log timestamps from the Seshat server's log, which goes to the server's own terminal*
-*Last run: —*
+*Run mode: agent*
+*Last run: 2026-08-03 — passed, mid-rebuild condition genuinely provoked on the
+third attempt. A rebuild ran 02:23:08.218 → :12.819; the `delete_track` issued
+during it landed inside that window, proved by the rebuild's own read returning
+**9 tracks with the deleted one already absent** while a push arriving at
+:13.729 still listed it. Exactly one trailing refresh followed (:15.538 →
+:20.170) and converged on the correct list. Final state verified: the deleted
+track gone, the created one present.*
 
-*Retagged 2026-08-03: this was marked `agent` and cannot be. The final-state
-half alone cannot distinguish a mid-rebuild mutation from the just-after one
-this test names as the likely near-miss, so an agent has nothing to judge.*
+**Use a send-only mutation, and do not use `create_track`.** The first two
+attempts were the near-miss this test warns about — the mutation scheduled its
+refresh ~0.9s *after* the rebuild ended, every time. The cause is structural:
+`Transport` serializes queries one-in-flight, `create_track` queries (it counts
+tracks before and after), so a create issued during a rebuild queues behind the
+rebuild's own queries and cannot execute until it finishes. `delete_track` is
+send-only, so its datagram goes straight out and lands mid-rebuild.
 
-Make one more structural mutation while a rebuild is already running (it lasts
-1.0–1.8s, so again from the same model response), and confirm one trailing
-refresh follows it and the final mutation is present afterwards. Check the log
-timestamps to confirm the mutation really landed *mid*-rebuild: arriving just
-after one looks identical in the final state and is the likely near-miss.
+Make one more structural mutation while a rebuild is already running, and confirm
+one trailing refresh follows it and the final mutation is present afterwards.
+Check the log timestamps to confirm the mutation really landed *mid*-rebuild:
+arriving just after one looks identical in the final state and is the likely
+near-miss.
+
+A rebuild took **4.6s** on a 9-track set measured 2026-08-03 (`Song:` to
+`Loaded …`), so the mutation has a wide window — but it must be issued from the
+same model response, and the calls before it need to fill roughly a second so
+the debounced refresh has actually started. `search_library` is the filler to
+reach for: it answers from ETS and never touches `Transport`, so it spends time
+without competing for the query queue.

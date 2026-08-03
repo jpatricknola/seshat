@@ -120,14 +120,16 @@ send, the payload shape, or the Transport matcher.
 
 ## One rejection, one error datagram
 
-*Run mode: user — the count of `OSC in: /live/error` lines is only visible in the Seshat server's debug log, which goes to the server's own terminal*
-*Last run: 2026-08-03 — passed. One rejection produced exactly one
+*Run mode: agent*
+*Last run: 2026-08-03 — passed, confirmed by reading the log rather than asking
+for it. One `get_track_devices` on track 99 produced exactly one
 `OSC in: /live/error ["request", "/live/track/get/devices/name",
-"Index out of range", 1, 99]` and no `"log"`-tagged copy.*
+"Index out of range", 1, 99]` past the baseline offset, and zero `"log"`-tagged
+copies.*
 
-*Retagged 2026-08-03: it was marked `agent` while its own stamp conceded an
-agent "must ask" for the tty. Same reason as the log-read tests in
-[mirror.md](mirror.md).*
+*This is readable because `config :seshat, :logger` mirrors the dev log to
+`log/dev.log` — see [mirror.md](mirror.md)'s preamble. Baseline its byte size
+first and read only the tail, exactly as with Live's own `Log.txt` above.*
 
 While provoking the rejection above, the Seshat server's debug log shows
 exactly **one** `OSC in: /live/error` for it, with a `"request"`-tagged

@@ -40,6 +40,44 @@ config :seshat, SeshatWeb.Endpoint,
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
 
+# Mirror the dev log to a file, *in addition* to the terminal — the default
+# handler is untouched, so the `iex -S mix phx.server` session still prints
+# everything it always did.
+#
+# This exists for the smoke tests. Several checks in
+# docs/smoke-tests/mirror.md are read out of the server log rather than out of
+# state, because a debounced refresh that ran and one that didn't leave an
+# identical mirror — only the `Song:` / `Loaded N tracks:` lines distinguish
+# them. With console-only logging those tests could be run by a human reading
+# the server's terminal and by nobody else. A file the agent sweep can open is
+# what keeps them zero-user.
+#
+# Timestamps are kept here even though the console format drops them: the
+# burst-coalescing tests compare tool-call times against refresh times, so a
+# line without one is useless to them.
+#
+# Anchored to __DIR__ for the same reason as :catalog_path below — `mix mcp` is
+# launched by the MCP client, whose cwd is not ours, and a relative path would
+# scatter log files wherever that happens to be.
+config :seshat, :logger, [
+  {:handler, :file_log, :logger_std_h,
+   %{
+     config: %{
+       file: ~c"#{Path.expand("../log/dev.log", __DIR__)}",
+       # Small, so a test reading the tail sees the last line promptly rather
+       # than waiting on the default multi-second flush.
+       filesync_repeat_interval: 500,
+       # Rotation, so this can never grow without bound: 10MB per file and 3
+       # archives is a ~40MB ceiling that no smoke run comes close to. Without
+       # max_no_files the handler truncates instead of rotating, which would
+       # invalidate a byte offset a test had already taken.
+       max_no_bytes: 10_000_000,
+       max_no_files: 3
+     },
+     formatter: Logger.Formatter.new(format: "$time [$level] $message\n")
+   }}
+]
+
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20

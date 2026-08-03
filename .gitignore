@@ -37,5 +37,8 @@ __pycache__/
 # Sound catalog — dev points :catalog_path here so it's visible; machine-specific
 /catalog.json
 
+# smoke test stuff
+/log
+
 # vscode stuff
 .DS_Store
