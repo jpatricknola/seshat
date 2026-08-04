@@ -61,6 +61,35 @@ ships, expect the *validation* to be wrong while the *report* stays honest: the
 post-write re-read is what stops a stale-read pass from becoming a claimed
 success. Record what you saw rather than treating it as new.
 
+## Clip properties read in one breath, and read true
+
+*Last run: —*
+
+`get_clip_properties` reads a MIDI clip as an `ensure_clip` guard plus **one
+batched tick** of 12 getters (`is_midi_clip` + the 11 common properties)
+instead of 13+ serialized ~100ms round trips. Correctness and speed are both
+the test: a batch that silently degraded to serial reads would still return
+right answers, and a broken echo-prefix match would return *wrong* answers
+fast.
+
+On a MIDI clip whose properties were just set to known values through
+`set_clip_properties` (a distinctive name, a brace like 1.0–3.0, looping on),
+call `get_clip_properties` once and time the call (`mcp_call.py` round-trip
+timing, the [devices.md](devices.md) precedent). Every reported property must
+match what was just confirmed, and the whole call must land **well under a
+second** — the serialized design measured ~1.5s per clip. Then call it on an
+empty slot: one immediate clean error naming the slot, not a stall and not a
+cascade of per-property errors.
+
+A wrong value (another clip's name, a loop point that was never set) means
+reply correlation broke — batching moved the echo checks into
+`Seshat.OSC.Transport`, so this is the test that they still hold on a real
+wire. A correct-but-slow read (≥1.3s) means the batch is not actually
+pipelining. The audio arm (gain/warp, the second batch) needs an audio clip
+no tool can create — that half lives in
+[../manual/engineered-state.md](../manual/engineered-state.md) § An audio
+clip's audio-only properties still read.
+
 ## Quantize lands on 1/16ths, not 1/32nds
 
 *Last run: 2026-08-03 — passed. A 7-note sloppy clip quantized `"1/16"` at 1.0

@@ -42,6 +42,10 @@ in passing by "Echo checks at every raw reply decode" — it now sends the
 bulk `/live/song/get/scenes/name` once instead of once per scene.)
 
 **Planner notes:**
+- [Implementation plan: batched pipelined queries](PLAN_batched_queries.md) —
+  the benchmark was run at plan time (2026-08-04) and picked the lever:
+  latency is AbletonOSC's 100ms tick, not datagram count, so client-side
+  batches match fork bulk endpoints tick-for-tick with no fork change.
 - **Any new bulk reply must echo indices** (aggregate-with-count, the
   vendored `/live/return_track/device/get/parameters` shape) or it trades N
   small straggler hazards for one big one — `state.ex`'s bulk-`track_names`
