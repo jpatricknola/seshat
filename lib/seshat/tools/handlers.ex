@@ -34,7 +34,14 @@ defmodule Seshat.Tools.Handlers do
   # Guards that run before a mutation read a single track/slot property —
   # roughly 100ms per round trip through the serialized query queue (the
   # 2026-08-03 mirror-rebuild run, docs/smoke_tests/auto/mirror.md: 4.6s over
-  # ~46 serialized queries), not the sub-millisecond loopback suggests.
+  # ~46 serialized queries), not the sub-millisecond loopback suggests. That
+  # 100ms is AbletonOSC's scheduling tick, not the wire: a query costs a tick
+  # because it waits for the next one, and a tick answers everything already
+  # queued on the socket. So a *group* of reads costs one tick between them when
+  # it goes out as a `Transport.query_batch/2` burst, which is what the clip,
+  # sends and device reads do — a lone guard like these still costs its own.
+  # Measured 2026-08-04; docs/abletonosc-api-docs.md, "Round trips cost ticks,
+  # not datagrams".
   # A bad index sends no reply on the queried address
   # (AbletonOSC raises inside the callback), but since the structured
   # /live/error correlation shipped (2026-08-03) Transport fails that query
@@ -2341,30 +2348,30 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Clip properties ---
   #
-  # Fourteen single-value getters rather than one bulk read: the bulk
-  # `/live/song/get/track_data` reply is a bare value list with no index echo,
+  # Sixteen single-value getters — 12 common (`is_midi_clip` plus the 11 in
+  # `@clip_common_reads`) and four audio-only — rather than one bulk read: the
+  # bulk `/live/song/get/track_data` reply is a bare value list with no index echo,
   # so it can't be checked against the clip we asked about (same reasoning as
-  # `ensure_midi_track/1`). This comment used to call these "sub-millisecond
-  # loopback round trips"; the measured figure is roughly 100ms per serialized
-  # round trip (docs/smoke_tests/auto/mirror.md, the 2026-08-03 rebuild run),
-  # so this read costs on the order of 1.5s per clip and 400+ round trips to
-  # survey an 8x4 grid.
-  #
-  # TODO! This 13-17-query design was judged acceptable on that wrong latency
-  # figure. The fix that keeps the echo-check guarantee is a bulk
-  # clip-properties endpoint in the fork — one reply carrying every property
-  # with the indices echoed, the same aggregate-with-count shape as the
-  # vendored /live/return_track/device/get/parameters — then one query here.
-  # See docs/evaluating/abletonosc-integration-review.md (2026-08-03), §3.3.
+  # `ensure_midi_track/1`). What made that expensive was sending them one at a
+  # time. A round trip costs one AbletonOSC tick (~100ms) because it waits for
+  # the next tick, and a tick answers everything already queued on the socket —
+  # so the twelve reads below ride *one* tick together through
+  # `Transport.query_batch/2`, which echo-checks each reply against the entry
+  # that asked for it. Measured 2026-08-04; see docs/abletonosc-api-docs.md,
+  # "Round trips cost ticks, not datagrams".
   #
   # `ensure_clip/3` first so an empty slot costs one timeout-free error rather
-  # than fourteen guard timeouts.
+  # than a batch of twelve rejections. `is_midi_clip` rides the common batch
+  # rather than being asked first, so the type check is free: only an audio clip
+  # pays a second tick, for the four audio-only reads.
   defp do_call("get_clip_properties", %{"track" => track, "clip_slot" => slot}) do
     with :ok <- ensure_clip(track, slot),
-         {:ok, midi?} <- clip_is_midi(track, slot),
-         {:ok, common} <- read_clip_properties(track, slot, @clip_common_reads),
+         {:ok, common} <-
+           read_clip_properties(track, slot, ["is_midi_clip" | @clip_common_reads]),
+         midi? = truthy?(common["is_midi_clip"]),
          {:ok, audio} <- read_audio_clip_properties(track, slot, midi?) do
-      {:ok, format_clip_properties(track, slot, midi?, Map.merge(common, audio))}
+      properties = common |> Map.delete("is_midi_clip") |> Map.merge(audio)
+      {:ok, format_clip_properties(track, slot, midi?, properties)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
@@ -2912,23 +2919,34 @@ defmodule Seshat.Tools.Handlers do
     read_vendored_chain("/live/master/get/devices", [], :master)
   end
 
-  # Three replies rather than the vendored chains' one, so each of the three
-  # carries its own straggler risk and the three lists could otherwise describe
-  # two different chains — hence `query_correlated/4` on each, verifying the
-  # echoed track index. Collapsing all three onto a combined
-  # /live/track/get/devices endpoint (the shape the vendored return/master
-  # getters already have) is the "bulk reads vs. per-address queries" roadmap
-  # item, and would leave these checks doing the same job on one reply instead of
-  # three. What stays residual either way: three verified replies are still three
-  # snapshots, so a chain edited mid-read is reported as it was at each moment.
+  # Three replies rather than the vendored chains' one, so the three lists could
+  # otherwise describe two different chains. One batch: Transport hands each
+  # reply to the entry whose track index it echoes, which is the check the three
+  # `query_correlated/4` calls used to do caller-side — at the price of one
+  # ~100ms AbletonOSC tick each, where the batch spends one between them.
+  # Collapsing them onto a combined /live/track/get/devices endpoint in the fork
+  # was weighed and dropped for exactly that reason: it would buy no latency over
+  # this (docs/archive/PLAN_batched_queries.md, benchmarked 2026-08-04). What stays
+  # residual: three verified replies are still three snapshots, so a chain edited
+  # mid-read is reported as it was at each moment — the window is now one tick
+  # wide instead of three.
   defp do_call("get_track_devices", %{"track" => track}) do
-    with {:ok, names} <- query_correlated("/live/track/get/devices/name", [track]),
-         {:ok, types} <- query_correlated("/live/track/get/devices/type", [track]),
-         {:ok, classes} <- query_correlated("/live/track/get/devices/class_name", [track]) do
+    subject = "the devices on track #{track}"
+
+    entries = [
+      {"/live/track/get/devices/name", [track]},
+      {"/live/track/get/devices/type", [track]},
+      {"/live/track/get/devices/class_name", [track]}
+    ]
+
+    with {:ok, [name_reply, type_reply, class_reply]} <- Transport.query_batch(entries),
+         {:ok, names} <- decode_entry(name_reply, subject, &{:ok, &1}),
+         {:ok, types} <- decode_entry(type_reply, subject, &{:ok, &1}),
+         {:ok, classes} <- decode_entry(class_reply, subject, &{:ok, &1}) do
       {:ok, format_device_chain({:track, track}, names, types, classes)}
     else
-      {:error, {:stale, _values}} ->
-        {:error, stale_reply_error("the devices on track #{track}")}
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason}
 
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
@@ -2963,18 +2981,29 @@ defmodule Seshat.Tools.Handlers do
   end
 
   # `get_track_devices`' hazard at worse odds — five replies rather than three,
-  # each echoing a track *and* a device index — so every one rides
-  # `query_correlated/4`. The name read decodes a single value; the four
-  # parameter reads keep their whole list.
+  # each of which has to echo a track *and* a device index — so one batch here
+  # too, resolved per entry on both indices. The name read decodes a single
+  # value; the four parameter reads keep their whole list, which is why they pass
+  # the identity decode rather than `unwrap_payload/1`.
   defp do_call("get_device_parameters", %{"track" => track, "device" => device}) do
     subject = "device #{device} on track #{track}"
+    indices = [track, device]
 
-    with {:ok, device_name} <-
-           query_correlated("/live/device/get/name", [track, device], decode: &unwrap_payload/1),
-         {:ok, names} <- query_correlated("/live/device/get/parameters/name", [track, device]),
-         {:ok, values} <- query_correlated("/live/device/get/parameters/value", [track, device]),
-         {:ok, mins} <- query_correlated("/live/device/get/parameters/min", [track, device]),
-         {:ok, maxes} <- query_correlated("/live/device/get/parameters/max", [track, device]) do
+    entries = [
+      {"/live/device/get/name", indices},
+      {"/live/device/get/parameters/name", indices},
+      {"/live/device/get/parameters/value", indices},
+      {"/live/device/get/parameters/min", indices},
+      {"/live/device/get/parameters/max", indices}
+    ]
+
+    with {:ok, [device_reply, name_reply, value_reply, min_reply, max_reply]} <-
+           Transport.query_batch(entries),
+         {:ok, device_name} <- decode_entry(device_reply, subject),
+         {:ok, names} <- decode_entry(name_reply, subject, &{:ok, &1}),
+         {:ok, values} <- decode_entry(value_reply, subject, &{:ok, &1}),
+         {:ok, mins} <- decode_entry(min_reply, subject, &{:ok, &1}),
+         {:ok, maxes} <- decode_entry(max_reply, subject, &{:ok, &1}) do
       {:ok,
        format_device_parameters(
          {:track, track},
@@ -2986,8 +3015,7 @@ defmodule Seshat.Tools.Handlers do
          maxes
        )}
     else
-      {:error, {:stale, _values}} -> {:error, stale_reply_error(subject)}
-      {:error, {:remote, message}} -> {:error, remote_error(message)}
+      {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
@@ -4024,20 +4052,6 @@ defmodule Seshat.Tools.Handlers do
       "retrying blind could load a second copy."
   end
 
-  # One name query per return plus one send query per return — up to 24 round
-  # trips at ~100ms each (~2s at Live's 12-return cap), a real cost this
-  # comment used to wave off as "tiny replies".
-  #
-  # TODO! The name half of each pair duplicates state Session.State already
-  # mirrors — but a blind mirror read is not the fix: the mirror is
-  # trailing-edge debounced, so after a return delete or reorder it can lag
-  # by ~1s and would label a send with the return that *used to* hold that
-  # index. If this is optimised, gate it on freshness — mirror names only
-  # when no structural refresh is pending and the mirror's return count
-  # matches the count just queried, per-index query fallback otherwise.
-  # "Push-fresh" alone is not a sufficient invariant here (PR #62 review,
-  # 2026-08-03).
-  #
   # With no returns there are no sends to read, but the track index still gets
   # checked: otherwise a typo'd track comes back as "this set has no return
   # tracks" — true, and not the question that was asked.
@@ -4048,35 +4062,78 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # One tick, not 1 + 2N of them. Each return contributes two entries — its own
+  # name and this track's send into it — and `Transport.query_batch/2` tells the
+  # replies apart by the index each echoes, which is exactly what lets two reads
+  # per return share one burst. At Live's 12-return cap that is 25 entries and
+  # one ~100ms tick, against the ~2.5s the serialized loop cost.
+  #
+  # It also supersedes the freshness-gated mirror read this comment used to
+  # sketch (PR #62 review, 2026-08-03). Reusing `Session.State`'s return names
+  # would now save nothing — the names arrive in the same tick as the levels —
+  # while still owing the staleness ceremony that review demanded, since the
+  # debounced mirror can lag a return delete or reorder by ~1s and would label a
+  # send with the return that *used to* hold that index.
+  #
+  # The track-name entry is the index guard, riding the same tick rather than
+  # being implied by whichever send read happened to fail first.
   defp read_sends(track, count) do
-    result =
-      Enum.reduce_while(0..(count - 1), {:ok, []}, fn index, {:ok, acc} ->
-        case read_send(track, index) do
-          {:ok, send_data} -> {:cont, {:ok, [send_data | acc]}}
-          {:error, reason} -> {:halt, {:error, reason}}
+    entries =
+      [{"/live/track/get/name", [track]}] ++
+        Enum.flat_map(0..(count - 1), fn index ->
+          [
+            {"/live/return_track/get/name", [index]},
+            {"/live/track/get/send", [track, index]}
+          ]
+        end)
+
+    case Transport.query_batch(entries, @guard_timeout) do
+      {:ok, [track_name | pairs]} ->
+        with {:ok, _name} <- decode_entry(track_name, "track #{track}") do
+          collect_sends(track, pairs)
+        end
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
+    end
+  rescue
+    # `entries` is `2 * count + 1`, and `Transport.query_batch/2` raises
+    # `ArgumentError` — synchronously, before anything reaches the wire — past
+    # its entry cap. Live 12 caps return tracks at 12 (25 entries), so this
+    # should never trigger through the UI; it exists so a count this code
+    # doesn't otherwise bound turns into a sentence rather than an uncaught
+    # crash out of a tool handler.
+    e in ArgumentError ->
+      {:error,
+       "Track #{track} has #{count} return tracks, too many to read sends for in a single " <>
+         "batch (#{Exception.message(e)}). That's far beyond Live's own return-track limit, so " <>
+         "this shouldn't happen — treat it as a bug if it does."}
+  catch
+    # One deadline over the whole burst. The hint names both indices because the
+    # burst reads both, and the extension hint isn't the right diagnosis here:
+    # `return_track_count/0` has already proved the extension answers.
+    :exit, _ ->
+      {:error, guard_timeout_error("the sends on track #{track}", @send_index_hint)}
+  end
+
+  # The batch's tail comes back as name/level pairs in return order — the order
+  # they were queued in — so re-pairing them is a chunk rather than a lookup.
+  # Stops at the first entry Live refused, as the per-return loop did.
+  defp collect_sends(track, pairs) do
+    collected =
+      pairs
+      |> Enum.chunk_every(2)
+      |> Enum.with_index()
+      |> Enum.reduce_while({:ok, []}, fn {[name_result, value_result], index}, {:ok, acc} ->
+        with {:ok, name} <- decode_entry(name_result, "the name of return track #{index}"),
+             {:ok, value} <- decode_entry(value_result, "send #{index} on track #{track}") do
+          {:cont, {:ok, [%{index: index, return: name, value: value} | acc]}}
+        else
+          {:error, message} -> {:halt, {:error, message}}
         end
       end)
 
-    with {:ok, sends} <- result, do: {:ok, Enum.reverse(sends)}
-  end
-
-  defp read_send(track, index) do
-    with {:ok, name} <-
-           query_echoed(
-             "/live/return_track/get/name",
-             [index],
-             "the name of return track #{index}",
-             @return_extension_hint
-           ),
-         {:ok, value} <-
-           query_echoed(
-             "/live/track/get/send",
-             [track, index],
-             "send #{index} on track #{track}",
-             @send_index_hint
-           ) do
-      {:ok, %{index: index, return: name, value: value}}
-    end
+    with {:ok, sends} <- collected, do: {:ok, Enum.reverse(sends)}
   end
 
   # The post-set read of a send level, and the three things it can say. The
@@ -4700,18 +4757,46 @@ defmodule Seshat.Tools.Handlers do
   defp read_audio_clip_properties(track, slot, false),
     do: read_clip_properties(track, slot, @clip_audio_reads)
 
+  # One batch, not one query per property. Each entry echoes the same track and
+  # slot behind a different address, and `Transport.query_batch/2` verifies that
+  # echo per entry — the check `query_echoed/4` used to perform caller-side, one
+  # reply at a time, at the price of a 100ms AbletonOSC tick each. Twelve
+  # properties therefore cost one tick between them rather than twelve.
+  #
+  # The per-property wording stays here, where the property is known: the
+  # transport reports only which entry failed and why.
+  defp read_clip_properties(_track, _slot, []), do: {:ok, %{}}
+
   defp read_clip_properties(track, slot, properties) do
-    Enum.reduce_while(properties, {:ok, %{}}, fn property, {:ok, acc} ->
-      case query_echoed(
-             clip_get_address(property),
-             [track, slot],
-             "the #{property} of the clip in slot #{slot} on track #{track}",
-             @clip_index_hint
-           ) do
-        {:ok, value} -> {:cont, {:ok, Map.put(acc, property, value)}}
-        {:error, message} -> {:halt, {:error, message}}
-      end
-    end)
+    properties = Enum.uniq(properties)
+    entries = Enum.map(properties, &{clip_get_address(&1), [track, slot]})
+
+    case Transport.query_batch(entries, @guard_timeout) do
+      {:ok, results} ->
+        properties
+        |> Enum.zip(results)
+        |> Enum.reduce_while({:ok, %{}}, fn {property, result}, {:ok, acc} ->
+          subject = "the #{property} of the clip in slot #{slot} on track #{track}"
+
+          case decode_entry(result, subject) do
+            {:ok, value} -> {:cont, {:ok, Map.put(acc, property, value)}}
+            {:error, message} -> {:halt, {:error, message}}
+          end
+        end)
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
+    end
+  catch
+    # One deadline covers the whole batch, so a timeout is no longer about one
+    # property — and every caller of this helper still reads before it mutates,
+    # bar `read_clip_writeback/3`, which overrides this wording with its own.
+    :exit, _ ->
+      {:error,
+       guard_timeout_error(
+         "the properties of the clip in slot #{slot} on track #{track}",
+         @clip_index_hint
+       )}
   end
 
   defp send_clip_writes(track, slot, writes) do
@@ -4733,6 +4818,7 @@ defmodule Seshat.Tools.Handlers do
   # Addresses as literals, one clause per property, rather than interpolating
   # the property name into the address: `vendored_addresses_test` greps `lib/`
   # for `"/live/…"` literals, and an interpolated address is invisible to it.
+  defp clip_get_address("is_midi_clip"), do: "/live/clip/get/is_midi_clip"
   defp clip_get_address("name"), do: "/live/clip/get/name"
   defp clip_get_address("length"), do: "/live/clip/get/length"
   defp clip_get_address("looping"), do: "/live/clip/get/looping"
@@ -4929,9 +5015,12 @@ defmodule Seshat.Tools.Handlers do
   #
   # Two queries rather than one `/live/song/get/track_data` carrying both
   # properties: that reply is a bare value list with no index echo, so it cannot
-  # be checked against the track we asked about. A second round trip
-  # (~100ms measured, not the sub-millisecond this comment once claimed) is
-  # still the right spend — the echo check is what it buys.
+  # be checked against the track we asked about. The second round trip costs one
+  # AbletonOSC tick (~100ms measured 2026-08-04, not the sub-millisecond this
+  # comment once claimed) and is still the right spend — the echo check is what
+  # it buys. Not a `Transport.query_batch/2` case, either: the second read is
+  # conditional on the first, so batching them would pay for a read an audio
+  # track never needs.
   defp ensure_midi_track(track) do
     case query_flag("/live/track/get/has_midi_input", [track], "the type of track #{track}") do
       {:ok, true} ->
@@ -5170,7 +5259,7 @@ defmodule Seshat.Tools.Handlers do
   # caller, and each call site already has a `catch :exit` whose wording knows
   # whether anything was sent. Swallowing it here would flatten "nothing further
   # was sent" and "the mutation is already on the wire" into one message.
-  defp query_correlated(address, args, opts \\ [], reissued? \\ false) do
+  defp query_correlated(address, args, opts, reissued? \\ false) do
     reply =
       case Keyword.get(opts, :timeout) do
         nil -> Transport.query(address, args)
@@ -5265,6 +5354,43 @@ defmodule Seshat.Tools.Handlers do
   defp remote_error(message) do
     "#{message}. Nothing further was sent — check get_session_state for the indices that " <>
       "actually exist."
+  end
+
+  # One `Transport.query_batch/2` result, rendered the way the serialized path
+  # renders a single reply: `unwrap_payload/1` behind the echoed indices by
+  # default, `remote_error/1` for a rejection Live named — whether that came back
+  # as the vendored envelope's error arm or as the structured `/live/error`
+  # Transport correlated to this very entry — and a sentence of its own for a
+  # payload no clause here can read.
+  #
+  # `decode` is the escape hatch for a reply whose payload is a whole list rather
+  # than one value (the device chain and parameter reads), exactly as
+  # `query_correlated/4`'s `:decode` option is.
+  #
+  # There is no reissue to make here and no `:stale` arm to write: the echo check
+  # `query_correlated/4` reissues in order to obtain has already happened inside
+  # Transport, per entry, before this reply was assigned to this entry at all.
+  defp decode_entry(result, subject, decode \\ &unwrap_payload/1)
+
+  defp decode_entry({:ok, payload}, subject, decode) do
+    case decode.(payload) do
+      {:ok, value} -> {:ok, value}
+      {:error, message} -> {:error, remote_error(message)}
+      :unexpected_shape -> {:error, unreadable_reply_error(subject)}
+    end
+  end
+
+  defp decode_entry({:error, {:live_error, message}}, _subject, _decode),
+    do: {:error, remote_error(message)}
+
+  # Not `stale_reply_error/2`: that one's "not about what was asked for, twice in
+  # a row" describes the serialized path's reissue, which a batch has no
+  # equivalent of. A reply that reaches this point *is* about what was asked for
+  # — Transport matched its echo — and is simply shaped in a way nothing here
+  # knows how to read.
+  defp unreadable_reply_error(subject) do
+    "Ableton's reply about #{subject} was not a shape this can read, so its value is " <>
+      "unknown. Nothing further was sent; try again."
   end
 
   # Only ever reached with two equal-length lists — `correlate_reply/2` rejects a

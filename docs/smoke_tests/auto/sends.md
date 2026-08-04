@@ -44,6 +44,31 @@ clause ([lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)).
 A reply that asserts success with no confirmation wording means the read-back
 is gone.
 
+## Reading a track's sends labels each return correctly
+
+*Last run: —*
+
+`get_track_sends` reads every send's return name and level in one batched
+tick (`query_batch` — one datagram burst of `2N + 1`, replies matched by
+echoed index inside `Seshat.OSC.Transport`). The hazard the batch must
+preserve against is mispairing: return A's name over return B's level, or one
+track's send answered with another's.
+
+Set-up on top of the file's: a **second** return track (create it, note that
+you did, delete it at the end), so a swapped label is detectable at all.
+
+Set send A and send B on one track to distinct, confirmed levels (`0.2` and
+`0.8`). Then call `get_track_sends` once: both sends must appear, each named
+with the right return's name and carrying the level just confirmed, the last
+send index present. Then call it with a track index the set doesn't have
+(`track: 99`): expect an immediate error (well under a second, Live's own
+"Index out of range" rendered generically), never a multi-second stall.
+
+A right-level-wrong-name pairing means the batch's echo-prefix matching (or
+the caller's decode zip) is broken — worse than a timeout, because it reads
+as an answer. A stall on the bad track index means the per-entry
+`/live/error` correlation is not reaching batch entries.
+
 ## A bad send index is refused before the set
 
 *Last run: 2026-08-04 — refused fast. `send: 9` against one return returned

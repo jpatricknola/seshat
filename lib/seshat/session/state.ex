@@ -910,9 +910,17 @@ defmodule Seshat.Session.State do
   address alone a straggler from an earlier query is indistinguishable by
   content, and one accepted straggler mislabels every track at once instead of
   yielding a single `nil`. That would defeat the echo check both bullets above
-  lean on, during exactly the structural churn a rebuild runs in. If the fork
-  ever grows the bulk mirror-snapshot endpoint the review recommends (§3.2,
-  indices echoed in the reply), this loop is what it replaces.
+  lean on, during exactly the structural churn a rebuild runs in.
+
+  What replaces this loop, if the mirror rebuild's cost is ever bought down, is
+  `Seshat.OSC.Transport.query_batch/2` — not the fork bulk-snapshot endpoint the
+  review recommended (§3.2), which was written before the benchmark existed. A
+  burst and a bulk reply cost the same single AbletonOSC tick (measured
+  2026-08-04, docs/archive/PLAN_batched_queries.md), so the endpoint buys no latency,
+  while the batch keeps the per-index echo check by matching every reply against
+  the entry that asked for it. That is roadmap work — "Monitored refresh worker
+  for `Session.State`", which is gated on re-measurement — and deliberately not
+  done here.
 
   Aborting the whole read rather than skipping the one index is deliberate:
   `do_refresh/1` is about to discard the list anyway, so every query after the

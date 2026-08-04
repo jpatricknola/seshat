@@ -200,3 +200,27 @@ guard stands on it either way. If `undo` reports the request as sent instead,
 `can_undo` alone is always true, and the finding is that the **undo guard should
 be dropped rather than widened**; say so in the report, and fold the reading into
 the API docs.
+
+## An audio clip's audio-only properties still read
+
+*Why manual: needs an audio clip in a Session slot, which no tool can create —
+recording one needs routed input hardware, so it takes a person dragging a
+sample into a slot*
+*Last run: —*
+
+The audio arm of `get_clip_properties` — `gain`, `gain_display_string`,
+`warp_mode`, `warping` — is a second batched read that only ever runs against
+an audio clip, so the agent sweep's MIDI-clip test
+([../auto/clips.md](../auto/clips.md) § Clip properties read in one breath,
+and read true) never exercises it.
+
+Drag any sample from Live's browser into a Session slot. `get_clip_properties`
+on that slot must report it as an audio clip, include a gain with its dB
+display string and a warp mode matching what the clip's own view shows, and
+omit nothing the MIDI arm would have shown (name, length, loop settings).
+Then read a MIDI clip and confirm the audio-only fields are absent rather
+than zeroed.
+
+A timeout here with MIDI clips reading fine means the audio batch is sending
+a property an audio clip doesn't carry (or vice versa — the
+`@clip_audio_only_properties` guard drifting from Live's reality).

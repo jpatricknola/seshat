@@ -33,7 +33,20 @@ untouched.
 
 ## The loop pair with looping off
 
-*Last run: 2026-08-03 — **defect reproduced, but its blast radius is smaller than
+*Last run: 2026-08-04 — passed, no drift, re-run after `get_clip_properties`'
+pair-context and write-back reads moved onto the batched helper. `looping: false`
+alone, then a read: `Loop: off, from beat 0.0 to 4.0 (4.0 beats)` with play
+markers 0.0–4.0 — the loop pair spanning the whole clip rather than tracking the
+markers, exactly as the 2026-08-03 run below recorded. `looping: true` with
+`loop_start: 1.0` and `loop_end: 3.0` in one call then produced exactly 1.0–3.0,
+so the batched pair-context read and the batched write-back both still order and
+report correctly. Worth recording: the `looping: false` call is also the* empty
+*pair-context case — it touches neither loop nor marker pair, so
+`read_clip_properties/3` is handed `[]` and must not reach
+`Transport.query_batch/2`, which raises on an empty batch. It did not, and the
+call succeeded.*
+
+*Prior run: 2026-08-03 — **defect reproduced, but its blast radius is smaller than
 this test assumed; both are recorded below.** With looping off and play markers
 at 0.0–2.0, the loop pair read **0.0–8.0** — the clip extent, *not* the markers
 (the earlier reading that looked like marker-tracking was a coincidence: the
@@ -60,6 +73,50 @@ ordering and the single-sided validation can run against stale values. Until tha
 ships, expect the *validation* to be wrong while the *report* stays honest: the
 post-write re-read is what stops a stale-read pass from becoming a claimed
 success. Record what you saw rather than treating it as new.
+
+## Clip properties read in one breath, and read true
+
+*Last run: 2026-08-04 — passed, and the pipelining is real. A MIDI clip on track
+0 slot 0 ("BatchProbe", two notes) was set to `looping: true`, `loop_start: 1.0`,
+`loop_end: 3.0`, `launch_quantization: 5`, `velocity_amount: 0.5`, each confirmed
+in `set_clip_properties`' own echo. One `get_clip_properties` then returned every
+one of them correctly — `MIDI, 2.0 beats / Loop: on, from beat 1.0 to 3.0 (2.0
+beats) / Play markers: start 0.0, end 4.0 / Launch: Trigger, quantization 1 bar,
+legato off, velocity amount 0.5` — in **0.377s wall clock including Python
+start-up and the HTTP handshake**, against the ~1.5s the serialized design
+measured. So the twelve-getter batch pipelines on a real wire and the
+echo-prefix matching in `Seshat.OSC.Transport` pairs every reply with the
+property that asked for it. Empty slot 3 on the same track came back in
+**0.157s** with one clean error ("Slot 3 on track 0 is empty. Clip slots are
+0-based, …") — no stall, no cascade of per-property errors. **Not covered:** the
+audio arm's second batch, which needs a hand-dragged audio clip — see
+[../manual/engineered-state.md](../manual/engineered-state.md) § An audio clip's
+audio-only properties still read.*
+
+`get_clip_properties` reads a MIDI clip as an `ensure_clip` guard plus **one
+batched tick** of 12 getters (`is_midi_clip` + the 11 common properties)
+instead of 13+ serialized ~100ms round trips. Correctness and speed are both
+the test: a batch that silently degraded to serial reads would still return
+right answers, and a broken echo-prefix match would return *wrong* answers
+fast.
+
+On a MIDI clip whose properties were just set to known values through
+`set_clip_properties` (a distinctive name, a brace like 1.0–3.0, looping on),
+call `get_clip_properties` once and time the call (`mcp_call.py` round-trip
+timing, the [devices.md](devices.md) precedent). Every reported property must
+match what was just confirmed, and the whole call must land **well under a
+second** — the serialized design measured ~1.5s per clip. Then call it on an
+empty slot: one immediate clean error naming the slot, not a stall and not a
+cascade of per-property errors.
+
+A wrong value (another clip's name, a loop point that was never set) means
+reply correlation broke — batching moved the echo checks into
+`Seshat.OSC.Transport`, so this is the test that they still hold on a real
+wire. A correct-but-slow read (≥1.3s) means the batch is not actually
+pipelining. The audio arm (gain/warp, the second batch) needs an audio clip
+no tool can create — that half lives in
+[../manual/engineered-state.md](../manual/engineered-state.md) § An audio
+clip's audio-only properties still read.
 
 ## Quantize lands on 1/16ths, not 1/32nds
 

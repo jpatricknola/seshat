@@ -199,6 +199,17 @@ included — and matches an incoming message against the in-flight request's
 address only. There is no request id on the wire, and none is coming. Three
 consequences:
 
+`query_batch/2` (added 2026-08-04, see
+[docs/archive/PLAN_batched_queries.md](../../docs/archive/PLAN_batched_queries.md))
+occupies one FIFO slot for several reads at once rather than sidestepping this
+section — it just matches more precisely: address *plus* echoed-argument
+prefix, so same-address entries (twelve `/live/track/get/send` reads in one
+batch) resolve to the right one instead of arriving in any old order. The two
+hazard classes below are unchanged by batching, not new risks it introduces —
+a wrong-args straggler now matches no entry at all (strictly better than the
+single-query path, which would have consumed the slot), and a listener push on
+a batched address can still satisfy an entry exactly as it can a lone query.
+
 - **A timed-out query's reply can still answer the next one on that address.**
   Serialization removes the old overwrite case, where mere overlap was enough:
   a reply that doesn't match the in-flight request's address is broadcast and

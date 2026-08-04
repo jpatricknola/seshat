@@ -53,6 +53,28 @@ request: Index out of range". Expect **fast and generic**, not slow and helpful.
 The lost guidance — the message no longer says which index was bad or what to
 call next — is tracked in [../ROADMAP.md](../ROADMAP.md), not here.
 
+## Chain and parameter reads pair the right values
+
+*Last run: —*
+
+The regular-track `get_track_devices` (three parallel list getters) and
+`get_device_parameters` (five) each collapse to one batched tick, and the
+thing that must survive is the pairing: all lists describing the *same*
+chain, the parameter read describing the device that was asked for.
+
+On a regular track with **two different devices** loaded (load them if
+needed; delete what you added afterwards), `get_track_devices` must list
+both in chain order with the right type for each. Then
+`get_device_parameters` with `device: 1` must head its reply with device 1's
+name — not device 0's — and list that device's parameters. Then ask for
+`device: 7` on the same track: immediate error, as § Device error paths are
+errors, not stalls already pins.
+
+A name/type mispairing or a parameter list under the wrong device name means
+the batch decode zipped replies that don't belong together — exactly the
+parallel-list hazard the old per-query echo checks guarded, now living in
+`Seshat.OSC.Transport`'s batch matching.
+
 ## The stray-track guard fires
 
 *Last run: 2026-08-03 — passed, both targets. `target: "return"` → error "Live

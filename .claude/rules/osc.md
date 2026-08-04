@@ -139,6 +139,18 @@ exist because a typo'd address looks exactly like success.
   directly. Address strings deliberately live inline in `Handlers`,
   `Registry`, and `Session.State` (greppable via `"/live/`) — do not add an
   abstraction layer over them.
+- **`Transport.query_batch/2` is reads only.** It pipelines several getters
+  into one AbletonOSC tick — one FIFO slot, one deadline, every datagram sent
+  back-to-back at dequeue, each reply matched to its entry by address plus
+  echoed-argument prefix. A batch can time out with datagrams already on the
+  wire, which is harmless only when nothing in it mutates: never put a
+  setter in one. An ordered sequence around a mutation (a pre-write guard, a
+  confirming read-back) stays individual `query/3` calls — the sequencing is
+  the point, and batching it would blur "sent" with "confirmed." See the
+  moduledoc's "Query serialization" section in
+  [lib/seshat/osc/transport.ex](../../lib/seshat/osc/transport.ex) and the
+  archived [PLAN_batched_queries.md](../../docs/archive/PLAN_batched_queries.md)
+  for the measured tick model behind it.
 - **Track indices are 0-based everywhere.** "Track 1" in user speech =
   index 0. Send IDs likewise (send A = 0).
 - **Ranges**: pan is -1.0 (left) to 1.0 (right); volume and send levels are
