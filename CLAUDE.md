@@ -235,6 +235,55 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
+The N+1 read patterns are now batched into single AbletonOSC ticks, shipped
+2026-08-04, closing what had been the queue's top item, "Bulk reads vs.
+per-address queries — benchmark, then pick the lever." The item asked for a
+benchmark before picking between three candidate levers (fork bulk
+endpoints, per-address query lanes, mirror reuse); the benchmark, run at
+plan time against the installed AbletonOSC with Seshat stopped, collapsed
+the choice outright. The ~100ms per query that earlier comments called a
+"sub-millisecond loopback round trip" is AbletonOSC's fixed 100ms scheduling
+tick (`manager.py`'s `tick()`), not per-datagram cost: any number of
+datagrams already queued on the socket when a tick fires all answer in that
+same tick (measured up to 63, zero drops, ≤15ms in-tick spread), so a
+client-side batch matches a fork bulk endpoint's latency exactly, with no
+Python change. `Seshat.OSC.Transport.query_batch/2` is the new primitive — one
+FIFO slot, one absolute deadline, every datagram sent back-to-back at
+dequeue, each reply matched to its entry by address plus echoed-argument
+prefix (the same defence `query_correlated/4` already bolted on caller-side,
+now living in Transport), with structured `/live/error` matched per entry so
+a batch aimed at a vanished target fails fast instead of waiting out the
+full timeout. Four read sites converted: `get_clip_properties` (13–17 serial
+queries → one or two batches, ~2–3 ticks), `get_track_sends` (1 + 2N → one
+`2N+1` batch), and the regular-track `get_track_devices` /
+`get_device_parameters` pair (3 and 5 queries → one batch each). No fork
+change, no `Definitions` change, no MCP surface change — every batched
+address was already documented and already in use. PR review found the
+implementation correct on independent re-derivation and applied three nits:
+`read_sends/2` no longer raises uncaught on a batch over the 64-entry cap
+(now a clean `{:error, _}`), plus two test-only additions pinning the empty-
+batch rider in `set_clip_properties` and two user-facing error strings that
+had no coverage. Plan archived at
+[docs/archive/PLAN_batched_queries.md](docs/archive/PLAN_batched_queries.md).
+**Live verification is incomplete — say so if this comes up.** Only the two
+`clips.md` MIDI-only checks (`get_clip_properties` reading back a batch it
+just wrote, and the `set_clip_properties` loop-pair rider) actually ran
+against real Ableton and passed, in well under a second where the serialized
+design measured ~1.5s. The other four automated citations — both in
+`sends.md`, both in `devices.md` — were skipped: this machine's installed
+AbletonOSC copy is older than the submodule pin, missing addresses this
+branch's other work depends on, and reinstalling was outside the scope that
+found this. The per-entry `/live/error` correlation and the `2N+1` sends
+batch have therefore never touched a real wire. `mix abletonosc.install`, a
+Live restart, then `/smoke-test sends` and `/smoke-test devices` are
+outstanding before this counts as fully live-verified; one manual citation
+(`smoke_tests/manual/engineered-state.md` § An audio clip's audio-only
+properties still read) needs a person regardless. "Monitored refresh worker
+for `Session.State`" gains a new planner note pointing at `query_batch/2` as
+the lever it should reach for first if it's ever picked up, since the
+mirror rebuild is the same N+1 disease at a larger scale (~73 queries,
+~4.6s) and a batched rebuild may retire the item outright.
+
 `set_track_send` now reports an outcome it observed, shipped 2026-08-03,
 closing what had been the queue's top item. Unlike volume/pan/mute/solo,
 sends have no listener in `track.py` and sit outside `Session.State`'s

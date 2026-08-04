@@ -2925,7 +2925,7 @@ defmodule Seshat.Tools.Handlers do
   # ~100ms AbletonOSC tick each, where the batch spends one between them.
   # Collapsing them onto a combined /live/track/get/devices endpoint in the fork
   # was weighed and dropped for exactly that reason: it would buy no latency over
-  # this (docs/PLAN_batched_queries.md, benchmarked 2026-08-04). What stays
+  # this (docs/archive/PLAN_batched_queries.md, benchmarked 2026-08-04). What stays
   # residual: three verified replies are still three snapshots, so a chain edited
   # mid-read is reported as it was at each moment — the window is now one tick
   # wide instead of three.

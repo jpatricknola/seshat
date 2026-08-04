@@ -1,5 +1,27 @@
 # Plan: Batched pipelined queries — the measured lever for the N+1 reads
 
+> **Archived 2026-08-04 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ (see the PR for the
+> implementer's per-item report and the review's nits, all applied). The
+> feature lives on branch `batched-queries` in
+> [../../lib/seshat/osc/transport.ex](../../lib/seshat/osc/transport.ex)
+> (`Transport.query_batch/2`) and the four converted read sites in
+> [../../lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex).
+> **Live verification is incomplete, not fully green — say so wherever this
+> plan is cited.** Only 2 of the 6 automated citations below actually ran
+> against real Ableton (both in `smoke_tests/auto/clips.md`, MIDI-only); the
+> other 4 automated citations (two in `sends.md`, two in `devices.md`) were
+> skipped because the AbletonOSC copy installed in this machine's Live is
+> older than the submodule pin, and the one manual citation
+> (`smoke_tests/manual/engineered-state.md` § An audio clip's audio-only
+> properties still read) needs a person. `mix abletonosc.install` + a Live
+> restart + `/smoke-test sends` + `/smoke-test devices` remain outstanding
+> before the per-entry `/live/error` correlation and the `2N+1` sends batch
+> can be called live-verified. The one follow-up this plan's "Out of scope"
+> section named — reaching for `query_batch/2` before building a monitored
+> refresh worker — went to roadmap item "Monitored refresh worker for
+> `Session.State`" as a planner note.
+
 Roadmap item: **"Bulk reads vs. per-address queries — benchmark, then pick
 the lever"** (currently #1).
 
@@ -13,10 +35,10 @@ figure is ~100ms per serialized round trip, which makes
 to survey an 8×4 grid) and `get_track_sends` up to ~2.5s (1 + 2 per return),
 with every one of those queries also head-of-line blocking every other
 tool's OSC traffic behind Transport's single serialized queue. Both sites
-carry a `TODO!` ([handlers.ex:2353](../lib/seshat/tools/handlers.ex#L2353),
-[handlers.ex:4031](../lib/seshat/tools/handlers.ex#L4031)); the option space
+carry a `TODO!` ([handlers.ex:2353](../../lib/seshat/tools/handlers.ex#L2353),
+[handlers.ex:4031](../../lib/seshat/tools/handlers.ex#L4031)); the option space
 is §2–§3 of
-[abletonosc-integration-review.md](evaluating/abletonosc-integration-review.md).
+[abletonosc-integration-review.md](../evaluating/abletonosc-integration-review.md).
 
 The roadmap item's instruction was: benchmark first, then pick between three
 candidate levers — fork bulk endpoints, per-address query lanes in
@@ -25,8 +47,8 @@ time (2026-08-04, below), and it collapses the choice.** The ~100ms is not
 per-datagram cost; it is AbletonOSC's scheduling quantum. `manager.py`
 schedules `tick()` once per 100ms on Live's main thread, and each tick's
 `osc_server.process()` drains *every* datagram queued on the socket,
-answering each inline ([manager.py:139-148](../priv/AbletonOSC/manager.py#L139-L148),
-[osc_server.py:190-234](../priv/AbletonOSC/abletonosc/osc_server.py#L190-L234)).
+answering each inline ([manager.py:139-148](../../priv/AbletonOSC/manager.py#L139-L148),
+[osc_server.py:190-234](../../priv/AbletonOSC/abletonosc/osc_server.py#L190-L234)).
 So a query costs one tick *because it waits for the next tick* — and any
 number of queries already on the socket when the tick fires cost that same
 one tick, together.
@@ -92,7 +114,7 @@ prefix is accepted, exactly today's class 2. Neither gets worse.
 
 **No new addresses, no fork change, no `mix abletonosc.install`.** Every
 address below is already documented in
-[abletonosc-api-docs.md](abletonosc-api-docs.md) and already sent by the
+[abletonosc-api-docs.md](../abletonosc-api-docs.md) and already sent by the
 sites being converted. What the batch relies on — checkable per row — is the
 reply echoing the request's arguments as a prefix:
 
@@ -122,7 +144,7 @@ in datagram order; bulk endpoints cost the same tick a burst does.
 
 ### 1. `Seshat.OSC.Transport.query_batch/1,2`
 
-**File:** [lib/seshat/osc/transport.ex](../lib/seshat/osc/transport.ex)
+**File:** [lib/seshat/osc/transport.ex](../../lib/seshat/osc/transport.ex)
 
 ```elixir
 @spec query_batch([{String.t(), list()}], non_neg_integer()) ::
@@ -178,7 +200,7 @@ def query_batch(entries, timeout \\ 5000)
 
 ### 2. `get_clip_properties` — 13–17 queries → guard + 1–2 batches
 
-**File:** [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
+**File:** [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
 
 - Reimplement `read_clip_properties/3` over `query_batch`: entries
   `{clip_get_address(property), [track, slot]}`, each tail decoded with the
@@ -205,7 +227,7 @@ def query_batch(entries, timeout \\ 5000)
 
 ### 3. `get_track_sends` — 1 + 2N queries → count + 1 batch
 
-**File:** [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
+**File:** [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
 
 - `return_track_count/0` stays (it is also the vendored-extension probe).
 - `read_sends/2` for `count >= 1` becomes one batch of `2N + 1` entries:
@@ -229,7 +251,7 @@ def query_batch(entries, timeout \\ 5000)
 
 ### 4. Regular-track device reads — 3/5 queries → 1 batch each
 
-**File:** [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
+**File:** [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
 
 - `do_call("get_track_devices", %{"track" => track})` (the regular-track
   clause): one batch of the three `/live/track/get/devices/*` entries, echo
@@ -249,22 +271,22 @@ def query_batch(entries, timeout \\ 5000)
 
 ### 5. Comments, docs, and the decision record
 
-- [handlers.ex](../lib/seshat/tools/handlers.ex): rewrite the file-header
+- [handlers.ex](../../lib/seshat/tools/handlers.ex): rewrite the file-header
   latency note (~line 30–40) and the comment at ~4933 to the tick model
   (~100ms *per serialized round trip* stays true; add that batches
   collapse a group to one tick). Grep `sub-milli` to catch any remnant.
-- [state.ex](../lib/seshat/session/state.ex): one-line edit to the
+- [state.ex](../../lib/seshat/session/state.ex): one-line edit to the
   `read_tracks/2` doc (~line 905): the replacement for the per-index loop,
   if that item is ever bought, is `query_batch` (echo-checked per entry) —
   not the fork bulk-snapshot endpoint the review recommended before the
   benchmark existed. No behaviour change here.
-- [abletonosc-api-docs.md](abletonosc-api-docs.md): add a short **"Round
+- [abletonosc-api-docs.md](../abletonosc-api-docs.md): add a short **"Round
   trips cost ticks, not datagrams"** measured subsection (beside the
   existing 2026-08-04 send-read-back measurements): the 100ms tick, burst →
   one tick (63 measured, zero drops, ≤15ms spread), replies in arrival
   order, bulk endpoints cost the same tick a burst does, serialized queries
   cost one tick each.
-- [abletonosc-integration-review.md](evaluating/abletonosc-integration-review.md):
+- [abletonosc-integration-review.md](../evaluating/abletonosc-integration-review.md):
   dated resolution notes on §2's efficiency finding and §3's endpoint
   recommendation — benchmark run 2026-08-04, batching chosen, fork bulk
   endpoints not pursued (latency-equivalent, strictly more maintenance);
@@ -276,8 +298,8 @@ def query_batch(entries, timeout \\ 5000)
 
 ### 6. Tests
 
-**Files:** [test/seshat/osc/transport_test.exs](../test/seshat/osc/transport_test.exs),
-[test/seshat/tools/handlers_test.exs](../test/seshat/tools/handlers_test.exs)
+**Files:** [test/seshat/osc/transport_test.exs](../../test/seshat/osc/transport_test.exs),
+[test/seshat/tools/handlers_test.exs](../../test/seshat/tools/handlers_test.exs)
 (or a sibling file if handlers_test is at size), all against
 `Seshat.Test.OSCSink` — nothing touches a live Ableton.
 
@@ -327,7 +349,7 @@ precondition: this plan changes no Python, and every batched address is
 already answered by the installed copy. Run the automated half with
 `/smoke-test`.
 
-- [smoke_tests/auto/clips.md](smoke_tests/auto/clips.md) § Clip properties
+- [smoke_tests/auto/clips.md](../smoke_tests/auto/clips.md) § Clip properties
   read in one breath, and read true — *written for this change*: the MIDI
   batch reads back just-confirmed values (correctness of the echo matching
   now living in Transport), the empty slot still fails once and fast, and
@@ -352,7 +374,7 @@ already answered by the installed copy. Run the automated half with
   empty. Clip slots are 0-based, …` — no stall, no cascade of per-property
   errors. Not covered by this run: the audio arm (second batch), which is the
   manual citation below.
-- [smoke_tests/auto/clips.md](smoke_tests/auto/clips.md) § The loop pair
+- [smoke_tests/auto/clips.md](../smoke_tests/auto/clips.md) § The loop pair
   with looping off — the `set_clip_properties` rider (pair-context and
   write-back now ride the shared batched helper); its known-wart
   expectations are unchanged and any drift is a finding.
@@ -369,25 +391,25 @@ already answered by the installed copy. Run the automated half with
   `read_clip_properties/3` is handed `[]` and must not reach
   `Transport.query_batch/2`, which raises on an empty batch. It did not, and
   the call succeeded.
-- [smoke_tests/auto/sends.md](smoke_tests/auto/sends.md) § Reading a
+- [smoke_tests/auto/sends.md](../smoke_tests/auto/sends.md) § Reading a
   track's sends labels each return correctly — *written for this change*:
   two returns at distinct confirmed levels, so a mispaired name/level (the
   exact hazard echo-prefix matching exists for) is detectable; plus the bad
   track index failing fast through per-entry `/live/error`.
-- [smoke_tests/auto/sends.md](smoke_tests/auto/sends.md) § A send set is
+- [smoke_tests/auto/sends.md](../smoke_tests/auto/sends.md) § A send set is
   confirmed by its own read-back — regression net that the *unbatched*
   ordered guard/read-back around `set_track_send` still behaves beside the
   new batch path.
-- [smoke_tests/auto/devices.md](smoke_tests/auto/devices.md) § Chain and
+- [smoke_tests/auto/devices.md](../smoke_tests/auto/devices.md) § Chain and
   parameter reads pair the right values — *written for this change*: the
   two regular-track batch conversions, judged by pairing (lists describing
   one chain; parameters under the device that was asked for).
-- [smoke_tests/auto/devices.md](smoke_tests/auto/devices.md) § Device error
+- [smoke_tests/auto/devices.md](../smoke_tests/auto/devices.md) § Device error
   paths are errors, not stalls — a bad index on a batched read still
   arrives as a fast structured `/live/error` (this run also proves the
   per-entry error path is reachable in Live, not just fed to itself by the
   test suite).
-- [smoke_tests/manual/engineered-state.md](smoke_tests/manual/engineered-state.md)
+- [smoke_tests/manual/engineered-state.md](../smoke_tests/manual/engineered-state.md)
   § An audio clip's audio-only properties still read — *written for this
   change*: the audio arm (the second batch) needs an audio clip, which no
   tool can create; a person drags a sample in and checks gain/warp against
@@ -404,7 +426,7 @@ with N).
 ## Out of scope
 
 - **`Session.State.do_refresh/1` / `read_tracks/2` / the mirror rebuild.**
-  The 4.6s rebuild ([mirror.md](smoke_tests/auto/mirror.md)) is this same
+  The 4.6s rebuild ([mirror.md](../smoke_tests/auto/mirror.md)) is this same
   disease at ~73 queries, but the mirror's degraded/reconciliation
   semantics are deliberately delicate and owned by roadmap "Monitored
   refresh worker for `Session.State`" — which is *gated on re-measurement
@@ -447,7 +469,7 @@ construction, recorded here:
    measured). They save only datagram count, which is not the scarce
    resource.
 4. **Do the batched addresses echo their request args?** Verified per
-   address against [abletonosc-api-docs.md](abletonosc-api-docs.md) (table
+   address against [abletonosc-api-docs.md](../abletonosc-api-docs.md) (table
    above) — and the same-address burst measured the echo doing its job
    (9 `name` replies distinguished by index, arrival order = send order).
 5. **Does the benchmark reflect the fork at the pin?** The harness ran

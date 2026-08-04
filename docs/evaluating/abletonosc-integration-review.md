@@ -204,7 +204,7 @@ redesign at all.
 **Resolved 2026-08-04 — benchmarked, and the answer was none of the three.**
 The comparison this correction called for was run against live Ableton and is
 recorded in `docs/abletonosc-api-docs.md` § "Round trips cost ticks, not
-datagrams" (reasoning in `docs/PLAN_batched_queries.md`). The ~100ms is
+datagrams" (reasoning in `docs/archive/PLAN_batched_queries.md`). The ~100ms is
 AbletonOSC's 100ms `tick()`, not per-datagram cost: a tick drains and answers
 *everything* already queued on the socket, so a burst of 63 mixed reads was
 answered in one tick with zero drops, and the fork's bulk endpoints measured
@@ -305,7 +305,7 @@ identical single tick, so the three read endpoints buy no latency over
 a `mix abletonosc.install` and a Live restart, `SESHAT.md` and
 `vendored_addresses_test` churn, and a permanently wider fork divergence. All
 three read sites they targeted are batched Seshat-side instead
-(`docs/PLAN_batched_queries.md`). Reopen only for a read needing more datagrams
+(`docs/archive/PLAN_batched_queries.md`). Reopen only for a read needing more datagrams
 than one burst can carry (>64 entries), or one needing an atomic snapshot
 across ticks — neither of which any current site does.
 

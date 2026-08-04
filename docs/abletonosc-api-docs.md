@@ -52,7 +52,7 @@ Consequences, all of them load-bearing:
   ~0.25ms.
 - **A bulk endpoint buys no latency over a burst.** Adding aggregate addresses
   to the fork to collapse an N+1 read was evaluated on these numbers and not
-  pursued — see `docs/PLAN_batched_queries.md`. Reopen only for a read needing
+  pursued — see `docs/archive/PLAN_batched_queries.md`. Reopen only for a read needing
   more than one burst's worth of datagrams, or an atomic multi-tick snapshot.
 - **63 datagrams is where the evidence stops, not where the wire breaks.** Both
   socket directions carry 64KB buffers against ~40-byte requests and ~60-byte

@@ -916,7 +916,7 @@ defmodule Seshat.Session.State do
   `Seshat.OSC.Transport.query_batch/2` — not the fork bulk-snapshot endpoint the
   review recommended (§3.2), which was written before the benchmark existed. A
   burst and a bulk reply cost the same single AbletonOSC tick (measured
-  2026-08-04, docs/PLAN_batched_queries.md), so the endpoint buys no latency,
+  2026-08-04, docs/archive/PLAN_batched_queries.md), so the endpoint buys no latency,
   while the batch keeps the per-index echo check by matching every reply against
   the entry that asked for it. That is roadmap work — "Monitored refresh worker
   for `Session.State`", which is gated on re-measurement — and deliberately not
