@@ -334,10 +334,41 @@ already answered by the installed copy. Run the automated half with
   the timed call pins the pipelining itself (~1.5s serialized before; well
   under a second batched — right answers arriving slowly would mean the
   batch quietly serialized).
+
+  **Run 2026-08-04 during PR review — passed.** A MIDI clip on track 0 slot 0
+  ("BatchProbe", written with two notes) was set through `set_clip_properties`
+  to `looping: true`, `loop_start: 1.0`, `loop_end: 3.0`,
+  `launch_quantization: 5`, `velocity_amount: 0.5`, all confirmed in that
+  tool's own echo. One `get_clip_properties` through `mcp_call.py` then
+  returned every one of those values correctly — `Clip 'BatchProbe' — track 0,
+  slot 0 — MIDI, 2.0 beats / Loop: on, from beat 1.0 to 3.0 (2.0 beats) / Play
+  markers: start 0.0, end 4.0 / Launch: Trigger, quantization 1 bar, legato
+  off, velocity amount 0.5` — in **0.377s wall clock including Python start-up
+  and the HTTP handshake**, against the ~1.5s the serialized design measured.
+  So the twelve-getter batch really does pipeline on a real wire and its
+  echo-prefix matching in `Seshat.OSC.Transport` pairs every reply with the
+  property that asked for it. `get_clip_properties` on empty slot 3 of the same
+  track came back in **0.157s** with one clean error, `Slot 3 on track 0 is
+  empty. Clip slots are 0-based, …` — no stall, no cascade of per-property
+  errors. Not covered by this run: the audio arm (second batch), which is the
+  manual citation below.
 - [smoke_tests/auto/clips.md](smoke_tests/auto/clips.md) § The loop pair
   with looping off — the `set_clip_properties` rider (pair-context and
   write-back now ride the shared batched helper); its known-wart
   expectations are unchanged and any drift is a finding.
+
+  **Run 2026-08-04 during PR review — passed, no drift.** `looping: false`
+  alone on the same clip, then a read: `Loop: off, from beat 0.0 to 4.0 (4.0
+  beats)` with play markers 0.0–4.0 — the loop pair spanning the whole clip
+  rather than tracking the markers, exactly as the 2026-08-03 run recorded.
+  `looping: true` with `loop_start: 1.0` and `loop_end: 3.0` in one call then
+  produced exactly 1.0–3.0 (`clip length is now 2.0 beats`), so the batched
+  pair-context read and the batched write-back both still order and report
+  correctly. Worth recording: the `looping: false` call is also the *empty*
+  pair-context case — it touches neither loop nor marker pair, so
+  `read_clip_properties/3` is handed `[]` and must not reach
+  `Transport.query_batch/2`, which raises on an empty batch. It did not, and
+  the call succeeded.
 - [smoke_tests/auto/sends.md](smoke_tests/auto/sends.md) § Reading a
   track's sends labels each return correctly — *written for this change*:
   two returns at distinct confirmed levels, so a mispaired name/level (the

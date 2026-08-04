@@ -4095,6 +4095,18 @@ defmodule Seshat.Tools.Handlers do
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
     end
+  rescue
+    # `entries` is `2 * count + 1`, and `Transport.query_batch/2` raises
+    # `ArgumentError` — synchronously, before anything reaches the wire — past
+    # its entry cap. Live 12 caps return tracks at 12 (25 entries), so this
+    # should never trigger through the UI; it exists so a count this code
+    # doesn't otherwise bound turns into a sentence rather than an uncaught
+    # crash out of a tool handler.
+    e in ArgumentError ->
+      {:error,
+       "Track #{track} has #{count} return tracks, too many to read sends for in a single " <>
+         "batch (#{Exception.message(e)}). That's far beyond Live's own return-track limit, so " <>
+         "this shouldn't happen — treat it as a bug if it does."}
   catch
     # One deadline over the whole burst. The hint names both indices because the
     # burst reads both, and the extension hint isn't the right diagnosis here:

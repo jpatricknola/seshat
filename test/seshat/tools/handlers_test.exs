@@ -969,6 +969,55 @@ defmodule Seshat.Tools.HandlersTest do
       assert message =~ "Clip does not exist"
       assert message =~ "Nothing further was sent"
     end
+
+    # A reply Live actually sent, correlated to the right entry, but shaped in
+    # a way `unwrap_payload/1` has no clause for — distinct from the rejection
+    # envelope above, which *is* a shape this code reads.
+    test "a reply shaped like nothing this code recognises is named, not decoded blindly", %{
+      sink: sink
+    } do
+      call =
+        Task.async(fn ->
+          Handlers.call("get_clip_properties", %{"track" => 0, "clip_slot" => 0})
+        end)
+
+      replies =
+        List.keyreplace(
+          @midi_clip_replies,
+          "/live/clip/get/name",
+          0,
+          {"/live/clip/get/name", [0, 0, "unexpected", "extra"]}
+        )
+
+      scripted_trace(sink, replies)
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "the name of the clip in slot 0 on track 0"
+      assert message =~ "was not a shape this can read"
+    end
+
+    # Slow by construction — the batch's own 2s guard timeout — and worth
+    # pinning: `read_clip_properties/3` now catches its own `:exit`, so a
+    # pre-write timeout renders this wording rather than propagating to
+    # `do_call`'s "Timed out reading the properties … nothing is known about
+    # it" clause, which used to be the only source of this error and is now
+    # dead for this path (still live for a timeout on `ensure_clip` itself).
+    test "an unanswered batch times out in its own words, not the tool's stale ones", %{
+      sink: sink
+    } do
+      call =
+        Task.async(fn ->
+          Handlers.call("get_clip_properties", %{"track" => 0, "clip_slot" => 0})
+        end)
+
+      assert_receive {:osc_out, "/live/clip_slot/get/has_clip", [0, 0]}
+      :ok = reply_datagram(sink, Message.encode("/live/clip_slot/get/has_clip", [0, 0, 1]))
+
+      assert {:error, message} = Task.await(call, 5_000)
+      assert message =~ "Timed out checking the properties of the clip in slot 0 on track 0"
+      assert message =~ "nothing further was sent"
+      refute message =~ "nothing is known about it"
+    end
   end
 
   # One count query, then every return's name and this track's level into it in
@@ -1043,6 +1092,28 @@ defmodule Seshat.Tools.HandlersTest do
       assert count_queries(trace, "/live/track/get/name") == 1
       assert count_queries(trace, "/live/return_track/get/name") == 0
       assert count_queries(trace, "/live/track/get/send") == 0
+    end
+
+    # `entries` is `2 * count + 1`, and `Transport.query_batch/2` raises past
+    # its 64-entry cap. Live 12 caps return tracks at 12, so 32 is unreachable
+    # through the UI — this pins that the raise is turned into a sentence
+    # rather than escaping the handler uncaught.
+    test "a return count too large for one batch fails without reaching the wire", %{
+      sink: sink
+    } do
+      call = Task.async(fn -> Handlers.call("get_track_sends", %{"track" => 0}) end)
+
+      trace = scripted_trace(sink, [{"/live/return_track/get/count", [32]}])
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "32 return tracks"
+      assert message =~ "bug"
+
+      # `validate_batch!/1` raises before `query_batch/2` ever calls
+      # `:gen_server.send_request/2`, so nothing past the count query reaches
+      # the wire.
+      assert count_queries(trace, "/live/return_track/get/count") == 1
+      assert count_queries(trace, "/live/track/get/name") == 0
     end
   end
 
@@ -3881,6 +3952,48 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert message =~ "start_marker 4.0 is not before end_marker 4.0"
       refute_receive {:osc_out, "/live/clip" <> _, _}
+    end
+  end
+
+  # `read_clip_pair_context/3` collapses to an empty entry list whenever a
+  # change touches neither ordered pair, and `read_clip_properties/3`'s
+  # `[]` clause exists precisely so that never reaches
+  # `Transport.query_batch/2` — which raises on an empty batch. This is that
+  # path, live: "looping" alone is a range property but not a pair key, so
+  # the pair-context read is empty.
+  describe "set_clip_properties in one batch" do
+    setup :osc_sink
+
+    test "a change touching neither pair skips the pair-context read without raising", %{
+      sink: sink
+    } do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_clip_properties", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "looping" => false
+          })
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip_slot/get/has_clip", [0, 0, 1]},
+          {"/live/clip/get/looping", [0, 0, 0]},
+          {"/live/clip/get/length", [0, 0, 4.0]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "looping"
+      assert message =~ "clip length is now 4.0 beats"
+
+      # No pair-property getter went out — the pair-context read was skipped
+      # rather than reaching Transport with an empty batch.
+      assert count_queries(trace, "/live/clip/get/loop_start") == 0
+      assert count_queries(trace, "/live/clip/get/loop_end") == 0
+      assert count_queries(trace, "/live/clip/get/start_marker") == 0
+      assert count_queries(trace, "/live/clip/get/end_marker") == 0
+      assert {"/live/clip/set/looping", [0, 0, 0]} in trace
     end
   end
 
