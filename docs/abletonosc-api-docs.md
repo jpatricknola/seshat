@@ -20,6 +20,47 @@
 
 ---
 
+## Round trips cost ticks, not datagrams
+
+**Measured against Live 12 on 2026-08-04** (harness bound to `127.0.0.1:11001`
+with no Seshat instance running; large-burst runs at 9 tracks, temporary tracks
+deleted afterwards). This is the fact every read-shaped design decision here
+rests on, so it is stated before the address tables rather than inside one.
+
+`manager.py` schedules `tick()` once per 100ms on Live's main thread, and each
+tick's `osc_server.process()` drains **every** datagram already queued on the
+socket, answering each inline. A query therefore costs ~100ms because it waits
+for the next tick — not because the datagram is expensive.
+
+| Test | Result |
+|---|---|
+| Serialized getter ×20, same address (`/live/song/get/tempo`) | 99.6–100.4ms each — exactly one tick per query |
+| Serialized getters ×20, alternating addresses | identical: 99.1–100.4ms each |
+| Burst of 10 different-address song getters, ×3 | all 10 answered in **one tick**, 1.1–1.9ms spread |
+| Burst of 45 (5 mixer getters × 9 tracks) ×3 | 45/45 in one tick, 11.7–13.0ms spread |
+| Burst of 63 (song scalars + 8 scene names + 45 track reads) | 63/63 in one tick, 14.2ms spread, **zero drops** |
+| Same-address burst (`/live/track/get/name` × 9 tracks at once) | 9/9 in one tick, replies in send order, told apart by the echoed index |
+| Bulk endpoints (`track_names`, `scenes/name`, `track_data`) | one tick each — **identical latency to a burst** |
+| Single query at random phase ×10 | uniform 15–100ms — RTT is time-to-next-tick and nothing else |
+
+Consequences, all of them load-bearing:
+
+- **N serialized reads cost N ticks; the same N sent back-to-back cost one.**
+  That is what `Seshat.OSC.Transport.query_batch/2` exists for, and what
+  `get_clip_properties`, `get_track_sends` and the regular-track device reads
+  use. Replies inside a tick arrive in datagram order; per-message processing is
+  ~0.25ms.
+- **A bulk endpoint buys no latency over a burst.** Adding aggregate addresses
+  to the fork to collapse an N+1 read was evaluated on these numbers and not
+  pursued — see `docs/PLAN_batched_queries.md`. Reopen only for a read needing
+  more than one burst's worth of datagrams, or an atomic multi-tick snapshot.
+- **63 datagrams is where the evidence stops, not where the wire breaks.** Both
+  socket directions carry 64KB buffers against ~40-byte requests and ~60-byte
+  replies. `query_batch/2` caps a batch at 64 entries for that reason; measure
+  before raising it.
+
+---
+
 ## Application API
 
 | Address | Query Params | Response Params | Description |

@@ -63,6 +63,47 @@ defmodule Seshat.OSC.Transport do
   answers nobody — not suppressed, because the mirror turns those into free
   freshness. The one exception is `/live/error`, below.
 
+  ## Batched queries
+
+  `query_batch/2` puts several *reads* on the wire back-to-back and waits for
+  all of them. It exists because the round trip's cost is AbletonOSC's
+  scheduling quantum, not the datagram: `manager.py` schedules `tick()` once
+  per 100ms, and each tick's `osc_server.process()` drains everything already
+  queued on the socket and answers it inline. Measured 2026-08-04 against Live
+  12 (recorded in `docs/abletonosc-api-docs.md`): a serialized query costs one
+  tick each, a burst of 63 costs *one tick between them*, and the fork's bulk
+  endpoints cost exactly the same one tick a burst does. So a group of reads
+  that has to be serialized here pays 100ms per member for nothing.
+
+  A batch is **one entry in the same FIFO queue** — it holds `in_flight` the
+  way a single query does, with one absolute deadline and one timer, and every
+  rule around it (dropped-if-expired at enqueue and at dequeue, deaf transport
+  answering `{:error, :reply_port_unavailable}` at once) is unchanged. What
+  differs is only what goes on the wire at dequeue and what has to arrive
+  before the caller is released.
+
+  Correlation is per entry, and it is stronger than the single-query path: a
+  reply resolves the first *unresolved* entry whose address matches **and**
+  whose request arguments the reply echoes back as a prefix. That is the same
+  check `Seshat.Tools.Handlers.correlate_reply/2` performs caller-side, moved
+  in here because a batch's callers can no longer do it themselves — several
+  entries may share an address, and the echoed index is the only thing telling
+  their replies apart. The two hazard classes above survive, neither worse:
+
+  - an identical-address, identical-argument straggler is accepted (class 1,
+    unchanged — it is indistinguishable from the entry's own reply);
+  - a listener push on a batched getter's address whose index prefix matches is
+    accepted (class 2, unchanged).
+
+  A straggler with *different* arguments is strictly better off here than on
+  the serial path: it matches no entry, so it consumes nothing and forces no
+  reissue, where serially it would have answered the query outright.
+
+  **Reads only.** A batch can reach its deadline with every datagram already
+  sent, which is harmless exactly when nothing in it mutates. Batching a setter
+  is forbidden; sequencing around a mutation is what the ordered single queries
+  are for.
+
   ## Failed-query correlation
 
   A callback that raises inside AbletonOSC sends no reply at all, so without
@@ -111,6 +152,13 @@ defmodule Seshat.OSC.Transport do
   # this machine can reach the listener at all. Both open paths share these
   # options, so `open_deaf/2`'s ephemeral socket is loopback-only too.
   @socket_opts [:binary, active: true, ip: @host, recbuf: 65_536, buffer: 65_536]
+
+  # One above the largest burst measured to survive a single AbletonOSC tick
+  # intact (63 datagrams, zero drops, 14.2ms in-tick spread — 2026-08-04). The
+  # cap is not where the wire breaks; it is where the evidence stops. Both
+  # socket directions carry 64KB buffers against ~40-byte requests and ~60-byte
+  # replies, so there is room above this — measure before raising it.
+  @max_batch_entries 64
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -175,6 +223,104 @@ defmodule Seshat.OSC.Transport do
       :timeout ->
         exit({:timeout, {GenServer, :call, [__MODULE__, request, timeout]}})
     end
+  end
+
+  @doc """
+  Send several read requests back-to-back and wait for all of their replies.
+
+  `entries` is a list of `{address, args}` in the order the results come back:
+  the reply is `{:ok, results}` with one result per entry, positionally. Each
+  result is `{:ok, tail}` — the reply's arguments *after* the prefix it echoed
+  back — or `{:error, {:live_error, message}}` when the fork's structured
+  `/live/error` named that exact request.
+
+  Every entry is matched by address **and** echoed-argument prefix, so entries
+  sharing an address (a send level per return, a property per clip) are told
+  apart by the index they echo. See the module's "Batched queries" section for
+  why this beats N serialized queries by ~100ms each and what it does not fix.
+
+  `timeout` bounds the caller's total wait — queue time plus flight time — as
+  an absolute deadline, exactly as `query/3` does. **On the deadline the server
+  never replies and the caller exits**, the same shape `query/3` produces, so
+  the `catch :exit` sites already written against it need no second form.
+  Partial results are deliberately not delivered: at one tick per batch, "some
+  answered" means Live stopped mid-tick, which is not a state any caller can
+  report more precisely than its existing timeout wording does.
+
+  `:gen_udp.send/4` failing part-way through the burst fails the whole batch
+  with `{:error, reason}`. That is safe only because the contract is
+  reads-only — the entries already on the wire changed nothing.
+
+  Raises `ArgumentError` — programmer error, the same class as a typo'd
+  address — on an empty batch, more than #{@max_batch_entries} entries, two
+  entries with the same address and arguments, or two entries on one address
+  where one's arguments are a prefix of the other's, which no reply could
+  disambiguate.
+  """
+  @spec query_batch([{String.t(), list()}], non_neg_integer()) ::
+          {:ok, [{:ok, list()} | {:error, {:live_error, String.t()}}]} | {:error, term()}
+  def query_batch(entries, timeout \\ 5000) do
+    validate_batch!(entries)
+
+    deadline = System.monotonic_time(:millisecond) + timeout
+    request = {:query_batch, entries, deadline}
+    request_id = :gen_server.send_request(__MODULE__, request)
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    case :gen_server.receive_response(request_id, remaining) do
+      {:reply, reply} ->
+        reply
+
+      {:error, {reason, server_ref}} ->
+        exit({reason, {GenServer, :call, [server_ref, request, timeout]}})
+
+      :timeout ->
+        exit({:timeout, {GenServer, :call, [__MODULE__, request, timeout]}})
+    end
+  end
+
+  # Ambiguity is checked in the caller's process, before anything reaches the
+  # wire: a batch whose replies could resolve the wrong entry is a bug in the
+  # call site, and it must fail where that call site is on the stack rather
+  # than a tick later as a mismatched result.
+  defp validate_batch!([]) do
+    raise ArgumentError, "query_batch/2 needs at least one entry"
+  end
+
+  defp validate_batch!(entries) when length(entries) > @max_batch_entries do
+    raise ArgumentError,
+          "query_batch/2 accepts at most #{@max_batch_entries} entries, got #{length(entries)}. " <>
+            "The largest burst measured against AbletonOSC answered 63 in one tick; beyond " <>
+            "that nothing is known, so split the read."
+  end
+
+  defp validate_batch!(entries) do
+    Enum.each(entries, fn
+      {address, args} when is_binary(address) and is_list(args) ->
+        :ok
+
+      other ->
+        raise ArgumentError, "query_batch/2 entries are {address, args}, got #{inspect(other)}"
+    end)
+
+    duplicates = entries -- Enum.uniq(entries)
+
+    if duplicates != [] do
+      raise ArgumentError,
+            "query_batch/2 entries must be distinct — #{inspect(hd(duplicates))} appears twice, " <>
+              "and one reply cannot resolve two identical entries"
+    end
+
+    Enum.each(entries, fn {address, args} ->
+      Enum.each(entries -- [{address, args}], fn {other_address, other_args} ->
+        if other_address == address and echo_prefix?(other_args, args) do
+          raise ArgumentError,
+                "query_batch/2 cannot tell #{address} #{inspect(args)} from " <>
+                  "#{address} #{inspect(other_args)} — the first echoes a prefix of the second, " <>
+                  "so a reply matches both"
+        end
+      end)
+    end)
   end
 
   @doc """
@@ -282,7 +428,29 @@ defmodule Seshat.OSC.Transport do
     {:reply, {:error, :reply_port_unavailable}, state}
   end
 
+  def handle_call({:query_batch, _entries, _deadline}, _from, %{deaf: true} = state) do
+    {:reply, {:error, :reply_port_unavailable}, state}
+  end
+
   def handle_call({:query, address, args, deadline}, from, state) do
+    enqueue(
+      %{kind: :single, address: address, args: args},
+      from,
+      deadline,
+      state
+    )
+  end
+
+  # A batch occupies exactly one queue slot. `entries` carry their own result
+  # once resolved; the caller is released when none is left `nil`.
+  def handle_call({:query_batch, entries, deadline}, from, state) do
+    entries =
+      Enum.map(entries, fn {address, args} -> %{address: address, args: args, result: nil} end)
+
+    enqueue(%{kind: :batch, entries: entries}, from, deadline, state)
+  end
+
+  defp enqueue(request, from, deadline, state) do
     now = System.monotonic_time(:millisecond)
 
     # A call can be handled after its own deadline whenever the server's mailbox
@@ -293,19 +461,15 @@ defmodule Seshat.OSC.Transport do
     if deadline <= now do
       {:noreply, state}
     else
-      request = %{
-        ref: make_ref(),
-        from: from,
-        address: address,
-        args: args,
-        deadline: deadline
-      }
+      ref = make_ref()
 
       # Armed for the *remaining* time, so the server's timer tracks the
       # caller's deadline instead of restarting the clock: a request queued
       # behind a 30s browser export with a 5s timeout expires at 5s, unsent.
-      timer = Process.send_after(self(), {:query_timeout, request.ref}, deadline, abs: true)
-      request = Map.put(request, :timer, timer)
+      timer = Process.send_after(self(), {:query_timeout, ref}, deadline, abs: true)
+
+      request =
+        Map.merge(request, %{ref: ref, from: from, deadline: deadline, timer: timer})
 
       case state.in_flight do
         nil ->
@@ -381,8 +545,7 @@ defmodule Seshat.OSC.Transport do
   # Ahead of the address-match clause on purpose. Nothing ever queries
   # `/live/error`, so the two can't actually collide — ordering it first makes
   # that a non-question rather than a fact a reader has to establish.
-  defp dispatch("/live/error" = address, args, %{in_flight: request} = state)
-       when not is_nil(request) do
+  defp dispatch("/live/error" = address, args, %{in_flight: %{kind: :single} = request} = state) do
     case failed_request(args, request) do
       {:match, message} ->
         Process.cancel_timer(request.timer)
@@ -396,6 +559,22 @@ defmodule Seshat.OSC.Transport do
     end
   end
 
+  # Per entry, against the same address-and-every-argument test a single query
+  # gets. A batch aimed at a vanished clip therefore fails fast in full: Live
+  # raises once per request and every rejection lands in the same tick.
+  defp dispatch("/live/error" = address, args, %{in_flight: %{kind: :batch} = request} = state) do
+    resolved =
+      resolve_entry(request, fn entry ->
+        case failed_request(args, entry) do
+          {:match, message} -> {:ok, {:error, {:live_error, message}}}
+          :no_match -> :no_match
+        end
+      end)
+
+    broadcast(address, args)
+    settle(resolved, state)
+  end
+
   # Answer the in-flight query if the response address matches, otherwise
   # broadcast only — today's handling of listener pushes and unsolicited
   # traffic, and the fate of every late reply that doesn't collide with the
@@ -406,7 +585,11 @@ defmodule Seshat.OSC.Transport do
   # first it is the request's answer; if the timer is handled first there is no
   # in-flight match left. A second wall-clock comparison here would override
   # that arrival ordering without making correlation any stronger.
-  defp dispatch(address, args, %{in_flight: %{address: expected} = request} = state)
+  defp dispatch(
+         address,
+         args,
+         %{in_flight: %{kind: :single, address: expected} = request} = state
+       )
        when address == expected do
     # `false` means the `{:query_timeout, ref}` message is already in the
     # mailbox; the unmatched-ref clause of `handle_info/2` absorbs it.
@@ -416,10 +599,85 @@ defmodule Seshat.OSC.Transport do
     advance(%{state | in_flight: nil})
   end
 
+  # The batch's own correlation: same address *and* the request's arguments
+  # echoed back as a prefix. That prefix is what tells two entries on one
+  # address apart, and what makes a straggler carrying different indices match
+  # nothing at all rather than answering the wrong entry.
+  defp dispatch(address, args, %{in_flight: %{kind: :batch} = request} = state) do
+    resolved =
+      resolve_entry(request, fn entry ->
+        if entry.address == address and echo_prefix?(args, entry.args),
+          do: {:ok, {:ok, Enum.drop(args, length(entry.args))}},
+          else: :no_match
+      end)
+
+    broadcast(address, args)
+    settle(resolved, state)
+  end
+
   defp dispatch(address, args, state) do
     broadcast(address, args)
     state
   end
+
+  # First *unresolved* entry the matcher accepts, so a second reply for an
+  # entry already answered falls through to the next one waiting on the same
+  # address rather than overwriting a result.
+  defp resolve_entry(request, matcher) do
+    hit =
+      request.entries
+      |> Enum.with_index()
+      |> Enum.find_value(fn {entry, index} ->
+        with nil <- entry.result,
+             {:ok, result} <- matcher.(entry) do
+          {index, result}
+        else
+          _ -> nil
+        end
+      end)
+
+    case hit do
+      nil ->
+        :no_match
+
+      {index, result} ->
+        entries = List.update_at(request.entries, index, &%{&1 | result: result})
+        %{request | entries: entries}
+    end
+  end
+
+  defp settle(:no_match, state), do: state
+
+  defp settle(request, state) do
+    if Enum.any?(request.entries, &is_nil(&1.result)) do
+      %{state | in_flight: request}
+    else
+      Process.cancel_timer(request.timer)
+      GenServer.reply(request.from, {:ok, Enum.map(request.entries, & &1.result)})
+      advance(%{state | in_flight: nil})
+    end
+  end
+
+  # What the batch requires of a reply, and deliberately looser than
+  # `wire_args_match?/2` next door. That one compares a structured
+  # `/live/error`'s verbatim echo of what Seshat put on the wire, so wire type
+  # is part of the identity. This compares what *Live* reports back, and Live
+  # normalises: a `1.0` index arrives as device 1 and is echoed as the integer
+  # 1 (`Seshat.Tools.Handlers.correlate_reply/2` documents the same tolerance,
+  # which is the check this replaces). Floats still get the 32-bit round trip,
+  # since OSC `f` is 32-bit and an Elixir float is not.
+  defp echo_prefix?(reply_args, sent) when length(reply_args) >= length(sent) do
+    reply_args
+    |> Enum.zip(sent)
+    |> Enum.all?(fn {reply, asked} -> echo_arg_match?(reply, asked) end)
+  end
+
+  defp echo_prefix?(_reply_args, _sent), do: false
+
+  defp echo_arg_match?(reply, asked) when is_number(reply) and is_number(asked),
+    do: reply == asked or float32(reply / 1.0) == float32(asked / 1.0)
+
+  defp echo_arg_match?(reply, asked), do: reply == asked
 
   # A structured `/live/error` belongs to the in-flight request only when it
   # names the same address and echoes back exactly the arguments that were sent.
@@ -495,8 +753,25 @@ defmodule Seshat.OSC.Transport do
     end
   end
 
-  defp send_request(request, state) do
-    message = Seshat.OSC.Message.encode(request.address, request.args)
+  defp send_request(%{kind: :single} = request, state) do
+    send_datagram(request.address, request.args, state)
+  end
+
+  # Back-to-back, with nothing waited on between them: the whole point is that
+  # they are all on AbletonOSC's socket before its next tick drains it. A
+  # mid-burst send failure fails the batch outright — safe only because a batch
+  # is reads-only, so the datagrams already out changed nothing.
+  defp send_request(%{kind: :batch, entries: entries}, state) do
+    Enum.reduce_while(entries, :ok, fn entry, :ok ->
+      case send_datagram(entry.address, entry.args, state) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp send_datagram(address, args, state) do
+    message = Seshat.OSC.Message.encode(address, args)
     :gen_udp.send(state.socket, @host, state.send_port, message)
   end
 

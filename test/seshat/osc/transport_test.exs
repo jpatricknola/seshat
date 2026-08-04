@@ -67,6 +67,11 @@ defmodule Seshat.OSC.TransportTest do
                {:error, :reply_port_unavailable}
     end
 
+    test "batches fail immediately too" do
+      assert Transport.query_batch([{"/live/track/get/name", [1]}], 200) ==
+               {:error, :reply_port_unavailable}
+    end
+
     test "sends still go out" do
       # Deliberately not a real /live/ address — belt and braces on top of the
       # test send port, so even a misconfigured run moves nothing in Ableton.
@@ -510,6 +515,269 @@ defmodule Seshat.OSC.TransportTest do
 
       assert_receive {:osc_message, "/live/error",
                       ["request", "/live/track/get/name", "Index out of range", 1, 5]}
+    end
+  end
+
+  # A batch is one queue slot carrying several reads, matched per entry by
+  # address *and* echoed-argument prefix. Same scoped exception as above: the
+  # sink plays AbletonOSC, so nothing here waits on Live.
+  describe "batched queries" do
+    setup do
+      sink = start_supervised!({OSCSink, forward_to: self()})
+      start_transport(sink)
+      {:ok, sink: sink}
+    end
+
+    test "results come back in entry order however the replies arrive", %{sink: sink} do
+      a =
+        Task.async(fn ->
+          Transport.query_batch(
+            [
+              {"/live/clip/get/name", [0, 0]},
+              {"/live/clip/get/length", [0, 0]},
+              {"/live/clip/get/looping", [0, 0]}
+            ],
+            2000
+          )
+        end)
+
+      assert_receive {:osc_out, "/live/clip/get/name", [0, 0]}
+      assert_receive {:osc_out, "/live/clip/get/length", [0, 0]}
+      assert_receive {:osc_out, "/live/clip/get/looping", [0, 0]}
+
+      # Deliberately backwards: the reply order is Live's business, the result
+      # order is the caller's contract.
+      reply(sink, "/live/clip/get/looping", [0, 0, 1])
+      reply(sink, "/live/clip/get/length", [0, 0, 4.0])
+      reply(sink, "/live/clip/get/name", [0, 0, "Verse"])
+
+      assert {:ok, [{:ok, ["Verse"]}, {:ok, [4.0]}, {:ok, [1]}]} = Task.await(a)
+    end
+
+    # The sends shape: one address, one entry per return, told apart only by
+    # the index each reply echoes. Correlation by address alone — the single
+    # query path — cannot do this at all.
+    test "entries sharing an address are told apart by their echoed index", %{sink: sink} do
+      a =
+        Task.async(fn ->
+          Transport.query_batch(
+            [
+              {"/live/track/get/send", [2, 0]},
+              {"/live/track/get/send", [2, 1]},
+              {"/live/track/get/send", [2, 2]}
+            ],
+            2000
+          )
+        end)
+
+      assert_receive {:osc_out, "/live/track/get/send", [2, 2]}
+
+      reply(sink, "/live/track/get/send", [2, 1, 0.5])
+      reply(sink, "/live/track/get/send", [2, 2, 0.25])
+      reply(sink, "/live/track/get/send", [2, 0, 0.75])
+
+      assert {:ok, [{:ok, [first]}, {:ok, [second]}, {:ok, [third]}]} = Task.await(a)
+      assert_in_delta first, 0.75, 0.0001
+      assert_in_delta second, 0.5, 0.0001
+      assert_in_delta third, 0.25, 0.0001
+    end
+
+    # Class-1 straggler, batched: on the serial path it would have consumed the
+    # in-flight slot and forced a reissue. Here it matches no entry, so it
+    # costs nothing and the entry's own reply still lands.
+    test "a reply echoing other indices resolves nothing and is broadcast", %{sink: sink} do
+      :ok = Phoenix.PubSub.subscribe(Seshat.PubSub, "osc:in")
+
+      a =
+        Task.async(fn ->
+          Transport.query_batch(
+            [{"/live/track/get/name", [1]}, {"/live/track/get/name", [2]}],
+            2000
+          )
+        end)
+
+      assert_receive {:osc_out, "/live/track/get/name", [2]}
+
+      reply(sink, "/live/track/get/name", [9, "Stranger"])
+      assert_receive {:osc_message, "/live/track/get/name", [9, "Stranger"]}
+
+      reply(sink, "/live/track/get/name", [1, "Bass"])
+      reply(sink, "/live/track/get/name", [2, "Keys"])
+
+      assert {:ok, [{:ok, ["Bass"]}, {:ok, ["Keys"]}]} = Task.await(a)
+    end
+
+    test "a structured error fails only the entry it names", %{sink: sink} do
+      a =
+        Task.async(fn ->
+          Transport.query_batch(
+            [{"/live/clip/get/gain", [0, 0]}, {"/live/clip/get/name", [0, 0]}],
+            2000
+          )
+        end)
+
+      assert_receive {:osc_out, "/live/clip/get/name", [0, 0]}
+
+      live_error(sink, "/live/clip/get/gain", [0, 0], "Clip is not an audio clip")
+      reply(sink, "/live/clip/get/name", [0, 0, "Verse"])
+
+      assert {:ok,
+              [
+                {:error, {:live_error, "Clip is not an audio clip"}},
+                {:ok, ["Verse"]}
+              ]} = Task.await(a)
+    end
+
+    # OSC `f` is 32-bit and an Elixir float is not, so a float argument comes
+    # back widened from its truncation. A naive `==` on the echoed prefix fails
+    # this test and nothing else.
+    test "a float argument matches its echo after the 32-bit round trip", %{sink: sink} do
+      a =
+        Task.async(fn ->
+          Transport.query_batch([{"/live/clip/get/notes", [0, 0, 0.37]}], 2000)
+        end)
+
+      assert_receive {:osc_out, "/live/clip/get/notes", [0, 0, echoed]}
+      assert echoed != 0.37
+
+      reply(sink, "/live/clip/get/notes", [0, 0, echoed, 60])
+      assert {:ok, [{:ok, [60]}]} = Task.await(a)
+    end
+
+    # Live normalises a float index to the integer it looked up, so the echo
+    # comes back typed differently from what was sent. `correlate_reply/2`
+    # tolerates that caller-side today and the batch matcher has to as well,
+    # or a float index would silently time out.
+    test "a float index still matches an integer echo", %{sink: sink} do
+      a = Task.async(fn -> Transport.query_batch([{"/live/track/get/name", [1.0]}], 2000) end)
+
+      assert_receive {:osc_out, "/live/track/get/name", [1.0]}
+      reply(sink, "/live/track/get/name", [1, "Bass"])
+
+      assert {:ok, [{:ok, ["Bass"]}]} = Task.await(a)
+    end
+
+    # Pipelining is the entire point: if the batch quietly serialized, the
+    # second and third datagrams would only appear after their predecessors'
+    # replies, and this would time out on the first `assert_receive`.
+    test "every datagram is on the wire before any reply comes back", %{sink: sink} do
+      a =
+        Task.async(fn ->
+          Transport.query_batch(
+            [
+              {"/live/device/get/parameters/name", [0, 0]},
+              {"/live/device/get/parameters/value", [0, 0]},
+              {"/live/device/get/parameters/min", [0, 0]}
+            ],
+            2000
+          )
+        end)
+
+      assert_receive {:osc_out, "/live/device/get/parameters/name", [0, 0]}
+      assert_receive {:osc_out, "/live/device/get/parameters/value", [0, 0]}
+      assert_receive {:osc_out, "/live/device/get/parameters/min", [0, 0]}
+
+      reply(sink, "/live/device/get/parameters/name", [0, 0, "Dry/Wet"])
+      reply(sink, "/live/device/get/parameters/value", [0, 0, 0.5])
+      reply(sink, "/live/device/get/parameters/min", [0, 0, 0.0])
+
+      assert {:ok, [{:ok, ["Dry/Wet"]}, {:ok, [_]}, {:ok, [_]}]} = Task.await(a)
+    end
+
+    # Partial results are never delivered — the caller exits exactly as
+    # `query/3`'s does, which is the shape every `catch :exit` site is written
+    # against.
+    test "a half-answered batch times out and frees the pipeline", %{sink: sink} do
+      {pid, ref} =
+        spawn_monitor(fn ->
+          Transport.query_batch(
+            [{"/live/track/get/name", [1]}, {"/live/track/get/name", [2]}],
+            200
+          )
+        end)
+
+      assert_receive {:osc_out, "/live/track/get/name", [2]}
+      reply(sink, "/live/track/get/name", [1, "Bass"])
+
+      assert_receive {:DOWN, ^ref, :process, ^pid, {:timeout, {GenServer, :call, _}}}, 1000
+
+      b = Task.async(fn -> Transport.query("/live/song/get/tempo", [], 2000) end)
+      assert_receive {:osc_out, "/live/song/get/tempo", []}
+      reply(sink, "/live/song/get/tempo", [120.0])
+      assert {:ok, _} = Task.await(b)
+    end
+
+    test "a batch waits its turn behind an in-flight single query", %{sink: sink} do
+      a = Task.async(fn -> Transport.query("/live/song/get/tempo", [], 2000) end)
+      assert_receive {:osc_out, "/live/song/get/tempo", []}
+
+      b = Task.async(fn -> Transport.query_batch([{"/live/track/get/name", [1]}], 2000) end)
+      await_queue_depth(1)
+      refute_received {:osc_out, "/live/track/get/name", [1]}
+
+      reply(sink, "/live/song/get/tempo", [120.0])
+      assert {:ok, _} = Task.await(a)
+
+      assert_receive {:osc_out, "/live/track/get/name", [1]}
+      reply(sink, "/live/track/get/name", [1, "Bass"])
+      assert {:ok, [{:ok, ["Bass"]}]} = Task.await(b)
+    end
+
+    test "a single query waits its turn behind an in-flight batch", %{sink: sink} do
+      a =
+        Task.async(fn ->
+          Transport.query_batch(
+            [{"/live/track/get/name", [1]}, {"/live/track/get/name", [2]}],
+            2000
+          )
+        end)
+
+      assert_receive {:osc_out, "/live/track/get/name", [2]}
+
+      b = Task.async(fn -> Transport.query("/live/song/get/tempo", [], 2000) end)
+      await_queue_depth(1)
+      refute_received {:osc_out, "/live/song/get/tempo", []}
+
+      reply(sink, "/live/track/get/name", [1, "Bass"])
+      reply(sink, "/live/track/get/name", [2, "Keys"])
+      assert {:ok, [{:ok, ["Bass"]}, {:ok, ["Keys"]}]} = Task.await(a)
+
+      assert_receive {:osc_out, "/live/song/get/tempo", []}
+      reply(sink, "/live/song/get/tempo", [120.0])
+      assert {:ok, _} = Task.await(b)
+    end
+
+    # Programmer errors, raised in the caller's process before anything reaches
+    # the wire: each is a batch whose replies could not be assigned to entries
+    # unambiguously, or one whose size leaves the measured envelope.
+    test "an unusable batch raises rather than going out" do
+      assert_raise ArgumentError, ~r/at least one entry/, fn ->
+        Transport.query_batch([], 200)
+      end
+
+      too_many = for i <- 0..64, do: {"/live/track/get/name", [i]}
+
+      assert_raise ArgumentError, ~r/at most 64 entries/, fn ->
+        Transport.query_batch(too_many, 200)
+      end
+
+      assert_raise ArgumentError, ~r/appears twice/, fn ->
+        Transport.query_batch(
+          [{"/live/track/get/name", [1]}, {"/live/track/get/name", [1]}],
+          200
+        )
+      end
+
+      # `[1]` is a prefix of `[1, 0]`, so a reply echoing `[1, 0, …]` would
+      # satisfy both entries.
+      assert_raise ArgumentError, ~r/echoes a prefix/, fn ->
+        Transport.query_batch(
+          [{"/live/track/get/send", [1]}, {"/live/track/get/send", [1, 0]}],
+          200
+        )
+      end
+
+      refute_received {:osc_out, _address, _args}
     end
   end
 

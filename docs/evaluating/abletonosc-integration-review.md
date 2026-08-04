@@ -201,6 +201,29 @@ approaches should be compared and benchmarked, not the lanes declared
 impossible. Reducing query counts remains the lever that needs no Transport
 redesign at all.
 
+**Resolved 2026-08-04 — benchmarked, and the answer was none of the three.**
+The comparison this correction called for was run against live Ableton and is
+recorded in `docs/abletonosc-api-docs.md` § "Round trips cost ticks, not
+datagrams" (reasoning in `docs/PLAN_batched_queries.md`). The ~100ms is
+AbletonOSC's 100ms `tick()`, not per-datagram cost: a tick drains and answers
+*everything* already queued on the socket, so a burst of 63 mixed reads was
+answered in one tick with zero drops, and the fork's bulk endpoints measured
+**identical** latency to a burst. What shipped is therefore
+`Seshat.OSC.Transport.query_batch/2` — several reads sent back-to-back in one
+FIFO slot, each reply matched to its entry by address *and* echoed-argument
+prefix. Per-exact-address lanes were rejected on the same numbers: they do not
+help the same-address loops that dominate two of the hot sites
+(`/live/return_track/get/name` × N and `/live/track/get/send` × N in
+`read_sends/2`), where a batch does. The echo checks stay exactly as necessary
+as this correction says — they simply moved inside Transport for batched reads.
+
+The table above now reads: `get_clip_properties` is a guard plus one batch (two
+for an audio clip), `get_track_sends` a count plus one batch,
+`get_track_devices` and `get_device_parameters` one batch each.
+`Session.State.do_refresh/1` is deliberately untouched — it belongs to roadmap
+"Monitored refresh worker for `Session.State`", which should reach for
+`query_batch/2` first.
+
 ### One genuine correctness gap (Seshat side)
 
 `get_track_devices` and `get_device_parameters` for **regular tracks**
@@ -275,6 +298,22 @@ philosophy, prioritized by Seshat's measured hotspots:
    Seshat's mirror, so honesty there is a Seshat-side choice about what the
    tool result claims, not a protocol gap.
 
+**Resolved 2026-08-04 — recommendations 1–3 evaluated and not pursued.** The
+benchmark above shows a bulk reply and a burst of the same reads costing the
+identical single tick, so the three read endpoints buy no latency over
+`Transport.query_batch/2` while costing new Python per site, two commits each,
+a `mix abletonosc.install` and a Live restart, `SESHAT.md` and
+`vendored_addresses_test` churn, and a permanently wider fork divergence. All
+three read sites they targeted are batched Seshat-side instead
+(`docs/PLAN_batched_queries.md`). Reopen only for a read needing more datagrams
+than one burst can carry (>64 entries), or one needing an atomic snapshot
+across ticks — neither of which any current site does.
+
+Recommendation 4 (**replying variants for destructive mutators**) is
+**unaffected** by that decision: its value is a failure path being observable
+at all, not a round trip being saved. It remains roadmap work under "Verify
+destructive mutations before reporting success".
+
 ### Interactions with the existing backlog
 
 - **Issue #15 (declarative endpoint manifest) becomes materially more
@@ -299,8 +338,9 @@ work was queued to the top of ROADMAP.md as "Echo checks at every raw reply
 decode" and shipped the same day (plan archived at
 [archive/PLAN_echo_checks.md](../archive/PLAN_echo_checks.md)) — see the
 correction on this in §2 below. "`set_track_send` reports a request, not an
-outcome" and "Bulk reads vs. per-address queries — benchmark, then pick the
-lever" remain open in ROADMAP.md; item 6's two setters are named in "Verify
+outcome" shipped 2026-08-03, and "Bulk reads vs. per-address queries —
+benchmark, then pick the lever" shipped 2026-08-04 as client-side batching
+(see the resolutions in §2 and §3); item 6's two setters are named in "Verify
 destructive mutations before reporting success". This doc stays the
 evidence, not the queue.
 
@@ -317,14 +357,25 @@ evidence, not the queue.
    finding describes.
 2. **`/live/song/get/track_names` is registered and documented but used
    nowhere in Seshat** — `read_tracks/2` queries `/live/track/get/name` per
-   track instead.
+   track instead. **Still true, and now a decision rather than an omission
+   (2026-08-04):** the bulk reply echoes nothing, so it cannot be checked
+   against the indices asked for, and it is no faster than a burst of per-index
+   reads. `read_tracks/2`'s doc now names `query_batch/2` as its replacement if
+   the rebuild's cost is ever bought down.
 3. **`read_send/2` re-queries return names** the mirror already holds
    push-fresh; `return_track_label/1` reads them from the mirror a few lines
-   away. Up to 12 redundant round trips per full send read.
+   away. Up to 12 redundant round trips per full send read. **Resolved
+   2026-08-04, by removing the cost rather than the query:** `read_sends/2` is
+   one batch, so the names ride the same tick as the levels and cost nothing
+   extra. Reusing the debounced mirror instead would now save no time at all
+   while still owing the freshness gating PR #62's review demanded; `read_send/2`
+   itself is gone.
 4. **Correct the "sub-millisecond" latency claims** (`handlers.ex:35`,
    `:2308`, `:4724`) to the measured ~100ms before re-judging any design
    decision that rests on them — in particular the 13–17-query
-   `get_clip_properties` design.
+   `get_clip_properties` design. **Resolved 2026-08-04:** all three comments now
+   carry the tick model, and `get_clip_properties` was re-judged on it — it is a
+   guard plus one batch.
 5. **Add echo checks (or adopt the future combined endpoints) in
    `get_track_devices` / `get_device_parameters`** for regular tracks (§2's
    correctness gap). **Resolved 2026-08-03** — see the resolution note on §2
