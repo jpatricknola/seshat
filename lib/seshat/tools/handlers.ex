@@ -2348,8 +2348,9 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Clip properties ---
   #
-  # Fourteen single-value getters rather than one bulk read: the bulk
-  # `/live/song/get/track_data` reply is a bare value list with no index echo,
+  # Sixteen single-value getters — 12 common (`is_midi_clip` plus the 11 in
+  # `@clip_common_reads`) and four audio-only — rather than one bulk read: the
+  # bulk `/live/song/get/track_data` reply is a bare value list with no index echo,
   # so it can't be checked against the clip we asked about (same reasoning as
   # `ensure_midi_track/1`). What made that expensive was sending them one at a
   # time. A round trip costs one AbletonOSC tick (~100ms) because it waits for
