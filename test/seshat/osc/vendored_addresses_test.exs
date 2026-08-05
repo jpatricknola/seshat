@@ -760,18 +760,17 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       source = File.read!(@osc_server)
 
       assert source =~ ~s|self.send("/live/error",| and
-               source =~ ~s|("request", message.address, detail,| and
                source =~ ~s|len(message.params), *message.params))|,
              """
              #{@osc_server} no longer sends the structured
              /live/error ["request", address, message, arg_count, *args] payload.
 
-             process_message's exact-match branch is the only place the failing
-             request's address and arguments are still in scope — upstream lets the
-             exception unwind to process()'s per-datagram catch, where they are gone.
-             Without this send, Seshat.OSC.Transport cannot correlate a rejection
-             with the query it belongs to, and every rejected query waits out its
-             full timeout again. See SESHAT.md in the fork.
+             The dispatch boundary is the only place the failing request's address
+             and arguments are still in scope — upstream lets the exception unwind
+             to process()'s per-datagram catch, where they are gone. Without this
+             send, Seshat.OSC.Transport cannot correlate a rejection with the query
+             it belongs to, and every rejected query waits out its full timeout
+             again. See SESHAT.md in the fork.
 
              The tail half of that payload — `len(message.params), *message.params`
              — is asserted separately and deliberately: correlation is by address
@@ -781,6 +780,8 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              themselves) while every real rejection from Live silently stopped
              matching and went back to paying a full timeout.
              """
+
+      assert_address_then_detail(source)
 
       assert source =~ ~s|extra={"osc_request_error": True}|,
              """
@@ -902,6 +903,115 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              Without it the sweep follows symlinks and can delete something outside
              the export root that merely happens to be named like an export.
              """
+    end
+  end
+
+  # The `("request", …)` payload's *order* is the wire contract, not just its
+  # membership: Seshat.OSC.Transport reads slot 2 as the address it correlates
+  # against the in-flight query and slot 3 as the human message it renders. Swap
+  # them and every rejected query stops correlating — Transport compares the
+  # error text to the pending address, never matches, and pays out the full
+  # timeout. That is precisely the regression this whole describe block exists
+  # to prevent, so a guard that accepts the swapped tuple is worse than none.
+  #
+  # But the slots must stay free to be *renamed*. The address has already been
+  # spelled `message.address` (when the send lived inline in process_message's
+  # exact-match branch) and `error_address` (once both branches were funnelled
+  # through OSCServer._dispatch), and a guard that fails on a rename is a guard
+  # that gets weakened to shut it up — which is how it came to accept a reorder
+  # in the first place.
+  #
+  # So the slots are identified by where their values *come from*, which no
+  # rename changes and a reorder cannot satisfy:
+  #
+  #   - the address is handed in by the caller, so its root name is a parameter
+  #     of _dispatch (`error_address`, or `message` in `message.address`);
+  #   - the detail is built locally from the caught exception, so its name is
+  #     assigned from `str(...)` inside the function and is *not* a parameter.
+  #
+  # Swapping the two fails both halves at once. A refactor that inlines either
+  # slot as a bare expression rather than a name also fails here, deliberately:
+  # this call site is the wire format, and a change to its shape is a thing a
+  # human should have to look at rather than a thing a regex should wave through.
+  defp assert_address_then_detail(source) do
+    slots =
+      Regex.run(~r/\(\s*"request"\s*,\s*([\w.]+)\s*,\s*([\w.]+)\s*,/, source,
+        capture: :all_but_first
+      )
+
+    assert slots,
+           """
+           #{@osc_server}'s structured /live/error payload no longer has a plain
+           name in its address and detail slots, so this guard cannot tell which
+           slot is which any more.
+
+           Seshat reads that tuple positionally — slot 2 is the address it
+           correlates a pending query against, slot 3 is the message it renders.
+           Re-derive this check against the new shape rather than relaxing it;
+           see Seshat.OSC.Transport's "Failed-query correlation" section for what
+           depends on the order.
+           """
+
+    [address_slot, detail_slot] = slots
+    params = dispatch_parameters(source)
+    address_root = address_slot |> String.split(".") |> hd()
+    detail_root = detail_slot |> String.split(".") |> hd()
+
+    assert address_root in params,
+           """
+           #{@osc_server} sends `#{address_slot}` in the address slot of its
+           structured /live/error payload, but that name is not a parameter of
+           _dispatch — so it is not the request address the caller handed in.
+
+           The likeliest cause is that the address and detail slots have been
+           swapped. Seshat.OSC.Transport reads slot 2 as the address to correlate
+           against the in-flight query; given the error text there instead, no
+           rejection ever matches and every rejected query waits out its full
+           timeout — silently, because the error still arrives and Live's log
+           still shows it.
+
+           _dispatch parameters: #{inspect(params)}
+           """
+
+    assert detail_root not in params and source =~ ~r/\b#{Regex.escape(detail_root)}\s*=\s*str\(/,
+           """
+           #{@osc_server} sends `#{detail_slot}` in the detail slot of its
+           structured /live/error payload, but that name is a parameter of
+           _dispatch rather than a message built locally from the caught
+           exception (`#{detail_root} = str(...)`).
+
+           The likeliest cause is that the address and detail slots have been
+           swapped — see the address assertion above for what that costs. If the
+           message is genuinely constructed somewhere new, re-derive this check
+           against that rather than dropping it.
+
+           _dispatch parameters: #{inspect(params)}
+           """
+  end
+
+  # Parameter *names* of `def _dispatch(...)`, with any default value or type
+  # annotation stripped. Used to tell a value the caller handed in from one the
+  # function built itself.
+  defp dispatch_parameters(source) do
+    case Regex.run(~r/def _dispatch\(([^)]*)\)/s, source, capture: :all_but_first) do
+      [params] ->
+        params
+        |> String.split(",")
+        |> Enum.map(fn param ->
+          param |> String.split(["=", ":"]) |> hd() |> String.trim()
+        end)
+        |> Enum.reject(&(&1 in ["", "self"]))
+
+      _ ->
+        flunk("""
+        #{@osc_server} has no `def _dispatch(...)` to read parameters from, so the
+        structured /live/error payload's address slot cannot be distinguished from
+        its detail slot.
+
+        If the dispatch boundary moved or was renamed, re-derive this guard
+        against the new one — Seshat.OSC.Transport still reads that payload
+        positionally either way.
+        """)
     end
   end
 

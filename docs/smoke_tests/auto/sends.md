@@ -14,10 +14,11 @@ at the end.
 
 ## A send set is confirmed by its own read-back
 
-*Last run: 2026-08-04 — all five sets confirmed. 0.37, 1.0, 0.0, then 0.37
-twice; every reply read "confirmed by reading it back" and named the right
-"was" (0.0 → 0.37 → 1.0 → 0.0 → 0.37, the idempotent repeat reporting "was
-0.37"). `get_track_sends` agreed at 0.37 afterwards. No reply ever said "did
+*Last run: 2026-08-05 (re-run against the merged bridge; previously
+2026-08-04) — all five sets confirmed. 0.37, 1.0, 0.0, then 0.37 twice; every
+reply read "confirmed by reading it back" and named the right "was"
+(0.0 → 0.37 → 1.0 → 0.0 → 0.37, the idempotent repeat reporting "was 0.37").
+`get_track_sends` agreed at 0.37 afterwards. No reply ever said "did
 not land" or "did not confirm it", so at microsecond spacing AbletonOSC does
 process set-then-get in arrival order, and the 4-decimal comparison absorbs the
 float32 widening (0.37 → 0.3700000047683716).*
@@ -46,7 +47,22 @@ is gone.
 
 ## Reading a track's sends labels each return correctly
 
-*Last run: —*
+*Last run: 2026-08-05 — passed, and this is the first live run of this check.
+With returns "A-Alpha" and "B-Beta" and track 0's sends confirmed at 0.2 and
+0.8, one `get_track_sends` produced `send 0 (A) -> "A-Alpha": 0.2` and
+`send 1 (B) -> "B-Beta": 0.8`. The wire shows why that matters: after the
+`/live/return_track/get/count [2]` reply, all five remaining entries came back
+inside the **same millisecond** (15:49:40.898) — `2N+1` with N=2, one tick —
+and two of them were `/live/return_track/get/name` and two were
+`/live/track/get/send`, i.e. two pairs sharing an address and distinguished
+only by echoed index. The echo-prefix matching had real work to do and got it
+right. `track: 99` answered in 291ms with Live's own "Index out of range",
+having produced three per-entry structured errors (`/live/track/get/name` argc
+1, and `/live/track/get/send` argc 2 twice, echoing 99 with send 0 and 1)
+alongside the two return-name replies that legitimately succeeded — so
+per-entry `/live/error` correlation does reach batch entries. Float32 widening
+was visible and absorbed: 0.2 arrived as 0.20000000298023224, 0.8 as
+0.800000011920929.*
 
 `get_track_sends` reads every send's return name and level in one batched
 tick (`query_batch` — one datagram burst of `2N + 1`, replies matched by
@@ -71,9 +87,12 @@ as an answer. A stall on the bad track index means the per-entry
 
 ## A bad send index is refused before the set
 
-*Last run: 2026-08-04 — refused fast. `send: 9` against one return returned
-"Index out of range. Nothing further was sent…"; timed over a full HTTP
-handshake at 0.144s total, nowhere near the ~2s guard timeout. Live's log
+*Last run: 2026-08-05 (re-run against the merged bridge; previously
+2026-08-04) — refused fast. `send: 9` against two returns returned "Index out
+of range. Nothing further was sent…" in 177ms over a full HTTP handshake,
+nowhere near the ~2s guard timeout, and `get_track_sends` afterwards still read
+0.2 and 0.8 — nothing mutated. The rejection arrives as `result` with
+`isError: true`, not a bare protocol error. Live's log
 recorded the raise on `/live/track/get/send` — the guard address, not the
 setter — and `get_track_sends` still read 0.37, so nothing mutated. The
 rejection arrives as `result` with `isError: true`, not a bare protocol

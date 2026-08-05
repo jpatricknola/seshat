@@ -127,6 +127,23 @@ defmodule Seshat.OSC.Transport do
   All knowledge of `/live/error`'s payload lives in this module. Callers see
   only `{:error, {:live_error, message}}`, and `describe_error/1` renders it.
 
+  **Never send an OSC wildcard through `query/3`.** The reason is response
+  cardinality, not error handling. AbletonOSC fans a `*` pattern out across
+  every registered address it matches and replies once per match on each
+  *concrete* address; `query/3` waits on exactly one reply, on the one address
+  it sent. So even a wildcard that succeeds completely is already broken here —
+  no reply carries the address being waited on, every one of them falls through
+  to broadcast, and the query pays a full timeout having discarded all N
+  answers. That was true before any of this module's error correlation existed.
+
+  The one thing correlation changes is the failure's shape. A structured error
+  from any single match carries the *pattern* back in its address slot, which
+  does match, so the clause above fails the query on the first bad endpoint
+  rather than timing out — a wrong-looking error instead of a slow one. Louder
+  is better than silent, but neither is usable. `query_batch/2` is the way to
+  read several properties in one tick: same single AbletonOSC tick a wildcard
+  would have cost, and each reply correlated to its own entry.
+
   `MIX_ENV=test` uses port `0` as a safe fallback and injects OS-assigned
   ephemeral ports into each supervised Transport, so concurrent test BEAMs
   cannot collide and the suite cannot reach a running Ableton.

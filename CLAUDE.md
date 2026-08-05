@@ -106,7 +106,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
 | [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (four view addresses in `view.py`, the two undo-step addresses in `song.py`, the structured `/live/error` request-context payload split across `osc_server.py` and `manager.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
-| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies the fork wholesale into Live's Remote Scripts |
+| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — fast-forwards the submodule to `origin/master`, then copies the fork wholesale into Live's Remote Scripts, **naming the commit it deployed**. Refuses rather than misreport: a dirty checkout, a detached HEAD carrying unbranched commits, or an old Seshat revision whose pin the fork has moved past. `--no-pull` installs the checkout as it stands, `--allow-dirty` includes uncommitted edits |
 
 ## Adding a tool
 
@@ -154,18 +154,20 @@ upstream files (and one upstream file whose *behaviour* we change, below):
   conversation. `Seshat.Tools.Handlers.call/2` wraps every tool dispatch in a
   pair, making one tool call exactly one undo step. Send-only, like `undo`
   itself.
-- `/live/error`'s structured payload — `abletonosc/osc_server.py`'s
-  `process_message` exact-match branch and `manager.py`'s
-  `LiveOSCErrorLogHandler.emit`. Upstream's `/live/error` carries only a
-  formatted log string, with no address or arguments to say which request
-  failed, so a rejected query could only wait out its full timeout. A raising
-  callback now also sends `("request", address, message, arg_count,
-  ...request_args)` directly on `/live/error`, marked `extra:
-  {osc_request_error: true}` so the log relay's own `("log", message)` copy of
-  the same failure is skipped — one rejection, one datagram.
+- `/live/error`'s structured payload — `abletonosc/osc_server.py`'s dispatch
+  boundary and `manager.py`'s `LiveOSCErrorLogHandler.emit`. Upstream's
+  `/live/error` carries only a formatted log string, with no address or
+  arguments to say which request failed, so a rejected query could only wait
+  out its full timeout. A failing request now also sends `("request", address,
+  message, arg_count, ...request_args)` directly on `/live/error`, marked
+  `extra: {osc_request_error: true}` so the log relay's own `("log", message)`
+  copy of the same failure is skipped — one rejection, one datagram.
   `Seshat.OSC.Transport` matches it against the in-flight query and fails fast
   instead of waiting out `@query_timeout`; see its "Failed-query correlation"
-  section.
+  section. Which failures the envelope covers is in
+  [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md)'s Status Messages
+  section — it is not every rejection in the fork, and the set widened once
+  already when both dispatch branches were funnelled through `_dispatch`.
 
 Any future address upstream doesn't provide goes into one of those files the
 same way. `vendored_addresses_test` is the tripwire in both directions: every
@@ -270,13 +272,28 @@ had no coverage. Plan archived at
 just wrote, and the `set_clip_properties` loop-pair rider) actually ran
 against real Ableton and passed, in well under a second where the serialized
 design measured ~1.5s. The other four automated citations — both in
-`sends.md`, both in `devices.md` — were skipped: this machine's installed
-AbletonOSC copy is older than the submodule pin, missing addresses this
-branch's other work depends on, and reinstalling was outside the scope that
-found this. The per-entry `/live/error` correlation and the `2N+1` sends
-batch have therefore never touched a real wire. `mix abletonosc.install`, a
-Live restart, then `/smoke-test sends` and `/smoke-test devices` are
-outstanding before this counts as fully live-verified; one manual citation
+`sends.md`, both in `devices.md` — were skipped at the time: this machine's
+installed AbletonOSC copy was older than the submodule pin, and reinstalling
+was outside the scope that found this. **The install has since been brought up
+to the pin** (verified 2026-08-05, all 34 Python files identical byte for
+byte), and `/smoke-test bridge` that day confirmed the **per-entry
+`/live/error` correlation on a real wire** for the first time: one bad index
+through `get_track_devices` produced three `"request"`-tagged datagrams, one
+per batch entry, within 2ms of each other, each correlated to its own entry,
+with zero `"log"`-tagged duplicates — and two batches on the same three
+addresses with different arguments were served on consecutive ticks 198ms
+apart, the second returning correct data. **`/smoke-test sends` and
+`/smoke-test devices` then both ran green on 2026-08-05**, closing the rest of
+it: the `2N+1` sends batch answered all five entries in a single millisecond
+after the count reply, with two pairs sharing an address and distinguished only
+by echoed index, paired correctly; a `track: 99` sends read produced three
+per-entry structured errors alongside the two return-name replies that
+legitimately succeeded, in 291ms. The batched `get_track_devices` /
+`get_device_parameters` pairing was verified the same way. That was the first
+live run for three checks that had never been executed at all
+(`sends.md` § Reading a track's sends labels each return correctly,
+`devices.md` § Chain and parameter reads pair the right values and § Browser
+search echoes the search it ran). One manual citation
 (`smoke_tests/manual/engineered-state.md` § An audio clip's audio-only
 properties still read) needs a person regardless. "Monitored refresh worker
 for `Session.State`" gains a new planner note pointing at `query_batch/2` as
@@ -532,9 +549,14 @@ instead of promising an effect that groove alone can't deliver on plain MIDI.
 `set_time_signature` shipped 2026-07-31: one tool sending upstream's
 `/live/song/set/signature_numerator` and `_denominator` directly (no fork
 change), with a numerator bounded 1–99 and a denominator restricted to the
-integer enum `{1, 2, 4, 8, 16}` because AbletonOSC's `_set_property` swallows
-a Live API rejection silently — the schema is what keeps an invalid value
-from being an undetectable no-op. `quantize_clip` shipped
+integer enum `{1, 2, 4, 8, 16}` — the schema is what keeps an invalid value
+from being an undetectable no-op, because a setter is sent fire-and-forget and
+nothing waits on one. (The original reason was narrower and is now obsolete:
+`_set_property` used to swallow a Live API rejection outright. Since the fork's
+dispatch-boundary rework it propagates, and the rejection does reach the wire
+as a structured `/live/error`. That changes nothing here — `send_message/2` has
+already returned by the time it lands — so the enum stays, on the second
+reason.) `quantize_clip` shipped
 2026-07-31: it snaps a MIDI clip's notes to a grid with a partial-strength
 amount via the Live Object Model's `Clip.quantize`, using a string grid enum
 (`"1/16"`, `"1/8T"`, …) that hides a `GridQuantization` integer table

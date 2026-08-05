@@ -3,9 +3,11 @@
 `swing_amount` is fork-only — one `properties_rw` line added to
 `priv/AbletonOSC/abletonosc/song.py` — so a Remote Scripts copy predating the fork
 pin makes `/live/song/set/swing_amount` silently a no-op, indistinguishable from
-success. `groove_amount` is upstream and needs no reinstall. AbletonOSC's
-`_set_property` swallows a Live API rejection silently, which is why the time
-signature's denominator is a schema enum rather than a bounded integer.
+success. `groove_amount` is upstream and needs no reinstall. The time signature's
+denominator is a schema enum rather than a bounded integer because setters are
+sent fire-and-forget: `Transport.send_message/2` has returned before Live could
+reject anything, so an out-of-enum value would read as a silent success no
+matter what Live does with it.
 
 ## Groove and swing read as numbers, not unknowns
 
@@ -39,6 +41,6 @@ parameters for set_time_signature — nothing was sent to Ableton": denominator 
 `set_time_signature` to 6/8, then `get_session_state` **without** `refresh: true`
 already shows 6/8 — the property listener pushes the change without a round trip.
 Then a denominator Live rejects: the schema enum (`1, 2, 4, 8, 16`) must refuse it
-before it reaches the wire, because `_set_property` would swallow the rejection
-and the call would read as a silent success. Restore the original signature
-afterwards.
+before it reaches the wire, because a setter is fire-and-forget and the call would
+otherwise read as a silent success whether Live accepted the value or not.
+Restore the original signature afterwards.

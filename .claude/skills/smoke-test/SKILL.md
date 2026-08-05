@@ -61,18 +61,55 @@ What follows is how to run them honestly.
    tempo, time signature. You'll restore or clean up afterwards. **If the session
    looks like real work in progress (named tracks, clips), create your own scratch
    tracks rather than modifying existing ones.**
-3. **Compare `priv/AbletonOSC/abletonosc` with the installed Remote Scripts
-   copy** (ignore `__pycache__`). If they differ, **do not reinstall and do not
-   restart Live** — both are user actions this skill never takes. Run the tests
-   unrelated to the fork, skip the fork-dependent ones, and report that the
-   loaded bridge does not match the repo.
+3. **Establish that the bridge Live is running is the bridge you think it is.**
+   This is three comparisons, not one, and **all three must hold** before any
+   fork-dependent result below means anything:
 
-   This matters more than it looks. `mix test` greps the submodule in the repo;
-   Live runs the copy in Remote Scripts. A green suite says nothing about what
-   Live has actually loaded, so **against a stale copy every result below is
-   right for the wrong reason.** When they match, that is what licenses the
-   fork-dependent results — see
-   [smoke_tests/auto/bridge.md](docs/smoke_tests/auto/bridge.md).
+   ```bash
+   git submodule status                                  # a) recorded pin
+   git -C priv/AbletonOSC log --oneline -1               #    …vs actual checkout
+   git -C priv/AbletonOSC fetch origin && \
+     git -C priv/AbletonOSC log --oneline HEAD..origin/master   # b) behind origin?
+   diff -rq --exclude=__pycache__ priv/AbletonOSC/abletonosc \
+     "$HOME/Music/Ableton/User Library/Remote Scripts/AbletonOSC/abletonosc"  # c)
+   ```
+
+   a) **checkout == recorded pin**, b) **nothing on `origin/master` the checkout
+   lacks**, c) **installed copy == checkout**, byte for byte.
+
+   On (a), which way it disagrees decides what to do. A checkout **behind** the
+   pin means Live is running Python older than the code in this tree — stop, as
+   below. A checkout **ahead** of the pin, matching origin, with the bump staged
+   but not yet committed, is the ordinary mid-work state while landing a bridge
+   change: `git ls-tree HEAD` reads the last *commit*, so staging alone will not
+   quiet it. Note it in the report and carry on; the results are about the
+   bridge Live is running, and that is the checkout.
+
+   **(c) alone is the trap, and it has already cost a full run.** On 2026-08-05 a
+   `/smoke-test bridge` run passed (c) byte for byte and reported six green
+   fork-divergence checks — against a bridge whose PR had been merged hours
+   earlier. `mix abletonosc.install` copies from the *local submodule checkout*,
+   and merging on GitHub does not move it, so the install had faithfully deployed
+   pre-merge code. Install and checkout agreed perfectly; they agreed on the wrong
+   commit. (c) can only ever tell you the two match — (a) and (b) are what tell you
+   *what* they match. Never report a fork-dependent pass on (c) alone.
+
+   If any of the three fails, **do not reinstall, do not pull, and do not restart
+   Live** — all three are user actions this skill never takes. Run the tests
+   unrelated to the fork, skip the fork-dependent ones, and report precisely which
+   comparison failed and what the loaded bridge actually is, by commit.
+
+   Why it matters at all: `mix test` greps the submodule in the repo; Live runs
+   the copy in Remote Scripts. A green suite says nothing about what Live has
+   actually loaded, so **against a stale copy every result below is right for the
+   wrong reason.** All three holding is what licenses the fork-dependent
+   results — see [smoke_tests/auto/bridge.md](docs/smoke_tests/auto/bridge.md).
+
+   **Files on disk are still not code in memory.** Live loads Remote Scripts at
+   startup; a reinstall since the last launch leaves all three comparisons green
+   while Live runs the old bridge from memory. The cheap probe is `bridge.md`'s
+   own fast-fail checks — if a divergence the checkout contains does not show on
+   the wire, suspect a missing restart before suspecting the code.
 
    If a change of yours needs the new Python loaded, `mix abletonosc.install`
    and the Live restart belong to whoever is driving that change, before they

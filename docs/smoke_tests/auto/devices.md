@@ -11,7 +11,13 @@ one return track, and a send from the track into it.
 
 ## Parameter 0 is the `Device On` switch, displaying `On`/`Off`
 
-*Last run: 2026-08-03 — passed on all three device kinds. `get_device_parameters`
+*Last run: 2026-08-05 (re-run against the merged bridge, **stock devices
+only** — the Instrument Rack and AU plugin halves were not re-covered and their
+2026-08-03 result below still stands as their most recent evidence). Reverb's
+parameter 0 read "Device On = 0.0 (range 0.0-1.0)" once bypassed;
+`bypass_device enabled: false` switched it Off, repeating replied "was already
+Off — nothing to do" without writing, and `enabled: true` restored it. Previous
+full run, 2026-08-03 — passed on all three device kinds. `get_device_parameters`
 reported parameter 0 as "Device On" (range 0.0–1.0) on a stock Live device
 (Reverb, 33 params), an Instrument Rack preset ("E-Piano Basic".adg, 18 params)
 and an AU plugin (Apple AUDelay, 4 params). `bypass_device enabled: false`
@@ -32,9 +38,16 @@ and its error prints the actual string; the fix is widening the accepted set in
 
 ## Device error paths are errors, not stalls
 
-*Last run: 2026-08-03 — passed, but **the bad-track-index premise was stale and
-is corrected below.** All three paths answered in ≤0.24s (whole `mcp_call.py`
-round trip). `delete_device` device 7 on a 2-device chain → "There are 2
+*Last run: 2026-08-05 (re-run against the merged bridge) — passed, both paths
+re-run. `delete_device` device 7 on a 2-device chain → "There are 2 device(s) on
+track 0 (indices 0–1) — there is no device 7. Chain: 0: Reverb, 1: EQ Eight."
+(180ms). `delete_device` track 99 → "Ableton rejected the request: Index out of
+range" (165ms) — note that this path **still carries the prefix**, because
+`delete_device` is not a batched read; the batched reads render the same class
+of rejection through `remote_error/1` instead, which is the inconsistency
+ROADMAP #26 now describes. Previous run, 2026-08-03 — passed, but **the
+bad-track-index premise was stale and is corrected below.** All three paths
+answered in ≤0.24s (whole `mcp_call.py` round trip). `delete_device` device 7 on a 2-device chain → "There are 2
 device(s) on track 1 (indices 0–1) — there is no device 7. Chain: 0: E-Piano
 Basic, 1: AUDelay." `delete_device` device 0 on an empty chain → "There are no
 devices on track 2, so there is nothing to delete (asked for device 0). Check
@@ -55,7 +68,14 @@ call next — is tracked in [../ROADMAP.md](../ROADMAP.md), not here.
 
 ## Chain and parameter reads pair the right values
 
-*Last run: —*
+*Last run: 2026-08-05 — passed, and this is the first live run of this check.
+With Reverb and EQ Eight on track 0, `get_track_devices` listed them in chain
+order with the right type each (`Device 0 "Reverb" — audio effect (Reverb)`,
+`Device 1 "EQ Eight" — audio effect (Eq8)`). `get_device_parameters` with
+`device: 1` headed its reply `Device 1 "EQ Eight"` — device 1's name, not
+device 0's — and the 84 parameters listed were unmistakably EQ Eight's
+("1 Filter On A", "1 Frequency A", "1 Gain A"), not Reverb's 33. `device: 7`
+errored in 236ms.*
 
 The regular-track `get_track_devices` (three parallel list getters) and
 `get_device_parameters` (five) each collapse to one batched tick, and the
@@ -77,7 +97,13 @@ parallel-list hazard the old per-query echo checks guarded, now living in
 
 ## The stray-track guard fires
 
-*Last run: 2026-08-03 — passed, both targets. `target: "return"` → error "Live
+*Last run: 2026-08-05 (re-run against the merged bridge) — passed, both
+targets. `target: "return"` errored naming the stray track "2-Operator",
+`target: "master"` naming "3-Operator"; nothing was claimed as loaded, a
+refreshed `get_session_state` showed both strays present at indices 1 and 2,
+and `get_track_devices` on return 0 still reported an empty chain. Both strays
+deleted afterwards. Previous run, 2026-08-03 — passed, both targets.
+`target: "return"` → error "Live
 would not load 'Operator' onto return track 0 — it created a new track
 "5-Operator" and put it there instead, leaving return track 0 unchanged… The new
 track was left in place rather than deleted." `target: "master"` → the same
@@ -94,7 +120,14 @@ either reports success, `browser.py`'s `_verify_landed` is not running.
 
 ## Browser search echoes the search it ran
 
-*Last run: —*
+*Last run: 2026-08-05 — passed, and this is the first live run of this check.
+`audio_effects` + `reverb` returned "Showing 25 of 158 matches" naming
+plausible items (3 Band Ambience Reverb.adg, Compressed Room Reverb.adg) in
+149ms — no wording about replies not being about what was asked for, so the
+echo comparison passes legitimate replies. `sounds_typo` was refused in 142ms
+by `Seshat.Tools.Validation` listing the eight valid categories, which is the
+Validation error this step actually reaches, per the note below — not
+`browser.py`'s stale-echo arm.*
 
 `list_browser_items` verifies the category and filter its reply echoes
 against the request before presenting anything — a real reply must pass that
