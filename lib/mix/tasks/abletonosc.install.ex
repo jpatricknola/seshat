@@ -19,6 +19,7 @@ defmodule Mix.Tasks.Abletonosc.Install do
       mix abletonosc.install                 # probe for an existing install
       mix abletonosc.install /path/to/AbletonOSC
       mix abletonosc.install --no-pull       # install the checkout as it stands
+      mix abletonosc.install --allow-dirty   # ...including uncommitted edits
 
   With no argument the task probes the usual Remote Scripts locations. If it
   finds an existing AbletonOSC install, that directory is replaced. If it finds
@@ -56,6 +57,23 @@ defmodule Mix.Tasks.Abletonosc.Install do
   deliberate commit. When the installed commit and the recorded pin disagree the
   task says so and names `git add priv/AbletonOSC`.
 
+  ## A dirty checkout is refused
+
+  Naming the installed commit is the point, and an uncommitted edit quietly
+  breaks it. When the checkout is already current, `fetch` and `merge --ff-only`
+  both succeed and say nothing, so every check passes, the reported subject is a
+  real commit — and the file copied into Live is not that commit. Same failure
+  as installing a stale pin, arriving from the other direction: the displayed
+  commit does not identify what was deployed.
+
+  So tracked modifications and untracked source (via `git status --porcelain`,
+  which skips `.gitignore`d paths, so `__pycache__` doesn't count) stop the
+  install, before the update and on the `--no-pull` path alike — opting out of
+  *advancing* the checkout is not opting out of knowing what is being deployed.
+  `--allow-dirty` installs anyway, for the inner loop of editing bridge Python,
+  and prints the count of uncommitted changes directly under the commit line so
+  the report stays honest.
+
   ## Prerequisite
 
   The submodule has to be checked out:
@@ -92,9 +110,12 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
   @impl true
   def run(args) do
-    {opts, rest} = OptionParser.parse!(args, strict: [no_pull: :boolean])
+    {opts, rest} = OptionParser.parse!(args, strict: [no_pull: :boolean, allow_dirty: :boolean])
 
     source = source!()
+    dirty = dirty_entries(source)
+
+    unless opts[:allow_dirty], do: refuse_if_dirty!(dirty)
 
     if opts[:no_pull] do
       Mix.shell().info("Skipping the update (--no-pull) - installing the checkout as it stands.")
@@ -102,7 +123,7 @@ defmodule Mix.Tasks.Abletonosc.Install do
       sync!(source)
     end
 
-    report_installed_commit(source)
+    report_installed_commit(source, dirty)
 
     install_dir = locate!(rest)
 
@@ -117,6 +138,46 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
     Files on disk are not code in memory: Live loads Remote Scripts at startup,
     so until it restarts it keeps running whatever it loaded last.
+    """)
+  end
+
+  # --- The checkout has to describe what gets copied ---
+
+  # Tracked modifications *and* untracked source, via --porcelain (which omits
+  # .gitignore'd paths, so __pycache__ doesn't count). Empty output means
+  # clean; a non-zero exit means this isn't a git checkout at all, which
+  # sync!/1 reports properly and --no-pull tolerates, so it is not this
+  # function's business.
+  defp dirty_entries(source) do
+    case cmd(source, ["status", "--porcelain"]) do
+      {out, 0} -> out |> String.split("\n", trim: true) |> Enum.map(&String.trim/1)
+      {_out, _code} -> []
+    end
+  end
+
+  # Naming the installed commit is the whole point of this task, and a dirty
+  # tree quietly breaks it: fetch and --ff-only both succeed when the checkout
+  # is already current, so every check passes, the reported subject is a real
+  # commit, and replace!/2 copies something that is not that commit. That is
+  # the same class of failure as installing a stale pin - the displayed commit
+  # not identifying what was deployed - so it is refused here rather than
+  # warned about afterwards. Checked before the update and on the --no-pull
+  # path alike: opting out of *advancing* the checkout is not opting out of
+  # knowing what is being deployed.
+  defp refuse_if_dirty!([]), do: :ok
+
+  defp refuse_if_dirty!(entries) do
+    Mix.raise("""
+    #{@source_dir} has uncommitted changes, so the commit this task would
+    report is not what it would copy into Live:
+
+    #{indent(Enum.join(entries, "\n"))}
+
+    Commit them in the submodule (see .claude/rules/osc.md - editing bridge
+    Python is two commits), or install them anyway, knowing the deployed
+    Python is not any commit:
+
+        mix abletonosc.install --allow-dirty
     """)
   end
 
@@ -183,15 +244,29 @@ defmodule Mix.Tasks.Abletonosc.Install do
   # invisible without it: the copy always succeeds and always reports success,
   # so the commit is the only thing that distinguishes a good install from one
   # that silently deployed month-old Python.
-  defp report_installed_commit(source) do
+  defp report_installed_commit(source, dirty) do
     case cmd(source, ["log", "-1", "--format=%h %s"]) do
       {out, 0} ->
         Mix.shell().info("  at #{String.trim(out)}")
+        report_dirty(dirty)
         warn_if_pin_differs(source)
 
       {_out, _code} ->
         :ok
     end
+  end
+
+  # Only reachable under --allow-dirty, since anything else has already
+  # stopped. The commit line above is true but incomplete there, and leaving it
+  # to stand alone would be the misreport this task exists to prevent - so the
+  # deviation is named on the line right under it.
+  defp report_dirty([]), do: :ok
+
+  defp report_dirty(entries) do
+    Mix.shell().info(
+      "  plus #{length(entries)} uncommitted change(s) (--allow-dirty) - " <>
+        "the deployed Python is not that commit"
+    )
   end
 
   # The pin is Seshat's record of which bridge its Elixir was written against,

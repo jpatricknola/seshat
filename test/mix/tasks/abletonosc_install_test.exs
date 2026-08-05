@@ -196,6 +196,83 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
              "installed anyway after refusing the fast-forward"
     end
 
+    test "refuses a dirty checkout rather than reporting a commit it isn't deploying",
+         %{tmp: tmp} do
+      %{project: project, install: install, source: source} = fixture_repo(tmp)
+
+      # Up to date with origin, so fetch and --ff-only both succeed and say
+      # nothing - but the tree has an uncommitted edit. This is the case where
+      # the reported commit stops describing what was copied, which is the one
+      # failure this whole task exists to prevent.
+      git(source, ["checkout", "master"])
+      File.write!(Path.join(source, "manager.py"), "# uncommitted work in progress\n")
+
+      File.cd!(project, fn ->
+        assert_raise Mix.Error, ~r/uncommitted|dirty/i, fn ->
+          Mix.Tasks.Abletonosc.Install.run([install])
+        end
+      end)
+
+      refute File.exists?(Path.join(install, "manager.py")),
+             "copied a dirty checkout after reporting a clean commit"
+    end
+
+    test "refuses a checkout with untracked source rather than reporting a clean commit",
+         %{tmp: tmp} do
+      %{project: project, install: install, source: source} = fixture_repo(tmp)
+
+      git(source, ["checkout", "master"])
+      File.write!(Path.join([source, "abletonosc", "experiment.py"]), "# not committed\n")
+
+      File.cd!(project, fn ->
+        assert_raise Mix.Error, ~r/uncommitted|untracked|dirty/i, fn ->
+          Mix.Tasks.Abletonosc.Install.run([install])
+        end
+      end)
+    end
+
+    test "--no-pull still refuses a dirty checkout", %{tmp: tmp} do
+      # --no-pull opts out of *advancing* the checkout, not out of knowing what
+      # is being deployed: the reported commit is just as wrong either way.
+      %{project: project, install: install, source: source} = fixture_repo(tmp)
+
+      git(source, ["checkout", "master"])
+      File.write!(Path.join(source, "manager.py"), "# uncommitted\n")
+
+      File.cd!(project, fn ->
+        assert_raise Mix.Error, ~r/uncommitted|dirty/i, fn ->
+          Mix.Tasks.Abletonosc.Install.run(["--no-pull", install])
+        end
+      end)
+    end
+
+    test "--allow-dirty installs the dirty tree and says the commit doesn't describe it",
+         %{tmp: tmp} do
+      %{project: project, install: install, source: source} = fixture_repo(tmp)
+
+      git(source, ["checkout", "master"])
+      File.write!(Path.join(source, "manager.py"), "# uncommitted work in progress\n")
+
+      Mix.shell(Mix.Shell.Process)
+      on_exit(fn -> Mix.shell(Mix.Shell.Quiet) end)
+
+      File.cd!(project, fn ->
+        Mix.Tasks.Abletonosc.Install.run(["--allow-dirty", install])
+      end)
+
+      assert File.read!(Path.join(install, "manager.py")) =~ "uncommitted work in progress"
+
+      messages =
+        Stream.repeatedly(fn ->
+          receive do: ({:mix_shell, :info, [m]} -> m), after: (0 -> nil)
+        end)
+        |> Enum.take_while(&is_binary/1)
+        |> Enum.join("\n")
+
+      assert messages =~ "uncommitted change(s)",
+             "installed a dirty tree without saying the commit doesn't describe it"
+    end
+
     test "refuses a source that isn't a git checkout at all", %{tmp: tmp} do
       project = Path.join(tmp, "seshat")
       source = Path.join(project, "priv/AbletonOSC")
