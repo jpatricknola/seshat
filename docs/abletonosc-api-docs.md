@@ -92,8 +92,41 @@ Consequences, all of them load-bearing:
 | Address | Response Params | Description |
 |---|---|---|
 | `/live/startup` | | Sent when AbletonOSC starts |
-| `/live/error` | `"request", address, error_msg, arg_count, *request_args` | A handler callback raised. Carries the request that produced it, and is sent **instead of** a reply — the request gets no other answer. Fork-only (see `SESHAT.md`); upstream sends only the shape below. |
-| `/live/error` | `"log", error_msg` | An error with no originating OSC request — parse failures, wildcard-branch failures, a handler's own internal error logs. Never correlatable to a request. |
+| `/live/error` | `"request", address, error_msg, arg_count, *request_args` | A request failed inside its handler. Carries the request that produced it, and is sent **instead of** a reply — the request gets no other answer. `address` is the address **the client sent**, which for a wildcard request is the pattern. Fork-only (see `SESHAT.md`); upstream sends only the shape below. |
+| `/live/error` | `"log", error_msg` | An error with no originating OSC request — parse failures, socket errors, a handler's own internal error logs. Never correlatable to a request. |
+
+The `"request"` shape covers exactly four failures: an uncaught exception in an
+ordinary callback (direct dispatch *or* wildcard fan-out), an exception in the
+generic `_call_method` path, an exception in the generic `_set_property` path,
+and a handler returning something that is neither a tuple nor `None`. It does
+not cover every rejection in the fork — the browser and return/master handlers
+reply with their own `"error"`-tagged envelopes, and the `/live/view/...`
+setters fail silently by design.
+
+Those envelope handlers cost **two** datagrams per rejection, not one. Measured
+2026-08-05, Live 12.4.3 — `get_track_devices` with `target: "return"` on return
+99 put both of these on the wire in the same millisecond:
+
+```
+/live/error                    ["log", "Return track 99 does not exist — this set has 0 return track(s) (get/devices)"]
+/live/return_track/get/devices [99, "error", "Return track 99 does not exist — this set has 0 return track(s)"]
+```
+
+The envelope reply is the one the caller reads; the `"log"` copy is the relay
+echoing the handler's own `logger.error`, which carries no `osc_request_error`
+marker to suppress it. Harmless — a `"log"` payload is never correlated to a
+query — but it is why "one rejection, one datagram" holds only for the
+dispatcher-boundary path. Tracked fork-side (`issues.md` #4/#15), not a Seshat
+defect.
+
+> **Three of those four arrived with the fork's dispatch-boundary rework
+> (`_dispatch`).** Before it, only a direct callback's own exception was
+> correlated: wildcard failures, generic method/setter failures and invalid
+> handler returns all reached the client as an uncorrelatable `"log"` line or
+> not at all. A Remote Scripts copy predating that commit therefore still
+> answers every address, still sends one datagram per failure, and just goes
+> quiet on the three — verify with `mix abletonosc.install` and a Live restart
+> before relying on them.
 
 `arg_count` makes the variable tail explicit and keeps a zero-argument request
 from needing a special case; `request_args` are the request's own arguments
@@ -103,16 +136,40 @@ compare against a 32-bit round-trip of what was sent, never a 64-bit float).
 error matching the in-flight query's address *and* every argument fails that
 query immediately instead of letting it wait out its timeout.
 
-Measured on the wire, Live 12.4.3, 2026-08-03 — `get_track_devices` on a track
-index past the end of the set produced exactly one datagram, and no
-`"log"`-tagged duplicate for the same failure:
+Measured on the wire, Live 12.4.3, **re-measured 2026-08-05** — since the
+2026-08-04 batching work `get_track_devices` reads through
+`Transport.query_batch/2`, so a track index past the end of the set now raises
+once *per entry* and produces **one datagram per raise**, still with no
+`"log"`-tagged duplicate for any of them:
 
 ```
-/live/error ["request", "/live/track/get/devices/name", "Index out of range", 1, 99]
+/live/error ["request", "/live/track/get/devices/name",       "Index out of range", 1, 99]
+/live/error ["request", "/live/track/get/devices/type",       "Index out of range", 1, 99]
+/live/error ["request", "/live/track/get/devices/class_name", "Index out of range", 1, 99]
 ```
 
-The whole rejection, client call to tool result, took 212ms against a 5,000ms
-query timeout. The raising address is the one that actually raised, which is not
+All three landed within 2ms of each other — one AbletonOSC tick — and each was
+correlated to its own batch entry. That is the first live confirmation of the
+per-entry correlation; the 2026-08-03 measurement below predates batching and
+recorded the single-datagram form of the same behaviour.
+
+The whole rejection, client call to tool result, took 198ms against a 5,000ms
+query timeout (212ms on the serial path, 2026-08-03). Two batches on the *same
+three addresses* with different arguments, fired back to back, were served one
+tick apart — 99ms — the second returning correct data, so an error releases the
+FIFO slot immediately and argument-level correlation holds when address alone
+would not distinguish them.
+
+**Wildcard fan-out, measured 2026-08-05 against the merged dispatch boundary.**
+`/live/*/get/tempo` with no arguments now replies once, on
+`/live/song/get/tempo`, and sends no `/live/error` at all. Before that commit
+the same request also matched `/live/scene/get/tempo_enabled` (the pattern was
+compiled unescaped and matched unanchored), which raised `IndexError` wanting a
+scene index, abandoned the rest of the fan-out, and surfaced as an
+uncorrelatable `/live/error ["log", "Error handling OSC message: list index out
+of range"]`. That one request is the cheapest probe there is for *which* bridge
+Live currently has in memory — a reply with no error means the merged code, a
+reply followed by that `"log"` line means the old one, and it mutates nothing. The raising address is the one that actually raised, which is not
 always the address the tool is named for: `get_clip_notes` on a bad index raises
 at its `/live/clip_slot/get/has_clip` guard, never reaching
 `/live/clip/get/notes`.

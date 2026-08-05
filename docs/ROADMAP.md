@@ -141,10 +141,14 @@ atomic".
 mutating and confirm the result afterward, instead of returning success as soon
 as `:gen_udp.send/4` returns.
 
-**Why:** Python catches Live API exceptions and only logs them, so a rejected
-delete or a dropped packet is indistinguishable from a successful one — and the
-follow cam then steers to a destination that may not exist. The reachable
-trigger is a stale model-held index.
+**Why:** a rejected delete and a dropped packet are indistinguishable from a
+successful one, because nothing waits on a setter — and the follow cam then
+steers to a destination that may not exist. The reachable trigger is a stale
+model-held index. (The original framing, "Python catches Live API exceptions
+and only logs them," is half obsolete: the fork now sends a correlated error
+for a rejected setter. Seshat still discards it — see the third planner note
+below — so the symptom is unchanged, but the fix has a cheaper option than it
+did.)
 
 **User stories:**
 - As a producer, when a delete never actually happened in Live, Seshat says
@@ -172,6 +176,25 @@ trigger is a stale model-held index.
   explicit), a few lines in `Definitions` + `Handlers`, and small enough to
   ride along here (or as a drive-by before this item is picked up) rather
   than rank on its own.
+- **A third option exists now, cheaper than a read-back: the correlated
+  setter failure.** The fork's dispatch-boundary rework stopped
+  `_call_method`/`_set_property` swallowing exceptions, so a rejected setter
+  or generic method now sends `/live/error ["request", <its own address>,
+  message, argc, *args]` — the same envelope a failing *query* gets, naming
+  the request and its arguments. Today Seshat throws that away:
+  `Transport.send_message/2` has already returned `:ok`, and the error is
+  broadcast on `"osc:in"` and answers nobody. The lever is a short grace
+  window after a silent setter — hold the tool step open for roughly one
+  AbletonOSC tick (~100ms, and 212ms was the measured client-call-to-result
+  figure for a rejection) and report the rejection if one arrives, rather
+  than paying a full read-back round trip. That is not the round-trip-per-
+  mutation design rejected above: nothing is *queried*, the wait is bounded
+  by a tick rather than by `@query_timeout`, and a clean setter costs
+  nothing extra. Weigh it against the read-back on a per-setter basis —
+  read-back proves the value landed, the envelope only proves it wasn't
+  refused — and note it needs a Transport-side subscription to unmatched
+  `"request"` errors, which does not exist yet. Requires the fork's
+  `_dispatch` commit installed; verify with `mix abletonosc.install` first.
 - **Two more Tier-A setters named by the 2026-08-03 integration review**
   ([abletonosc-integration-review.md](evaluating/abletonosc-integration-review.md),
   §4 item 6): `set_track_arm` returns "Armed track N" unverified while
@@ -708,6 +731,20 @@ flow, so this is not an active break.
 **Goal:** a tool call Live rejects for a bad index tells the model which index
 was bad and which `get_*` tool resolves it, instead of the bare "Ableton
 rejected the request: Index out of range".
+
+**Partly solved already, by accident — re-scope before planning this.** Measured
+2026-08-05 (`/smoke-test bridge`): `get_track_devices` on track 99 now replies
+"Index out of range. Nothing further was sent — check get_session_state for the
+indices that actually exist." The batched-reads work of 2026-08-04 routed the
+converted reads through `Handlers.remote_error/1` instead of
+`Transport.describe_error/1`, and `remote_error/1` already carries the
+what-to-call-next half of this item's goal. So the goal now holds on the four
+batched read sites and not on the rest, which still render the bare
+`describe_error/1` string — the inconsistency is arguably worse than the
+uniform gap this item was written against. What is still missing everywhere,
+including the batched paths, is the *which index* half: the reply says to check
+`get_session_state` but never names 99. Both are in the `/live/error` payload
+already (`address`, `arg_count`, the args), so this is still only rendering.
 
 **Why:** found running the never-run agent smoke tests on 2026-08-03
 ([smoke_tests/auto/devices.md](smoke_tests/auto/devices.md) § Device error paths are

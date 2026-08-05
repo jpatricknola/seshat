@@ -163,6 +163,17 @@ still gets *no distinguishing value back* — `describe_error/1`'s message says
 Ableton rejected the request, not which guard to add — so guard rather than
 diagnose after the fact:
 
+> **Setters and generic methods raise too, and it buys you nothing.** The
+> fork's dispatch-boundary rework widened the correlated envelope past
+> callbacks that reply: a failing `/live/*/set/*` or a failing generic method
+> now comes back with its own address and arguments as well. That is a
+> diagnostic gain, not a delivery-semantics one. Seshat sends those with
+> `Transport.send_message/2`, which returns as soon as UDP transmission
+> succeeds, so the tool step is already complete and reported by the time the
+> error lands — it is broadcast on `"osc:in"` and answers nobody. A setter that
+> must be *known* to have landed still needs a guard before it or a read-back
+> after it (`set_track_send` and `set_device_parameter` are the patterns).
+
 - **An index that doesn't exist** — a track, slot, or scene index past the end
   of the set raises `IndexError` inside the callback. This is the single most
   common cause of a rejected query, so guard error messages should lead with

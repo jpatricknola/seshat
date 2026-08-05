@@ -760,18 +760,27 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       source = File.read!(@osc_server)
 
       assert source =~ ~s|self.send("/live/error",| and
-               source =~ ~s|("request", message.address, detail,| and
+               source =~ ~r/\("request", [\w.]+, detail,/ and
                source =~ ~s|len(message.params), *message.params))|,
              """
              #{@osc_server} no longer sends the structured
              /live/error ["request", address, message, arg_count, *args] payload.
 
-             process_message's exact-match branch is the only place the failing
-             request's address and arguments are still in scope — upstream lets the
-             exception unwind to process()'s per-datagram catch, where they are gone.
-             Without this send, Seshat.OSC.Transport cannot correlate a rejection
-             with the query it belongs to, and every rejected query waits out its
-             full timeout again. See SESHAT.md in the fork.
+             The dispatch boundary is the only place the failing request's address
+             and arguments are still in scope — upstream lets the exception unwind
+             to process()'s per-datagram catch, where they are gone. Without this
+             send, Seshat.OSC.Transport cannot correlate a rejection with the query
+             it belongs to, and every rejected query waits out its full timeout
+             again. See SESHAT.md in the fork.
+
+             The address slot is matched as a regex rather than a literal on
+             purpose. It has been spelled `message.address` (when the send lived
+             inline in process_message's exact-match branch) and `error_address`
+             (once both branches were funnelled through OSCServer._dispatch), and
+             it will be renamed again. What Seshat depends on is the payload
+             *shape* — the "request" tag, some address expression, the detail —
+             not the local variable a refactor happens to be using, and a guard
+             that fails on a rename is a guard that gets weakened to shut it up.
 
              The tail half of that payload — `len(message.params), *message.params`
              — is asserted separately and deliberately: correlation is by address
