@@ -18,6 +18,7 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
       mix abletonosc.install                 # probe for an existing install
       mix abletonosc.install /path/to/AbletonOSC
+      mix abletonosc.install --no-pull       # install the checkout as it stands
 
   With no argument the task probes the usual Remote Scripts locations. If it
   finds an existing AbletonOSC install, that directory is replaced. If it finds
@@ -27,6 +28,33 @@ defmodule Mix.Tasks.Abletonosc.Install do
   A directory that already exists but doesn't look like an AbletonOSC install
   (no `manager.py`, no `abletonosc/handler.py`) is refused rather than replaced,
   so a mistyped path can't delete something else.
+
+  ## It brings the submodule up to date first
+
+  This task **fetches and fast-forwards `priv/AbletonOSC` to `origin/master`
+  before copying anything**, and prints the commit it actually installed.
+
+  That is not a convenience. Merging a PR on the fork changes the *remote*; it
+  does not touch this clone, and a submodule is a separate repository, so
+  nothing you can do in the Seshat repo will move it either — `git pull` here
+  updates the recorded *pin*, and `git submodule update` moves the checkout *to*
+  that pin, which is itself whatever commit was last recorded. On 2026-08-05
+  that cost a full afternoon: a fork PR was merged, Live was quit, this task was
+  run, Live was restarted, and the smoke tests were run against pre-merge
+  Python — because the checkout had been sitting detached at the old pin for two
+  days and this task copied it faithfully and reported success.
+
+  A detached HEAD is checked out onto `master` first, since that was the actual
+  trap. If git refuses the fast-forward for any reason — the branch has
+  diverged, the tree has uncommitted changes, the network is unreachable — its
+  own message is printed verbatim and the task stops rather than installing
+  something that isn't what you asked for. Use `--no-pull` to install the
+  checkout exactly as it stands, which is what you want offline, or when
+  deliberately installing an older commit to bisect against Live.
+
+  Bringing the checkout forward does **not** record the new pin — that stays a
+  deliberate commit. When the installed commit and the recorded pin disagree the
+  task says so and names `git add priv/AbletonOSC`.
 
   ## Prerequisite
 
@@ -57,10 +85,26 @@ defmodule Mix.Tasks.Abletonosc.Install do
   # distribution and cost nothing sitting unused next to it.
   @excluded ~w(.git .github .gitignore tests)
 
+  # The fork's default branch. Hardcoded rather than resolved from origin/HEAD:
+  # this task installs one specific repository, and a wrong guess here would
+  # fast-forward to somewhere unintended rather than fail.
+  @branch "master"
+
   @impl true
   def run(args) do
+    {opts, rest} = OptionParser.parse!(args, strict: [no_pull: :boolean])
+
     source = source!()
-    install_dir = locate!(args)
+
+    if opts[:no_pull] do
+      Mix.shell().info("Skipping the update (--no-pull) - installing the checkout as it stands.")
+    else
+      sync!(source)
+    end
+
+    report_installed_commit(source)
+
+    install_dir = locate!(rest)
 
     Mix.shell().info("Installing #{@source_dir} -> #{install_dir}")
 
@@ -70,7 +114,120 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
     Done. Restart Ableton Live (or toggle AbletonOSC off and back on under
     Preferences > Link/MIDI > Control Surface) to pick up the new handlers.
+
+    Files on disk are not code in memory: Live loads Remote Scripts at startup,
+    so until it restarts it keeps running whatever it loaded last.
     """)
+  end
+
+  # --- Bringing the submodule up to date ---
+
+  # Fetch and fast-forward, or explain why not and stop. Every failure here is
+  # reported with git's own stderr rather than a paraphrase: the states that
+  # land here (diverged branch, uncommitted changes, no network, no remote) are
+  # exactly the ones where git's message already names the fix and a paraphrase
+  # would lose it. Nothing is forced, rebased or stashed — this task installs
+  # files, and quietly rewriting someone's history to do that would be a far
+  # worse surprise than refusing.
+  defp sync!(source) do
+    unless File.exists?(Path.join(source, ".git")) do
+      Mix.raise("""
+      #{@source_dir} is not a git checkout, so it can't be brought up to date.
+
+      If it was vendored deliberately rather than checked out as a submodule,
+      install it as it stands:
+
+          mix abletonosc.install --no-pull
+      """)
+    end
+
+    if detached?(source) do
+      Mix.shell().info("#{@source_dir} was on a detached HEAD - checking out #{@branch}.")
+      git!(source, ["checkout", @branch], "check out #{@branch}")
+    end
+
+    Mix.shell().info("Fetching origin...")
+    git!(source, ["fetch", "origin"], "fetch origin")
+    git!(source, ["merge", "--ff-only", "origin/#{@branch}"], "fast-forward to origin/#{@branch}")
+  end
+
+  # `symbolic-ref` fails on a detached HEAD, which is precisely the state a
+  # submodule checkout is left in by `git submodule update` — and the state that
+  # made a merged PR invisible to this task for two days.
+  defp detached?(source) do
+    match?({_, code} when code != 0, cmd(source, ["symbolic-ref", "--quiet", "HEAD"]))
+  end
+
+  defp git!(source, args, what) do
+    case cmd(source, args) do
+      {_out, 0} ->
+        :ok
+
+      {out, _code} ->
+        Mix.raise("""
+        Couldn't #{what} in #{@source_dir}, so the install stopped rather than
+        deploying Python that isn't what you asked for.
+
+        git said:
+
+        #{indent(out)}
+
+        Resolve that, or install the checkout exactly as it stands:
+
+            mix abletonosc.install --no-pull
+        """)
+    end
+  end
+
+  # What is about to be copied, named. The whole failure this guards against is
+  # invisible without it: the copy always succeeds and always reports success,
+  # so the commit is the only thing that distinguishes a good install from one
+  # that silently deployed month-old Python.
+  defp report_installed_commit(source) do
+    case cmd(source, ["log", "-1", "--format=%h %s"]) do
+      {out, 0} ->
+        Mix.shell().info("  at #{String.trim(out)}")
+        warn_if_pin_differs(source)
+
+      {_out, _code} ->
+        :ok
+    end
+  end
+
+  # The pin is Seshat's record of which bridge its Elixir was written against,
+  # and moving the checkout deliberately does not move it. Saying so here is
+  # what keeps "I installed the latest" from silently becoming "the tests now
+  # grep Python no commit of mine refers to".
+  defp warn_if_pin_differs(source) do
+    with {head, 0} <- cmd(source, ["rev-parse", "HEAD"]),
+         {entry, 0} <- cmd(File.cwd!(), ["ls-tree", "HEAD", @source_dir]),
+         [_mode, "commit", pin] <-
+           String.split(entry, [" ", "\t"], parts: 4, trim: true) |> Enum.take(3),
+         true <- String.trim(head) != pin do
+      Mix.shell().info("""
+
+      Note: this is not the commit Seshat records for #{@source_dir}
+      (pinned #{String.slice(pin, 0, 7)}). Record it so the Elixir side and the
+      bridge move together:
+
+          git add #{@source_dir}
+      """)
+    else
+      _ -> :ok
+    end
+  end
+
+  defp cmd(dir, args) do
+    System.cmd("git", args, cd: dir, stderr_to_stdout: true)
+  rescue
+    ErlangError -> {"git is not available on PATH", 1}
+  end
+
+  defp indent(text) do
+    text
+    |> String.trim_trailing()
+    |> String.split("\n")
+    |> Enum.map_join("\n", &("    " <> &1))
   end
 
   # --- Source ---
@@ -109,7 +266,7 @@ defmodule Mix.Tasks.Abletonosc.Install do
       #{expanded} already exists and doesn't look like an AbletonOSC installation.
 
       Expected to find manager.py and abletonosc/handler.py inside it. Refusing
-      to replace it — pass a path that is either an AbletonOSC install or
+      to replace it - pass a path that is either an AbletonOSC install or
       doesn't exist yet.
       """)
     end
@@ -124,7 +281,7 @@ defmodule Mix.Tasks.Abletonosc.Install do
         # install. The user library is the right home for it: Live's own app
         # bundle is wiped by a Live upgrade.
         fresh = hd(candidate_paths())
-        Mix.shell().info("No existing AbletonOSC found — installing fresh.")
+        Mix.shell().info("No existing AbletonOSC found - installing fresh.")
         fresh
 
       path ->
