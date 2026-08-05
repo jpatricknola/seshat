@@ -209,7 +209,12 @@ seconds apart, the condition was not provoked — rerun rather than tick it.
 
 ## A wildcard matches complete addresses only
 
-*Last run: —*
+*Last run: 2026-08-05 — passed. `/live/*/get/tempo` with no arguments produced
+exactly one reply, `OSC in: /live/song/get/tempo [120.0]`, and no `/live/error`
+of any shape. The same request against the pre-merge bridge earlier the same
+day produced that reply **plus** `/live/error ["log", "Error handling OSC
+message: list index out of range"]`, which is what makes this a decisive probe
+rather than a formality.*
 
 The fork compiles a `*` pattern as
 `"[^/]+".join(re.escape(part) for part in address.split("*"))` and matches it
@@ -243,47 +248,59 @@ reach for it first whenever a fork-dependent result looks wrong.
 
 ## A wildcard fan-out answers every applicable match
 
-*Last run: —*
+*Last run: 2026-08-05 — passed, after the first version of this check was
+written on a wrong premise and corrected on the spot. `/live/clip/get/* 0 0`
+against a MIDI clip returned **36** replies in one burst (15:57:55.534-.537),
+every registered clip getter answering on its own concrete address, and zero
+`/live/error` of either shape.*
 
 A wildcard is a fan-out: every matching endpoint runs and replies on its own
-concrete address. Endpoints that don't apply to the request are skipped
-silently (`ValueError`, `AttributeError`, `IndexError`), and the ones after
-them in registration order must still answer.
+concrete address, and the whole set arrives in one AbletonOSC tick.
 
 With a **MIDI** clip at track 0, slot 0 (write one with `write_midi_notes` if
 the set has none; delete it afterwards), send:
 
     python3 .claude/skills/smoke-test/scripts/osc_send.py '/live/clip/get/*' 0 0
 
-`clip.py` registers `properties_r + properties_rw`, and a MIDI clip raises on
-the audio-only ones. `gain_display_string` sits third in `properties_r` and
-`gain`, `warp_mode` and `warping` sit inside `properties_rw`, so the tail of
-`log/dev.log` must show:
+Quote the address — an unquoted `*` is a shell glob. Then read the tail of
+`log/dev.log`. Every getter `clip.py` registers (`properties_r + properties_rw`,
+plus `notes`) must appear exactly once, and there must be **no `/live/error`**
+of either shape. 36 replies was the 2026-08-05 count; treat a materially
+smaller number as a truncated fan-out and diff the list against `clip.py`
+rather than trusting the total.
 
-- **no** reply on `/live/clip/get/gain_display_string`, `/gain`, `/warp_mode`
-  or `/warping` — they were skipped, and skips send nothing;
-- replies on addresses registered **after** each of those — `is_midi_clip` and
-  `is_audio_clip` follow `gain_display_string`; `name`, `start_marker` and
-  `looping` sit among and after the audio-only `properties_rw` entries;
-- **no `/live/error`** of either shape.
-
-A fan-out that stops at the first skip shows the early properties and nothing
-after them. A `["log", …]` line means an endpoint raised something outside the
-skip set and took the loop down with it.
+**The inapplicable properties reply, they are not skipped.** `gain`,
+`gain_display_string`, `warp_mode` and `warping` do not apply to a MIDI clip,
+and each comes back **present with a `nil` value** — `/live/clip/get/gain
+[0, 0, nil]` — because Live raises `RuntimeError` and
+`AbletonOSCHandler._get_property` converts exactly that into `None` before the
+callback ever returns. The dispatcher never sees an exception, so the wildcard
+skip set is not involved. The first draft of this test asserted those four
+would be *absent*, on the strength of a reference-doc claim that they raise;
+they do not, the doc was corrected, and the measurement is now in
+[abletonosc-api-docs.md](../../abletonosc-api-docs.md).
 
 **What this does not prove.** It does not exercise the merge's fan-out
 *isolation* fix, which only changes behaviour for exceptions **outside**
 `{ValueError, AttributeError, IndexError}` — upstream already skipped those
-three and continued. Provoking anything else safely is the problem: the one
-pattern that reliably raises `TypeError` mid-fan-out is `/live/song/*`, which
-matches every generic song *method* and would fire `start_playing`,
-`stop_all_clips`, `delete_track` and `undo` on the user's set. Don't. That half
-lives in the fork's own `tests_unit/test_osc_server.py` and is marked
-⚠️ unmeasured here deliberately.
+three and continued, and here nothing raises out of a callback at all.
+Provoking anything else safely is the problem: the one pattern that reliably
+raises mid-fan-out is `/live/song/*`, which matches every generic song *method*
+and would fire `start_playing`, `stop_all_clips`, `delete_track` and `undo` on
+the user's set. Don't. That half lives in the fork's own
+`tests_unit/test_osc_server.py` and is ⚠️ unmeasured here deliberately.
 
 ## A failing generic method names the request that failed
 
-*Last run: —*
+*Last run: 2026-08-05 — passed, and this is the first live evidence that a
+generic `_call_method` failure reaches the correlated envelope at all.
+`/live/song/delete_scene` with no arguments produced exactly one datagram,
+`/live/error ["request", "/live/song/delete_scene", "Python argument types in
+Song.delete_scene(Song) did not match C++ signature: delete_scene(TPyHandle…"]`,
+and zero `"log"`-tagged copies. `get_clip_slots` reported 8 scenes before and 8
+after, so nothing was deleted. Note the exception is Boost.Python's
+`ArgumentError` rather than a plain `TypeError` — the point is that it
+propagated out of `_call_method` instead of being swallowed.*
 
 `AbletonOSCHandler._call_method` and `_set_property` used to catch every
 exception and log it, so a failing generic method reached the client only as an

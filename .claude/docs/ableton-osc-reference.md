@@ -185,10 +185,20 @@ diagnose after the fact:
 - **`/live/clip/get/notes` range args are all-or-nothing** — the handler raises
   unless it gets exactly 0 or 4 of `start_pitch, pitch_span, start_time,
   time_span`. If any is given, fill all four (`Handlers.note_range_args/1`).
-- **Audio-only clip properties on a MIDI clip** — `gain`, `gain_display_string`,
-  `warp_mode`, `warping` raise on a MIDI clip (`Clip` has no such attribute
-  upstream). Check `/live/clip/get/is_midi_clip` first, as
-  `get_clip_properties`/`set_clip_properties` do.
+- **Audio-only clip properties on a MIDI clip** — `gain`,
+  `gain_display_string`, `warp_mode`, `warping`. Check
+  `/live/clip/get/is_midi_clip` first, as
+  `get_clip_properties`/`set_clip_properties` do — but **not because they
+  raise**. Measured 2026-08-05 on Live 12.4.3: each replies normally with a
+  `nil` value (`/live/clip/get/gain [0, 0, nil]`), because Live raises
+  `RuntimeError` and `AbletonOSCHandler._get_property` converts exactly that
+  into `None` as deliberate inapplicable-property semantics — the one branch
+  the 2026-08-05 dispatch-boundary merge left untouched. So the guard exists to
+  avoid presenting meaningless nils, not to avoid an error, and a query for one
+  costs a round trip rather than failing fast. This entry previously said they
+  raise; that was never measured, and a smoke test written on it failed
+  immediately. What *does* raise is a clip query against an **empty slot**,
+  above.
 
 A install still running the pre-2026-08-03 copy (no `mix abletonosc.install`
 since, or a Live restart still pending) is unaffected by any of the above and

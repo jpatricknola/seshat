@@ -160,6 +160,26 @@ tick apart — 99ms — the second returning correct data, so an error releases 
 FIFO slot immediately and argument-level correlation holds when address alone
 would not distinguish them.
 
+**Inapplicable clip properties reply `nil`, they do not raise. Measured
+2026-08-05, Live 12.4.3.** `/live/clip/get/* 0 0` against a MIDI clip returned
+all 36 registered clip getters, including the audio-only four:
+
+```
+/live/clip/get/gain                [0, 0, nil]
+/live/clip/get/gain_display_string [0, 0, nil]
+/live/clip/get/warp_mode           [0, 0, nil]
+/live/clip/get/warping             [0, 0, nil]
+```
+
+Live raises `RuntimeError` for these and `AbletonOSCHandler._get_property`
+converts exactly that to `None` before returning — deliberate
+inapplicable-property semantics, and the one branch the dispatch-boundary
+merge left untouched. So `get_clip_properties`' `is_midi_clip` guard avoids
+presenting meaningless nils and a wasted round trip, **not** an error: a query
+for one of these costs a reply, never a rejection. Guidance saying they "raise
+on a MIDI clip" was unmeasured and is corrected. A clip query against an
+**empty slot** does raise, and is a different case.
+
 **Wildcard fan-out, measured 2026-08-05 against the merged dispatch boundary.**
 `/live/*/get/tempo` with no arguments now replies once, on
 `/live/song/get/tempo`, and sends no `/live/error` at all. Before that commit
