@@ -282,9 +282,18 @@ through `get_track_devices` produced three `"request"`-tagged datagrams, one
 per batch entry, within 2ms of each other, each correlated to its own entry,
 with zero `"log"`-tagged duplicates — and two batches on the same three
 addresses with different arguments were served on consecutive ticks 198ms
-apart, the second returning correct data. The **`2N+1` sends batch** is still
-unverified live. `/smoke-test sends` and `/smoke-test devices` remain
-outstanding; one manual citation
+apart, the second returning correct data. **`/smoke-test sends` and
+`/smoke-test devices` then both ran green on 2026-08-05**, closing the rest of
+it: the `2N+1` sends batch answered all five entries in a single millisecond
+after the count reply, with two pairs sharing an address and distinguished only
+by echoed index, paired correctly; a `track: 99` sends read produced three
+per-entry structured errors alongside the two return-name replies that
+legitimately succeeded, in 291ms. The batched `get_track_devices` /
+`get_device_parameters` pairing was verified the same way. That was the first
+live run for three checks that had never been executed at all
+(`sends.md` § Reading a track's sends labels each return correctly,
+`devices.md` § Chain and parameter reads pair the right values and § Browser
+search echoes the search it ran). One manual citation
 (`smoke_tests/manual/engineered-state.md` § An audio clip's audio-only
 properties still read) needs a person regardless. "Monitored refresh worker
 for `Session.State`" gains a new planner note pointing at `query_batch/2` as
