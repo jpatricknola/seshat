@@ -206,3 +206,112 @@ and `wait`), then **confirm from the wire log** that the two batches are within
 a few hundred milliseconds of each other before recording a pass. If they are
 seconds apart, the condition was not provoked — rerun rather than tick it.
 
+
+## A wildcard matches complete addresses only
+
+*Last run: —*
+
+The fork compiles a `*` pattern as
+`"[^/]+".join(re.escape(part) for part in address.split("*"))` and matches it
+with `fullmatch`. Upstream built the regex from the raw address and matched
+with `re.match`, so a pattern could match the *prefix* of a longer registered
+address and invoke a callback with another endpoint's argument shape.
+
+Send `/live/*/get/tempo` with **no arguments** and read the tail of
+`log/dev.log`. Exactly one reply must come back —
+`OSC in: /live/song/get/tempo [120.0]`, or whatever the tempo is — and there
+must be **no `/live/error` of any shape** behind it.
+
+    python3 .claude/skills/smoke-test/scripts/osc_send.py '/live/*/get/tempo'
+
+Quote the address: an unquoted `*` is a shell glob. Nothing in `lib/` sends a
+wildcard and nothing should start (`Seshat.OSC.Transport`'s moduledoc explains
+why a fan-out cannot go through `query/3` at all), so `osc_send.py` is the only
+way to reach this, and the replies land on the running Seshat rather than on
+the script.
+
+**This is also the cheapest probe for which bridge Live has in memory**, which
+is worth more than the contract it checks. Before the dispatch-boundary merge
+the same request also matched `/live/scene/get/tempo_enabled`, which raised
+`IndexError` wanting a scene index, abandoned the rest of the fan-out, and
+surfaced as `/live/error ["log", "Error handling OSC message: list index out of
+range"]`. So a tempo reply *followed by that line* means Live is still running
+pre-merge Python — a state the three commit comparisons in `/smoke-test`'s
+preflight cannot detect, because Remote Scripts load at startup and a reinstall
+since the last launch leaves every file on disk correct. It mutates nothing, so
+reach for it first whenever a fork-dependent result looks wrong.
+
+## A wildcard fan-out answers every applicable match
+
+*Last run: —*
+
+A wildcard is a fan-out: every matching endpoint runs and replies on its own
+concrete address. Endpoints that don't apply to the request are skipped
+silently (`ValueError`, `AttributeError`, `IndexError`), and the ones after
+them in registration order must still answer.
+
+With a **MIDI** clip at track 0, slot 0 (write one with `write_midi_notes` if
+the set has none; delete it afterwards), send:
+
+    python3 .claude/skills/smoke-test/scripts/osc_send.py '/live/clip/get/*' 0 0
+
+`clip.py` registers `properties_r + properties_rw`, and a MIDI clip raises on
+the audio-only ones. `gain_display_string` sits third in `properties_r` and
+`gain`, `warp_mode` and `warping` sit inside `properties_rw`, so the tail of
+`log/dev.log` must show:
+
+- **no** reply on `/live/clip/get/gain_display_string`, `/gain`, `/warp_mode`
+  or `/warping` — they were skipped, and skips send nothing;
+- replies on addresses registered **after** each of those — `is_midi_clip` and
+  `is_audio_clip` follow `gain_display_string`; `name`, `start_marker` and
+  `looping` sit among and after the audio-only `properties_rw` entries;
+- **no `/live/error`** of either shape.
+
+A fan-out that stops at the first skip shows the early properties and nothing
+after them. A `["log", …]` line means an endpoint raised something outside the
+skip set and took the loop down with it.
+
+**What this does not prove.** It does not exercise the merge's fan-out
+*isolation* fix, which only changes behaviour for exceptions **outside**
+`{ValueError, AttributeError, IndexError}` — upstream already skipped those
+three and continued. Provoking anything else safely is the problem: the one
+pattern that reliably raises `TypeError` mid-fan-out is `/live/song/*`, which
+matches every generic song *method* and would fire `start_playing`,
+`stop_all_clips`, `delete_track` and `undo` on the user's set. Don't. That half
+lives in the fork's own `tests_unit/test_osc_server.py` and is marked
+⚠️ unmeasured here deliberately.
+
+## A failing generic method names the request that failed
+
+*Last run: —*
+
+`AbletonOSCHandler._call_method` and `_set_property` used to catch every
+exception and log it, so a failing generic method reached the client only as an
+uncorrelatable `/live/error ["log", …]` with nothing to say which request died.
+The dispatch-boundary merge lets them propagate to `OSCServer._dispatch`, which
+has the address and arguments still in hand.
+
+`/live/song/delete_scene` is a generic method taking a scene index. Call it
+with **no arguments** — `getattr(song, "delete_scene")()` raises `TypeError`
+before it can delete anything, so this mutates nothing:
+
+    python3 .claude/skills/smoke-test/scripts/osc_send.py /live/song/delete_scene
+
+Baseline `log/dev.log` first. The tail must show exactly one
+`OSC in: /live/error ["request", "/live/song/delete_scene", …, 0]` — the
+`"request"` tag, the address, and an argument count of `0` — and **zero**
+`"log"`-tagged copies. Then `get_clip_slots` must report the same scene count
+as before, confirming nothing was deleted.
+
+A `["log", …]` line instead of a `["request", …]` one means the handler-local
+catches are back, which an upstream merge would do silently: every address
+still answers and `mix test` stays green.
+
+**The `_set_property` twin is ⚠️ unmeasured.** It shares this code path, but no
+generic setter has been found that Live rejects by *raising* — measured
+2026-08-05, `/live/song/set/signature_denominator 3` is ignored silently, with
+no exception and no datagram, and the signature stays where it was. If you find
+a setter that raises, add it here; until then the property is covered only in
+`tests_unit/`, and Seshat gains nothing from it either way, since setters go
+out through `Transport.send_message/2`, which has returned before any error
+could arrive.
