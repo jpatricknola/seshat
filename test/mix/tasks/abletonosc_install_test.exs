@@ -20,6 +20,19 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
 
   @source "priv/AbletonOSC"
 
+  # Every test that copies the *real* submodule passes both flags, and the
+  # second one is not incidental. `--no-pull` keeps `mix test` off the network
+  # and stops it fast-forwarding the developer's actual checkout. `--allow-dirty`
+  # is what keeps the suite green during the two-commit bridge-editing loop in
+  # .claude/rules/osc.md: between editing Python and committing it, the submodule
+  # is dirty by design, and the install task refuses a dirty tree on the
+  # `--no-pull` path too. Without this, `mix precommit` fails six unrelated tests
+  # at exactly the moment the rules file tells you to run it.
+  #
+  # Neither flag is under test here — the dirty-refusal and fetch behaviour have
+  # their own describe block below, against throwaway fixture repositories.
+  @local_source ~w(--no-pull --allow-dirty)
+
   setup_all do
     unless File.regular?(Path.join(@source, "manager.py")) do
       raise """
@@ -50,7 +63,7 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
     test "installs fresh into a path that doesn't exist yet", %{tmp: tmp} do
       dir = Path.join(tmp, "AbletonOSC")
 
-      Mix.Tasks.Abletonosc.Install.run(["--no-pull", dir])
+      Mix.Tasks.Abletonosc.Install.run(@local_source ++ [dir])
 
       assert File.regular?(Path.join(dir, "manager.py"))
       assert File.regular?(Path.join([dir, "abletonosc", "handler.py"]))
@@ -73,14 +86,29 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
       assert File.dir?(Path.join(dir, "pythonosc"))
     end
 
-    test "leaves git bookkeeping and the fork's test suite behind", %{tmp: tmp} do
+    test "leaves git bookkeeping and the fork's test suites behind", %{tmp: tmp} do
       dir = Path.join(tmp, "AbletonOSC")
 
-      Mix.Tasks.Abletonosc.Install.run(["--no-pull", dir])
+      Mix.Tasks.Abletonosc.Install.run(@local_source ++ [dir])
 
       refute File.exists?(Path.join(dir, ".git"))
       refute File.exists?(Path.join(dir, ".github"))
       refute File.exists?(Path.join(dir, "tests"))
+      refute File.exists?(Path.join(dir, "tests_unit"))
+
+      # Asserted as a pattern, not as two names. The fork grew `tests_unit/`
+      # beside `tests/` in the 2026-08-05 dispatch-boundary merge and the
+      # exclusion list did not grow with it, so pytest fixtures shipped into
+      # Live's Remote Scripts. Naming each directory as it appears means the
+      # next one slips through the same way; this fails on it instead.
+      shipped_test_dirs =
+        dir
+        |> File.ls!()
+        |> Enum.filter(&(String.starts_with?(&1, "tests") and File.dir?(Path.join(dir, &1))))
+
+      assert shipped_test_dirs == [],
+             "the install shipped the fork's test suite(s) into Remote Scripts: " <>
+               "#{inspect(shipped_test_dirs)} — add them to @excluded"
     end
 
     test "replaces an existing install wholesale", %{tmp: tmp} do
@@ -98,7 +126,7 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
         "from .track_listeners import TrackListenerHandler\n"
       )
 
-      Mix.Tasks.Abletonosc.Install.run(["--no-pull", dir])
+      Mix.Tasks.Abletonosc.Install.run(@local_source ++ [dir])
 
       refute File.exists?(Path.join([dir, "abletonosc", "track_listeners.py"])),
              "a file the fork doesn't have survived the install"
@@ -117,7 +145,7 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
       File.write!(Path.join(not_an_install, "important.txt"), "please don't")
 
       assert_raise Mix.Error, ~r/doesn't look like an AbletonOSC installation/, fn ->
-        Mix.Tasks.Abletonosc.Install.run(["--no-pull", not_an_install])
+        Mix.Tasks.Abletonosc.Install.run(@local_source ++ [not_an_install])
       end
 
       assert File.regular?(Path.join(not_an_install, "important.txt"))
@@ -126,10 +154,10 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
     test "is idempotent", %{tmp: tmp} do
       dir = Path.join(tmp, "AbletonOSC")
 
-      Mix.Tasks.Abletonosc.Install.run(["--no-pull", dir])
+      Mix.Tasks.Abletonosc.Install.run(@local_source ++ [dir])
       after_first = tree(dir)
 
-      Mix.Tasks.Abletonosc.Install.run(["--no-pull", dir])
+      Mix.Tasks.Abletonosc.Install.run(@local_source ++ [dir])
 
       assert tree(dir) == after_first
     end
@@ -142,7 +170,7 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
 
       File.cd!(empty_project, fn ->
         assert_raise Mix.Error, ~r/git submodule update --init/, fn ->
-          Mix.Tasks.Abletonosc.Install.run(["--no-pull", Path.join(tmp, "AbletonOSC")])
+          Mix.Tasks.Abletonosc.Install.run(@local_source ++ [Path.join(tmp, "AbletonOSC")])
         end
       end)
     end
@@ -172,6 +200,73 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
 
       assert File.read!(Path.join(install, "manager.py")) =~ "original",
              "--no-pull still brought the checkout forward"
+    end
+
+    test "refuses to abandon commits made on the detached HEAD", %{tmp: tmp} do
+      %{project: project, install: install, source: source} = fixture_repo(tmp)
+
+      # .claude/rules/osc.md step 1 exists because `git submodule update --init`
+      # detaches and a commit made there belongs to no branch. This is someone
+      # who skipped it: edited bridge Python and committed, still detached. The
+      # tree is *clean*, so the dirty guard sees nothing - and checking out
+      # master to install would drop the commit on the floor while the task
+      # printed a real-looking commit line for something else.
+      commit_message = "urgent bridge fix nobody branched"
+      File.write!(Path.join(source, "manager.py"), "# work only on the detached HEAD\n")
+      commit(source, commit_message)
+
+      File.cd!(project, fn ->
+        assert_raise Mix.Error, ~r/detached HEAD carrying work that is not on/, fn ->
+          Mix.Tasks.Abletonosc.Install.run([install])
+        end
+      end)
+
+      refute File.exists?(Path.join(install, "manager.py")),
+             "installed master anyway, abandoning the detached commit"
+
+      assert git(source, ["log", "-1", "--format=%s"]) =~ commit_message,
+             "the detached commit is no longer HEAD - the task moved off it"
+    end
+
+    test "a detached HEAD already on origin/master is brought forward, not refused",
+         %{tmp: tmp} do
+      # The other side of the guard above, and the ordinary case: detached at a
+      # commit origin already has. Nothing is at risk, so it must not be refused
+      # - a guard that also blocks the stale pin would block the whole point of
+      # the task.
+      %{project: project, install: install} = fixture_repo(tmp)
+
+      File.cd!(project, fn -> Mix.Tasks.Abletonosc.Install.run([install]) end)
+
+      assert File.read!(Path.join(install, "manager.py")) =~ "merged"
+    end
+
+    test "names the pin when the installed commit has moved past it", %{tmp: tmp} do
+      # Advancing the checkout deliberately does not record the new pin, so the
+      # Elixir side and the bridge are now describing different commits. Saying
+      # so is the second half of the two-commit rule in .claude/rules/osc.md;
+      # without it, "I installed the latest" quietly becomes "the tests grep
+      # Python no commit of mine refers to".
+      %{project: project, install: install, source: source, first: first} = fixture_repo(tmp)
+
+      git(project, ["init", "--initial-branch=main"])
+      git(source, ["checkout", first])
+      git(project, ["add", "priv/AbletonOSC"])
+      commit(project, "record the older pin")
+      git(source, ["checkout", "--detach", first])
+
+      Mix.shell(Mix.Shell.Process)
+      on_exit(fn -> Mix.shell(Mix.Shell.Quiet) end)
+
+      File.cd!(project, fn -> Mix.Tasks.Abletonosc.Install.run([install]) end)
+
+      messages = drain_shell()
+
+      assert messages =~ "not the commit Seshat records",
+             "advanced past the recorded pin without saying so"
+
+      assert messages =~ "git add priv/AbletonOSC",
+             "said the pin was stale without naming how to record it"
     end
 
     test "refuses to install when the branch has diverged", %{tmp: tmp} do
@@ -262,14 +357,7 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
 
       assert File.read!(Path.join(install, "manager.py")) =~ "uncommitted work in progress"
 
-      messages =
-        Stream.repeatedly(fn ->
-          receive do: ({:mix_shell, :info, [m]} -> m), after: (0 -> nil)
-        end)
-        |> Enum.take_while(&is_binary/1)
-        |> Enum.join("\n")
-
-      assert messages =~ "uncommitted change(s)",
+      assert drain_shell() =~ "uncommitted change(s)",
              "installed a dirty tree without saying the commit doesn't describe it"
     end
 
@@ -353,6 +441,17 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
     git(source, ["checkout", first])
 
     %{project: project, source: source, first: first, install: Path.join(tmp, "AbletonOSC")}
+  end
+
+  # Everything Mix.Shell.Process has queued, joined. The task reports across
+  # several info/1 calls, and which line carries a given phrase is a formatting
+  # detail no test should be pinned to.
+  defp drain_shell do
+    Stream.repeatedly(fn ->
+      receive do: ({:mix_shell, :info, [m]} -> m), after: (0 -> nil)
+    end)
+    |> Enum.take_while(&is_binary/1)
+    |> Enum.join("\n")
   end
 
   defp commit(dir, message) do

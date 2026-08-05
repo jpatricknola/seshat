@@ -25,8 +25,17 @@ exist because a typo'd address looks exactly like success.
 
   1. `git -C priv/AbletonOSC checkout master` **first**. `git submodule update
      --init` leaves a *detached HEAD*, and a commit made there belongs to no
-     branch and pushes nowhere.
+     branch and pushes nowhere. `mix abletonosc.install` refuses to run against
+     a detached HEAD carrying commits rather than silently abandoning them, but
+     that is a backstop, not a substitute for doing this first.
   2. Edit the Python, then `commit` and `push` **inside** `priv/AbletonOSC`.
+
+     While this step is mid-flight the submodule is dirty, and
+     `mix abletonosc.install` refuses a dirty checkout — it names the commit it
+     deploys, and an uncommitted edit makes that name a lie. To install and
+     audition your edit before committing it, pass `--allow-dirty`; the report
+     then says the deployed Python is not any commit. `mix test` is unaffected
+     either way.
   3. `git add priv/AbletonOSC` from the Seshat root — that stages the new SHA,
      not the files. Put it in the same Seshat commit as the Elixir side, so the
      pin and the code depending on it move together.
@@ -35,6 +44,14 @@ exist because a typo'd address looks exactly like success.
      suite is telling you about Python that Live has never loaded. That failure
      mode is new with the fork — treat a passing test on unreinstalled Python as
      no evidence at all.
+
+     The task **fetches and fast-forwards the submodule to `origin/master`
+     before copying**, and prints the commit it installed. That is the fix for
+     the 2026-08-05 failure where a merged fork PR was installed, restarted
+     around and smoke-tested against — as two-day-old Python, because merging on
+     GitHub moves the remote and nothing in this repo moves the checkout. Use
+     `--no-pull` to install the checkout exactly as it stands: offline work, or
+     deliberately bisecting an older bridge against Live.
 
   A fresh git worktree (`/lifecycle`, worktree-isolated agents) has an empty
   `priv/AbletonOSC` until step 0, `git submodule update --init`; the

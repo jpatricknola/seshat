@@ -46,12 +46,19 @@ defmodule Mix.Tasks.Abletonosc.Install do
   days and this task copied it faithfully and reported success.
 
   A detached HEAD is checked out onto `master` first, since that was the actual
-  trap. If git refuses the fast-forward for any reason — the branch has
-  diverged, the tree has uncommitted changes, the network is unreachable — its
-  own message is printed verbatim and the task stops rather than installing
-  something that isn't what you asked for. Use `--no-pull` to install the
-  checkout exactly as it stands, which is what you want offline, or when
-  deliberately installing an older commit to bisect against Live.
+  trap — but only once the detached commit is confirmed to be on
+  `origin/master` already. A detached HEAD carrying commits of its own is the
+  *other* half of that trap (`git submodule update --init` detaches, and a
+  commit made there belongs to no branch), and checking out `master` from it
+  would abandon that work while the task reported a plausible commit; that is
+  refused, with the branch-it-first recipe.
+
+  If git refuses the fast-forward for any reason — the branch has diverged, the
+  tree has uncommitted changes, the network is unreachable — its own message is
+  printed verbatim and the task stops rather than installing something that
+  isn't what you asked for. Use `--no-pull` to install the checkout exactly as
+  it stands, which is what you want offline, or when deliberately installing an
+  older commit to bisect against Live.
 
   Bringing the checkout forward does **not** record the new pin — that stays a
   deliberate commit. When the installed commit and the recorded pin disagree the
@@ -120,10 +127,15 @@ defmodule Mix.Tasks.Abletonosc.Install do
   @source_dir "priv/AbletonOSC"
 
   # Git's own bookkeeping (`.git` is a *file* in a submodule checkout, not a
-  # directory) and the fork's test suite. Everything else AbletonOSC ships with
-  # goes across — `client/` and `run-console.py` are part of its normal
-  # distribution and cost nothing sitting unused next to it.
-  @excluded ~w(.git .github .gitignore tests)
+  # directory) and the fork's test suites — `tests/` needs a running Live and
+  # `tests_unit/` needs pytest, so neither belongs in Remote Scripts. Everything
+  # else AbletonOSC ships with goes across — `client/` and `run-console.py` are
+  # part of its normal distribution and cost nothing sitting unused next to it.
+  #
+  # Any future `tests*` directory in the fork has to be added here by hand; the
+  # test suite refuses an install that ships one, so the omission fails loudly
+  # rather than quietly deploying test fixtures into Live.
+  @excluded ~w(.git .github .gitignore tests tests_unit)
 
   # The fork's default branch. Hardcoded rather than resolved from origin/HEAD:
   # this task installs one specific repository, and a wrong guess here would
@@ -145,9 +157,11 @@ defmodule Mix.Tasks.Abletonosc.Install do
       sync!(source)
     end
 
-    report_installed_commit(source, dirty)
-
+    # Locate before reporting: a mistyped path should fail without first
+    # printing a commit line for an install that never happens.
     install_dir = locate!(rest)
+
+    report_installed_commit(source, dirty)
 
     Mix.shell().info("Installing #{@source_dir} -> #{install_dir}")
 
@@ -170,9 +184,13 @@ defmodule Mix.Tasks.Abletonosc.Install do
   # clean; a non-zero exit means this isn't a git checkout at all, which
   # sync!/1 reports properly and --no-pull tolerates, so it is not this
   # function's business.
+  #
+  # Only trailing whitespace is stripped. Porcelain's leading two columns are
+  # the staged and unstaged status codes, so ` M file` and `M  file` are
+  # different states and trimming the left would render them identically.
   defp dirty_entries(source) do
     case cmd(source, ["status", "--porcelain"]) do
-      {out, 0} -> out |> String.split("\n", trim: true) |> Enum.map(&String.trim/1)
+      {out, 0} -> out |> String.split("\n", trim: true) |> Enum.map(&String.trim_trailing/1)
       {_out, _code} -> []
     end
   end
@@ -224,15 +242,65 @@ defmodule Mix.Tasks.Abletonosc.Install do
       """)
     end
 
+    Mix.shell().info("Fetching origin...")
+    git!(source, ["fetch", "origin"], "fetch origin")
+
     if detached?(source) do
+      refuse_if_checkout_would_orphan!(source)
       Mix.shell().info("#{@source_dir} was on a detached HEAD - checking out #{@branch}.")
       git!(source, ["checkout", @branch], "check out #{@branch}")
     end
 
-    Mix.shell().info("Fetching origin...")
-    git!(source, ["fetch", "origin"], "fetch origin")
     refuse_advance_on_old_release!(source)
     git!(source, ["merge", "--ff-only", "origin/#{@branch}"], "fast-forward to origin/#{@branch}")
+  end
+
+  # The detached-HEAD checkout above is safe only while the detached commit is
+  # already on origin/#{@branch}. It usually is - that is the stale-pin state
+  # this task exists for. But .claude/rules/osc.md's step 1 exists because
+  # `git submodule update --init` leaves a detached HEAD and a commit made there
+  # "belongs to no branch": someone who edits and commits bridge Python without
+  # checking out master first is sitting on exactly such a commit, with a
+  # *clean* tree, so refuse_if_dirty!/1 sees nothing wrong.
+  #
+  # Checking out #{@branch} from there abandons that work. Git says so on
+  # stderr, but git!/3 discards output on success, so the user sees only "was on
+  # a detached HEAD" and a real-looking commit line while the install ships
+  # something else entirely - the same invisible misreport as a stale pin,
+  # arriving from a third direction.
+  #
+  # Run after the fetch, so the ancestry question is asked against a current
+  # origin/#{@branch}. When that ref cannot be resolved there is nothing to
+  # compare against and nothing is refused; the `merge --ff-only` below fails
+  # with git's own message in that case anyway.
+  defp refuse_if_checkout_would_orphan!(source) do
+    with {_tip, 0} <- cmd(source, ["rev-parse", "--verify", "origin/#{@branch}"]),
+         {_out, code} when code != 0 <-
+           cmd(source, ["merge-base", "--is-ancestor", "HEAD", "origin/#{@branch}"]),
+         {head, 0} <- cmd(source, ["log", "-1", "--format=%h %s"]) do
+      Mix.raise("""
+      #{@source_dir} is on a detached HEAD carrying work that is not on
+      origin/#{@branch}:
+
+      #{indent(head)}
+
+      Checking out #{@branch} to install would leave that commit on no branch at
+      all, and the install would deploy #{@branch} while reporting a commit that
+      no longer describes anything reachable.
+
+      Put it on a branch first (see .claude/rules/osc.md - editing bridge Python
+      is two commits):
+
+          git -C #{@source_dir} branch <name> HEAD
+          git -C #{@source_dir} checkout <name>
+
+      Or install this detached commit exactly as it stands:
+
+          mix abletonosc.install --no-pull
+      """)
+    else
+      _ -> :ok
+    end
   end
 
   # The one case where advancing to the fork's tip is the wrong default.

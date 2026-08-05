@@ -760,7 +760,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       source = File.read!(@osc_server)
 
       assert source =~ ~s|self.send("/live/error",| and
-               source =~ ~r/\("request", [\w.]+, detail,/ and
+               source =~ ~r/\("request", [\w.]+, [\w.]+,/ and
                source =~ ~s|len(message.params), *message.params))|,
              """
              #{@osc_server} no longer sends the structured
@@ -773,14 +773,18 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              it belongs to, and every rejected query waits out its full timeout
              again. See SESHAT.md in the fork.
 
-             The address slot is matched as a regex rather than a literal on
-             purpose. It has been spelled `message.address` (when the send lived
-             inline in process_message's exact-match branch) and `error_address`
-             (once both branches were funnelled through OSCServer._dispatch), and
-             it will be renamed again. What Seshat depends on is the payload
-             *shape* — the "request" tag, some address expression, the detail —
-             not the local variable a refactor happens to be using, and a guard
-             that fails on a rename is a guard that gets weakened to shut it up.
+             The address and detail slots are matched as a regex rather than as
+             literals on purpose. The address has been spelled `message.address`
+             (when the send lived inline in process_message's exact-match branch)
+             and `error_address` (once both branches were funnelled through
+             OSCServer._dispatch), and both slots will be renamed again. What
+             Seshat depends on is the payload *shape* — the "request" tag, then
+             an address expression, then a detail expression — not the local
+             variables a refactor happens to be using, and a guard that fails on
+             a rename is a guard that gets weakened to shut it up.
+
+             The tag and the tail below stay literal, because those are the parts
+             Seshat actually parses off the wire rather than names in Python.
 
              The tail half of that payload — `len(message.params), *message.params`
              — is asserted separately and deliberately: correlation is by address

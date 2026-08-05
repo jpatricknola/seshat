@@ -106,7 +106,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
 | [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (four view addresses in `view.py`, the two undo-step addresses in `song.py`, the structured `/live/error` request-context payload split across `osc_server.py` and `manager.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
-| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — copies the fork wholesale into Live's Remote Scripts |
+| [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — fast-forwards the submodule to `origin/master`, then copies the fork wholesale into Live's Remote Scripts, **naming the commit it deployed**. Refuses rather than misreport: a dirty checkout, a detached HEAD carrying unbranched commits, or an old Seshat revision whose pin the fork has moved past. `--no-pull` installs the checkout as it stands, `--allow-dirty` includes uncommitted edits |
 
 ## Adding a tool
 
