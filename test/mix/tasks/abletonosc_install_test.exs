@@ -273,6 +273,40 @@ defmodule Mix.Tasks.Abletonosc.InstallTest do
              "installed a dirty tree without saying the commit doesn't describe it"
     end
 
+    test "refuses to advance the bridge when the parent tree is an old revision",
+         %{tmp: tmp} do
+      %{project: project, install: install, source: source, first: first} = fixture_repo(tmp)
+
+      # The parent is a real repo whose HEAD is behind its own upstream, and
+      # whose recorded pin is the older bridge commit. That is the shape of a
+      # clean checkout of an older Seshat release: a descendant check cannot
+      # see it, because the pin genuinely is an ancestor of the fork's tip.
+      parent_origin = Path.join(tmp, "seshat-origin.git")
+      File.mkdir_p!(parent_origin)
+      git(parent_origin, ["init", "--bare", "--initial-branch=main"])
+      git(project, ["init", "--initial-branch=main"])
+      git(project, ["remote", "add", "origin", parent_origin])
+      git(source, ["checkout", first])
+      File.write!(Path.join(project, "README.md"), "old release\n")
+      git(project, ["add", "README.md"])
+      git(project, ["-c", "user.email=t@e.com", "-c", "user.name=T", "add", "priv/AbletonOSC"])
+      commit(project, "old release")
+      git(project, ["push", "-u", "origin", "main"])
+      File.write!(Path.join(project, "README.md"), "newer release\n")
+      commit(project, "newer release")
+      git(project, ["push", "origin", "main"])
+      git(project, ["reset", "--hard", "HEAD~1"])
+
+      File.cd!(project, fn ->
+        assert_raise Mix.Error, ~r/older Seshat revision|behind its own upstream/, fn ->
+          Mix.Tasks.Abletonosc.Install.run([install])
+        end
+      end)
+
+      refute File.exists?(Path.join(install, "manager.py")),
+             "advanced and installed despite the parent being an old revision"
+    end
+
     test "refuses a source that isn't a git checkout at all", %{tmp: tmp} do
       project = Path.join(tmp, "seshat")
       source = Path.join(project, "priv/AbletonOSC")

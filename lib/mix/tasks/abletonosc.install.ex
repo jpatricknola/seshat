@@ -57,6 +57,28 @@ defmodule Mix.Tasks.Abletonosc.Install do
   deliberate commit. When the installed commit and the recorded pin disagree the
   task says so and names `git add priv/AbletonOSC`.
 
+  ### Except on an old revision of this repository
+
+  Advancing past the recorded pin installs Python newer than the pin this
+  Seshat revision was tested against. On a current tree that is fine and
+  deliberate — the pin is usually seconds behind the tip, and the next commit
+  records it. On an **old** revision it is not: a clean checkout of an earlier
+  release, run after a later incompatible bridge change, would silently deploy
+  that newer Python against Elixir written long before it.
+
+  So when this working tree is behind its own upstream *and* `origin/master` has
+  moved past the recorded pin, the install stops and points at
+  `git submodule update --init` plus `--no-pull`, which is how you install the
+  bridge the checkout actually records.
+
+  Note what the signal is: being behind **this** repository's upstream, not
+  anything about the submodule's own history. A descendant check on
+  `origin/master` cannot see this case — history moved forward normally there,
+  so the old pin genuinely *is* an ancestor of the new tip and the check passes.
+  Best-effort by construction: with no upstream ref fetched there is nothing to
+  compare against, and the install proceeds rather than blocking on a question
+  it cannot answer.
+
   ## A dirty checkout is refused
 
   Naming the installed commit is the point, and an uncommitted edit quietly
@@ -209,7 +231,72 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
     Mix.shell().info("Fetching origin...")
     git!(source, ["fetch", "origin"], "fetch origin")
+    refuse_advance_on_old_release!(source)
     git!(source, ["merge", "--ff-only", "origin/#{@branch}"], "fast-forward to origin/#{@branch}")
+  end
+
+  # The one case where advancing to the fork's tip is the wrong default.
+  #
+  # Advancing past the recorded pin normally installs Python newer than the pin
+  # this Seshat revision was tested against, which is accepted here: on a tree
+  # that is current, the pin is usually seconds behind the tip and the next
+  # commit records it. On an **old** Seshat revision it is not accepted, and the
+  # PR review named the shape: a clean checkout of an older release, run after
+  # a later incompatible bridge change, would silently deploy that newer Python
+  # against Elixir written years before it.
+  #
+  # What identifies "old" is the *parent* repo, not the submodule. A descendant
+  # check on origin/master cannot see this - in that scenario history moved
+  # forward normally, so the old pin **is** an ancestor of the new tip and the
+  # check passes. Being behind this repository's own upstream is the signal
+  # that the recorded pin belongs to a revision someone has moved past.
+  #
+  # Best-effort by construction: with no upstream ref fetched there is nothing
+  # to compare against, and the install proceeds rather than blocking on a
+  # question it cannot answer.
+  defp refuse_advance_on_old_release!(source) do
+    with true <- old_seshat_revision?(),
+         {tip, 0} <- cmd(source, ["rev-parse", "origin/#{@branch}"]),
+         pin when is_binary(pin) <- recorded_pin(),
+         true <- String.trim(tip) != pin do
+      Mix.raise("""
+      Refusing to advance #{@source_dir} past the commit this checkout records.
+
+      This working tree is behind its own upstream, so the pin it carries
+      (#{String.slice(pin, 0, 7)}) belongs to an older Seshat revision - and
+      origin/#{@branch} has moved on to #{String.slice(String.trim(tip), 0, 7)}.
+      Installing the fork's tip here would run bridge Python this revision has
+      never been tested against.
+
+      Install the bridge this checkout actually records:
+
+          git submodule update --init
+          mix abletonosc.install --no-pull
+
+      Or, if advancing is what you meant, bring this repository up to date
+      first so the pin moves with it.
+      """)
+    else
+      _ -> :ok
+    end
+  end
+
+  defp old_seshat_revision? do
+    with {ref, 0} <- cmd(File.cwd!(), ["rev-parse", "--abbrev-ref", "@{upstream}"]),
+         {behind, 0} <- cmd(File.cwd!(), ["rev-list", "--count", "HEAD..#{String.trim(ref)}"]) do
+      String.trim(behind) != "0"
+    else
+      _ -> false
+    end
+  end
+
+  defp recorded_pin do
+    with {entry, 0} <- cmd(File.cwd!(), ["ls-tree", "HEAD", @source_dir]),
+         [_mode, "commit", pin | _] <- String.split(entry, [" ", "\t"], trim: true) do
+      pin
+    else
+      _ -> nil
+    end
   end
 
   # `symbolic-ref` fails on a detached HEAD, which is precisely the state a
@@ -275,9 +362,7 @@ defmodule Mix.Tasks.Abletonosc.Install do
   # grep Python no commit of mine refers to".
   defp warn_if_pin_differs(source) do
     with {head, 0} <- cmd(source, ["rev-parse", "HEAD"]),
-         {entry, 0} <- cmd(File.cwd!(), ["ls-tree", "HEAD", @source_dir]),
-         [_mode, "commit", pin] <-
-           String.split(entry, [" ", "\t"], parts: 4, trim: true) |> Enum.take(3),
+         pin when is_binary(pin) <- recorded_pin(),
          true <- String.trim(head) != pin do
       Mix.shell().info("""
 
