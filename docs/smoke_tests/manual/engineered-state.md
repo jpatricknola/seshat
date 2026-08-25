@@ -75,6 +75,26 @@ starting.
    re-subscription pushes the current value of everything, so anything a lost
    datagram nil'd repopulates without a manual refresh.
 
+## An unchanged library stays fresh across a Live restart
+
+*Why manual: requires quitting and restarting Live while ensuring no Pack, plugin or preset is installed or saved*
+*Last run: —*
+
+Build the catalog with `reindex_library`, then run one ordinary
+`search_library` and confirm it carries no catalog-freshness notice. Record the
+mtimes of `catalog.json`, the selected `Live-files-*.db`, and its `-wal` sibling.
+
+Without installing a Pack or plugin, saving a preset, or otherwise changing the
+browser library, quit Live normally and start it again. Wait for Live and its
+browser indexer to settle, then run the same `search_library` again. It must not
+warn that the catalog is stale. Record the three mtimes again.
+
+A stale warning after this content-neutral restart is a failure: ordinary
+SQLite checkpoint/startup activity is touching the signal, so comparing mtimes
+cannot distinguish a library change and must not ship as an automatic prompt.
+If an actual library change occurred during the window, report the run as not
+provoked rather than passed.
+
 ## A degraded rebuild is honest
 
 *Why manual: requires comparison against Live's visible track headers*

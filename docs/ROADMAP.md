@@ -21,59 +21,7 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · `start_new_project` — the setup wizard, and prompt budget back
-
-**Goal:** a tool that catches "let's start a new project" / "start fresh" and
-runs the opening of a session: report what's in the open set, name any empty
-leftover track, and gather the one-line brief (genre, tempo, mood, reference)
-its reply asks for. It **reads and guides; it does not mutate** — the actual
-work stays with `create_track` / `delete_track`, with the model in the loop.
-
-**Why:** two wins at once. It fixes finding #1 of the 2026-07-28 validation
-run ("start a new project" only appended tracks, leaving the default set's
-leftovers behind), and it moves that rule off the *instructions* budget,
-which is hard-capped — see below. A tool description routes a user utterance
-far more reliably than a bullet in a block that gets truncated from the
-bottom, and a reply can name the empty track it actually found instead of
-asserting a cleanup unconditionally and hoping the model checks.
-
-**User stories:**
-- As a producer saying "let's start something fresh," I get a quick read of
-  what's in the open set and one question — genre, tempo, mood, reference —
-  so the session starts from my idea, not from leftovers.
-- As a producer, the default set's empty leftover track gets noticed and put
-  to use, instead of new tracks silently piling up beside it.
-
-**Planner notes:**
-- **The 2,048-character ceiling is the point.** Claude Desktop truncates
-  server `instructions` mid-sentence at 2,048 characters and says nothing
-  (measured 2026-07-29; see the comment above `@text` in
-  [lib/seshat/instructions.ex](../lib/seshat/instructions.ex)). Tool schemas
-  have no such cap — ~36KB ships every request. So moving a rule from the
-  instructions into a tool description or reply costs nothing in total
-  context and buys room on the one budget that silently drops content.
-- **The "New project" bullet is already gone from `Seshat.Instructions`**
-  (removed 2026-07-29, ~230 characters back). Nothing states replace-not-append
-  until this ships — the model will append tracks, as it did before that rule
-  was written. That gap is deliberate: the rule was bought back as budget on
-  the assumption this tool follows.
-- **No file operations, ever.** Opening or saving a set is a human step —
-  Live's save dialog swallows keystrokes and no code should discard a user's
-  work. That is settled; see
-  [archive/create-project-removal.md](archive/create-project-removal.md).
-- **Read-only is what keeps it from repeating history.** Every failure of the
-  removed `create_project` came from fire-and-forget mutation through Live's
-  post-load settling window. A tool that only reads `Session.State` and
-  returns guidance cannot reproduce any of it.
-- The default set is now a single blank MIDI track, so "leftovers" is at most
-  one track — the reply should say what it found, not describe a mess.
-- Trigger phrasing carries the whole routing job now, so the description has
-  to cover the ways the intent is actually spoken. Standard `/add-tool`
-  discipline, load-bearing here.
-- Sequenced above personas: smaller, fixes a named validation finding, and
-  frees budget the persona work will want.
-
-## #2 · Make catalog persistence atomic and report write failures
+## #1 · Make catalog persistence atomic and report write failures
 
 **Goal:** a reindex that cannot be persisted says so, and a crash mid-write
 cannot leave a truncated `catalog.json`.
@@ -99,7 +47,9 @@ the next start restores an old or empty catalog. `File.write/2` is not atomic.
 - From the 2026-07-29 external review; the durability half accepted, the ETS
   generation swap declined above.
 
-## #3 · Catalog staleness check — notice without being asked
+## #2 · Catalog staleness check — notice without being asked
+
+Implementation plan: [PLAN_catalog_staleness_check.md](PLAN_catalog_staleness_check.md).
 
 **Goal:** a free freshness check — does `catalog.json` exist, and is its
 build timestamp newer than the mtime of Ableton's browser database? Run it
@@ -135,7 +85,7 @@ atomic".
 - A startup check may log or cache the stale status, but it must not start a
   reindex: no MCP conversation may be connected to receive the warning.
 
-## #4 · Verify destructive mutations before reporting success
+## #3 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -205,7 +155,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #5 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #4 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -240,7 +190,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #6 · Monitored refresh worker for `Session.State`
+## #5 · Monitored refresh worker for `Session.State`
 
 **Goal:** move the mirror rebuild off the GenServer's synchronous path and give
 it an overall deadline plus freshness / connection / last-error metadata, so a
@@ -281,6 +231,61 @@ the shipped fix may retire it outright.
   instead, which may shrink the blocking window enough on its own to retire
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
+
+## #6 · `start_new_project` — the setup wizard, and prompt budget back
+
+**Goal:** a tool that catches "let's start a new project" / "start fresh" and
+runs the opening of a session: report what's in the open set, name any empty
+leftover track, and gather the one-line brief (genre, tempo, mood, reference)
+its reply asks for. It **reads and guides; it does not mutate** — the actual
+work stays with `create_track` / `delete_track`, with the model in the loop.
+
+**Why:** two wins at once. It fixes finding #1 of the 2026-07-28 validation
+run ("start a new project" only appended tracks, leaving the default set's
+leftovers behind), and it moves that rule off the *instructions* budget,
+which is hard-capped — see below. A tool description routes a user utterance
+far more reliably than a bullet in a block that gets truncated from the
+bottom, and a reply can name the empty track it actually found instead of
+asserting a cleanup unconditionally and hoping the model checks.
+
+**User stories:**
+- As a producer saying "let's start something fresh," I get a quick read of
+  what's in the open set and one question — genre, tempo, mood, reference —
+  so the session starts from my idea, not from leftovers.
+- As a producer, the default set's empty leftover track gets noticed and put
+  to use, instead of new tracks silently piling up beside it.
+
+**Planner notes:**
+- **The 2,048-character ceiling is the point.** Claude Desktop truncates
+  server `instructions` mid-sentence at 2,048 characters and says nothing
+  (measured 2026-07-29; see the comment above `@text` in
+  [lib/seshat/instructions.ex](../lib/seshat/instructions.ex)). Tool schemas
+  have no such cap — ~36KB ships every request. So moving a rule from the
+  instructions into a tool description or reply costs nothing in total
+  context and buys room on the one budget that silently drops content.
+- **The "New project" bullet is already gone from `Seshat.Instructions`**
+  (removed 2026-07-29, ~230 characters back). Nothing states replace-not-append
+  until this ships — the model will append tracks, as it did before that rule
+  was written. That gap is deliberate: the rule was bought back as budget on
+  the assumption this tool follows.
+- **No file operations, ever.** Opening or saving a set is a human step —
+  Live's save dialog swallows keystrokes and no code should discard a user's
+  work. That is settled; see
+  [archive/create-project-removal.md](archive/create-project-removal.md).
+- **Read-only is what keeps it from repeating history.** Every failure of the
+  removed `create_project` came from fire-and-forget mutation through Live's
+  post-load settling window. A tool that only reads `Session.State` and
+  returns guidance cannot reproduce any of it.
+- The default set is now a single blank MIDI track, so "leftovers" is at most
+  one track — the reply should say what it found, not describe a mess.
+- Trigger phrasing carries the whole routing job now, so the description has
+  to cover the ways the intent is actually spoken. Standard `/add-tool`
+  discipline, load-bearing here.
+- **Sequenced here, not at the top.** It stays immediately above personas —
+  smaller, fixes a named validation finding, and frees budget the persona
+  work will want — but nothing is broken while it's missing: the cost is one
+  awkward session opening the model can be steered through by hand, so the
+  correctness and catalog items above it earn more per hour of effort.
 
 ## #7 · Producer personas — switchable musical taste
 
