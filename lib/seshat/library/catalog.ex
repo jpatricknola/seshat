@@ -242,7 +242,7 @@ defmodule Seshat.Library.Catalog do
   end
 
   @doc "Whether the persisted catalog predates Ableton's current browser database."
-  @spec freshness(atom()) :: :fresh | :stale | :missing | :unknown
+  @spec freshness(GenServer.server()) :: :fresh | :stale | :missing | :unknown
   def freshness(server \\ __MODULE__) do
     GenServer.call(server, :freshness, @freshness_timeout)
   catch
@@ -899,9 +899,16 @@ defmodule Seshat.Library.Catalog do
     # will answer from them for the rest of this run — so a failed write is not
     # `{:error, _}`, which would claim nothing was indexed. It travels as part of
     # the summary instead, and the reply says both halves: indexed, not saved.
+    #
+    # The timestamp belongs to the build in ETS, so it advances whether or not
+    # the write landed: a later usage-counter flush persists these entries, and
+    # stamping them with the previous build's time (or nil) would make a
+    # freshly rebuilt catalog report itself stale until the next reindex.
+    state = %{state | indexed_at: indexed_at}
+
     case write_file(state.path, entries, indexed_at) do
       :ok ->
-        {:reply, {:ok, Map.put(summary, :persisted, :ok)}, %{state | indexed_at: indexed_at}}
+        {:reply, {:ok, Map.put(summary, :persisted, :ok)}, state}
 
       {:error, reason} ->
         Logger.warning("Catalog: could not write #{state.path}: #{inspect(reason)}")
