@@ -827,7 +827,153 @@ defmodule Seshat.Library.CatalogTest do
 
       assert {[], 0, []} = Catalog.search(opts)
     end
+
+    test "a successful write leaves no temp file behind", %{path: path} do
+      assert File.exists?(path)
+      refute File.exists?(path <> ".tmp"), "the temp file must be renamed, not left beside it"
+    end
+
+    test "a reindex that cannot be saved says so instead of reporting success", %{
+      path: path,
+      opts: opts,
+      server: server
+    } do
+      seal(Path.dirname(path))
+
+      assert {:ok, summary} = GenServer.call(server, {:replace, normalized()})
+      assert {:error, :eacces} = summary.persisted
+
+      # The entries did land in ETS — the reindex worked, only the save didn't.
+      assert summary.items == 4
+      assert {[_entry], 1, []} = Catalog.search([query: "drifter"] ++ opts)
+    end
+
+    test "a failed write leaves the previous catalog intact, not truncated", %{
+      path: path,
+      server: server
+    } do
+      before = File.read!(path)
+      persisted_indexed_at = before |> Jason.decode!() |> Map.fetch!("indexed_at")
+      seal(Path.dirname(path))
+
+      # A replace with different contents — if the write were not atomic, this
+      # is where the old file would be truncated on the way to failing.
+      assert {:ok, %{persisted: {:error, _}}} =
+               GenServer.call(server, {:replace, Enum.take(normalized(), 1)})
+
+      assert File.read!(path) == before
+      assert :sys.get_state(server).indexed_at == persisted_indexed_at
+
+      # And it is still a catalog the next boot can load, not a torn fragment.
+      restore(Path.dirname(path))
+      %{opts: reloaded} = start_catalog(%{path: path})
+      assert Catalog.count(reloaded[:table]) == 4
+    end
+
+    test "a usage-counter flush preserves the reindex timestamp", %{
+      path: path,
+      server: server
+    } do
+      before = path |> File.read!() |> Jason.decode!() |> Map.fetch!("indexed_at")
+
+      :ok = Catalog.record_load("query:Sounds#Bass:FileId_5200", server)
+      assert :ok = GenServer.call(server, :flush)
+
+      after_flush = path |> File.read!() |> Jason.decode!() |> Map.fetch!("indexed_at")
+      assert after_flush == before
+    end
   end
+
+  describe "freshness" do
+    test "is fresh when the browser database predates the reindex" do
+      db_dir = tmp_dir("fresh-db")
+      _db_path = write_db_marker(db_dir, {{2020, 1, 1}, {0, 0, 0}})
+      %{path: path} = start_catalog(%{ableton_db_dir: db_dir})
+      %{server: reloaded} = start_catalog(%{path: path, ableton_db_dir: db_dir})
+
+      assert Catalog.freshness(reloaded) == :fresh
+    end
+
+    test "is stale when the browser database is newer than the reindex" do
+      db_dir = tmp_dir("stale-db")
+      db_path = write_db_marker(db_dir, {{2020, 1, 1}, {0, 0, 0}})
+      %{server: server} = start_catalog(%{ableton_db_dir: db_dir})
+
+      File.touch!(db_path, {{2100, 1, 1}, {0, 0, 0}})
+
+      assert Catalog.freshness(server) == :stale
+    end
+
+    test "is stale when uncheckpointed browser changes make only the WAL newer" do
+      db_dir = tmp_dir("stale-wal-db")
+      db_path = write_db_marker(db_dir, {{2020, 1, 1}, {0, 0, 0}})
+      %{server: server} = start_catalog(%{ableton_db_dir: db_dir})
+
+      wal_path = db_path <> "-wal"
+      File.write!(wal_path, "uncheckpointed change")
+      File.touch!(wal_path, {{2100, 1, 1}, {0, 0, 0}})
+
+      assert Catalog.freshness(server) == :stale
+    end
+
+    test "is missing when the persistence file disappears" do
+      db_dir = tmp_dir("missing-file-db")
+      _db_path = write_db_marker(db_dir, {{2020, 1, 1}, {0, 0, 0}})
+      %{path: path, server: server} = start_catalog(%{ableton_db_dir: db_dir})
+
+      File.rm!(path)
+
+      assert Catalog.freshness(server) == :missing
+    end
+
+    test "is unknown when Ableton's database cannot be located" do
+      empty_db_dir = tmp_dir("empty-db")
+      File.mkdir_p!(empty_db_dir)
+      %{server: server} = start_catalog(%{ableton_db_dir: empty_db_dir})
+
+      assert Catalog.freshness(server) == :unknown
+    end
+
+    test "is unknown rather than exiting when the Catalog process is absent" do
+      assert Catalog.freshness(:catalog_process_that_is_not_running) == :unknown
+    end
+
+    test "loads entries but marks missing or invalid build metadata stale" do
+      db_dir = tmp_dir("metadata-db")
+      _db_path = write_db_marker(db_dir, {{2020, 1, 1}, {0, 0, 0}})
+
+      for {label, indexed_at} <- [{"missing", :missing}, {"invalid", "last Tuesday"}] do
+        %{path: source_path} = start_catalog(%{ableton_db_dir: db_dir})
+        payload = source_path |> File.read!() |> Jason.decode!()
+        path = Path.join(tmp_dir("#{label}-metadata"), "catalog.json")
+        File.mkdir_p!(Path.dirname(path))
+
+        payload =
+          case indexed_at do
+            :missing -> Map.delete(payload, "indexed_at")
+            value -> Map.put(payload, "indexed_at", value)
+          end
+
+        File.write!(path, Jason.encode!(payload))
+
+        %{opts: opts, server: server} =
+          start_catalog(%{path: path, ableton_db_dir: db_dir})
+
+        assert Catalog.count(opts[:table]) == 4
+        assert Catalog.freshness(server) == :stale
+      end
+    end
+  end
+
+  # A directory nothing can be created in — the cheapest real write failure.
+  # Restored before the setup's `rm_rf` runs, since on_exit callbacks are LIFO
+  # and a sealed directory refuses its own cleanup.
+  defp seal(dir) do
+    on_exit(fn -> File.chmod(dir, 0o755) end)
+    File.chmod!(dir, 0o555)
+  end
+
+  defp restore(dir), do: File.chmod!(dir, 0o755)
 
   # The fixture above is hand-written and deliberately tiny, which makes the
   # assertions above exact and readable — but it is not shaped like anything
@@ -981,7 +1127,11 @@ defmodule Seshat.Library.CatalogTest do
 
     server =
       start_supervised!(
-        {Catalog, name: :"#{table}_server", table: table, path: path},
+        {Catalog,
+         name: :"#{table}_server",
+         table: table,
+         path: path,
+         ableton_db_dir: Map.get(context, :ableton_db_dir)},
         id: table
       )
 
@@ -1060,5 +1210,24 @@ defmodule Seshat.Library.CatalogTest do
       "seshat-catalog-test-#{System.unique_integer([:positive])}",
       "catalog.json"
     ])
+  end
+
+  defp tmp_dir(label) do
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "seshat-catalog-#{label}-#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf(dir) end)
+    dir
+  end
+
+  defp write_db_marker(dir, mtime) do
+    File.mkdir_p!(dir)
+    path = Path.join(dir, "Live-files-12300.db")
+    File.write!(path, "mtime marker")
+    File.touch!(path, mtime)
+    path
   end
 end

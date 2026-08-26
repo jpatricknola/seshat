@@ -553,8 +553,36 @@ defmodule Seshat.Tools.Handlers do
   @spec format_reindex_summary(map()) :: String.t()
   def format_reindex_summary(%{items: items, tagged: tagged} = summary) do
     "Reindexed the sound catalog: #{items} item(s), #{tagged} of them tagged by Ableton. " <>
-      "#{format_vocabulary(summary)}search_library is ready."
+      "#{format_vocabulary(summary)}search_library is ready." <> format_persistence(summary)
   end
+
+  # A reindex that couldn't be saved still indexed everything — search answers
+  # from memory until Seshat stops. Say both halves, because the half that goes
+  # wrong later is the one nothing else would ever mention.
+  defp format_persistence(%{persisted: {:error, reason}}) do
+    " Note: the catalog could not be saved to disk (#{inspect(reason)}), so these newly " <>
+      "indexed results will be lost when Seshat restarts; an older saved catalog may be " <>
+      "restored instead. Check that the folder is writable and has free space, then run " <>
+      "reindex_library again."
+  end
+
+  defp format_persistence(_summary), do: ""
+
+  defp catalog_freshness_notice(:stale) do
+    "\n\nCatalog freshness notice: Ableton's library has changed since this catalog was " <>
+      "built. These results are still usable, but warn the user and offer to run " <>
+      "reindex_library. It can take up to a minute and Live's UI may be temporarily " <>
+      "unresponsive, so get confirmation before starting it."
+  end
+
+  defp catalog_freshness_notice(:missing) do
+    "\n\nCatalog freshness notice: the saved catalog is missing; these results exist only in " <>
+      "the current Seshat process. Warn the user and offer to run reindex_library. It can " <>
+      "take up to a minute and Live's UI may be temporarily unresponsive, so get " <>
+      "confirmation before starting it."
+  end
+
+  defp catalog_freshness_notice(_status), do: ""
 
   defp format_vocabulary(%{distinct_tags: 0}), do: ""
 
@@ -2686,7 +2714,9 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Sound catalog ---
   #
-  # Answered from ETS, so no Ableton required — see Seshat.Library.Catalog.
+  # Results come from ETS, so no Ableton or Catalog-process round trip is
+  # required. The advisory freshness check fails soft to `:unknown` if that
+  # process is busy or absent rather than delaying or taking down the search.
 
   defp do_call("search_library", params) do
     opts =
@@ -2704,13 +2734,15 @@ defmodule Seshat.Tools.Handlers do
          "reindex_library (Ableton must be running; it takes up to a minute), or fall back to " <>
          "list_browser_items for this search."}
     else
+      freshness = Catalog.freshness()
       {entries, total, facets} = Catalog.search(opts)
 
       # A zero-result search is the one case worth a second scan: without it the
       # reply can only say "loosen something", which is where the model gives up.
       context = if total == 0, do: Catalog.diagnose(opts), else: facets
 
-      {:ok, format_catalog_entries(entries, total, context)}
+      {:ok,
+       format_catalog_entries(entries, total, context) <> catalog_freshness_notice(freshness)}
     end
   end
 
