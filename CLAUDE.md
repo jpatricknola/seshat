@@ -5,11 +5,22 @@
 Natural-language control of Ableton Live. The LLM calls tools; the tools send
 OSC to Ableton. Built with Elixir/Phoenix.
 
-**Not in production** Backwards compatibility is never
-a goal: no fallback layers, migration shims, or compat paths for older
-installs or older data. When a change needs `mix abletonosc.install` re-run,
-a catalog rebuild, or a restart, just require it and say so — design for the
-current setup only.
+**Not in production** — so backwards compatibility is never a goal: no
+fallback layers, migration shims, or compatibility paths for older installs
+or older data. When a change needs `mix abletonosc.install` re-run, a catalog
+rebuild, or a restart, require it and say so; design for the current setup.
+
+Do not stretch that rule into "nothing else matters yet." **Distribution is
+an eventual goal**, so shipping constraints apply when a dependency is
+selected, not only before release. Check the code, model weights, datasets,
+and other artifacts independently. A dependency with no licence,
+non-commercial terms (`CC-BY-NC`, `CC-BY-NC-SA`), research-only weights, or
+another restriction incompatible with intended distribution is disqualified
+unless the design explicitly obtains the necessary rights or keeps the
+restricted component outside the distributed product.
+[docs/evaluating/midi-generation-options.md](docs/evaluating/midi-generation-options.md)
+records a worked example: an otherwise-good drum transcriber rejected on an
+absent licence in favour of a suitable replacement.
 
 ## MCP entry point, protocol-neutral tool layer
 
