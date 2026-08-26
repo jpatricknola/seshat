@@ -10,6 +10,9 @@ constraints section rules out entire categories in advance.
 
 The product behavior this research must serve is defined separately in
 [music-generation-user-stories.md](music-generation-user-stories.md).
+This brief is the historical handoff; where its per-material priority list
+conflicts with the completed options document's multi-part framing, the latter
+supersedes it.
 
 ## Goal
 
@@ -53,7 +56,10 @@ material rather than assuming one wiring wins.
   1.0–1.1s per four-bar clip for `sm-music`, 2.6–3.8s for `medium`,
   bar-exact durations, excellent free-text conditioning, local
   `--negative-prompt` support. Option C below builds on it.
-- Latency budget: a generation tool call should land in ~10 seconds.
+- Model-compute budget: generation and any transcription should take roughly
+  10 seconds or less. That does not establish end-to-end tool latency; the
+  completed options document must also account for Live-side track creation,
+  device loading, clip writing, and verification.
 - Target material, in priority order: drum patterns (multi-instrument),
   basslines, chord progressions/pads, melodies. Loops of 1–16 bars.
 - Eventual distribution is a design constraint now. Check code, weights, and

@@ -12,9 +12,9 @@ existing set, is defined in
 
 Updated after the local spike recorded below: SA3 small and medium both run
 locally inside the latency budget, their runtime returns bar-exact files
-without a client trim, and the repository's direct
-`ClipSlot.create_audio_clip(path)` integration makes browser indexing
-unnecessary.
+without a client trim, and SA3's experimental Ableton integration demonstrates
+that direct `ClipSlot.create_audio_clip(path)` import can make browser indexing
+unnecessary. **Seshat does not expose that LOM method today.**
 
 ## The Suno question, settled
 
@@ -91,11 +91,14 @@ Files and `timings.csv` live in `~/.seshat/audio-spike/`.
 6. **Stable Audio 2.5's audio-to-audio** (`strength` 0.6–0.9) is the one
    capability no local small model matches — "make a variation of this
    clip" later.
-7. **Direct clip import replaces browser indexing.** Stable Audio 3's
+7. **Direct clip import can replace browser indexing, but is not implemented
+   in Seshat.** Stable Audio 3's
    experimental Ableton integration calls `ClipSlot.create_audio_clip(path)`.
-   A Seshat fork address can wrap that LOM method and verify `has_clip`, name,
-   and length; generated WAVs can remain in a managed folder outside the User
-   Library.
+   A new Seshat fork address can wrap that LOM method and verify `has_clip`,
+   name, and length; generated WAVs can remain in a managed folder outside the
+   User Library. That means a fork change, address documentation and tests,
+   `mix abletonosc.install`, and a Live restart before this route can import
+   anything.
 
 ## Recommended architecture
 
@@ -123,6 +126,9 @@ Files and `timings.csv` live in `~/.seshat/audio-spike/`.
 
 - SA3 quality by ear on the target material slate, BPM adherence on Live's
   grid, loop cleanliness, and whether medium earns an escalation surface.
+- Implement and live-test the absent `ClipSlot.create_audio_clip(path)` fork
+  address, including verification, address documentation, install/restart
+  instructions, and behavior when the target slot is occupied.
 - Model-weight installation and licence entitlement: what Seshat distributes,
   what the user downloads separately, and what happens above the Community
   License revenue threshold.

@@ -1,13 +1,20 @@
 # MIDI generation — from a described part to notes that feel played
 
 _Research & options doc · 26–27 Aug 2026 · answers
-[midi-generation-research-brief.md](midi-generation-research-brief.md) · feeds
-[ROADMAP.md](../ROADMAP.md), decides nothing by itself._
+[midi-generation-research-brief.md](midi-generation-research-brief.md) · may
+feed [ROADMAP.md](../ROADMAP.md) after the listening gate; decides nothing by
+itself._
 
 The product-level outcomes and acceptance criteria are in
 [music-generation-user-stories.md](music-generation-user-stories.md). This
 document evaluates ways to achieve them; it does not redefine them around a
 candidate's limitations.
+
+The product document also settles four boundaries this research previously
+left open: one multi-part request is one high-level tool and one undo step;
+separate MIDI parts are the default; MIDI is the default output; and the first
+context-aware release reads Session-view MIDI clips rather than claiming to
+understand existing audio or Arrangement material.
 
 The brief's premise, settled 2026-08-25 and not relitigated here: Claude
 composing notes directly through `write_midi_notes` failed on **feel** —
@@ -39,6 +46,10 @@ ranges, onset offsets, and latency prove that plumbing is plausible; they do
 not prove that the resulting MIDI sounds good. The product output is MIDI in
 Live, so the deciding comparison must be the final rendered MIDI—not source
 audio, model architecture, or proxy statistics.
+
+That is why there is no generation implementation epic on the roadmap yet.
+The roadmap now tracks only the independently real large-datagram defect; the
+listening gate must select a product route before implementation is ranked.
 
 ### The design space is two axes, not a list of routes
 
@@ -101,7 +112,7 @@ ears required"). Route C inherits it wholesale: transcription is
 demonstrably cheap and structurally plausible, but correctness and retained
 groove are not established; it
 cannot rescue material that doesn't groove. **The prerequisite spikes plus
-one blinded listening slate can settle both epics** — that is the
+one blinded listening slate can settle both the audio and MIDI decisions** — that is the
 highest-value next action in this document. The measured `ADTOF-pytorch`
 port carries no licence and is not a
 shipping candidate. **Inverse Drum Machine (IDM; Apache-2.0 repository with
@@ -129,8 +140,11 @@ velocity mapping: IDM native velocities | Basic Pitch amplitude
 write_midi_notes  →  clip in Live
 ```
 
-**Measured pitched-material total: 1.1–3.9 s of compute**, against a
-10-second budget: 1.0–3.8 s for SA3 plus 0.06 s for Basic Pitch. The earlier
+**Measured pitched-material total: 1.1–3.9 s of model compute**, against the
+roughly 10-second compute budget: 1.0–3.8 s for SA3 plus 0.06 s for Basic
+Pitch. This is not an end-to-end product latency measurement: track creation,
+catalog search, device loading, clip writing, and verification in Live were
+not timed, and a multi-part plan must measure them together. The earlier
 ADTOF drum proof of concept took 0.14–0.76 s, but no end-to-end drum total is
 claimed for IDM until it is run locally. Basic Pitch's ONNX model is
 **225 KB**; IDM is reported as ~100× smaller than supervised baselines, but
@@ -230,15 +244,13 @@ domain and `switchable_velocity: true`. And `prism_medium` shows the
 opposite half: real velocity variation, no microtiming (its encoder has
 `switchable_microtiming: false`), and content that isn't a drum pattern.
 
-**Read this as a spike result, not a verdict.** midigpt 0.3.4 is seven days
+**Read this as a historical spike result, not a candidate.** midigpt 0.3.4 is seven days
 old; the reference caller is the lab's own MMM Studio, not this script; and
 full-AR-from-an-empty-`Score` is the least-travelled path through a package
-built for infilling an existing arrangement. What would settle it: a
-half-day spike that (a) starts from a real MIDI clip instead of an empty
-score, (b) uses the `attributes` names the constraint layer actually
-special-cases (`note_density`, `onset_polyphony`) rather than the analyzer's
-`bar_*` names, and (c) files the velocity round-trip upstream. Until then,
-**MIDI-GPT is the contender to re-check, not the one to build on.**
+built for infilling an existing arrangement. Its CC-BY-NC-4.0 weights
+disqualify it under Seshat's distribution rule regardless of whether a better
+caller improves quality. Revisit only if commercially compatible weights or
+rights appear; do not spend another spike while the licence remains unchanged.
 
 ### A.3 text2midi and MIDI-LLM — the free-text lane
 
@@ -303,7 +315,7 @@ of "AI music API" aggregators.
 - **Klangio** does have a real developer API — for **transcription**
   (audio → MIDI/MusicXML, piano/guitar/bass/vocals, plus a `Drum2Notes`
   product), not generation. It is a paid, cloud version of Route C's second
-  stage, and Route C's second stage already runs here in 0.2 s.
+  stage, and the measured Basic Pitch second stage already runs here in 0.06 s.
 - The "AI music API" aggregators sell audio generation (Suno-adjacent
   models, stems, WAV). One advertises audio→MIDI conversion at ~$0.08 a
   generation. None generate symbolic music from text.
@@ -524,12 +536,13 @@ partly hide.
   specifically that is a real loss, since open hat and shaker/perc are
   load-bearing in the genre. **How many lanes IDM emits is unverified** and
   is one of the things its spike must establish — a wider vocabulary would
-  narrow this gap, though not close it against GMD's 27 pitches.
-- **Route D / the Groove MIDI Dataset gives more** — its files carry **27
-  distinct MIDI pitches**, reduced by Magenta's own table to canonical lanes
-  for kick, snare, high tom, low-mid tom, **closed hat, open hat**, crash and
-  **ride** (the page's header says five classes while listing eight; the
-  pitch table is the authority). The MIDI-only download is **3.11 MB**.
+  narrow this gap, though not close it against GMD's nine canonical lanes.
+- **Route D / the Groove MIDI Dataset gives more** — Magenta's published
+  mapping lists **22 recorded source pitches**, reduced to nine canonical
+  lanes: kick, snare, high tom, low-mid tom, **high floor tom**, closed hat,
+  open hat, crash, and ride. The MIDI-only download is **3.11 MB**. Do not
+  confuse the measured 27 distinct *velocity values* in the Closed Hat row
+  above with a pitch count.
 
 This gives Route D a concrete **editability and lane-coverage advantage** in
 the comparison: retrieval hands back more lanes than the measured Route C
@@ -540,23 +553,29 @@ interplay before transcription; only the final-render comparison can show
 whether that advantage survives extraction.
 
 **What this costs on the Live side, and it is not nothing.** N lanes means N
-tracks, each needing its own instrument loaded and its own notes written —
-so one user request becomes N × (`create_track` → `search_library` →
-`load_device` → `write_midi_notes`), which is N × the tool calls and N × the
-undo steps, against a house rule of one tool call per undo step. Two design
-questions fall out, both for the plan, neither answered here:
+tracks, each needing its own sound selected, instrument loaded, notes written,
+and result verified. Exposing those stages as ordinary MCP calls would produce
+N × (`create_track` → `search_library` → `load_device` →
+`write_midi_notes`) and N × the undo steps. The product contract rejects that
+shape: one high-level generation tool must orchestrate the entire request
+inside one undo boundary. That does not remove the work or latency; it makes
+them one atomic product operation. Two implementation requirements follow:
 
 - **Pitch normalisation per lane.** A per-instrument track usually holds a
-  one-shot sampler, which answers to a single pitch (Simpler's C3), not to
-  GM 38. Splitting therefore also means *rewriting* each lane's pitches to
-  whatever its loaded instrument expects — which is a different problem from
-  the Drum Rack pad-mapping gap in the open questions, and slightly easier.
-- **Is the split the default, or a parameter?** One drum-rack track is the
-  Ableton-native shape and one undo step; separate tracks are the
-  mix-and-process shape and N of them. The tool contract should probably
-  offer both and default to the rack, with the split available on request —
-  but that is a call for the plan, informed by which one the user actually
-  reaches for.
+  one-shot sampler, which answers to a single playable pitch, not to GM 38.
+  Splitting therefore also means *rewriting* each lane's pitches to whatever
+  its loaded instrument expects — which is a different problem from the Drum
+  Rack pad-mapping gap in the open questions, and slightly easier. That pitch
+  must be read back or set explicitly, not assumed: Simpler's root follows the
+  sample's original pitch, and `load_device` reports nothing about it.
+- **Sound selection per lane.** “Dusty lo-fi” has to influence which kick,
+  snare, hat, and bass devices or samples are loaded, not just the notes. The
+  existing catalog can supply candidates, but neither this research nor the
+  model spikes evaluated contextual preset selection.
+
+Separate per-instrument tracks are the first-release default because that is
+the product story being evaluated. A one-Drum-Rack representation can remain a
+later option; it should not weaken the split-track acceptance test.
 
 ---
 
@@ -742,10 +761,10 @@ GMD+derived-bass arm remains sub-second, while a conditioned arm using two
 worst-case measured SA3 generations could cost ~3.8 s + ~3.8 s and still fit
 the budget. The tool
 contract has to express dependency — "this part follows that one" — which is
-a real schema decision, not an implementation detail. Undo granularity
-multiplies the same way §C.5's per-instrument split does: one part per tool
-call, one undo step per part. A failed first part invalidates the second, so
-the error surface is sequential too.
+a real schema decision, not an implementation detail. The high-level
+generation tool owns the whole sequence and one undo boundary. A failed first
+part invalidates the second, so the operation needs an atomic failure policy
+as well as sequential generation.
 
 **What it does not solve.** Harmonic coherence still needs a validated plan
 derived from `Session.State`'s key/scale—sequencing fixes rhythm, not notes.
@@ -760,6 +779,23 @@ pass to measure whether conditioning itself helps without changing the bass
 backend. The rule-derived arm tests a complete product candidate; it does not
 isolate the effect of wiring.
 
+### E.2 Existing-project context is a separate conditioning problem
+
+Everything above conditions parts created inside one request. The first
+release also asks for a new part that follows existing Session clips. Seshat
+can read MIDI notes with `get_clip_notes`, so the experiment must include an
+existing-MIDI arm and define who derives chord changes, phrase boundaries,
+density, and rhythmic accents from those notes. Reading only
+`Session.State`'s tempo, key, and scale does not meet the user story, and
+letting Claude guess unconstrained root motion repeats part of the original
+pitch failure.
+
+Existing audio is a different input. Seshat cannot currently inspect its
+musical content, and Basic Pitch has only been measured on isolated generated
+bass and pad files—not arbitrary user mixes. Existing-audio conditioning is
+therefore outside the first-release claim until an input path, source
+assumptions, transcription quality, and latency are measured explicitly.
+
 ---
 
 ## Recommendation: run the decision experiment
@@ -770,13 +806,17 @@ run a blinded product bake-off:
 
 1. **Choose 8–12 representative prompts before generating anything.** Include
    drum-only, bass-only, and combined bass-and-drums requests across likely
-   styles. Fix bar count, tempo, target instruments, and loudness-matching
-   rules.
+   styles, plus bass added against existing Session-view MIDI. Fix bar count,
+   tempo, target instruments, alternate-take rules, and loudness matching.
 2. **Clear the prerequisites.** Spike IDM on the existing SA3 drum slate and
    choose a permissively licensed separator for joint C. Record latency,
    install footprint, class mapping, missed/phantom hits, bleed, and onset
    damage. Remove any candidate that cannot produce evaluable final MIDI; do
-   not substitute ADTOF silently.
+   not substitute ADTOF silently. Verify the separator's weights independently
+   from its code licence—Demucs's code is MIT, but the rights to its
+   pretrained weights are unresolved upstream (issue #327; training data
+   includes non-commercial MUSDB), so treat them as unlicensed until clarified
+   and do not assume Demucs is the answer.
 3. **Run controlled subtests where one-factor comparison is possible.** For
    the same drum and bass MIDI, compare independent placement with a post-hoc
    conditioned version. For the same derived-bass algorithm, compare a GMD
@@ -815,42 +855,65 @@ run a blinded product bake-off:
 
 ---
 
-## Open questions a `/plan` must answer
+## Open work for the decision experiment and eventual `/plan`
 
 - **Which separator makes joint Route C testable and shippable?** This audit
   measured isolated SA3 outputs, not separation of a jointly generated rhythm
   section. Compare candidate separators on bass/drum bleed, onset damage,
   local latency, licence, and Apple deployment before treating joint C as an
-  implemented route.
-- **How does the tool contract express one part depending on another?** §E
-  makes ordering a design primitive: a conditioned two-part request has
-  ordered stages, and the second needs the first's notes as input. Decide
-  whether that is one tool call producing several tracks (one undo step, an
-  opaque multi-part operation) or one call per part with Claude sequencing
-  them (N undo steps, matching the house "LLM does the resolving" rule but
-  requiring the contract to carry a reference to the earlier part). This
-  interacts directly with §C.5's per-instrument split, which multiplies the
-  same counts again.
-- **Which pads does the target instrument actually use?** The candidate
-  pipelines can normalise to GM drum pitches, but a Drum Rack maps pads to
-  arbitrary notes.
-  Seshat cannot currently read a rack's pad layout — there is no
+  implemented route. Inspect both code and checkpoint terms: popular
+  separators commonly license those artifacts differently.
+- **How does the one high-level tool enforce atomicity?** The product decision
+  is settled: one request creates all related tracks in one undo step. The plan
+  must define rollback or cleanup for a failed later part, how the second stage
+  receives the first part's symbolic notes, and how one result reports partial
+  generation without leaving a misleading half-success in Live.
+- **Which pads does an optional Drum Rack output use?** The first-release
+  split-track shape can normalise every one-shot lane to its loaded sampler's
+  playable pitch. A future one-rack output instead needs the actual pad map;
+  a Drum Rack may map arbitrary notes. Seshat cannot currently read that
+  layout — there is no
   `/live/device/...` drum-pad address in the fork or in
-  [abletonosc-api-docs.md](../abletonosc-api-docs.md). **This is a
-  prerequisite for drum generation on every route**, and probably a new
-  vendored address (`DrumPad.note` / `.name` / `.chains` off the device).
-  Scope it before the generator, not after.
-- **Does a 4-bar transcription fit in one OSC datagram?**
-  `Seshat.Commands.Registry` sends every note in a single
-  `/live/clip/add/notes` message with no chunking, and this machine's
-  `net.inet.udp.maxdgram` is **9 216 bytes** — roughly 300 notes at six
-  args each. Measured note counts here reached 170 for four bars of hats;
-  eight bars of dense multi-instrument drums would cross it. Decide chunking
-  (or measure the real ceiling) before a user finds it.
+  [abletonosc-api-docs.md](../abletonosc-api-docs.md). Treat a pad-read address
+  as a prerequisite only if the plan brings rack output into scope.
+- **Large note batches already need chunking.** `Seshat.Commands.Registry`
+  sends all notes in one `/live/clip/add/notes` datagram, while the public
+  schema sets no maximum. That is an existing `write_midi_notes` defect rather
+  than generation-specific plan work; it is now tracked independently in
+  [ROADMAP.md](../ROADMAP.md). The generation plan depends on that fix for
+  dense or long clips.
+- **What is the full Live-side latency?** Measure one complete single-part and
+  multi-part request, including catalog lookup, track creation, every
+  `load_device`, clip writes, verification, and follow-cam work. The measured
+  1.1–3.9 seconds covers model compute only; `load_device` has a 30-second
+  failure timeout but no representative wall-clock measurement here.
+- **How is existing MIDI interpreted?** Define the selected Session scene,
+  relevant reference tracks, and a bounded representation of chord changes,
+  phrase boundaries, density, and accents. Validate harmonic output against
+  those observations; mirrored key/scale plus unconstrained Claude root motion
+  is not sufficient. Reading the selection is itself a prerequisite: Seshat
+  can *set* the selected scene but has no tool or mirror that reads
+  `/live/view/get/selected_scene` or `.../selected_clip`, so "the selected
+  scene" cannot be resolved today. Existing-audio conditioning stays outside
+  the first release until separately measured.
+- **Where are hard constraints enforced?** Length, placement, output form, and
+  rules such as “no note on beat one” require validation or deterministic
+  post-processing before notes reach Live. Prompting a generator is not proof
+  that a contract was obeyed.
+- **How are alternatives varied and placed?** Define seed or retrieval
+  variation so “another take” cannot repeat a deterministic result, and place
+  the alternative in the next suitable empty Session scene without overwriting
+  accepted material.
+- **How are sounds chosen?** The final listening slate needs fixed comparison
+  instruments, while the product needs catalog-driven selection that responds
+  to requests such as “dusty lo-fi.” Measure device-loading time and judge the
+  loaded sounds separately from note quality.
 - **Where is beat zero?** Transcribers return seconds. Converting to beats
   needs the tempo (mirrored) *and* the assumption that the clip starts on
   the downbeat. The audio spike proved SA3's durations are bar-exact; nobody
-  has checked that the first hit lands on the one.
+  has checked that the first hit lands on the one. The measured nearest-grid
+  offsets partly describe internal timing but do not establish the downbeat or
+  loop-boundary alignment; measure both on the existing WAV slate now.
 - **Quantise policy.** Raw transcription, or `quantize_clip` at partial
   strength by default? The 4.3 ms vs 28.2 ms spread above says the answer
   is material-dependent, which argues for a tool parameter with an honest
@@ -886,7 +949,8 @@ run a blinded product bake-off:
   but direct retrieval needs an attribution strategy for the resulting
   product experience. SA3 weights use the Stability AI Community License,
   free for commercial use only below its stated revenue threshold; the audio
-  epic must define installation and entitlement above that threshold.
+  evidence's eventual plan must define installation and entitlement above that
+  threshold.
   **GrooVAE is an open case**: its code is Apache-2.0, but the hosted
   checkpoint's terms are unverified, and under this rule that has to be
   settled *before* the generative lane is built on it, not after.
@@ -949,6 +1013,7 @@ independent of the SA3 weights already there and can be deleted freely.
   [Inverse Drum Machine](https://arxiv.org/abs/2505.03337) ·
   [Apache-2.0 implementation](https://github.com/bernardo-torres/inverse-drum-machine) ·
   [Noise-to-Notes](https://arxiv.org/pdf/2509.21739)
+- [Demucs pretrained-weight licence discussion](https://github.com/facebookresearch/demucs/issues/327)
 - [AIVA pricing/MIDI rights](https://www.aiva.ai/pricing) ·
   [Staccato pricing and plugin surface](https://staccato.ai/pricing) ·
   [Hooktheory Aria terms](https://www.hooktheory.com/hookpad/aria-tos) ·

@@ -20,7 +20,8 @@ unless the design explicitly obtains the necessary rights or keeps the
 restricted component outside the distributed product.
 [docs/evaluating/midi-generation-options.md](docs/evaluating/midi-generation-options.md)
 records a worked example: an otherwise-good drum transcriber rejected on an
-absent licence in favour of a suitable replacement.
+absent licence in favour of a permissively licensed candidate that still
+needs its own quality spike.
 
 ## MCP entry point, protocol-neutral tool layer
 

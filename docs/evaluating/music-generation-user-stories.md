@@ -15,6 +15,24 @@ This document uses **part** for one musical role, such as kick, hi-hat, snare,
 or bass. Each MIDI part normally lands on its own track. “Stem” is reserved for
 rendered audio, where the term is unambiguous.
 
+## Product decisions that shape the first release
+
+- **One request is one reversible action.** A request that creates several
+  related tracks is one high-level generation operation and one Ableton undo
+  step. It must not be implemented as a loose conversation-time chain of
+  independently undoable track, device, and note mutations.
+- **MIDI is the default output.** It is the editable form and the feature's
+  main differentiator. An explicit audio request selects audio; the response
+  always names the form that was created.
+- **Session View first.** “This section” means an explicitly named or selected
+  Session scene and its clips. If no target is unambiguous, Seshat asks. Writing
+  or conditioning against Arrangement ranges is outside the first release.
+- **Readable MIDI is the first contextual input.** The first release may
+  condition on notes read from existing MIDI clips. An existing audio clip is
+  not silently treated as understood: conditioning on user audio requires a
+  separate transcription/analysis path and must be described as unsupported
+  until that path is measured.
+
 ## What “intelligently related” means
 
 Related parts should sound like one performance split across tracks, not
@@ -118,7 +136,7 @@ it understated.”
 
 - Both new parts respond to the existing chorus and to each other.
 - The requested section, clip length, and phrase boundaries are shared across
-  the new clips. Nothing is added to unrelated scenes or arrangement ranges.
+  the new clips. Nothing is added to unrelated Session scenes.
 - The result respects “understated” across note density, dynamics,
   articulation, and register rather than treating it as a track-name label.
 
@@ -137,8 +155,11 @@ unchanged drums, and no unrelated clip or track is modified.
 **Moment:** The user says, “Give me another take.”
 
 **Expected result:** A genuinely different but still contextually coherent
-take is created in a reversible location or only replaces the prior take with
-clear user intent. An accepted take is never silently overwritten.
+take is created in the next suitable empty Session scene on the same tracks.
+Replacing the prior take requires clear user intent; an accepted take is never
+silently overwritten. Retrieval and generative backends must expose an
+explicit variation mechanism rather than returning the same deterministic
+choice.
 
 ### 8. Preserve explicit musical constraints
 
@@ -164,7 +185,7 @@ Every core story must satisfy all applicable criteria:
 | Feel | Timing and velocities fit the requested style and avoid accidental mechanical uniformity. |
 | Safety | Existing material is preserved, the mutation is reversible, and alternatives do not silently overwrite accepted work. |
 | Honest result | The response distinguishes MIDI from audio, names what was created, and reports unsupported or unverifiable constraints rather than claiming success. |
-| Responsiveness | The complete request should normally land within the existing roughly ten-second generation budget. |
+| Responsiveness | Generator compute stays within the roughly ten-second model budget. Complete request latency—including track creation, sound selection, device loading, clip writing, and verification—must be measured in Live and assigned a separate product budget before planning. |
 
 ## Output-mode expectations
 
@@ -174,10 +195,9 @@ Every core story must satisfy all applicable criteria:
 - **Audio requested:** prioritize sound quality. Create an aligned audio clip
   on a new audio track and retain the generated file while the Live set may
   reference it.
-- **No mode stated:** this remains a product decision. The implementation must
-  adopt and disclose a consistent default or ask when the choice materially
-  changes the result; it must not choose differently from request to request
-  without explanation.
+- **No mode stated:** create MIDI and say so. If MIDI cannot represent the
+  requested material adequately, explain the limitation and offer audio rather
+  than silently changing output form.
 
 ## Boundaries
 
@@ -191,16 +211,20 @@ The first release need not support every story at once. Its claimed scope
 must, however, be narrower than this document rather than quietly weakening
 “related” to “same BPM and key.”
 
+### First-release candidate slice
+
+The decision experiment should try to earn stories 1–3 first: blank-project
+beats, blank-project rhythm sections, and bass added against existing **MIDI**
+context in Session View. MIDI is the default output, while explicit audio
+output remains eligible once the audio-import path exists. Stories 4–8 remain
+the product direction and cannot be claimed until their own context,
+constraint, and iteration behavior is tested.
+
 ## Product questions still to decide
 
-- When no output form is stated, should Seshat default to editable MIDI, use a
-  material-dependent default, or ask?
-- For drums, is one track per requested instrument always the default, or may
-  the user opt into one Drum Rack clip with separately editable lanes?
-- How is “this section” resolved: selected clip/scene, currently playing
-  material, an explicit arrangement range, or a focused follow-up question?
-- Does “another take” create a new scene/track, duplicate beside the original,
-  or replace only after confirmation?
+- Should a later release offer one Drum Rack clip as an alternative to the
+  first release's separate-track default?
 - Which subset of drum, bass, harmony, and melody stories earns the first
   release through the blinded listening experiment?
-
+- What analysis would let a later release condition safely on existing audio
+  clips, and how will it distinguish a solo source from a mixed recording?
