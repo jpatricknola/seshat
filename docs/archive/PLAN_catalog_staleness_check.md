@@ -1,5 +1,17 @@
 # Plan: Catalog staleness check — notice without being asked
 
+> **Archived 2026-08-27 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. Both halves — the atomic
+> temp-sync-rename writer with the write outcome reported through the reindex
+> reply, and the freshness check `search_library` appends — live in
+> [../../lib/seshat/library/catalog.ex](../../lib/seshat/library/catalog.ex)
+> (`freshness/1`, `atomic_write/2`) and the `search_library` / reindex-summary
+> clauses of [../../lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex).
+> PR review moved the build timestamp onto the ETS build regardless of the
+> write outcome, so a usage flush after a failed reindex write stamps the new
+> build time. The one cited live check is manual and had not been run at
+> archive time. No follow-ups were queued.
+
 Roadmap item: **"Catalog staleness check — notice without being asked"**.
 
 ## Context
