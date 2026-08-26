@@ -2,7 +2,7 @@
 
 _Research & options doc · 26–27 Aug 2026 · answers
 [midi-generation-research-brief.md](midi-generation-research-brief.md) · may
-feed [ROADMAP.md](../ROADMAP.md) after the listening gate; decides nothing by
+feed [ROADMAP.md](../../ROADMAP.md) after the listening gate; decides nothing by
 itself._
 
 The product-level outcomes and acceptance criteria are in
@@ -874,13 +874,13 @@ run a blinded product bake-off:
   a Drum Rack may map arbitrary notes. Seshat cannot currently read that
   layout — there is no
   `/live/device/...` drum-pad address in the fork or in
-  [abletonosc-api-docs.md](../abletonosc-api-docs.md). Treat a pad-read address
+  [abletonosc-api-docs.md](../../abletonosc-api-docs.md). Treat a pad-read address
   as a prerequisite only if the plan brings rack output into scope.
 - **Large note batches already need chunking.** `Seshat.Commands.Registry`
   sends all notes in one `/live/clip/add/notes` datagram, while the public
   schema sets no maximum. That is an existing `write_midi_notes` defect rather
   than generation-specific plan work; it is now tracked independently in
-  [ROADMAP.md](../ROADMAP.md). The generation plan depends on that fix for
+  [ROADMAP.md](../../ROADMAP.md). The generation plan depends on that fix for
   dense or long clips.
 - **What is the full Live-side latency?** Measure one complete single-part and
   multi-part request, including catalog lookup, track creation, every

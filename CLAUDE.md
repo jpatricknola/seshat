@@ -18,7 +18,7 @@ non-commercial terms (`CC-BY-NC`, `CC-BY-NC-SA`), research-only weights, or
 another restriction incompatible with intended distribution is disqualified
 unless the design explicitly obtains the necessary rights or keeps the
 restricted component outside the distributed product.
-[docs/evaluating/midi-generation-options.md](docs/evaluating/midi-generation-options.md)
+[docs/evaluating/generative features/midi-generation-options.md](docs/evaluating/generative%20features/midi-generation-options.md)
 records a worked example: an otherwise-good drum transcriber rejected on an
 absent licence in favour of a permissively licensed candidate that still
 needs its own quality spike.

@@ -582,7 +582,7 @@ bytes, so a sufficiently dense request can exceed the transport ceiling even
 though it passed validation. This is an existing `write_midi_notes` defect,
 not work that should remain buried inside the prospective music-generation
 plan; generated 8–16 bar drums merely make it easier to hit. The generation
-work in [docs/evaluating/midi-generation-options.md](evaluating/midi-generation-options.md)
+work in [docs/evaluating/generative features/midi-generation-options.md](evaluating/generative%20features/midi-generation-options.md)
 depends on this fix for dense or long clips, so if that epic is ever ranked,
 this item moves ahead of it.
 
