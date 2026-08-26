@@ -2007,6 +2007,40 @@ defmodule Seshat.Tools.HandlersTest do
                "Reindexed the sound catalog: 3 item(s), 0 of them tagged by Ableton. " <>
                  "search_library is ready."
     end
+
+    # The failure nothing else would ever mention: search works all session, and
+    # the loss only shows up as an empty library after the next restart.
+    test "a reindex that could not be saved says so, and says what to do" do
+      result =
+        Handlers.format_reindex_summary(%{
+          items: 3,
+          tagged: 0,
+          distinct_tags: 0,
+          top_tags: [],
+          persisted: {:error, :enospc}
+        })
+
+      assert result =~ "Reindexed the sound catalog: 3 item(s)"
+      assert result =~ "could not be saved to disk (:enospc)"
+      assert result =~ "newly indexed results will be lost when Seshat restarts"
+      assert result =~ "an older saved catalog may be restored instead"
+      assert result =~ "run reindex_library again"
+    end
+
+    test "a saved reindex says nothing about saving" do
+      result =
+        Handlers.format_reindex_summary(%{
+          items: 3,
+          tagged: 0,
+          distinct_tags: 0,
+          top_tags: [],
+          persisted: :ok
+        })
+
+      assert result ==
+               "Reindexed the sound catalog: 3 item(s), 0 of them tagged by Ableton. " <>
+                 "search_library is ready."
+    end
   end
 
   describe "search_library" do
@@ -2032,14 +2066,22 @@ defmodule Seshat.Tools.HandlersTest do
     setup :osc_sink
 
     setup do
-      path =
-        Path.join([
+      root =
+        Path.join(
           System.tmp_dir!(),
-          "seshat-handlers-catalog-#{System.unique_integer([:positive])}",
-          "catalog.json"
-        ])
+          "seshat-handlers-catalog-#{System.unique_integer([:positive])}"
+        )
 
-      server = start_supervised!({Seshat.Library.Catalog, path: path})
+      path = Path.join(root, "catalog.json")
+      db_dir = Path.join(root, "ableton-db")
+      db_path = Path.join(db_dir, "Live-files-12300.db")
+      File.mkdir_p!(db_dir)
+      File.write!(db_path, "mtime marker")
+      File.touch!(db_path, {{2020, 1, 1}, {0, 0, 0}})
+
+      server =
+        start_supervised!({Seshat.Library.Catalog, path: path, ableton_db_dir: db_dir})
+
       _ = :sys.get_state(server)
 
       {:ok, _summary} =
@@ -2053,9 +2095,9 @@ defmodule Seshat.Tools.HandlersTest do
            ]}
         )
 
-      on_exit(fn -> File.rm_rf(Path.dirname(path)) end)
+      on_exit(fn -> File.rm_rf(root) end)
 
-      :ok
+      %{catalog_path: path, catalog_server: server, db_path: db_path}
     end
 
     test "a zero-result search comes back diagnosed, not merely empty" do
@@ -2075,6 +2117,7 @@ defmodule Seshat.Tools.HandlersTest do
       assert reply =~ "2 match(es)"
       assert reply =~ "Nylon Guitar.adg — Acoustic, Soft"
       refute reply =~ "matches nothing"
+      refute reply =~ "Catalog freshness notice"
     end
 
     test "a truncated search offers the tags that would narrow it" do
@@ -2082,6 +2125,61 @@ defmodule Seshat.Tools.HandlersTest do
                Handlers.call("search_library", %{"query" => "guitar", "max_results" => 1})
 
       assert reply =~ "Showing 1 of 2 matches — top tags among them:"
+    end
+
+    test "a stale catalog returns results and tells the model to offer a warned reindex", %{
+      db_path: db_path
+    } do
+      File.touch!(db_path, {{2100, 1, 1}, {0, 0, 0}})
+
+      assert {:ok, reply} = Handlers.call("search_library", %{"query" => "guitar"})
+
+      assert reply =~ "2 match(es)"
+      assert reply =~ "Ableton's library has changed since this catalog was built"
+      assert reply =~ "offer to run reindex_library"
+      assert reply =~ "up to a minute"
+      assert reply =~ "Live's UI may be temporarily unresponsive"
+      assert reply =~ "get confirmation"
+    end
+
+    test "a missing saved catalog returns in-memory results with rebuild guidance", %{
+      catalog_path: catalog_path
+    } do
+      File.rm!(catalog_path)
+
+      assert {:ok, reply} = Handlers.call("search_library", %{"query" => "guitar"})
+
+      assert reply =~ "2 match(es)"
+      assert reply =~ "saved catalog is missing"
+      assert reply =~ "results exist only in the current Seshat process"
+      assert reply =~ "offer to run reindex_library"
+    end
+
+    test "an unavailable Ableton database does not spoil offline search", %{db_path: db_path} do
+      File.rm!(db_path)
+
+      assert {:ok, reply} = Handlers.call("search_library", %{"query" => "guitar"})
+
+      assert reply =~ "2 match(es)"
+      refute reply =~ "Catalog freshness notice"
+    end
+
+    test "a busy Catalog writer cannot delay or take down the ETS search", %{
+      catalog_server: server
+    } do
+      :ok = :sys.suspend(server)
+
+      try do
+        started_at = System.monotonic_time(:millisecond)
+
+        assert {:ok, reply} = Handlers.call("search_library", %{"query" => "guitar"})
+
+        assert System.monotonic_time(:millisecond) - started_at < 1_000
+        assert reply =~ "2 match(es)"
+        refute reply =~ "Catalog freshness notice"
+      after
+        :ok = :sys.resume(server)
+      end
     end
   end
 

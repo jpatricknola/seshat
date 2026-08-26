@@ -81,7 +81,13 @@ so `search_library` answers instantly and with Ableton closed. It is built by
 `reindex_library`, which merges a browser export with the preset tags read out
 of Ableton's own SQLite database, then folds the browser's alias rows so one
 preset is one entry (`categories`/`paths` are plural for that reason). That file is read-only source data — Seshat
-still has no database of its own. In dev the catalog is redirected to the
+still has no database of its own. The catalog file is written atomically
+(temp file, sync, rename) and a reindex whose write failed says so in its
+reply while still answering from ETS; `Catalog.freshness/1` compares the
+retained build timestamp against the mtime of that database (and its `-wal`),
+and `search_library` appends a rebuild notice when the catalog is stale or its
+file has gone missing — never when the database simply can't be found, so
+offline search stays quiet. In dev the catalog is redirected to the
 project root (`:catalog_path` in [config/dev.exs](config/dev.exs), gitignored)
 so it can be read by eye; every other environment uses the `~/.seshat/` default.
 
@@ -249,6 +255,35 @@ holds superseded point-in-time plans and decision records; never treat those
 as current documentation.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
+Catalog persistence is atomic and the catalog notices its own staleness,
+shipped 2026-08-27, closing the queue's top two items together ("Make catalog
+persistence atomic and report write failures" and "Catalog staleness check —
+notice without being asked"), which shared one writer. `Seshat.Library.Catalog`
+now writes `catalog.json` through `atomic_write/2` (sibling temp file, `:sync`,
+rename), so a crash or a full disk mid-write leaves the whole old file rather
+than a torn one that would load as an empty catalog; `{:replace, entries}`
+carries the write outcome in its summary as `persisted: :ok | {:error, _}` and
+`reindex_library`'s reply says both halves when the save failed (indexed, not
+saved, lost on restart). The build timestamp `indexed_at` is assigned only at
+reindex and threaded unchanged through every usage-counter write — previously
+every debounced `use_count` flush regenerated it, so loading one device made
+an old catalog look freshly built. `Catalog.freshness/1` (`:fresh | :stale |
+:missing | :unknown`) stats the persistence file, locates the newest
+`Live-files-*.db` via `AbletonDB.locate_db/1`, takes the newer of the `.db`
+and `-wal` mtimes, and compares against the retained timestamp; missing or
+unparseable build metadata is `:stale`, an unlocatable database is `:unknown`.
+`search_library` calls it under a 100ms timeout that fails soft to `:unknown`,
+then appends a notice on `:stale` or `:missing` telling the model to warn the
+user and offer `reindex_library` with the up-to-a-minute / Live-UI-freeze
+caveat. No OSC, fork or `Definitions` change. PR review found one defect and
+it was fixed before merge: a failed reindex write used to keep the previous
+`indexed_at` in state while ETS held the new build, so a later successful
+usage flush stamped new entries with the old time. **The one cited live
+check is manual and has not run** — `manual/engineered-state.md § An unchanged
+library stays fresh across a Live restart`, which decides whether a
+content-neutral Live restart touches the database mtime and turns this into a
+recurring false warning; run it before trusting the notice. Plan archived at
+[docs/archive/PLAN_catalog_staleness_check.md](docs/archive/PLAN_catalog_staleness_check.md).
 The N+1 read patterns are now batched into single AbletonOSC ticks, shipped
 2026-08-04, closing what had been the queue's top item, "Bulk reads vs.
 per-address queries — benchmark, then pick the lever." The item asked for a

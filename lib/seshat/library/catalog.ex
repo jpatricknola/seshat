@@ -68,6 +68,10 @@ defmodule Seshat.Library.Catalog do
   # Loads are frequent and the file is only a usage counter — batch the writes.
   @persist_debounce 5_000
 
+  # Freshness is advisory and search reads its actual results straight from ETS.
+  # Never let a busy or missing writer delay that read behind a reindex/write.
+  @freshness_timeout 100
+
   @default_max_results 15
 
   # A truncated result reports the tags that would narrow it, and a reindex
@@ -237,6 +241,14 @@ defmodule Seshat.Library.Catalog do
     end
   end
 
+  @doc "Whether the persisted catalog predates Ableton's current browser database."
+  @spec freshness(GenServer.server()) :: :fresh | :stale | :missing | :unknown
+  def freshness(server \\ __MODULE__) do
+    GenServer.call(server, :freshness, @freshness_timeout)
+  catch
+    :exit, _reason -> :unknown
+  end
+
   @doc """
   Rebuild the catalog: export Live's browser, read Ableton's tags, merge, save.
 
@@ -252,7 +264,8 @@ defmodule Seshat.Library.Catalog do
              items: non_neg_integer(),
              tagged: non_neg_integer(),
              distinct_tags: non_neg_integer(),
-             top_tags: [{String.t(), pos_integer()}]
+             top_tags: [{String.t(), pos_integer()}],
+             persisted: :ok | {:error, term()}
            }}
           | {:error, term()}
   def reindex(server \\ __MODULE__) do
@@ -820,6 +833,7 @@ defmodule Seshat.Library.Catalog do
   def init(opts) do
     table = Keyword.get(opts, :table, @table)
     path = Keyword.get(opts, :path, catalog_path())
+    ableton_db_dir = Keyword.get(opts, :ableton_db_dir)
 
     :ets.new(table, [:set, :protected, :named_table, read_concurrency: true])
 
@@ -827,54 +841,84 @@ defmodule Seshat.Library.Catalog do
     # debounced write — otherwise the last few use_count bumps are lost.
     Process.flag(:trap_exit, true)
 
-    state = %{table: table, path: path, persist_timer: nil}
+    state = %{
+      table: table,
+      path: path,
+      ableton_db_dir: ableton_db_dir,
+      indexed_at: nil,
+      persist_timer: nil
+    }
+
     {:ok, state, {:continue, :load}}
   end
 
   @impl true
   def handle_continue(:load, state) do
-    case load_file(state.path) do
-      {:ok, entries} ->
-        insert_all(state.table, entries)
-        Logger.info("Catalog: loaded #{length(entries)} entries from #{state.path}")
+    state =
+      case load_file(state.path) do
+        {:ok, entries, indexed_at} ->
+          insert_all(state.table, entries)
+          Logger.info("Catalog: loaded #{length(entries)} entries from #{state.path}")
+          %{state | indexed_at: indexed_at}
 
-      {:error, :enoent} ->
-        Logger.info("Catalog: no catalog at #{state.path} — run reindex_library to build one")
+        {:error, :enoent} ->
+          Logger.info("Catalog: no catalog at #{state.path} — run reindex_library to build one")
+          state
 
-      {:error, :stale_format} ->
-        Logger.info(
-          "Catalog: #{state.path} was written in an older format — " <>
-            "run reindex_library to rebuild it"
-        )
+        {:error, :stale_format} ->
+          Logger.info(
+            "Catalog: #{state.path} was written in an older format — " <>
+              "run reindex_library to rebuild it"
+          )
 
-      {:error, reason} ->
-        Logger.warning("Catalog: could not load #{state.path}: #{inspect(reason)}")
-    end
+          state
+
+        {:error, reason} ->
+          Logger.warning("Catalog: could not load #{state.path}: #{inspect(reason)}")
+          state
+      end
 
     {:noreply, state}
   end
 
   @impl true
+  def handle_call(:freshness, _from, state) do
+    {:reply, freshness_status(state), state}
+  end
+
   def handle_call({:replace, entries}, _from, state) do
     entries = carry_over_usage(entries, all_entries(state.table))
+    indexed_at = DateTime.utc_now() |> DateTime.to_iso8601()
 
     :ets.delete_all_objects(state.table)
     insert_all(state.table, entries)
 
     summary = summarise(entries)
 
-    case write_file(state.path, entries) do
+    # The reindex itself succeeded either way — the entries are in ETS and search
+    # will answer from them for the rest of this run — so a failed write is not
+    # `{:error, _}`, which would claim nothing was indexed. It travels as part of
+    # the summary instead, and the reply says both halves: indexed, not saved.
+    #
+    # The timestamp belongs to the build in ETS, so it advances whether or not
+    # the write landed: a later usage-counter flush persists these entries, and
+    # stamping them with the previous build's time (or nil) would make a
+    # freshly rebuilt catalog report itself stale until the next reindex.
+    state = %{state | indexed_at: indexed_at}
+
+    case write_file(state.path, entries, indexed_at) do
       :ok ->
-        {:reply, {:ok, summary}, state}
+        {:reply, {:ok, Map.put(summary, :persisted, :ok)}, state}
 
       {:error, reason} ->
         Logger.warning("Catalog: could not write #{state.path}: #{inspect(reason)}")
-        {:reply, {:ok, summary}, state}
+        {:reply, {:ok, Map.put(summary, :persisted, {:error, reason})}, state}
     end
   end
 
   def handle_call(:flush, _from, state) do
-    {:reply, write_file(state.path, all_entries(state.table)), cancel_timer(state)}
+    {:reply, write_file(state.path, all_entries(state.table), state.indexed_at),
+     cancel_timer(state)}
   end
 
   @impl true
@@ -897,7 +941,11 @@ defmodule Seshat.Library.Catalog do
 
   @impl true
   def handle_info(:persist, state) do
-    write_file(state.path, all_entries(state.table))
+    log_write_failure(
+      state.path,
+      write_file(state.path, all_entries(state.table), state.indexed_at)
+    )
+
     {:noreply, %{state | persist_timer: nil}}
   end
 
@@ -906,7 +954,10 @@ defmodule Seshat.Library.Catalog do
   def terminate(_reason, %{persist_timer: nil}), do: :ok
 
   def terminate(_reason, state) do
-    write_file(state.path, all_entries(state.table))
+    log_write_failure(
+      state.path,
+      write_file(state.path, all_entries(state.table), state.indexed_at)
+    )
   end
 
   # --- Private ---
@@ -1087,6 +1138,15 @@ defmodule Seshat.Library.Catalog do
     %{state | persist_timer: nil}
   end
 
+  # Usage bumps have no caller waiting on them, so a failed write can only be
+  # logged — but losing one is losing a few `use_count` increments, not a
+  # catalog, and the next reindex reports its own write honestly.
+  defp log_write_failure(_path, :ok), do: :ok
+
+  defp log_write_failure(path, {:error, reason}) do
+    Logger.warning("Catalog: could not write #{path}: #{inspect(reason)}")
+  end
+
   defp catalog_path do
     Application.get_env(:seshat, :catalog_path, @default_path) |> Path.expand()
   end
@@ -1097,26 +1157,96 @@ defmodule Seshat.Library.Catalog do
   # library has nothing like that" rather than "this file is stale".
   defp load_file(path) do
     with {:ok, body} <- File.read(path),
-         {:ok, %{"version" => @format_version, "entries" => entries}} <- Jason.decode(body) do
-      {:ok, Enum.map(entries, &from_json/1)}
+         {:ok, payload} <- Jason.decode(body) do
+      case payload do
+        %{"version" => @format_version, "entries" => entries} ->
+          {:ok, Enum.map(entries, &from_json/1), Map.get(payload, "indexed_at")}
+
+        %{"entries" => _} ->
+          {:error, :stale_format}
+
+        _other ->
+          {:error, :unrecognised_format}
+      end
     else
       {:error, %Jason.DecodeError{} = error} -> {:error, error}
-      {:ok, %{"entries" => _}} -> {:error, :stale_format}
-      {:ok, _other} -> {:error, :unrecognised_format}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp write_file(path, entries) do
+  defp write_file(path, entries, indexed_at) do
     payload = %{
       "version" => @format_version,
-      "indexed_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "indexed_at" => indexed_at,
       "entries" => Enum.map(entries, &to_json/1)
     }
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
          {:ok, body} <- Jason.encode(payload, pretty: pretty?()) do
-      File.write(path, body)
+      atomic_write(path, body)
+    end
+  end
+
+  defp freshness_status(state) do
+    case File.stat(state.path) do
+      {:ok, _stat} -> compare_db_mtime(state.indexed_at, state.ableton_db_dir)
+      {:error, :enoent} -> :missing
+      {:error, _reason} -> :unknown
+    end
+  end
+
+  defp compare_db_mtime(indexed_at, ableton_db_dir) when is_binary(indexed_at) do
+    with {:ok, built_at, _offset} <- DateTime.from_iso8601(indexed_at),
+         {:ok, db_path} <- AbletonDB.locate_db(ableton_db_dir),
+         {:ok, source_mtime} <- browser_source_mtime(db_path) do
+      if source_mtime > DateTime.to_unix(built_at), do: :stale, else: :fresh
+    else
+      {:error, :invalid_format} -> :stale
+      {:error, _reason} -> :unknown
+    end
+  end
+
+  defp compare_db_mtime(_indexed_at, _ableton_db_dir), do: :stale
+
+  # Live keeps this SQLite database in WAL mode. Newly indexed browser content
+  # can live in `-wal` until a checkpoint updates the main file, so watching only
+  # the `.db` silently misses the exact mid-session changes this check is for.
+  defp browser_source_mtime(db_path) do
+    mtimes =
+      [db_path, db_path <> "-wal"]
+      |> Enum.flat_map(fn path ->
+        case File.stat(path, time: :posix) do
+          {:ok, %File.Stat{mtime: mtime}} -> [mtime]
+          {:error, _reason} -> []
+        end
+      end)
+
+    case mtimes do
+      [] -> {:error, :enoent}
+      values -> {:ok, Enum.max(values)}
+    end
+  end
+
+  # `File.write/2` truncates before it writes, so a crash or a full disk partway
+  # through leaves a *truncated* catalog.json — and that is worse than losing the
+  # write, because `load_file/1` then fails to decode it and the catalog starts
+  # empty. An empty catalog is not an error state anywhere downstream (`scan/1`
+  # deliberately treats an unbuilt one as empty), so search answers every query
+  # with nothing found, which reads as "this library has nothing like that".
+  #
+  # Writing a sibling temp file and renaming over the target means a reader sees
+  # the whole old file or the whole new one, never a torn one. The temp file has
+  # to share the directory: rename is only atomic within a filesystem.
+  defp atomic_write(path, body) do
+    tmp = path <> ".tmp"
+
+    with :ok <- File.write(tmp, body, [:sync]),
+         :ok <- File.rename(tmp, path) do
+      :ok
+    else
+      {:error, reason} ->
+        File.rm(tmp)
+        {:error, reason}
     end
   end
 
