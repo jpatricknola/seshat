@@ -862,12 +862,37 @@ defmodule Seshat.Library.CatalogTest do
                GenServer.call(server, {:replace, Enum.take(normalized(), 1)})
 
       assert File.read!(path) == before
-      assert :sys.get_state(server).indexed_at == persisted_indexed_at
+
+      # The build in ETS is the new one, so the retained timestamp is too — the
+      # file on disk keeps describing the old build until something rewrites it.
+      assert :sys.get_state(server).indexed_at != persisted_indexed_at
 
       # And it is still a catalog the next boot can load, not a torn fragment.
       restore(Path.dirname(path))
       %{opts: reloaded} = start_catalog(%{path: path})
       assert Catalog.count(reloaded[:table]) == 4
+    end
+
+    test "a usage flush after a failed reindex write stamps the new build time, not the old", %{
+      path: path,
+      server: server
+    } do
+      old_indexed_at = path |> File.read!() |> Jason.decode!() |> Map.fetch!("indexed_at")
+      seal(Path.dirname(path))
+
+      assert {:ok, %{persisted: {:error, _}}} =
+               GenServer.call(server, {:replace, Enum.take(normalized(), 1)})
+
+      # Space comes back, a device gets loaded, the debounced write succeeds.
+      restore(Path.dirname(path))
+      :ok = Catalog.record_load("query:Sounds#Bass:FileId_5200", server)
+      assert :ok = GenServer.call(server, :flush)
+
+      written = path |> File.read!() |> Jason.decode!()
+      assert length(written["entries"]) == 1
+      assert is_binary(written["indexed_at"])
+      assert written["indexed_at"] != old_indexed_at
+      assert written["indexed_at"] == :sys.get_state(server).indexed_at
     end
 
     test "a usage-counter flush preserves the reindex timestamp", %{

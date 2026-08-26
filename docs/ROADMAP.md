@@ -21,71 +21,7 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Make catalog persistence atomic and report write failures
-
-**Goal:** a reindex that cannot be persisted says so, and a crash mid-write
-cannot leave a truncated `catalog.json`.
-
-**Why:** [catalog.ex:831-838](../lib/seshat/library/catalog.ex#L831-L838) logs a
-write failure and then returns `{:ok, summary}` — the tool reports success while
-the next start restores an old or empty catalog. `File.write/2` is not atomic.
-
-**User stories:**
-- As a producer, if a reindex couldn't be saved I'm told right then — not
-  left to discover at the next launch that search has been answering from an
-  old library.
-
-**Planner notes:**
-- Write to a temporary file, sync, rename — then report durable success.
-- **Skip the ETS generation swap.** The review also flagged that
-  `:ets.delete_all_objects/1` before `insert_all` lets a concurrent search see an
-  empty table. Real, but reindex is a rare user-initiated operation that freezes
-  Live's UI for up to a minute and that the user is waiting on; a few
-  milliseconds of empty results inside that window is not observable.
-- **Do this in one pass with "Catalog staleness check"** — same writer, and that
-  issue needs a built-at timestamp written there anyway.
-- From the 2026-07-29 external review; the durability half accepted, the ETS
-  generation swap declined above.
-
-## #2 · Catalog staleness check — notice without being asked
-
-Implementation plan: [PLAN_catalog_staleness_check.md](PLAN_catalog_staleness_check.md).
-
-**Goal:** a free freshness check — does `catalog.json` exist, and is its
-build timestamp newer than the mtime of Ableton's browser database? Run it
-when the user initiates a catalog operation such as `search_library`. When the
-catalog is missing or stale, the tool result says that a reindex is needed,
-that it can take up to a minute, and that Live's UI will freeze while it runs.
-The model can then warn the user and offer to invoke `reindex_library`.
-
-**Why:** 2026-07-28 validation run: the script literally has the *user*
-asking whether an index exists yet — backwards. The user shouldn't need to
-know when the freshness check is needed. The check costs two file stats and is
-naturally triggered by the operation that depends on the catalog. The expensive
-rebuild remains announced and explicit because a tool cannot both warn the user
-and complete the rebuild before returning its result.
-
-**User stories:**
-- As a producer who just installed a new Pack, my next library search notices
-  that its catalog is stale and offers to refresh it — I do not have to know
-  when or how to check the index myself, and I am warned before Live freezes.
-
-**Planner notes:**
-- `catalog.json` needs a built-at timestamp if the merge writer doesn't
-  already record one — which is why this pairs with "Make catalog persistence
-atomic".
-- The Ableton DB path comes from `Seshat.Library.AbletonDB` (per-machine;
-  the Windows caveat stays with "Deliberately not planned", not this issue).
-- Put the check at the start of `search_library`, and share the same helper
-  with any future catalog operation that depends on freshness.
-- If a stale catalog is still readable, `search_library` may return its results
-  with the warning rather than turning staleness into a hard failure. A missing
-  catalog must return the reindex guidance instead of pretending that an empty
-  search found nothing.
-- A startup check may log or cache the stale status, but it must not start a
-  reindex: no MCP conversation may be connected to receive the warning.
-
-## #3 · Verify destructive mutations before reporting success
+## #1 · Verify destructive mutations before reporting success
 
 **Goal:** destructive and structural operations check their target before
 mutating and confirm the result afterward, instead of returning success as soon
@@ -155,7 +91,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #4 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #2 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Goal:** read the tag *axes* (Character, Genres, Type, …) and the
 preset→device relation out of Ableton's database, and surface the real
@@ -190,7 +126,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #5 · Monitored refresh worker for `Session.State`
+## #3 · Monitored refresh worker for `Session.State`
 
 **Goal:** move the mirror rebuild off the GenServer's synchronous path and give
 it an overall deadline plus freshness / connection / last-error metadata, so a
@@ -232,7 +168,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #6 · `start_new_project` — the setup wizard, and prompt budget back
+## #4 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Goal:** a tool that catches "let's start a new project" / "start fresh" and
 runs the opening of a session: report what's in the open set, name any empty
@@ -287,7 +223,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   awkward session opening the model can be steered through by hand, so the
   correctness and catalog items above it earn more per hour of effort.
 
-## #7 · Producer personas — switchable musical taste
+## #5 · Producer personas — switchable musical taste
 
 **Goal:** layer a *persona* onto the base session instructions. 
 Personas live one per file in [priv/producers/](../priv/producers/)
@@ -320,7 +256,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #8 · AX-backed audio output — the first narrow UI workflow
+## #6 · AX-backed audio output — the first narrow UI workflow
 
 **Goal:** `get_audio_outputs` and `set_audio_output` tools that let a user say
 “switch Live to the headphones,” resolve the installed device name, change
@@ -355,7 +291,7 @@ permission setup out of the request path and measuring what the user waits for.
   outside the Live Set's LOM undo history, and the tool must work without
   emitting unrelated begin/end datagrams.
 
-## #9 · `screenshot_live` — let Seshat see the screen
+## #7 · `screenshot_live` — let Seshat see the screen
 
 **Goal:** capture Live's window (macOS `screencapture` targeted by window
 ID) and return the image in the MCP tool result, so the client model —
@@ -379,7 +315,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #10 · Restart the MCP supervisor after abnormal failure
+## #8 · Restart the MCP supervisor after abnormal failure
 
 **Goal:** change the nested MCP supervisor's child spec from
 `restart: :temporary` to `:transient`.
@@ -398,7 +334,7 @@ healthy — the tools simply stop existing, with nothing saying why.
 - Raised as a speculative risk by the 2026-07-29 external review — the failure
   has not been reproduced, only reasoned from the child spec.
 
-## #11 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
+## #9 · MCP `tools/call` with `arguments: null` crashes instead of a readable rejection
 
 **Goal:** a `tools/call` whose `"arguments"` is JSON `null` gets a
 model-readable rejection — same channel as any other invalid call — instead
@@ -427,7 +363,7 @@ the interception entirely: an absent `"arguments"` key and a non-map value
   [test/seshat/mcp/server_test.exs](../test/seshat/mcp/server_test.exs)
   alongside the existing non-map-`arguments` (array) case.
 
-## #12 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #10 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Goal:** setting `looping` *and* the loop points in one call produces the
 intended brace on a clip whose stored loop points differ from its play markers.
@@ -454,7 +390,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #13 · Search eval harness — numbers before opinions
+## #11 · Search eval harness — numbers before opinions
 
 **Goal:** a repeatable harness that scores `search_library` relevance against
 a fixed set of realistic "describe a sound" queries, so every further catalog
@@ -479,7 +415,7 @@ harness".** Buy each only if the eval still shows the miss it targets after
 "Catalog vocabulary" lands. They're ranked by
 [sound-search-options.md](evaluating/sound-search-options.md)'s impact-per-effort ordering.
 
-## #14 · Widen the search slate at tied score bands
+## #12 · Widen the search slate at tied score bands
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -494,7 +430,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #15 · Accepted-search memory
+## #13 · Accepted-search memory
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -512,7 +448,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #16 · Browser preview audition
+## #14 · Browser preview audition
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -533,7 +469,7 @@ better search may make it unnecessary.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #17 · Opt-in `samples` index
+## #15 · Opt-in `samples` index
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -551,7 +487,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #18 · LLM enrichment at reindex
+## #16 · LLM enrichment at reindex
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an external model service or an MCP-client-driven tagging
@@ -571,7 +507,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #19 · User XMP tags
+## #17 · User XMP tags
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -586,7 +522,7 @@ actually tags things — hence the low rank.
 
 ---
 
-## #20 · Read-only audio input display — warn before a silent take
+## #18 · Read-only audio input display — warn before a silent take
 
 **Goal:** surface a track's audio input routing, read-only, so `record_clip`
 can warn when an audio take is about to record nothing.
@@ -615,7 +551,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #21 · Device list per track in session state
+## #19 · Device list per track in session state
 
 **Goal:** mirror each track's device chain in `Seshat.Session.State`, so the
 agent sees loaded devices without a `get_track_devices` round-trip.
@@ -634,7 +570,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #22 · Modify a note in place
+## #20 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -647,7 +583,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #23 · Clip grid in session state — only if usage demands it
+## #21 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -661,7 +597,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #24 · Small OSC breadth — grab bag
+## #22 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -682,7 +618,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #25 · Adopt MCP `2026-07-28` when Anubis supports it
+## #23 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
@@ -731,7 +667,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #26 · A rejected index says which index, and what to call next
+## #24 · A rejected index says which index, and what to call next
 
 **Goal:** a tool call Live rejects for a bad index tells the model which index
 was bad and which `get_*` tool resolves it, instead of the bare "Ableton
@@ -783,7 +719,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #27 · `set_device_parameter` on a regular track loses Live's rejection message
+## #25 · `set_device_parameter` on a regular track loses Live's rejection message
 
 **Goal:** an invalid device or parameter index on a **regular-track**
 `set_device_parameter` call reports Live's actual rejection ("Ableton rejected
