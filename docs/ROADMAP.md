@@ -37,57 +37,57 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · AX-backed audio output — the first narrow UI workflow
+## #1 · AX-backed audio output — verify the remainder
 
 **Impact 5 · Lift 8 · 0.62 impact-per-effort**
 
-**Ranked above its quotient by decision on 2026-08-27** — picked up next
-regardless of where 0.62 would place it. It gates nothing and nothing gates
-it; the plan is already written
-([PLAN_audio_output.md](PLAN_audio_output.md)) and its smoke tests already
-exist. Restore it to its quotient position if it is put back down.
+**Ranked above its quotient by decision on 2026-08-27** — implementation has
+since landed on branch `ax-audio-output`; what is left is verification, not
+code. Restore it to its quotient position once this entry closes out.
 
-**Goal:** `get_audio_outputs` and `set_audio_output` tools that let a user say
-“switch Live to the headphones,” resolve the installed device name, change
-Live's application-wide output through semantic macOS Accessibility elements,
-verify the result, and restore the UI within a user-visible latency budget.
+**Implemented and reviewed already — do not re-implement.**
+`get_audio_outputs` and `set_audio_output` exist end to end: the native AX
+helper (`native/seshat_ax/main.m`, a closed four-command JSON protocol —
+version, permission, list-outputs, set-output, with no generic press/dump/
+keystroke command), `Seshat.AX.Client`, `mix ax.install`, the `undo_step:
+false` opt-out (pinned by test to exactly these two tools), and a macOS CI
+build. Three review rounds ran; two blocking findings surfaced and were both
+fixed: `AudioOutputTransaction`'s early return skipped its own cleanup block,
+leaving the user's frontmost app changed after a merely read-only question;
+and later, a chooser was `CFRelease`d and NULLed before its press result was
+checked, so a rejected press could leave Live's audio-output popup menu
+hanging open. Plan: [PLAN_audio_output.md](PLAN_audio_output.md) — kept in
+place rather than archived, because its citations are still unrun and
+archiving now would strand that record.
 
-**Why:** audio-device selection is absent from Live 12.4.3's LOM, so OSC cannot
-reach it. The 2026-08-03 spike succeeded without coordinates, keystrokes,
-AppleScript, or screenshots: it enumerated the named choices, selected a second
-device, read the value back, and restored the original. The native round trip
-took 1.55 seconds, but an exploratory conversational turn took 37 seconds while
-code was compiled on demand — shipping value depends on moving compilation and
-permission setup out of the request path and measuring what the user waits for.
-
-**User stories:**
-- As a producer whose sound is coming from the laptop, I can say “switch Live
-  to the headphones” and hear it move promptly without opening Settings myself.
-- As a producer, a successful reply means Live's selected output was read back,
-  not merely that a UI action was attempted.
-- As a producer, Live's Settings and application focus return to how I had them;
-  changing output does not leave cleanup work on screen.
-
-**Planner notes:**
-- [Implementation plan: AX-backed audio-output selection](PLAN_audio_output.md).
-- LOM-first remains absolute. The reusable AX boundary is available only to a
-  concrete, independently verified LOM gap with named elements and read-back;
-  this is not a generic UI-control tool.
-- Acceptance: three fresh local-client “headphones” requests each change Live's
-  verified value within 10 seconds; the setter's own MCP call finishes within 5
-  seconds. Permission onboarding is one-time and outside that normal path.
-- The tool definition must opt out of OSC undo wrapping. Audio preferences are
-  outside the Live Set's LOM undo history, and the tool must work without
-  emitting unrelated begin/end datagrams.
-- **Implemented on branch `ax-audio-output`, but this entry stays until the
-  latency evidence exists.** Everything reachable without Ableton is built and
-  covered: the native helper, `Seshat.AX.Client`, `mix ax.install`, both tools,
-  the undo opt-out, and a macOS CI build. None of the acceptance criteria above
-  are measurements yet — they need Live running, Accessibility granted, and a
-  real client. Run `/smoke-test audio-output` plus
-  [smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md) §
-  *Headphones resolve and switch within the user-visible budget* before `/ship`
-  touches this item.
+**What's left — verification only, needs a human:**
+- Install the helper for real: `mix ax.install` into
+  `~/.seshat/bin/seshat-ax`, then grant Accessibility permission when macOS
+  prompts. Every run so far used a scratch build at a temp path, never
+  installed and never approved.
+- Settle an open question the real install should answer: that scratch
+  build twice reported `trusted: true` without ever being installed or
+  approved, which looks like permission is being attributed to the parent
+  process (the terminal/IDE already trusted) rather than to the executable
+  itself. Confirm permission actually follows `~/.seshat/bin/seshat-ax`
+  before relying on that assumption elsewhere.
+- Run these through a real MCP client — every run so far has gone through
+  `Handlers.call/2` directly, not a client, and all three currently read
+  "partly, and not as written" for exactly that reason:
+  [smoke_tests/auto/audio-output.md](smoke_tests/auto/audio-output.md) §
+  *The available outputs and current selection agree with Live*, §
+  *A named output changes, verifies, and restores*, § *An unavailable output
+  fails quickly and changes nothing*.
+- [smoke_tests/manual/engineered-state.md](smoke_tests/manual/engineered-state.md)
+  § *An open Settings window survives an audio-output read* and § *A blocked
+  Settings window still gives focus back* — both still `Last run: —`.
+- [smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md) §
+  *Headphones resolve and switch within the user-visible budget* — the
+  plan's actual acceptance criterion (three fresh local-client requests each
+  change Live's verified value within 10 seconds), still unrun.
+- A second physical audio output on the test machine, for the audible half
+  of that last check — this machine currently has only one, so nothing has
+  moved audibly yet.
 
 ## #2 · Catalog vocabulary — read tag axes, teach the menu proactively
 
