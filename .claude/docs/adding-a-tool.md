@@ -213,8 +213,10 @@ Two places, and the choice is not a matter of taste:
 1. **The tool description** — anything that matters when using *this* tool:
    chord intervals, drum-map pitches, warp modes, index bases, which tool to
    call first, how to present the result. This is the default, and it is the
-   only one with no length limit (~36KB of schemas ships every
-   request).
+   only one with no length limit (~57KB of schemas ships every
+   request — 52 tools, measured 2026-08-28 over the MCP-converted schemas;
+   `mcp_call.py stats` measures the client-visible number over a real
+   handshake).
 2. **`Seshat.Instructions`** — only what belongs to *no* tool: register, what
    to do when a request is outside the tools entirely, the fact that the view
    has already moved. Hard-capped at 2,048 characters, because Claude Desktop

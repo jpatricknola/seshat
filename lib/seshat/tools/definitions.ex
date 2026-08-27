@@ -31,81 +31,63 @@ defmodule Seshat.Tools.Definitions do
 
   @tools [
     %{
-      name: "set_track_pan",
+      name: "set_mixer",
       description:
-        "Set the stereo panning position of a track in Ableton Live. " <>
-          "Track indices are 0-based: 'track 1' = index 0. " <>
-          "Value ranges from -1.0 (full left) through 0.0 (center) to 1.0 (full right). " <>
-          "Common mappings: 'hard left' = -1.0, 'slightly left' = -0.3, 'center' = 0.0, 'hard right' = 1.0. " <>
-          "The reply echoes the position as Live displays it (50L / C / 50R) — check it against " <>
-          "what the user asked for.",
+        "Set any of a track's mixer controls in one call — volume, pan, mute, solo, arm, " <>
+          "name — on a regular track, a return track, the master, or the cue output. Send " <>
+          "only the properties you are changing, at least one. target defaults to 'track'. " <>
+          "Track and return indices are 0-based and separate spaces: 'track 1' = track 0; " <>
+          "return 0 = send A's return (see get_session_state for both). track is required " <>
+          "for target 'track' and 'return' and ignored for 'master' and 'cue'. " <>
+          "Volume is Live's fader scale, NOT linear and NOT topping out at unity: " <>
+          "0.0 = silence, 0.6 = about -10 dB ('quiet'), 0.85 = unity gain (0 dB, where a " <>
+          "new track sits — prefer this for 'all the way up'), 1.0 = +6 dB of boost. The " <>
+          "reply echoes the approximate dB. Pan: -1.0 hard left, 0.0 center, 1.0 hard " <>
+          "right; the master pan tilts the whole mix and nearly always stays at 0. " <>
+          "Each target has a subset: returns have no arm; the master has volume and pan " <>
+          "only; cue has volume only (the browser-preview/headphone level, not what the " <>
+          "audience hears) — a property the target lacks is refused by name and nothing " <>
+          "else in the call is sent. Return, master and cue replies name the previous " <>
+          "value. To change how much a track feeds a return, use set_track_send.",
       parameters: %{
         type: "object",
         properties: %{
-          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
-          "value" => %{
-            type: "number",
-            minimum: -1.0,
-            maximum: 1.0,
-            description: "Pan position. -1.0 = full left, 0.0 = center, 1.0 = full right"
-          }
-        },
-        required: ["track", "value"]
-      }
-    },
-    %{
-      name: "set_track_volume",
-      description:
-        "Set the volume level of a track in Ableton Live. " <>
-          "Track indices are 0-based: 'track 1' = index 0. " <>
-          "The 0.0-1.0 range is Live's fader scale, which is NOT linear and does NOT top out at " <>
-          "unity: 0.85 is unity gain (0 dB, where a new track sits) and 1.0 is +6 dB of boost. " <>
-          "Common mappings: 'off'/'silent' = 0.0, 'quiet' = 0.6 (about -10 dB), " <>
-          "'normal'/'unity'/'full' = 0.85 (0 dB), 'max'/'boost' = 1.0 (+6 dB). " <>
-          "Prefer 0.85 for 'turn it up all the way' unless the user actually wants it pushed " <>
-          "past unity. The reply echoes the approximate dB value — check it against what the " <>
-          "user asked for.",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
-          "value" => %{
+          "target" => %{
+            type: "string",
+            enum: ["track", "return", "master", "cue"],
+            description: "Which mixer strip. Defaults to 'track'."
+          },
+          "track" => %{
+            type: "integer",
+            minimum: 0,
+            description:
+              "0-indexed track (target 'track') or return track (target 'return'). Ignored " <>
+                "for 'master' and 'cue'."
+          },
+          "volume" => %{
             type: "number",
             minimum: 0.0,
             maximum: 1.0,
-            description:
-              "Fader position. 0.0 = silence, 0.85 = unity gain (0 dB), 1.0 = +6 dB (maximum boost)"
+            description: "Fader position. 0.0 = silence, 0.85 = unity (0 dB), 1.0 = +6 dB"
+          },
+          "pan" => %{
+            type: "number",
+            minimum: -1.0,
+            maximum: 1.0,
+            description: "-1.0 = hard left, 0.0 = center, 1.0 = hard right"
+          },
+          "mute" => %{type: "boolean", description: "true = muted"},
+          "solo" => %{type: "boolean", description: "true = soloed"},
+          "arm" => %{
+            type: "boolean",
+            description: "true = armed for recording (regular tracks only)"
+          },
+          "name" => %{
+            type: "string",
+            description: "New name (regular and return tracks only)"
           }
         },
-        required: ["track", "value"]
-      }
-    },
-    %{
-      name: "set_track_mute",
-      description:
-        "Mute or unmute a track in Ableton Live. " <>
-          "Track indices are 0-based: 'track 1' = index 0.",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
-          "muted" => %{type: "boolean", description: "true = muted, false = unmuted"}
-        },
-        required: ["track", "muted"]
-      }
-    },
-    %{
-      name: "set_track_solo",
-      description:
-        "Solo or unsolo a track in Ableton Live. " <>
-          "Track indices are 0-based: 'track 1' = index 0.",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
-          "soloed" => %{type: "boolean", description: "true = soloed, false = unsoloed"}
-        },
-        required: ["track", "soloed"]
+        required: []
       }
     },
     %{
@@ -113,14 +95,19 @@ defmodule Seshat.Tools.Definitions do
       description:
         "Create a new track in Ableton Live and give it a name. " <>
           "Use 'midi' for software instruments (synths, samplers, drum machines, keys, pads). " <>
-          "Use 'audio' for recording external sources (vocals, guitar, bass, field recordings).",
+          "Use 'audio' for recording external sources (vocals, guitar, bass, field recordings). " <>
+          "'return' creates a return track — shared-effect host that every track gains a send " <>
+          "to (return N = send letter N; Live caps a set at 12) — appended after the existing " <>
+          "returns and empty until load_device (target: 'return') fills it.",
       parameters: %{
         type: "object",
         properties: %{
           "track_type" => %{
             type: "string",
-            enum: ["midi", "audio"],
-            description: "midi = software instruments, audio = external recording"
+            enum: ["midi", "audio", "return"],
+            description:
+              "midi = software instruments, audio = external recording, return = shared-effect " <>
+                "return track"
           },
           "name" => %{
             type: "string",
@@ -169,8 +156,8 @@ defmodule Seshat.Tools.Definitions do
             description:
               "Optional clip name, shown on the clip in Live's Session grid and in " <>
                 "get_clip_slots readouts. Only used when creating or writing the clip — omit " <>
-                "to leave it unnamed (there is no auto-generated fallback); set_clip_name " <>
-                "renames later."
+                "to leave it unnamed (there is no auto-generated fallback); " <>
+                "set_clip_properties renames later."
           },
           "clip_length" => %{
             type: "number",
@@ -220,14 +207,24 @@ defmodule Seshat.Tools.Definitions do
       description:
         "Delete a track from the Ableton Live session. " <>
           "Track indices are 0-based: 'track 1' = index 0. " <>
-          "Use get_session_state first to confirm the track index.",
+          "Use get_session_state first to confirm the track index. " <>
+          "target 'return' deletes a return track by return index (0 = send A); the returns " <>
+          "after it shift down a place with their send letters — re-check get_session_state " <>
+          "before touching another send.",
       parameters: %{
         type: "object",
         properties: %{
+          "target" => %{
+            type: "string",
+            enum: ["track", "return"],
+            description:
+              "Which space the index is in: 'track' (default) = a regular track, 'return' = a " <>
+                "return track."
+          },
           "track" => %{
             type: "integer",
             minimum: 0,
-            description: "0-indexed track number to delete"
+            description: "0-indexed track number to delete (return index with target 'return')"
           }
         },
         required: ["track"]
@@ -248,18 +245,6 @@ defmodule Seshat.Tools.Definitions do
           }
         },
         required: ["track"]
-      }
-    },
-    %{
-      name: "set_track_name",
-      description: "Rename a track in Ableton Live. Track indices are 0-based.",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
-          "name" => %{type: "string", description: "New name for the track"}
-        },
-        required: ["track", "name"]
       }
     },
     %{
@@ -376,20 +361,6 @@ defmodule Seshat.Tools.Definitions do
       }
     },
     %{
-      name: "set_track_arm",
-      description:
-        "Arm or disarm a track for recording in Ableton Live. " <>
-          "Track indices are 0-based.",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
-          "armed" => %{type: "boolean", description: "true = armed, false = disarmed"}
-        },
-        required: ["track", "armed"]
-      }
-    },
-    %{
       name: "capture_midi",
       description:
         "Retroactively capture the MIDI the user just played into a new Session clip — " <>
@@ -405,7 +376,7 @@ defmodule Seshat.Tools.Definitions do
           "If nothing MIDI was played since the last capture, the reply says nothing appeared. " <>
           "The view follows the capture automatically: the new clip is selected with the note " <>
           "editor open, even mid-playback. " <>
-          "Follow up with get_clip_notes to inspect what was kept, or set_clip_name to rename it.",
+          "Follow up with get_clip_notes to inspect what was kept, or set_clip_properties to rename it.",
       parameters: %{
         type: "object",
         properties: %{
@@ -596,22 +567,6 @@ defmodule Seshat.Tools.Definitions do
       }
     },
     %{
-      name: "set_clip_name",
-      description:
-        "Rename a clip in Ableton Live. " <>
-          "Clip slot N sits in scene N, both 0-based: scene 1 = slot 0. " <>
-          "Use get_clip_slots first to confirm which slot holds the clip.",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "track" => %{type: "integer", minimum: 0, description: "0-indexed track number"},
-          "clip_slot" => %{type: "integer", minimum: 0, description: "0-indexed scene/clip slot"},
-          "name" => %{type: "string", description: "New name for the clip"}
-        },
-        required: ["track", "clip_slot", "name"]
-      }
-    },
-    %{
       name: "get_clip_properties",
       description:
         "Read one clip's playback properties: clip type (MIDI/audio), name, length in beats, " <>
@@ -636,8 +591,8 @@ defmodule Seshat.Tools.Definitions do
     %{
       name: "set_clip_properties",
       description:
-        "Set a clip's own loop brace, play markers, launch behavior, or (audio clips only) " <>
-          "gain/warp. This is the clip's OWN loop — distinct from set_loop, which moves the " <>
+        "Set a clip's own name, loop brace, play markers, launch behavior, or (audio clips " <>
+          "only) gain/warp. This is the clip's OWN loop — distinct from set_loop, which moves the " <>
           "song's global arrangement loop. Track and clip_slot are 0-based; slot N sits in " <>
           "scene N. All properties are optional — send only what you're changing, at least " <>
           "one. Positions are in beats from the clip's start — except on an audio clip with " <>
@@ -652,7 +607,7 @@ defmodule Seshat.Tools.Definitions do
           "matched the intent. launch_mode: 0=Trigger, 1=Gate, 2=Toggle, 3=Repeat. " <>
           "launch_quantization: 0=Global, 1=None, 2=8 bars, 3=4 bars, 4=2 bars, 5=1 bar, " <>
           "6=1/2, 7=1/2T, 8=1/4, 9=1/4T, 10=1/8, 11=1/8T, 12=1/16, 13=1/16T, 14=1/32. " <>
-          "velocity_amount is 0.0–1.0. Audio only — gain: nonlinear 0.0–1.0, trust the dB the " <>
+          "velocity_amount is 0.0–1.0. name renames the clip. Audio only — gain: nonlinear 0.0–1.0, trust the dB the " <>
           "reply echoes rather than the number; warp_mode: 0=Beats, 1=Tones, 2=Texture, " <>
           "3=Re-Pitch, 4=Complex, 6=Complex Pro; warping: on/off. Audio-only properties on a " <>
           "MIDI clip are rejected with an error. Use get_clip_properties first to see current " <>
@@ -708,6 +663,10 @@ defmodule Seshat.Tools.Definitions do
             minimum: 0.0,
             maximum: 1.0,
             description: "How much MIDI velocity affects clip volume, 0.0–1.0"
+          },
+          "name" => %{
+            type: "string",
+            description: "New name for the clip, shown on it in Live's Session grid"
           },
           "gain" => %{
             type: "number",
@@ -944,12 +903,24 @@ defmodule Seshat.Tools.Definitions do
     },
     # --- Notes ---
     %{
-      name: "remove_notes",
+      name: "edit_notes",
       description:
-        "Remove MIDI notes from a clip in Ableton Live. " <>
-          "With no range specified, removes ALL notes. " <>
-          "Optionally specify a pitch and time range to remove specific notes. " <>
-          "Track indices are 0-based, and clip slot N sits in scene N: scene 1 = slot 0.",
+        "Edit or delete the MIDI notes in a window of a clip, in place, as one undoable " <>
+          "step — 'make the third note quieter', 'shift the bassline up an octave', 'delete " <>
+          "the hats in bar 2'. The window is a pitch range (start_pitch + pitch_span) and a " <>
+          "time range (start_time + time_span, in beats from the clip's start); a note is in " <>
+          "the window if it STARTS inside it — a note that begins before the window and " <>
+          "sounds into it is not touched. Omit the window to edit every note. Then give " <>
+          "at least one change: transpose (semitones, may be negative), velocity (absolute " <>
+          "1-127) or velocity_delta (added, clamped to 1-127), duration (absolute beats) or " <>
+          "shift (beats added to each start, may be negative), or delete: true. Changes " <>
+          "apply to every note in the window; to touch one note, make the window exactly " <>
+          "its pitch and start. Results outside 0-127 or before beat 0 are refused before " <>
+          "anything changes. Call get_clip_notes first to see what is there; the reply " <>
+          "reports how many notes matched and reads the window back. Track and clip_slot are " <>
+          "0-based; slot N sits in scene N. Live's per-note probability, velocity deviation " <>
+          "and release velocity are reset to defaults on edited notes (the wire cannot carry " <>
+          "them); unedited notes are untouched.",
       parameters: %{
         type: "object",
         properties: %{
@@ -963,23 +934,54 @@ defmodule Seshat.Tools.Definitions do
             type: "integer",
             minimum: 0,
             maximum: 127,
-            description: "Lowest pitch to remove (default 0)"
+            description: "Lowest pitch in the window (default 0)"
           },
           "pitch_span" => %{
             type: "integer",
             minimum: 1,
             maximum: 128,
-            description: "Number of pitches to span (default 128 = all)"
+            description: "Pitches spanned (default 128 = all)"
           },
           "start_time" => %{
             type: "number",
             minimum: 0.0,
-            description: "Start time in beats (default 0.0)"
+            description: "Window start in beats (default 0.0)"
           },
           "time_span" => %{
             type: "number",
             minimum: 0.0,
-            description: "Time span in beats (default: entire clip)"
+            description: "Window length in beats (default: whole clip)"
+          },
+          "transpose" => %{
+            type: "integer",
+            minimum: -127,
+            maximum: 127,
+            description: "Semitones to add to each pitch"
+          },
+          "velocity" => %{
+            type: "integer",
+            minimum: 1,
+            maximum: 127,
+            description: "Set every matched note's velocity"
+          },
+          "velocity_delta" => %{
+            type: "integer",
+            minimum: -126,
+            maximum: 126,
+            description: "Add to each velocity, clamped 1-127"
+          },
+          "duration" => %{
+            type: "number",
+            minimum: 0.001,
+            description: "Set every matched note's length, in beats"
+          },
+          "shift" => %{
+            type: "number",
+            description: "Beats to add to each start (negative = earlier)"
+          },
+          "delete" => %{
+            type: "boolean",
+            description: "true = remove the matched notes instead of editing them"
           }
         },
         required: ["track"]
@@ -997,10 +999,10 @@ defmodule Seshat.Tools.Definitions do
           "ALWAYS call this before editing existing material — transposing, fixing a note, " <>
           "humanizing velocities, adding to an existing part — so you work with what is " <>
           "actually there instead of overwriting it. " <>
-          "The typical edit loop is: get_clip_notes → decide changes → remove_notes " <>
-          "(with a pitch/time range) → write_midi_notes. " <>
+          "The typical edit loop is: get_clip_notes → edit_notes for changes to existing " <>
+          "notes, or write_midi_notes to add new ones. " <>
           "Optionally restrict the read to a pitch/time window using the same range " <>
-          "parameters remove_notes takes. " <>
+          "parameters edit_notes takes. " <>
           "Use get_clip_slots first to see which slots hold MIDI clips worth reading.",
       parameters: %{
         type: "object",
@@ -1434,10 +1436,10 @@ defmodule Seshat.Tools.Definitions do
           "UI number, never raw index.",
       parameters: %{type: "object", properties: %{}, required: []}
     },
-    # --- Sends, return tracks, master ---
+    # --- Sends ---
     #
-    # Everything below except set_track_send / get_track_sends' send reads needs
-    # Seshat's return_track.py extension to AbletonOSC (mix abletonosc.install).
+    # `get_track_sends` reads the return-track count and names through Seshat's
+    # return_track.py extension; the send levels themselves are upstream's.
     %{
       name: "set_track_send",
       description:
@@ -1452,7 +1454,8 @@ defmodule Seshat.Tools.Definitions do
           "0.6+ is a drenched, obvious effect. " <>
           "The send is only audible if its return track has an effect loaded — load one with " <>
           "load_device (target: 'return'). " <>
-          "Regular tracks only — for a return track's own level use set_return_track_volume.",
+          "Regular tracks only — for a return track's own level use set_mixer " <>
+          "(target: 'return').",
       parameters: %{
         type: "object",
         properties: %{
@@ -1483,8 +1486,7 @@ defmodule Seshat.Tools.Definitions do
           "it feeds. " <>
           "Track indices are 0-based: 'track 1' = index 0. " <>
           "Use this before relative send changes ('a bit less delay') or to see which send " <>
-          "index feeds which return. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
+          "index feeds which return.",
       parameters: %{
         type: "object",
         properties: %{
@@ -1495,227 +1497,6 @@ defmodule Seshat.Tools.Definitions do
           }
         },
         required: ["track"]
-      }
-    },
-    %{
-      name: "create_return_track",
-      description:
-        "Create a new return track in Ableton Live and name it. " <>
-          "Return tracks host shared effects (reverb, delay) that regular tracks feed via " <>
-          "sends; the new return is appended after existing ones, and every track " <>
-          "automatically gains the matching send (new return's index = new send's index; " <>
-          "return 0 = send A). " <>
-          "Live allows at most 12 return tracks; the tool errors at the cap. " <>
-          "The new return is empty — load its effect immediately with load_device " <>
-          "(target: 'return') so the sends into it are audible. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "name" => %{
-            type: "string",
-            description:
-              "Short descriptive label for the return track (e.g. 'Room Reverb', 'Slap Delay')"
-          }
-        },
-        required: ["name"]
-      }
-    },
-    %{
-      name: "delete_return_track",
-      description:
-        "Delete a return track. " <>
-          "Return-track indices are 0-based and separate from regular track indices: return 0 " <>
-          "= the first return = send A (see get_session_state). " <>
-          "Deleting a return shifts the indices and send letters of the returns after it — " <>
-          "re-check get_session_state afterwards. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "return_track" => %{
-            type: "integer",
-            minimum: 0,
-            description: "0-indexed return track: 0 = the first return = send A"
-          }
-        },
-        required: ["return_track"]
-      }
-    },
-    %{
-      name: "set_return_track_volume",
-      description:
-        "Set the volume of a return track — the overall level of the shared effect it hosts. " <>
-          "Return-track indices are 0-based and separate from regular tracks: return 0 = send " <>
-          "A's return (see get_session_state). " <>
-          "Same fader scale as set_track_volume: 0.0 = silence, 0.85 = unity gain (0 dB), " <>
-          "1.0 = +6 dB. " <>
-          "To change how much one track feeds the effect, use set_track_send instead. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "return_track" => %{
-            type: "integer",
-            minimum: 0,
-            description: "0-indexed return track: 0 = the first return = send A"
-          },
-          "value" => %{
-            type: "number",
-            minimum: 0.0,
-            maximum: 1.0,
-            description:
-              "Fader position. 0.0 = silence, 0.85 = unity gain (0 dB), 1.0 = +6 dB (maximum boost)"
-          }
-        },
-        required: ["return_track", "value"]
-      }
-    },
-    %{
-      name: "set_return_track_pan",
-      description:
-        "Set the pan of a return track — where the shared effect sits in the stereo field. " <>
-          "Return-track indices are 0-based and separate from regular tracks: return 0 = send " <>
-          "A's return (see get_session_state). " <>
-          "-1.0 = hard left, 0.0 = center, 1.0 = hard right. " <>
-          "For a regular track's pan use set_track_pan. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "return_track" => %{
-            type: "integer",
-            minimum: 0,
-            description: "0-indexed return track: 0 = the first return = send A"
-          },
-          "value" => %{
-            type: "number",
-            minimum: -1.0,
-            maximum: 1.0,
-            description: "Pan position. -1.0 = hard left, 0.0 = center, 1.0 = hard right"
-          }
-        },
-        required: ["return_track", "value"]
-      }
-    },
-    %{
-      name: "set_return_track_mute",
-      description:
-        "Mute or unmute a return track — silences the shared effect (reverb, delay) for every " <>
-          "track feeding it, without touching the sends. " <>
-          "muted: true silences, false brings it back. " <>
-          "Return-track indices are 0-based and separate from regular tracks: return 0 = send " <>
-          "A (see get_session_state). " <>
-          "For a regular track use set_track_mute. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "return_track" => %{
-            type: "integer",
-            minimum: 0,
-            description: "0-indexed return track: 0 = the first return = send A"
-          },
-          "muted" => %{
-            type: "boolean",
-            description: "true silences the return track, false brings it back"
-          }
-        },
-        required: ["return_track", "muted"]
-      }
-    },
-    %{
-      name: "set_return_track_solo",
-      description:
-        "Solo or unsolo a return track — hear the effect channel alone, which is how you dial " <>
-          "in a reverb or delay without the dry signal masking it. " <>
-          "soloed: true silences everything else, false brings the rest back. " <>
-          "Return-track indices are 0-based and separate from regular tracks: return 0 = send " <>
-          "A (see get_session_state). " <>
-          "For a regular track use set_track_solo. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "return_track" => %{
-            type: "integer",
-            minimum: 0,
-            description: "0-indexed return track: 0 = the first return = send A"
-          },
-          "soloed" => %{
-            type: "boolean",
-            description: "true hears this return alone, false brings the rest back"
-          }
-        },
-        required: ["return_track", "soloed"]
-      }
-    },
-    %{
-      name: "set_master_volume",
-      description:
-        "Set the master track's output volume in Ableton Live (shown as Main in Live 12). " <>
-          "Same fader scale as set_track_volume: 0.0 = silence, 0.85 = unity gain (0 dB, where " <>
-          "a new set sits), 1.0 = +6 dB. " <>
-          "Lower this if the master is clipping; prefer track volumes and sends for balance " <>
-          "moves. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "value" => %{
-            type: "number",
-            minimum: 0.0,
-            maximum: 1.0,
-            description:
-              "Fader position. 0.0 = silence, 0.85 = unity gain (0 dB), 1.0 = +6 dB (maximum boost)"
-          }
-        },
-        required: ["value"]
-      }
-    },
-    %{
-      name: "set_master_pan",
-      description:
-        "Set the master track's stereo pan in Ableton Live (the master is shown as Main in " <>
-          "Live 12). " <>
-          "-1.0 = hard left, 0.0 = center (where nearly every mix should stay), 1.0 = hard " <>
-          "right. " <>
-          "Prefer track pans for placement; this tilts the entire mix. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "value" => %{
-            type: "number",
-            minimum: -1.0,
-            maximum: 1.0,
-            description: "Pan position. -1.0 = hard left, 0.0 = center, 1.0 = hard right"
-          }
-        },
-        required: ["value"]
-      }
-    },
-    %{
-      name: "set_cue_volume",
-      description:
-        "Set the cue (preview/headphone) volume on Ableton Live's master track — the level of " <>
-          "browser previews and of anything cued, separate from the master output the audience " <>
-          "hears. " <>
-          "0.0 = silent, 1.0 = maximum; it uses the same fader curve as track volume, so 0.85 " <>
-          "is unity gain. " <>
-          "If a browser preview (preview_item) is inaudible, this dial is the likely reason. " <>
-          "Requires Seshat's AbletonOSC extension (mix abletonosc.install).",
-      parameters: %{
-        type: "object",
-        properties: %{
-          "value" => %{
-            type: "number",
-            minimum: 0.0,
-            maximum: 1.0,
-            description: "Cue fader position. 0.0 = silent, 0.85 = unity gain (0 dB), 1.0 = +6 dB"
-          }
-        },
-        required: ["value"]
       }
     },
     %{

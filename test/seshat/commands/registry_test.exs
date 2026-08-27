@@ -37,7 +37,7 @@ defmodule Seshat.Commands.RegistryTest do
       assert {:error, message} = Registry.ensure_return_created(12, 12)
 
       assert message =~ "limit of 12"
-      assert message =~ "delete_return_track"
+      assert message =~ "delete_track (target: 'return')"
       assert message =~ "Nothing was created or renamed"
     end
 

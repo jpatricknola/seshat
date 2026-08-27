@@ -9,8 +9,8 @@ the set-up below also touch `/live/return_track/get/name`, which is vendored —
 a set with no reachable return names points at [bridge.md](bridge.md) first.
 
 Set-up: at least one regular track and one return track. If the set has no
-return, create one with `create_return_track`, note that you did, and delete it
-at the end.
+return, create one with `create_track track_type: "return"`, note that you did,
+and delete it at the end with `delete_track target: "return"`.
 
 ## A send set is confirmed by its own read-back
 

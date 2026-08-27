@@ -30,7 +30,10 @@ restarted server. Record all four values here: advertised tool count, compact
 JSON bytes for the complete `tools/list` array, largest individual tool, and
 that tool's compact JSON bytes.
 
-The consolidation plans from a 67-tool / 62,784-byte baseline to 52 tools. Use
+The consolidation plans from a 67-tool / 62,784-byte baseline to 52 tools.
+For reference, encoding the MCP-converted schemas Elixir-side on 2026-08-28 gave
+52 tools / 57,450 bytes, largest `set_clip_properties` at 3,555 — that is *not*
+this check's answer, only the shape to expect from one. Use
 the byte comparison only if `stats` reproduces the old baseline when run on the
 pre-consolidation definitions; otherwise state that the encoding method changed
 and establish this output as the new baseline. The count must match
@@ -45,7 +48,8 @@ the consolidation successful.
 
 ## A changed property carries what you intended
 
-*Last run: 2026-08-02 — `set_track_pan.value` carries `minimum`/`maximum`*
+*Last run: — (the 2026-08-02 run read `set_track_pan.value`, a tool the
+2026-08-27 consolidation removed; `set_mixer.pan` is the same shape)*
 
 `mcp_call.py schema <tool> <property>` for whatever moved. Recorded 2026-07-30,
 when bounds moved into the advertised schema: the encoded shape became
@@ -54,12 +58,13 @@ Bounds *inside* `oneOf` branches were the untested combination.
 
 ## A rejected call comes back readable, not as a protocol error
 
-*Last run: 2026-08-03 — passed. Came back as `result` with `"isError": true` and
-the text "Invalid parameters for set_track_pan — nothing was sent to Ableton:\n-
-value: must be at most 1.0 (got 2.0) — Pan position. -1.0 = full left, 0.0 =
-center, 1.0 = full right". No `error` key, no `-32602`, no Peri internals.*
+*Last run: — (the 2026-08-03 run passed on `set_track_pan`, removed by the
+2026-08-27 consolidation: it came back as `result` with `"isError": true` and
+the text "Invalid parameters for set_track_pan — nothing was sent to
+Ableton:\n- value: must be at most 1.0 (got 2.0) — Pan position…", no `error`
+key, no `-32602`, no Peri internals)*
 
-`mcp_call.py call set_track_pan '{"track": 0, "value": 2.0}'` must return a
+`mcp_call.py call set_mixer '{"track": 0, "pan": 2.0}'` must return a
 `result` with `"isError": true` whose text names the bound and the value
 (`must be at most 1.0 (got 2.0)`), with no Peri internals (`{:float,`) in it. An
 `error` key with `-32602` means `Seshat.MCP.Server`'s `handle_request/2`
@@ -82,10 +87,10 @@ protocol errors.
 
 ## The rejected value never reached Live
 
-*Last run: 2026-08-03 — passed. Track 0's pan read 0.0 before the rejected
-`value: 2.0` call and still read 0.0 afterwards via
-`get_session_state(refresh: true)` — a fresh read from Live, not the mirror. Had
-the write gone out, Live would have clamped it to 1.0.*
+*Last run: — (the 2026-08-03 run passed on `set_track_pan`: track 0's pan read
+0.0 before the rejected `value: 2.0` call and still read 0.0 afterwards via
+`get_session_state(refresh: true)`, a fresh read from Live rather than the
+mirror. `set_mixer`'s `pan` is the same path and has not been run.)*
 
 After the rejection above, read the target back. A refusal that silently *did*
 send is the thing worth catching, and no reply string can show it to you.

@@ -502,10 +502,10 @@ Much of what the Ableton side needs exists; the table says which.
 | Key/scale | **Mirrored** (`root_note`, `scale_name`) |
 | Song position / next bar boundary | **Not mirrored.** `/live/song/get/current_song_time` is a query (≈100 ms AbletonOSC tick); `/live/song/start_listen/beat` pushes a beat number every beat — the right primitive, unused so far |
 | Create an audio track | `create_track` (`type: "audio"`) |
-| Arm / record into a slot | `set_track_arm`, `record_clip`, `stop_recording` — Live starts and stops a Session take on the global launch-quantization boundary (1 bar by default), so "capture the next eight bars" is `record_clip` with `bars: 8` |
+| Arm / record into a slot | `set_mixer` (`arm`), `record_clip`, `stop_recording` — Live starts and stops a Session take on the global launch-quantization boundary (1 bar by default), so "capture the next eight bars" is `record_clip` with `bars: 8` |
 | Route generated audio into that track | **Nothing.** Seshat can neither set nor read a track's input routing (`record_clip`'s description already says so) |
 | Route the user's MIDI to the generator (fast loop) | **Nothing** in Seshat; in Live it is a track's MIDI To / a device on the track — the M4L topology below makes it a device drop |
-| Clip naming and metadata | `set_clip_name` |
+| Clip naming and metadata | `set_clip_properties` (`name`) |
 | Warp the captured clip | `set_clip_properties` (`warping`, `warp_mode`) |
 | MIDI/clip inspection for chord context | `get_clip_notes` |
 | Section markers | **Fork gap, not a Live gap.** Arrangement locators are in the LOM — `Song.cue_points` (listenable), `set_or_delete_cue`, `jump_to_next_cue`, `is_cue_point_selected`, verified in 12.4.3's `LomTypes.pyc` 2026-08-27 — just not in the fork. One handler; scene names need not stand in. [live-native-options.md §2.7](live-native-options.md) |

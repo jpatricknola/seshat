@@ -114,8 +114,8 @@ defmodule Seshat.MCP.ToolsTest do
     test "accepts integers where the schema says number" do
       # Models routinely emit `1` rather than `1.0`; Peri's :float alone
       # would reject it.
-      assert {:ok, _} = validate("set_track_pan", %{"track" => 0, "value" => 1})
-      assert {:ok, _} = validate("set_track_pan", %{"track" => 0, "value" => -0.5})
+      assert {:ok, _} = validate("set_mixer", %{"track" => 0, "pan" => 1})
+      assert {:ok, _} = validate("set_mixer", %{"track" => 0, "pan" => -0.5})
 
       assert {:ok, _} =
                validate("set_device_parameter", %{
@@ -127,11 +127,12 @@ defmodule Seshat.MCP.ToolsTest do
     end
 
     test "rejects missing required params" do
-      assert {:error, _} = validate("set_track_pan", %{"track" => 0})
+      assert {:error, _} = validate("set_scene_name", %{"scene" => 0})
     end
 
     test "enforces enums" do
       assert {:ok, _} = validate("create_track", %{"track_type" => "midi", "name" => "Drums"})
+      assert {:ok, _} = validate("create_track", %{"track_type" => "return", "name" => "Verb"})
       assert {:error, _} = validate("create_track", %{"track_type" => "banjo", "name" => "Drums"})
     end
 
@@ -148,17 +149,17 @@ defmodule Seshat.MCP.ToolsTest do
     # 2.0 at the wire. The authoritative check is `Seshat.Tools.Validation`;
     # this is the wire agreeing with it rather than contradicting it.
     test "enforces declared ranges on numbers" do
-      assert {:error, _} = validate("set_track_pan", %{"track" => 0, "value" => 2.0})
-      assert {:error, _} = validate("set_track_pan", %{"track" => 0, "value" => -1.5})
-      assert {:ok, _} = validate("set_track_pan", %{"track" => 0, "value" => 1.0})
+      assert {:error, _} = validate("set_mixer", %{"track" => 0, "pan" => 2.0})
+      assert {:error, _} = validate("set_mixer", %{"track" => 0, "pan" => -1.5})
+      assert {:ok, _} = validate("set_mixer", %{"track" => 0, "pan" => 1.0})
     end
 
     test "enforces declared ranges on integers" do
-      assert {:error, _} = validate("set_track_pan", %{"track" => -1, "value" => 0.0})
+      assert {:error, _} = validate("set_mixer", %{"track" => -1, "pan" => 0.0})
     end
 
     test "a non-numeric value on a bounded number errors rather than crashing" do
-      assert {:error, _} = validate("set_track_pan", %{"track" => 0, "value" => "loud"})
+      assert {:error, _} = validate("set_mixer", %{"track" => 0, "pan" => "loud"})
     end
 
     # `target` is the first *optional* enum shared across six tools, so a
@@ -175,6 +176,22 @@ defmodule Seshat.MCP.ToolsTest do
       assert {:ok, _} = validate("get_device_parameters", Map.put(params, "target", "return"))
       assert {:ok, _} = validate("get_device_parameters", Map.put(params, "target", "master"))
       assert {:error, _} = validate("get_device_parameters", Map.put(params, "target", "send"))
+    end
+
+    # `set_mixer` is the first mutating tool with nothing required, which is
+    # what makes `required: []` worth pinning at the wire rather than only in
+    # `Definitions`: a converter that emitted no `required` key at all, or that
+    # invented one, would be invisible everywhere else.
+    test "set_mixer advertises its own four-value target and requires nothing" do
+      component = Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_mixer"))
+
+      assert component.input_schema["properties"]["target"]["enum"] ==
+               ["track", "return", "master", "cue"]
+
+      assert Map.get(component.input_schema, "required", []) == []
+
+      assert {:ok, _} = validate("set_mixer", %{"target" => "master", "volume" => 0.85})
+      assert {:error, _} = validate("set_mixer", %{"target" => "aux", "volume" => 0.85})
     end
 
     test "every device tool advertises the same target enum" do
@@ -196,20 +213,20 @@ defmodule Seshat.MCP.ToolsTest do
     # steer the model away from an out-of-range call in the first place.
     test "a bounded number has a top-level type and range" do
       component =
-        Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_track_pan"))
+        Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_mixer"))
 
-      value = component.input_schema["properties"]["value"]
+      value = component.input_schema["properties"]["pan"]
 
       assert value["type"] == "number"
       assert value["minimum"] == -1.0
       assert value["maximum"] == 1.0
-      assert value["description"] =~ "Pan position"
+      assert value["description"] =~ "hard left"
       refute Map.has_key?(value, "oneOf")
     end
 
     test "a bounded integer carries its minimum" do
       component =
-        Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_track_pan"))
+        Enum.find(Seshat.MCP.Server.__components__(:tool), &(&1.name == "set_mixer"))
 
       assert %{"type" => "integer", "minimum" => 0} =
                Map.take(component.input_schema["properties"]["track"], ["type", "minimum"])

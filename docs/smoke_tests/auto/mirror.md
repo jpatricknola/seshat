@@ -57,19 +57,20 @@ after the return's own create had settled, the log showed **zero** `Song:`
 lines, **zero** `Loaded N tracks` lines and no refresh scheduling at all — so
 the setters triggered no full rebuild. Values restored immediately afterwards.*
 
-Issue the four return mixer setters (volume, pan, mute, solo) and the three
-master ones (volume, pan, cue volume) in a burst, then `get_session_state`
+Issue the four return properties (`set_mixer target: "return"` with volume,
+pan, mute, solo) and the three master/cue ones (`target: "master"` with volume
+and pan, `target: "cue"` with volume) in a burst, then `get_session_state`
 **without** `refresh: true`: it answers and carries the pushed final values. The
 log shows **no** full-refresh `Song:` / `Loaded …` sequence caused by those
 setters.
 
 Baseline the log offset *after* any scratch return you created has settled — a
-`create_return_track` is itself structural and produces exactly the sequence
-this test is looking for the absence of.
+`create_track track_type: "return"` is itself structural and produces exactly
+the sequence this test is looking for the absence of.
 
 If the four return values are the ones that don't arrive, the fix is to restore
-`State.refresh()` in those four handlers only — their listener pushes were
-inferred from the master ones, never measured.
+`State.refresh()` in `set_mixer`'s return branch only — their listener pushes
+were inferred from the master ones, never measured.
 
 ## A burst of creates collapses into one refresh
 

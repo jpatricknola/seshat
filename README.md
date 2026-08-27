@@ -95,9 +95,9 @@ AbletonOSC install. The fork adds what upstream is missing:
 - **A browser API**, without which `search_library`, `list_browser_items` and
   `load_device` don't work.
 - **Return track and master addresses** — upstream only reaches regular tracks
-  — without which `set_track_send`, `get_track_sends`, `create_return_track`,
-  `delete_return_track`, `set_return_track_volume`, `set_master_volume`, and the
-  return/master lines in `get_session_state` don't work.
+  — without which `set_track_send`, `get_track_sends`, `create_track` and
+  `delete_track` with `target: 'return'`, `set_mixer` on a return, the master or
+  the cue, and the return/master lines in `get_session_state` don't work.
 - **Track-list listeners**, so the session mirror follows tracks added, deleted
   or reordered by hand in Live.
 

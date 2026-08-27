@@ -3,7 +3,7 @@ defmodule Seshat.MCP.Tools do
   Generates one `Anubis.Server.Component` module per entry in
   `Seshat.Tools.Definitions`.
 
-  `"set_track_pan"` becomes `Seshat.MCP.Tools.SetTrackPan`. Anubis derives the
+  `"set_mixer"` becomes `Seshat.MCP.Tools.SetMixer`. Anubis derives the
   wire name back from the module name (`Macro.underscore/1` of the last
   segment), so that round trip keeps definitions and wire names in sync.
   `Seshat.MCP.ToolsTest` asserts it.

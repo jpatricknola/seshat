@@ -122,6 +122,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Single-message tools hit Transport directly; multi-step ones go via Registry. |
 | [lib/seshat/tools/validation.ex](lib/seshat/tools/validation.ex) | Schema-driven parameter validation, called from `Handlers.call/2` before dispatch — reads the declared bounds/types straight out of `Definitions`, so every tool is covered by construction |
 | [lib/seshat/tools/follow_cam.ex](lib/seshat/tools/follow_cam.ex) | View steering — after a create/write/delete succeeds, selects what it touched and shows the pane it's in. `calls/2` is the pure decision; `steer/2` sends it best-effort |
+| [lib/seshat/tools/note_edit.ex](lib/seshat/tools/note_edit.ex) | Pure note-edit arithmetic behind `edit_notes` (transpose, velocity, duration, shift, delete, range refusals); no OSC |
 | [lib/seshat/instructions.ex](lib/seshat/instructions.ex) | MCP session-level guidance — the conventions no single tool description can carry |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
 | [lib/seshat/mcp/tools.ex](lib/seshat/mcp/tools.ex) | Generates one MCP component per tool definition |

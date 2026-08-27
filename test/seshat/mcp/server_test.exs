@@ -56,7 +56,7 @@ defmodule Seshat.MCP.ServerTest do
       # `Validation` call and the interception could be gone unnoticed.
       request = %{
         "method" => "tools/call",
-        "params" => %{"name" => "set_track_pan", "arguments" => %{"track" => 0, "value" => 2.0}}
+        "params" => %{"name" => "set_mixer", "arguments" => %{"track" => 0, "pan" => 2.0}}
       }
 
       assert {:error, %Anubis.MCP.Error{reason: :invalid_params}, _frame} =
@@ -64,12 +64,12 @@ defmodule Seshat.MCP.ServerTest do
     end
 
     test "an out-of-range number names the bound, the value and the parameter's own description" do
-      text = rejection_text(call("set_track_pan", %{"track" => 0, "value" => 2.0}))
+      text = rejection_text(call("set_mixer", %{"track" => 0, "pan" => 2.0}))
 
-      assert text =~ "Invalid parameters for set_track_pan"
+      assert text =~ "Invalid parameters for set_mixer"
       assert text =~ "must be at most 1.0"
       assert text =~ "(got 2.0)"
-      assert text =~ "-1.0 = full left"
+      assert text =~ "-1.0 = hard left"
 
       # Peri's internals must be gone, not merely wrapped.
       refute text =~ "{:float,"
@@ -87,15 +87,18 @@ defmodule Seshat.MCP.ServerTest do
       assert text =~ "127"
     end
 
+    # `set_mixer` requires nothing (its properties are all optional and the
+    # handler enforces what a target needs), so the required-parameter path is
+    # exercised through a tool that still declares one.
     test "a missing required parameter says so" do
-      text = rejection_text(call("set_track_pan", %{"value" => 0.5}))
+      text = rejection_text(call("set_track_send", %{"send" => 0, "value" => 0.5}))
 
       assert text =~ "track: required but missing"
-      assert text =~ "0-indexed track number"
+      assert text =~ "0-indexed regular track number"
     end
 
     test "a string where an integer belongs is named as a type error" do
-      text = rejection_text(call("set_track_pan", %{"track" => "zero", "value" => 0.0}))
+      text = rejection_text(call("set_mixer", %{"track" => "zero", "pan" => 0.0}))
 
       assert text =~ "track: must be an integer (got \"zero\")"
     end
@@ -103,7 +106,7 @@ defmodule Seshat.MCP.ServerTest do
     test "an absent arguments key is treated as empty arguments" do
       reply =
         Server.handle_request(
-          %{"method" => "tools/call", "params" => %{"name" => "set_track_pan"}},
+          %{"method" => "tools/call", "params" => %{"name" => "set_track_send"}},
           %Frame{}
         )
 
@@ -114,16 +117,16 @@ defmodule Seshat.MCP.ServerTest do
     end
 
     test "an explicit null arguments value is treated as empty arguments" do
-      text = rejection_text(call("set_track_pan", nil))
+      text = rejection_text(call("set_track_send", nil))
 
       assert text =~ "track: required but missing"
       assert text =~ "value: required but missing"
     end
 
     test "non-map arguments fall back to Peri's own text, framed as a tool result" do
-      text = rejection_text(call("set_track_pan", ["track", 0]))
+      text = rejection_text(call("set_track_send", ["track", 0]))
 
-      assert text =~ "Invalid parameters for set_track_pan — nothing was sent to Ableton:"
+      assert text =~ "Invalid parameters for set_track_send — nothing was sent to Ableton:"
       assert String.contains?(text, "\n- ")
     end
 
@@ -154,13 +157,13 @@ defmodule Seshat.MCP.ServerTest do
 
       assert length(tools) == length(Seshat.Tools.Definitions.all())
 
-      pan = Enum.find(tools, &(&1.name == "set_track_pan"))
-      value = pan.input_schema["properties"]["value"]
+      mixer = Enum.find(tools, &(&1.name == "set_mixer"))
+      pan = mixer.input_schema["properties"]["pan"]
 
-      assert value["type"] == "number"
-      assert value["minimum"] == -1.0
-      assert value["maximum"] == 1.0
-      refute Map.has_key?(value, "oneOf")
+      assert pan["type"] == "number"
+      assert pan["minimum"] == -1.0
+      assert pan["maximum"] == 1.0
+      refute Map.has_key?(pan, "oneOf")
     end
   end
 end
