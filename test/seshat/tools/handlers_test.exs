@@ -4710,8 +4710,82 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert {"/live/clip/remove/notes", [0, 0, 42, 1, 0.0, 9999.0]} in trace
       assert count_queries(trace, "/live/clip/add/notes") == 0
-      assert message =~ "Deleted 1 note"
+      assert message =~ "Deleted 1 note in pitches 42-42 of the clip"
+      refute message =~ "9999"
       assert message =~ "reads back empty"
+    end
+
+    # The reply names the window that was used — never the 9999.0 sentinel, and
+    # never "the whole clip" for a window that left only one half at its default
+    # (found live 2026-08-28: a beats-2–3 delete replied "in the whole clip").
+    test "the reply names only the halves of the window that were given", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_time" => 2.0,
+            "time_span" => 1.0,
+            "delete" => true
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 42, 2.0, 0.25, 90.0, false]},
+            {"/live/clip/get/notes", [0, 0]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Deleted 1 note in beats 2.0-3.0 of the clip"
+      refute message =~ "whole clip"
+      refute message =~ "pitches"
+    end
+
+    test "a start_time with no span reads as onward; no window at all as the whole clip",
+         %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_time" => 4.0,
+            "delete" => true
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 42, 4.0, 0.25, 90.0, false]},
+            {"/live/clip/get/notes", [0, 0]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "in beats 4.0 onward of the clip"
+      refute message =~ "9999"
+
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{"track" => 0, "clip_slot" => 0, "delete" => true})
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 42, 4.0, 0.25, 90.0, false]},
+            {"/live/clip/get/notes", [0, 0]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "in the whole clip"
     end
 
     test "an empty window changes nothing and says why", %{sink: sink} do

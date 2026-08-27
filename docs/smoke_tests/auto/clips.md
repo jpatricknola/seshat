@@ -195,7 +195,7 @@ against the wrong count.
 
 ## `edit_notes` rewrites only the window
 
-*Last run: 2026-08-28 — passed. Reply "Edited 2 notes in pitches 60-60, beats 0.0-9999.0 … velocity +10. Read back and confirmed."; pitch-60 notes read vel 110.0 and 47.0 with start/dur unchanged to every digit (0.0/0.3333, 1.6667/1.75), pitch 64 and 67 identical; one `undo` restored the first read exactly. Note: the reply leaks the 9999.0 time_span sentinel — see ROADMAP.*
+*Last run: 2026-08-28 — passed. Reply "Edited 2 notes in pitches 60-60, beats 0.0-9999.0 … velocity +10. Read back and confirmed."; pitch-60 notes read vel 110.0 and 47.0 with start/dur unchanged to every digit (0.0/0.3333, 1.6667/1.75), pitch 64 and 67 identical; one `undo` restored the first read exactly. Note: the reply leaked the 9999.0 time_span sentinel — fixed on the branch the same day (`window_phrase/1` now prints only the halves given); a re-run should read "in pitches 60-60 of the clip".*
 
 `edit_notes` is read → `/live/clip/remove/notes` → `/live/clip/add/notes` →
 read, in one undo step. The measured shape (2026-08-27) and the two
@@ -237,7 +237,7 @@ refusal is happening after the rewrite.
 
 ## `delete: true` empties the window and nothing else
 
-*Last run: 2026-08-28 — passed on semantics, wording defect found. Three notes remained including the 1.6667 note; one `undo` brought the fourth back. But the reply read "Deleted 1 note in the whole clip of the clip in slot 1" — `window_phrase/1` in handlers.ex says "the whole clip" whenever the pitch window is default, ignoring the beats 2.0–3.0 window that was given. See ROADMAP.*
+*Last run: 2026-08-28 — passed on semantics, wording defect found. Three notes remained including the 1.6667 note; one `undo` brought the fourth back. But the reply read "Deleted 1 note in the whole clip of the clip in slot 1" — `window_phrase/1` in handlers.ex says "the whole clip" whenever the pitch window is default, ignoring the beats 2.0–3.0 window that was given. Fixed on the branch the same day; a re-run should read "in beats 2.0-3.0 of the clip".*
 
 Same clip. `edit_notes start_time: 2.0, time_span: 1.0, delete: true`. The
 window is beats 2–3; the pitch-60 note starting at 1.6667 sounds into it but

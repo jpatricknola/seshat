@@ -5789,12 +5789,29 @@ defmodule Seshat.Tools.Handlers do
   defp clamped_note(count),
     do: " #{note_count(count)} hit the 1-127 velocity limit and stopped there."
 
-  defp window_phrase([0, 128, _start_time, _time_span]), do: "the whole clip"
-
+  # Says the window that was actually used, half by half: a pitch half at its
+  # default is silent, a time half at its default is silent, and only both
+  # silent is "the whole clip". The 9999.0 `time_span` default never prints —
+  # it is a sentinel for "to the end", and reads as one.
   defp window_phrase([start_pitch, pitch_span, start_time, time_span]) do
-    "pitches #{start_pitch}-#{start_pitch + pitch_span - 1}, beats " <>
-      "#{format_number(start_time / 1.0)}-#{format_number((start_time + time_span) / 1.0)}"
+    halves = [pitch_phrase(start_pitch, pitch_span), time_phrase(start_time, time_span)]
+
+    case Enum.reject(halves, &is_nil/1) do
+      [] -> "the whole clip"
+      given -> Enum.join(given, ", ")
+    end
   end
+
+  defp pitch_phrase(0, 128), do: nil
+  defp pitch_phrase(start, span), do: "pitches #{start}-#{min(start + span - 1, 127)}"
+
+  defp time_phrase(start, span) when start <= 0.0 and span >= 9999.0, do: nil
+
+  defp time_phrase(start, span) when span >= 9999.0,
+    do: "beats #{format_number(start / 1.0)} onward"
+
+  defp time_phrase(start, span),
+    do: "beats #{format_number(start / 1.0)}-#{format_number((start + span) / 1.0)}"
 
   defp describe_note_changes(changes) do
     ~w(transpose velocity velocity_delta duration shift)

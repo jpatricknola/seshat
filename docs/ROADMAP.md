@@ -682,32 +682,7 @@ convention across the module.
 - Low lift once the mocking question is settled — the message itself is
   already correct and doesn't need to change, only get pinned.
 
-## #19 · `edit_notes`' reply describes the wrong window
-
-**Impact 2 · Lift 1 · 2.00 impact-per-effort**
-
-**Goal:** make the window sentence in `edit_notes`' reply say the window that
-was actually used. Today `window_phrase/1` in `lib/seshat/tools/handlers.ex`
-matches `[0, 128, _, _]` and prints "the whole clip" whenever the *pitch*
-window is at its default — so `start_time: 2.0, time_span: 1.0, delete: true`
-replies "Deleted 1 note in the whole clip", which reads as a catastrophe to
-the model and the user even though only beats 2–3 were touched. The other
-branch leaks the internal default: a pitch-only window reads "beats
-0.0-9999.0", the `time_span` sentinel from `do_call("edit_notes", …)`.
-
-**Why:** found by `/smoke-test clips` on 2026-08-28
-(`smoke_tests/auto/clips.md § delete: true empties the window and nothing
-else`) — the semantics were right, only the report was wrong, and this tool's
-reply is the one line the model relays after a destructive edit.
-
-**Planner notes:**
-- Four cases: no window → "the whole clip"; pitch only → "pitches a-b";
-  time only → "beats x-y"; both → both. Render the time half from the clip
-  length when `time_span` was defaulted, or omit it, never print 9999.
-- Pure formatting; pin it in `handlers_test.exs` beside the existing
-  `edit_notes` reply assertions.
-
-## #20 · LLM enrichment at reindex
+## #19 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -734,7 +709,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #21 · Monitored refresh worker for `Session.State`
+## #20 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -778,7 +753,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #22 · Device list per track in session state
+## #21 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -799,7 +774,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #23 · Adopt MCP `2026-07-28` when Anubis supports it
+## #22 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -850,7 +825,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #24 · Clip grid in session state — only if usage demands it
+## #23 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 

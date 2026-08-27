@@ -642,13 +642,13 @@ New, all with `Last run: —`:
 - `smoke_tests/auto/clips.md § edit_notes rewrites only the window` — the
   measured round trip, including the velocity-int / mute-0|1 conversion
   that a verbatim re-send gets wrong.
-  *2026-08-28: passed — vel 110/47 with starts and durations unchanged to every digit, other notes identical, one `undo` restored the first read. Reply leaks the `9999.0` time sentinel (ROADMAP #19).*
+  *2026-08-28: passed — vel 110/47 with starts and durations unchanged to every digit, other notes identical, one `undo` restored the first read. Reply leaked the `9999.0` time sentinel — fixed on the branch the same day.*
 - `smoke_tests/auto/clips.md § A window edit that would leave the range is
   refused` — refusal before the sends.
   *2026-08-28: passed after correcting the test — `transpose: 60` on G4 is exactly 127 and legal; `61` and `shift: -1.0` both refused before sending, clip untouched, `-12` read back as 55.*
 - `smoke_tests/auto/clips.md § delete: true empties the window and nothing
   else` — match-by-start semantics.
-  *2026-08-28: semantics passed — the 1.6667 note survived, one `undo` restored the fourth — but the reply said "in the whole clip" for a beats-2–3 window (ROADMAP #19).*
+  *2026-08-28: semantics passed — the 1.6667 note survived, one `undo` restored the fourth — but the reply said "in the whole clip" for a beats-2–3 window — fixed on the branch the same day.*
 - `smoke_tests/auto/clips.md § Renaming rides set_clip_properties` — the
   string property through the numeric write/read-back path.
   *2026-08-28: passed — `name` and `looping` echoed in one reply, name on the right slot in `get_clip_slots`.*
