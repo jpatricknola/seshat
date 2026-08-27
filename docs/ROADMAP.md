@@ -570,7 +570,42 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #20 · Modify a note in place
+## #20 · `write_midi_notes` must chunk large note batches
+
+**Goal:** dense and long MIDI clips are written in bounded OSC messages instead
+of one unbounded UDP datagram.
+
+**Why:** `Seshat.Commands.Registry.add_notes/3` currently flattens every note
+into one `/live/clip/add/notes` message, while the public schema places no
+maximum on the notes array. This machine's `net.inet.udp.maxdgram` is 9,216
+bytes, so a sufficiently dense request can exceed the transport ceiling even
+though it passed validation. This is an existing `write_midi_notes` defect,
+not work that should remain buried inside the prospective music-generation
+plan; generated 8–16 bar drums merely make it easier to hit. The generation
+work in [docs/evaluating/generative features/midi-generation-options.md](evaluating/generative%20features/midi-generation-options.md)
+depends on this fix for dense or long clips, so if that epic is ever ranked,
+this item moves ahead of it.
+
+**User stories:**
+- As a producer writing a dense or long MIDI clip, all requested notes land in
+  Live instead of the whole write disappearing because its UDP packet was too
+  large.
+
+**Planner notes:**
+- Keep clip creation and all note chunks inside the existing single
+  `write_midi_notes` command and undo step. Repeated
+  `/live/clip/add/notes` calls append, so create once and batch only the add.
+- Derive a conservative chunk size from encoded OSC payload size, not an
+  undocumented note-count guess. Each wire note adds pitch, start, duration,
+  velocity, and mute arguments; track and slot are message-level arguments.
+- Add pure tests at, below, and above the chosen boundary, including a long
+  dense clip and preservation of note order. The OS limit is the failure
+  mechanism, but the test should not send to Live or depend on this Mac's
+  current sysctl value.
+- Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
+  surface needs valid dense clips to work, not become validation errors.
+
+## #21 · Modify a note in place
 
 **Goal:** edit one note's velocity/length/pitch directly instead of
 read → remove range → rewrite.
@@ -583,7 +618,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #21 · Clip grid in session state — only if usage demands it
+## #22 · Clip grid in session state — only if usage demands it
 
 **Goal:** promote the clip grid from on-demand (`get_clip_slots`, shipped)
 into push-fresh `Session.State`.
@@ -597,7 +632,7 @@ happened — worth checking whether grid-read frequency actually justifies the
 subscription surface before building it. Index-keyed listeners, like the
 device-chain mirror's — these are ordinary fork commits on the fixed base class.
 
-## #22 · Small OSC breadth — grab bag
+## #23 · Small OSC breadth — grab bag
 
 Individually tiny, none blocking a workflow; pick up opportunistically:
 
@@ -618,7 +653,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #23 · Adopt MCP `2026-07-28` when Anubis supports it
+## #24 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Goal:** serve MCP's stateless `2026-07-28` protocol over both Streamable HTTP
 and stdio while retaining legacy compatibility for as long as clients need it.
@@ -667,7 +702,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #24 · A rejected index says which index, and what to call next
+## #25 · A rejected index says which index, and what to call next
 
 **Goal:** a tool call Live rejects for a bad index tells the model which index
 was bad and which `get_*` tool resolves it, instead of the bare "Ableton
@@ -719,7 +754,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #25 · `set_device_parameter` on a regular track loses Live's rejection message
+## #26 · `set_device_parameter` on a regular track loses Live's rejection message
 
 **Goal:** an invalid device or parameter index on a **regular-track**
 `set_device_parameter` call reports Live's actual rejection ("Ableton rejected
