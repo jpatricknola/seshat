@@ -118,10 +118,17 @@ collision classes. A caller still gets *no distinguishing value back* —
 `describe_error/1`'s message says Ableton rejected the request, not which
 guard to add — so guard rather than diagnose after the fact: check
 `/live/clip_slot/get/has_clip` before a clip query (`get_clip_notes`,
-`Registry.ensure_clip/3`), `/live/clip/get/is_midi_clip` before notes or the
-audio-only properties (`get_clip_properties`/`set_clip_properties`), and fill
-all four of `/live/clip/get/notes`' range args or none
-(`Handlers.note_range_args/1`).
+`Registry.ensure_clip/3`), `/live/clip/get/is_midi_clip` before a notes query
+(`get_clip_notes`), and fill all four of `/live/clip/get/notes`' range args or
+none (`Handlers.note_range_args/1`).
+
+`get_clip_properties`/`set_clip_properties` read `is_midi_clip` too, but that
+guard is **not** in this class: the audio-only four (`gain`,
+`gain_display_string`, `warp_mode`, `warping`) do not raise on a MIDI clip.
+Live raises and `AbletonOSCHandler._get_property` converts exactly that to
+`None`, so each replies normally carrying nil — measured 2026-08-05, and
+recorded in the fork's `API.md`. The guard is there to save a round trip and
+keep meaningless nils out of a reply, not to dodge a rejection.
 
 Setters and generic methods raise with the same envelope, and it buys Seshat
 nothing for delivery: `Transport.send_message/2` returns as soon as UDP

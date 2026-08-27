@@ -17,9 +17,12 @@ defmodule Seshat.Tools.FollowCam do
 
     * `calls/2` is **pure** — tool name plus the facts the handler gathered, to
       an ordered list of `{address, args}`. Every steering send is
-      fire-and-forget UDP with no reply, so nothing can be asserted at the wire;
-      this function is where the whole decision lives and where the tests drive
-      it.
+      fire-and-forget: `steer/2` never waits, so nothing can be asserted at the
+      wire; this function is where the whole decision lives and where the tests
+      drive it. (One of these addresses does answer —
+      `/live/view/set/selected_device` echoes both indices back, the only view
+      setter that replies. Nothing correlates on that address, so the reply is
+      broadcast and answers nobody; it is not confirmation of anything here.)
     * `steer/2` sends them, swallowing every failure. Steering must never fail
       or delay the tool it follows: the tool already succeeded, and a dead
       transport is not a reason to turn a successful write into an error.

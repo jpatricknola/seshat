@@ -911,7 +911,12 @@ defmodule Seshat.Tools.Definitions do
     },
     %{
       name: "select_track",
-      description: "Select a track in Ableton Live's UI. Track indices are 0-based.",
+      description:
+        "Select a track in Ableton Live's UI. Track indices are 0-based. " <>
+          "Regular (audio/MIDI) tracks only — a return track cannot be selected here at any " <>
+          "index, and passing a return's index selects the regular track that happens to sit " <>
+          "there instead. There is no tool for selecting a return; act on one through the " <>
+          "return tools, which leave it selected themselves.",
       parameters: %{
         type: "object",
         properties: %{
@@ -1167,8 +1172,9 @@ defmodule Seshat.Tools.Definitions do
           "filter" => %{
             type: "string",
             description:
-              "Case-insensitive substring match on the item name (e.g. 'operator', 'reverb', " <>
-                "'808'). Omit or pass \"\" to list everything in the category."
+              "Case-insensitive substring match on the item's folder path and name together " <>
+                "(e.g. 'operator', 'reverb', '808'), so a folder name matches everything " <>
+                "inside it. Omit or pass \"\" to list everything in the category."
           },
           "max_results" => %{
             type: "integer",
