@@ -165,9 +165,15 @@ defmodule Seshat.Tools.Handlers do
     "warping"
   ]
 
-  # `Clip` only carries these on an audio clip; reading or writing one on a MIDI
-  # clip raises inside AbletonOSC's callback, which sends nothing back — a guard
-  # timeout burned on an answer we already know.
+  # `Clip` only carries these on an audio clip. Reading one on a MIDI clip does
+  # **not** raise: Live raises `RuntimeError` and
+  # `AbletonOSCHandler._get_property` converts exactly that to `None`, so the
+  # reply arrives normally carrying nil (`/live/clip/get/gain [0, 0, nil]` —
+  # measured 2026-08-05, Live 12.4.3; priv/AbletonOSC/API.md). So the guard
+  # buys a round trip and keeps meaningless nils out of the reply, not an
+  # avoided error. Writing one is a different case, and the reason the setter
+  # refuses rather than sending: an accepted-looking silent setter would report
+  # a change Live never made.
   @clip_audio_only_properties ["gain", "warp_mode", "warping"]
 
   @clip_writable_properties @clip_range_properties ++ @clip_scalar_properties
@@ -731,10 +737,13 @@ defmodule Seshat.Tools.Handlers do
   The out-of-range error for `delete_device`, raised in Elixir before anything
   reaches the wire.
 
-  `/live/track/delete_device` never replies, and a bad device index only raises
-  inside AbletonOSC's callback — so an unchecked index costs a full verification
-  timeout and still can't say what went wrong. Checking against the chain we
-  just read says it immediately, and prints the chain so the retry is one step.
+  `/live/track/delete_device` has no reply on success, and a bad device index
+  raises inside AbletonOSC's callback. That rejection does reach the wire as
+  `/live/error ["request", "/live/track/delete_device", …]`, but it reaches
+  nobody here: the delete goes out through `send_message/2`, which has returned
+  before the error lands, so the tool would report a success it never observed.
+  Checking against the chain we just read says it immediately, and prints the
+  chain so the retry is one step.
   """
   @spec device_out_of_range_error(chain(), integer(), list()) :: String.t()
   def device_out_of_range_error(chain, device, []) do
@@ -920,12 +929,16 @@ defmodule Seshat.Tools.Handlers do
 
   The full measured mapping, including what this function deliberately never
   sends: `0` no grid, `1` 1/4, `2` 1/8, `3` and `4` 1/8 triplet, `5` 1/16,
-  `6` and `7` 1/16 triplet, `8` 1/32, `≥9` invalid (Live's callback raises,
-  AbletonOSC swallows it, nothing moves and nothing is reported). There is no
-  1/2 grid and there are no bar-length grids, which is why the tool's enum
-  stops at 1/4. Duplicated pairs send the lower value.
+  `6` and `7` 1/16 triplet, `8` 1/32, `≥9` invalid (Live's callback raises;
+  since the fork's dispatch-boundary rework AbletonOSC reports that as
+  `/live/error ["request", "/live/clip/quantize", …]`, but nothing moves).
+  There is no 1/2 grid and there are no bar-length grids, which is why the
+  tool's enum stops at 1/4. Duplicated pairs send the lower value.
 
-  A wrong integer here is silent in every layer: the address never replies, so
+  A wrong integer is still silent *to Seshat*: quantize goes out through
+  `send_message/2`, which has returned by the time any rejection lands, and the
+  address never replies on success either. An out-of-range grid is reported on
+  the wire and answers nobody; a valid-but-wrong one isn't reported at all, and
   the only symptom is notes landing on the wrong grid in Live.
   """
   @spec grid_quantization(String.t()) :: 1 | 2 | 3 | 5 | 6 | 8
@@ -2616,8 +2629,10 @@ defmodule Seshat.Tools.Handlers do
 
   # Reads only, so no %Command{}/Registry — Registry is for mutation sequences.
   # The two guards up front are not politeness: querying notes on an empty slot
-  # raises inside AbletonOSC, which means no reply and a 5s timeout instead of
-  # an answer.
+  # raises inside AbletonOSC, so the read never answers on its own address. The
+  # structured `/live/error` turns that into a fast rejection rather than a 5s
+  # timeout, but a rejection carrying no distinguishing value is still a worse
+  # answer than "the slot is empty" — which is what these two produce.
   # Three replies, all correlated: without the echo check a straggler abandoned
   # by an earlier timeout could pair one clip's name with another clip's length
   # or notes. The notes read is the one place in the file where the echo is a
@@ -3141,9 +3156,11 @@ defmodule Seshat.Tools.Handlers do
          "get_device_parameters."}
   end
 
-  # `/live/track/delete_device` never replies — AbletonOSC's `_call_method`
-  # returns nothing, and a bad device index raises inside the callback — so
-  # success and failure are indistinguishable on the wire. Hence the sandwich:
+  # `/live/track/delete_device` has no reply on success — AbletonOSC's
+  # `_call_method` returns nothing — and a bad device index raises inside the
+  # callback. The raise is correlated on the wire now, but this is a
+  # `send_message/2`: it has returned before that datagram arrives, so from
+  # here success and failure still look identical. Hence the sandwich:
   # read the chain first (which validates the track index, bounds-checks the
   # device index in Elixir, and captures the names for the reply), then re-read
   # the count afterwards as the only confirmation available.

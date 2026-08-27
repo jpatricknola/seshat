@@ -23,8 +23,14 @@ still at 4.0–8.0. **Live ignores an inverted loop point; it does not clamp** �
 measured by sending `/live/clip/set/loop_start 1 2 9.0` raw past the guard, after
 which the brace was unchanged and `Log.txt` carried `ERROR:abletonosc:613 - Error
 setting clip.loop_start: Cannot set LoopStart behind LoopEnd`. Live raises,
-AbletonOSC catches and logs, and the setter is a silent no-op on the wire — which
-is what the Elixir-side guard exists to replace.*
+AbletonOSC catches and logs, and the setter moved nothing — which is what the
+Elixir-side guard exists to replace. **The "nothing reaches the wire" half of
+this reading is superseded**: it was measured before the fork's
+dispatch-boundary rework, which now sends `/live/error ["request",
+"/live/clip/set/loop_start", …]` for the same raise (`priv/AbletonOSC/API.md`,
+"The loop pair rejects an inversion"). It still reaches nobody here — the
+setter is a `send_message/2` that has returned by then — so the guard's job is
+unchanged.*
 
 Move a brace entirely past the old one in one call (the end-first path) and
 confirm it lands. Then make a single-sided invalid write (`loop_start` beyond the

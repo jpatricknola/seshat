@@ -172,9 +172,13 @@ defmodule Seshat.OSC.Transport do
 
   # One above the largest burst measured to survive a single AbletonOSC tick
   # intact (63 datagrams, zero drops, 14.2ms in-tick spread — 2026-08-04). The
-  # cap is not where the wire breaks; it is where the evidence stops. Both
-  # socket directions carry 64KB buffers against ~40-byte requests and ~60-byte
-  # replies, so there is room above this — measure before raising it.
+  # cap is not where the wire breaks; it is where the evidence stops. This end
+  # buffers 64KB (above); AbletonOSC's own socket does not — `osc_server.py`
+  # reads each datagram with `recvfrom(65536)` and never sets
+  # `SO_RCVBUF`/`SO_SNDBUF`, so its buffers are the OS defaults, against
+  # ~40-byte requests and ~60-byte replies. There is room above this on the
+  # evidence, but the headroom is the OS default's, not a 64KB one we set —
+  # measure before raising it.
   @max_batch_entries 64
 
   def start_link(opts \\ []) do
