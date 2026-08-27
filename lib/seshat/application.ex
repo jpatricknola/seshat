@@ -95,7 +95,12 @@ defmodule Seshat.Application do
            [strategy: :one_for_one]
          ]},
       type: :supervisor,
-      restart: :temporary
+      # :transient, not :temporary — an abnormal exit here would otherwise
+      # remove MCP service permanently while the Phoenix endpoint keeps
+      # reporting healthy, so the tools stop existing with nothing saying why.
+      # Not :permanent: a genuine "Anubis cannot start" would then take the
+      # whole application down, which is very likely why this was :temporary.
+      restart: :transient
     }
   end
 end

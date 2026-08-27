@@ -72,6 +72,8 @@ defmodule Seshat.MCP.Server do
   # generated catch-all below this module body.
   @impl Anubis.Server
   def handle_request(%{"method" => "tools/call"} = request, frame) do
+    request = normalize_arguments(request)
+
     case Anubis.Server.Handlers.handle(request, __MODULE__, frame) do
       {:error, %Error{reason: :invalid_params} = error, frame} = rejection ->
         params = request["params"] || %{}
@@ -88,6 +90,19 @@ defmodule Seshat.MCP.Server do
         other
     end
   end
+
+  # An explicit `"arguments": null` is the one shape neither Anubis nor the
+  # rewrite below handles. Peri accepts it and passes `nil` straight through,
+  # so the rejection branch never runs and `Seshat.Tools.Handlers.call/2` —
+  # guarded `when is_binary(name) and is_map(params)` — raises a
+  # FunctionClauseError instead, and no reply reaches the client at all. An
+  # absent key already defaults to `%{}` inside Anubis, and a null argument
+  # object means the same thing, so make them the same request here: the
+  # rejection that follows names the missing required params like any other.
+  defp normalize_arguments(%{"params" => %{"arguments" => nil} = params} = request),
+    do: %{request | "params" => Map.put(params, "arguments", %{})}
+
+  defp normalize_arguments(request), do: request
 
   # The wire decode guarantees string keys, which is what `Validation` wants.
   defp rewrite_rejection(name, arguments, error) when is_map(arguments) do

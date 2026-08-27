@@ -113,6 +113,13 @@ defmodule Seshat.MCP.ServerTest do
       assert text =~ "value: required but missing"
     end
 
+    test "an explicit null arguments value is treated as empty arguments" do
+      text = rejection_text(call("set_track_pan", nil))
+
+      assert text =~ "track: required but missing"
+      assert text =~ "value: required but missing"
+    end
+
     test "non-map arguments fall back to Peri's own text, framed as a tool result" do
       text = rejection_text(call("set_track_pan", ["track", 0]))
 

@@ -1339,6 +1339,38 @@ defmodule Seshat.Tools.HandlersTest do
       assert {"/live/device/set/parameter/value", [0, 1, 2, 0.5]} in trace
     end
 
+    # The regular-track clause has no pre-mutation guard, so this read-back is
+    # the only place a bad device or parameter index can be diagnosed. It used
+    # to collapse into `:unconfirmed` and route the model to
+    # get_device_parameters, which is rejected for the same reason — a circle.
+    test "an index Live rejects is reported in Live's own words", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_device_parameter", %{
+            "track" => 0,
+            "device" => 9,
+            "parameter" => 2,
+            "value" => 0.5
+          })
+        end)
+
+      assert_receive {:osc_out, "/live/device/get/parameter/value_string", [0, 9, 2]}
+
+      reply_datagram(
+        sink,
+        Message.encode(
+          "/live/error",
+          ["request", "/live/device/get/parameter/value_string", "Index out of range", 3, 0, 9, 2]
+        )
+      )
+
+      assert {:error, message} = Task.await(call)
+      assert message =~ "Ableton rejected the request: Index out of range"
+      assert message =~ "nothing changed"
+      assert message =~ "get_track_devices"
+      refute message =~ "did not confirm it"
+    end
+
     test "a read-back about the parameter that was written still confirms it", %{sink: sink} do
       call =
         Task.async(fn ->

@@ -3146,6 +3146,19 @@ defmodule Seshat.Tools.Handlers do
          "The set was sent but reading #{subject} back did not confirm it — verify with " <>
            "get_device_parameters."}
 
+      # Live named the rejection. Unlike the return and master clauses this one
+      # has no pre-mutation guard, so the read-back is where a bad device or
+      # parameter index surfaces — and it is the same pair of indices the set
+      # used, so a rejection here means the set was refused too. Say that
+      # rather than routing the model to get_device_parameters, which would be
+      # rejected for the same reason.
+      {:error, {:live_error, _} = reason} ->
+        {:error,
+         "#{Transport.describe_error(reason)} That read used the same indices as the set, " <>
+           "so the set was refused too and nothing changed — list the chain with " <>
+           "get_track_devices and its controls with get_device_parameters to find the " <>
+           "indices that exist."}
+
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
     end
@@ -4351,7 +4364,7 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # The post-mutation read: every failure collapses to `:unconfirmed`, because
+  # The post-mutation read. A non-answer collapses to `:unconfirmed`, because
   # after the setter is on the wire the only honest report is that the write was
   # not verified — never that nothing was sent, which is what `query_echoed/4`'s
   # wording would claim. That is the one reason this isn't `query_echoed/4`; the
@@ -4359,12 +4372,22 @@ defmodule Seshat.Tools.Handlers do
   # straggler can no longer supply another parameter's display value as proof
   # this write landed.
   #
+  # A rejection Live *named* is not a non-answer and is passed through intact.
+  # It used to collapse with the rest, which cost the regular-track
+  # `set_device_parameter` clause its only index diagnosis: it has no
+  # pre-mutation guard, so a bad device or parameter index arrived as "did not
+  # confirm it — verify with get_device_parameters", sending the model to a call
+  # that fails the same way. `:unconfirmed` now means what it says — a mismatch,
+  # a stale reply, or a timeout — and every caller either renders the
+  # `{:error, _}` or falls through to its own unconfirmed wording.
+  #
   # The timeout is caught here rather than left to the caller: a read-back that
   # never answers is exactly as unconfirmed as one that answers wrongly, and the
   # caller's own message says so.
   defp read_back_value(address, indices) do
     case query_correlated(address, indices, timeout: @guard_timeout, decode: &unwrap_payload/1) do
       {:ok, value} -> {:ok, value}
+      {:error, {:live_error, _} = reason} -> {:error, reason}
       _other -> :unconfirmed
     end
   catch

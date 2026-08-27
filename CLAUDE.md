@@ -380,12 +380,31 @@ stale-twice paths against `Seshat.Test.OSCSink`; live verification against
 real Ableton confirmed the happy paths and error paths still behave, recorded
 in the archived plan. No fork change. Plan archived at
 [docs/archive/PLAN_echo_checks.md](docs/archive/PLAN_echo_checks.md). PR
-review surfaced one narrower follow-up outside this plan's scope — a
-regular-track `set_device_parameter` call on a bad device or parameter index
-now reports a generic "did not confirm it" instead of Live's real rejection,
-because `read_back_value/2` collapses every non-`{:ok, _}` outcome alike —
-queued as "`set_device_parameter` on a regular track loses Live's rejection
-message".
+review surfaced one narrower follow-up outside this plan's scope, which has
+since **shipped 2026-08-27**: a regular-track `set_device_parameter` call on a
+bad device or parameter index used to report a generic "did not confirm it"
+instead of Live's real rejection, because `read_back_value/2` collapsed every
+non-`{:ok, _}` outcome alike. It now passes `{:error, {:live_error, _}}`
+through intact — `:unconfirmed` means only a mismatch, a stale reply or a
+timeout — and the regular-track clause renders Live's words plus the fact that
+the read used the same indices as the set, so the set was refused too. The
+return and master clauses are unaffected: they pre-guard with `query_echoed/4`
+and diagnose a bad index before mutating. Note the surface is now three
+renderings wide (`describe_error/1` bare, `remote_error/1`, and this clause's
+own sentence); unifying them is the open item "A rejected index says which
+index, and what to call next".
+
+Two more one-liners shipped the same day, both from the 2026-07-29/07-31
+reviews. The nested MCP supervisor's child spec is `restart: :transient` rather
+than `:temporary` ([lib/seshat/application.ex](lib/seshat/application.ex)), so
+an abnormal Anubis exit no longer removes MCP service permanently while the
+Phoenix endpoint keeps reporting healthy — `:permanent` was rejected because a
+genuine "cannot start" would then take the whole application down. And an MCP
+`tools/call` carrying an explicit `"arguments": null` is normalised to `%{}` at
+`Seshat.MCP.Server.handle_request/2` before it reaches Anubis: Peri accepted the
+`nil` and passed it through, so `Handlers.call/2`'s `is_map(params)` guard raised
+a `FunctionClauseError` and no reply reached the client at all. It now produces
+the same model-readable rejection an absent `arguments` key does.
 A failed query now fails fast instead of waiting out a 5-second timeout,
 shipped 2026-08-03, closing what had been the queue's top item. `/live/error`
 used to carry only a formatted log string, with nothing to say which request
