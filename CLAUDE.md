@@ -248,6 +248,49 @@ That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
 
+**The tool surface is consolidated from 67 tools to 52, no capability lost,
+shipped 2026-08-28**, closing the queue's former top item and absorbing
+"Modify a note in place" into it. All Elixir-layer, no fork or OSC change.
+Thirteen same-verb-different-target mixer setters
+(`set_track_volume/pan/mute/solo/arm/name`, the four `set_return_track_*`,
+`set_master_volume/pan`, `set_cue_volume`) collapsed into one `set_mixer`
+(`target: track | return | master | cue`, default `track`), which reports
+each property asked for and refuses by name the ones a target lacks, all-or-
+nothing before anything is sent. `create_return_track`/`delete_return_track`
+folded into `create_track track_type: "return"` / `delete_track target:
+"return"`; `set_clip_name` became a `name` property of
+`set_clip_properties`; `remove_notes` became `edit_notes` — a match (pitch /
+time range) plus a delta (velocity, length, pitch shift, or delete),
+implemented as pure arithmetic in the new
+`lib/seshat/tools/note_edit.ex`, composing a remove and a re-add through
+`Seshat.Commands.Registry` under one undo step. Every "Requires Seshat's
+AbletonOSC extension (mix abletonosc.install)" line was deleted from tool
+descriptions — developer-facing text with no model audience. PR review found
+the implementation correct on independent re-derivation (all 29 addresses
+checked verbatim against `priv/AbletonOSC/API.md`) and surfaced one real bug
+fixed before merge: `NoteEdit.validate/1` refused `delete: true` on its own,
+which broke `edit_notes`' primary use case outright. Two nits were applied
+after review (a README sentence that conflated `create_track`'s
+`track_type` with `delete_track`'s `target`; a contradictory pair of
+guard-timeout sentences on the master/cue mixer path); one was declined as
+its own roadmap item rather than a local fix — "Pin the wording of
+`edit_notes`' partial-failure message" — because `Transport.send_message/2`
+cannot be made to fail against the test harness, so testing it means picking
+a mocking strategy for a whole family of similarly-shaped error helpers, not
+a one-line change. **Live verification has not run.** All ten new/renamed
+automated citations in `docs/smoke_tests/auto/{mixer,clips,mcp-surface}.md`
+and the one manual `conversation.md` routing check still read `Last run: —`;
+run `/smoke-test mixer`, `/smoke-test clips`, `/smoke-test mcp-surface` and
+get a person through the manual check before trusting the new tools against
+real Live. `priv/AbletonOSC/FORK_GAPS.md`'s note-modification row (pointing
+at the now-removed "Modify a note in place") is a known carry-over — the
+standalone fork clone was mid-way through an unmerged branch when this
+shipped — and `.claude/skills/smoke-test/scripts/mcp_call.py`'s new `stats`
+command still needs a run against a live server to confirm the client-
+visible schema byte count the plan measured Elixir-side (~57KB). Plan
+archived at
+[docs/archive/PLAN_consolidate_tool_surface.md](docs/archive/PLAN_consolidate_tool_surface.md).
+
 **ROADMAP.md ranks features, defects and security work in one queue.**
 Catalog persistence is atomic and the catalog notices its own staleness,
 shipped 2026-08-27, closing the queue's top two items together ("Make catalog

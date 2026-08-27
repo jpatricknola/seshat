@@ -37,76 +37,7 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Consolidate the tool surface — 67 tools to 52, no capability lost
-
-**Impact 6 · Lift 3 · 2.00 impact-per-effort**
-
-**Ranked above its quotient by decision on 2026-08-27** — it is the next thing
-built, ahead of the AX verification below, because every tool added after it
-would be added on the wrong pattern and have to be re-shaped later.
-
-**Plan:** [PLAN_consolidate_tool_surface.md](PLAN_consolidate_tool_surface.md)
-(2026-08-27).
-
-**Goal:** collapse the same-verb-different-target neighbours in
-`Seshat.Tools.Definitions` into parameterised tools, and write the rule that
-stops them coming back. The full audit, the projected count with the whole
-roadmap and generation epic built (~60), and the levers beyond merging are
-in [evaluating/tool-surface-scaling.md](evaluating/tool-surface-scaling.md).
-
-**Why:** 67 tools, 62.8KB of schema (~16k tokens) in every request, and the
-roadmap plus the generation research would add ~30 more on the current
-one-thing-one-tool pattern. The ceiling that bites first is not context but
-selection accuracy: the model mis-picks between confusable names
-(`set_track_volume` / `set_return_track_volume` / `set_master_volume`), and
-the failure is silent. Fewer near-duplicate names is the fix; the pattern
-already exists in the tree (`@device_target`, `set_clip_properties`) and just
-stopped being applied.
-
-**User stories:**
-- As a producer saying "mute the master," it works — today no tool exists and
-  the model has to discover that by absence; after, `set_mixer` refuses the
-  properties a target lacks by name and accepts the rest.
-- As a producer, "make the third note quieter" is one edit, not a read, a range
-  delete and a rewrite — `edit_notes` takes a match and a delta.
-
-**Planner notes:**
-- The changes, all at the Elixir layer, no fork or OSC change:
-  - Thirteen mixer setters (`set_track_volume/pan/mute/solo/arm/name`, the
-    four `set_return_track_*`, `set_master_volume/pan`, `set_cue_volume`) →
-    one `set_mixer`: `target: track | return | master | cue` (default
-    `track`), `track` index, optional `volume`, `pan`, `mute`, `solo`,
-    `arm`, `name`, each with its own schema so `Validation` still bounds
-    every value. Reply reports each property asked for; properties the
-    target lacks are refused by name. Follow `set_clip_properties`.
-  - `create_return_track` → `create_track` with `track_type: "return"`;
-    `delete_return_track` → `delete_track` with `target: "return"`.
-  - `set_clip_name` → a `name` property of `set_clip_properties`. (`set_loop`
-    stays: it is the song's arrangement loop, not the clip's — an earlier draft
-    of this entry had it wrong.)
-  - `remove_notes` → `edit_notes`: a match (pitch / time range) plus a delta
-    (velocity, length, pitch shift, or delete). This absorbs "Modify a note
-    in place" below — close that item when this ships.
-  - Delete every copy of "Requires Seshat's AbletonOSC extension (mix
-    abletonosc.install)" from descriptions — 11 of them, addressed to a
-    developer, meaningless to the model.
-- **Do not** merge on property with a polymorphic value, and do not merge
-  `show_view`/`hide_view` or `bypass_device`/`delete_device` — the options doc
-  says why.
-- Write the rule into [.claude/docs/adding-a-tool.md](../.claude/docs/adding-a-tool.md)
-  and the `/add-tool` skill in the same PR: a new name only when the model
-  must choose between it and an existing tool; same verb elsewhere is a
-  `target`; same noun's property is an optional parameter; 80 tools is the
-  review line.
-- Breaking change to the tool contract — fine, nothing is deployed. Update
-  the `docs/smoke_tests/` files that name the removed tools in the same PR;
-  bump the count in `definitions_test.exs`; `Session.State` and `FollowCam`
-  match on tool names in places — grep for each removed name.
-- `mix precommit` covers the pure layer; `/smoke-test` for the mixer file and
-  clips file afterwards, since the wire messages are unchanged but the
-  clauses that send them are new.
-
-## #2 · AX-backed audio output — verify the remainder
+## #1 · AX-backed audio output — verify the remainder
 
 **Impact 5 · Lift 8 · 0.62 impact-per-effort**
 
@@ -163,7 +94,7 @@ archiving now would strand that record.
   of that last check — this machine currently has only one, so nothing has
   moved audibly yet.
 
-## #3 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #2 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Impact 8 · Lift 4 · 2.00 impact-per-effort**
 
@@ -200,7 +131,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #4 · Search eval harness — numbers before opinions
+## #3 · Search eval harness — numbers before opinions
 
 **Impact 2 · Lift 3 · 0.67 impact-per-effort**
 
@@ -229,7 +160,7 @@ benchmark informally (see
 formalize that rather than inventing a new one. Runs offline against the
 catalog — no Ableton needed.
 
-## #5 · Widen the search slate at tied score bands
+## #4 · Widen the search slate at tied score bands
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -250,7 +181,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #6 · A rejected index says which index, and what to call next
+## #5 · A rejected index says which index, and what to call next
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -311,7 +242,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #7 · Browser preview audition
+## #6 · Browser preview audition
 
 **Impact 7 · Lift 3 · 2.33 impact-per-effort**
 
@@ -339,7 +270,7 @@ what decides.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #8 · `start_new_project` — the setup wizard, and prompt budget back
+## #7 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -397,7 +328,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   want, so prefer building it before that item even though ratio separates
   them.
 
-## #9 · `write_midi_notes` must chunk large note batches
+## #8 · `write_midi_notes` must chunk large note batches
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -434,7 +365,7 @@ this item moves ahead of it.
 - Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
   surface needs valid dense clips to work, not become validation errors.
 
-## #10 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #9 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Impact 4 · Lift 2 · 2.00 impact-per-effort**
 
@@ -463,7 +394,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #11 · Read-only audio input display — warn before a silent take
+## #10 · Read-only audio input display — warn before a silent take
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -494,25 +425,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #12 · Modify a note in place
-
-**Impact 5 · Lift 3 · 1.67 impact-per-effort**
-
-**Absorbed by "Consolidate the tool surface" above** — its `edit_notes`
-(match + delta) is this item. Remove this entry when that ships.
-
-**Goal:** edit one note's velocity/length/pitch directly instead of
-read → remove range → rewrite.
-
-**Why:** the current path works but is three calls and a footgun
-(`remove_notes` ranges). Cleaner, not urgent.
-
-**User stories:**
-- As a producer saying "make the third note a little quieter," that's one
-  clean edit — not a read, a range delete, and a rewrite that can clip the
-  notes around it.
-
-## #13 · `screenshot_live` — let Seshat see the screen
+## #11 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -538,7 +451,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #14 · Opt-in `samples` index
+## #12 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -562,7 +475,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #15 · Accepted-search memory
+## #13 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
@@ -586,7 +499,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #16 · Producer personas — switchable musical taste
+## #14 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -621,7 +534,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #17 · Verify destructive mutations before reporting success
+## #15 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -693,7 +606,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #18 · User XMP tags
+## #16 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -712,7 +625,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #19 · Small OSC breadth — grab bag
+## #17 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -735,7 +648,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #20 · Pin the wording of `edit_notes`' partial-failure message
+## #18 · Pin the wording of `edit_notes`' partial-failure message
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -769,7 +682,7 @@ convention across the module.
 - Low lift once the mocking question is settled — the message itself is
   already correct and doesn't need to change, only get pinned.
 
-## #21 · LLM enrichment at reindex
+## #19 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -796,7 +709,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #22 · Monitored refresh worker for `Session.State`
+## #20 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -840,7 +753,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #23 · Device list per track in session state
+## #21 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -861,7 +774,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #24 · Adopt MCP `2026-07-28` when Anubis supports it
+## #22 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -912,7 +825,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #25 · Clip grid in session state — only if usage demands it
+## #23 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 
