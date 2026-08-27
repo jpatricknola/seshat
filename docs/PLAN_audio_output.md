@@ -337,9 +337,13 @@ Cover without Live or Accessibility permission:
 
 Add a small `macos-latest` CI job that compiles the Objective-C source with the
 same warnings-as-errors command as `mix ax.install`, runs only the permission
-status command, and asserts it returns valid `permission_required` JSON in the
-untrusted runner. The existing Ubuntu Elixir job remains unchanged. Neither CI
-job controls a real application.
+status command, and asserts the reply is well-formed and internally consistent.
+It originally asserted `permission_required` on the reasoning that a fresh
+runner holds no grant; that assertion failed on its first run (2026-08-27) —
+the runner reported `trusted: true` — so the step now accepts either answer and
+checks that `trusted` agrees with `ok`, `code` and the exit status. The existing
+Ubuntu Elixir job remains unchanged. Neither CI job controls a real
+application.
 
 `mix precommit` remains the Elixir bar. On macOS, also run
 `mix ax.install --no-prompt --destination <temporary path>` so the exact native
@@ -417,17 +421,23 @@ routed audio hardware, or a real client’s model loop. Run with `/smoke-test`.
 not a normal request); unplugging the selected device during the AX action (not
 deterministically reproducible); non-English Live labels (out of scope); and
 Bluetooth/CoreAudio behavior on hardware other than the devices installed on
-this Mac. The macOS CI job proves compilation and structured permission failure,
-not trusted cross-process control. Also uncovered, from the same review round:
-whether Accessibility trust is actually scoped to the installed executable's
-path rather than to the process that launched it — a reviewer's own
-never-installed build reported itself trusted when run from an
-already-approved terminal, which points at the parent process. README.md's
-"Open question" note under "Install the Accessibility helper" and
-`mix ax.install`'s moduledoc both say so now; resolving it needs a controlled
-comparison on a real machine (same build, different parent processes), which
-is exactly the kind of experiment this repo's own process rules do not let an
-agent phase run unsupervised.
+this Mac. The macOS CI job proves compilation and a well-formed permission
+reply, not trusted cross-process control.
+
+Also uncovered, and now with evidence against the assumption it rests on:
+whether Accessibility trust is scoped to the installed executable's path.
+Three observations on 2026-08-27 say a never-approved build can read as
+trusted — two PR reviews running a scratch build from an already-approved
+terminal, and the macOS CI runner, a machine with no grant at all, which is
+what broke the CI step above. The terminal cases point at parent-process
+attribution; the CI case is equally consistent with that environment being
+trusted wholesale (a runner as root would be), so the two explanations are
+still not separated. README.md's "Open question" note under "Install the
+Accessibility helper" and `mix ax.install`'s moduledoc both carry the
+corrected picture. Resolving it needs the one comparison nobody has run: the
+same installed build launched from an approved parent and from an unapproved
+one, on a real machine — the kind of experiment this repo's process rules do
+not let an agent phase run unsupervised.
 
 ## Out of scope
 

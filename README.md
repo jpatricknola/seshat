@@ -141,18 +141,32 @@ executable at that path: re-running `mix ax.install` after a change rebuilds
 in place and, as measured 2026-08-03, keeps the grant. Compilation is atomic,
 so a build that fails leaves the working, already-approved helper untouched.
 
-**Open question, not yet resolved:** whether trust is scoped that narrowly is
-still an assumption, not something this project has confirmed. A PR review
-(2026-08-27) ran a helper built fresh to a scratch path — never installed,
-never approved on its own — from the same terminal session, and it reported
-itself trusted anyway, which is at least as consistent with macOS attributing
-Accessibility trust to the *parent* process (the terminal) as to this
-executable's path. Nobody has run the controlled comparison (same build,
-different parent) that would tell those two apart. If trust does follow the
-parent, a user who launches Seshat from a different parent process than the
-one they approved under could be refused despite having approved the right
-path — the troubleshooting entry below would then be incomplete, not wrong.
-Treat this as unverified until someone checks it during a real onboarding run.
+**Open question, and the evidence now points away from that expectation.**
+Three separate observations (2026-08-27) have a helper reporting itself
+trusted when nothing ever approved it: two PR reviews built one fresh to a
+scratch path and ran it from an already-approved terminal, and — the one that
+is not explainable by the terminal — a GitHub Actions `macos-latest` runner,
+a machine nobody has ever granted anything on, answered
+`{"ok":true,"protocol_version":1,"trusted":true}`. That third result broke a
+CI step which had asserted the opposite; the step now checks only that the
+reply is well-formed and internally consistent, because either answer is one
+macOS may legitimately give.
+
+Two explanations survive, and this project has not separated them: macOS may
+attribute Accessibility trust to the responsible *parent* process rather than
+to the executable, or the environments observed may simply be trusted wholesale
+(a CI runner running as root is trusted unconditionally, which would explain
+the third case and say nothing about the first two). Nobody has run the
+comparison that would tell them apart — the same installed build, launched from
+a parent that was approved and from one that was not.
+
+What this means in practice: **do not rely on the grant being attached to
+`~/.seshat/bin/seshat-ax` specifically.** If trust follows the parent, a user
+who launches Seshat from a different terminal, a supervisor, or a login agent
+than the one they approved under can be refused despite having approved the
+right path — and, in the other direction, a `trusted: true` reading is not by
+itself proof that the install is correctly permitted. Treat the reading as
+advisory until someone runs that comparison during a real onboarding.
 
 When you ask for an output change, Live briefly comes to the front while the
 helper reads or sets the value, then the application that was frontmost goes
@@ -351,12 +365,12 @@ isn't trusted.** Run `mix ax.install` (macOS only) and turn on the printed path
 under System Settings → Privacy & Security → Accessibility. No restart of Live
 or Seshat is needed afterwards. If it still says untrusted, check that the entry
 you enabled is `~/.seshat/bin/seshat-ax` and not an older copy left somewhere
-else. Assumed cause: the permission follows the executable, not the project —
-but that specific attribution is unverified (see the "Open question" note
+else. The permission was *expected* to follow the executable, but the
+evidence is against that being the whole story (see the "Open question" note
 under [Install the Accessibility helper](#install-the-accessibility-helper-macos-once)).
-If the right path is enabled and it is still refused, the more likely cause in
-practice is launching Seshat from a different parent process (a different
-terminal app, a supervisor) than the one you approved under.
+So if the right path is enabled and it is still refused, try launching Seshat
+from the same terminal application you approved under before re-checking the
+path — trust may be attached to the parent process rather than to the binary.
 
 **`set_audio_output` reports that Live's Settings couldn't be reached.** Live
 was running but its Settings window wouldn't open or the Audio page wasn't

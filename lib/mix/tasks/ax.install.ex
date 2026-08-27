@@ -35,13 +35,17 @@ defmodule Mix.Tasks.Ax.Install do
   whether it is still trusted and tells you if it is not.
 
   What that spike did not test is *what* macOS actually keyed the grant on — the
-  installed path, or the parent process that launched it (a PR review,
-  2026-08-27, saw a never-installed, never-approved helper built to a scratch
-  path report itself trusted when run from an already-approved terminal
-  session, which points at the parent rather than the path). See README.md's
-  "Open question" note under "Install the Accessibility helper"; nothing here
-  depends on resolving it, but a user moving between parent processes might
-  see different results than this task's own docs anticipate.
+  installed path, or something else entirely. Three observations on 2026-08-27
+  are against the path: two PR reviews saw a never-installed, never-approved
+  helper built to a scratch path report itself trusted from an already-approved
+  terminal, and a GitHub Actions runner — a machine with no grant of any kind —
+  reported the same, breaking a CI step that had asserted a refusal. Either
+  macOS attributes the grant to the responsible parent process, or those
+  environments are trusted wholesale (a runner executing as root would be).
+  See README.md's "Open question" note under "Install the Accessibility
+  helper". Nothing in this task depends on resolving it, but the reading below
+  is advisory rather than proof, and a user moving between parent processes may
+  see results this task's own docs do not anticipate.
 
   ## Building is atomic
 
@@ -127,10 +131,11 @@ defmodule Mix.Tasks.Ax.Install do
 
     if trusted?(output) do
       Mix.shell().info(
-        "macOS reports this helper trusted for Accessibility control - nothing else to do, " <>
-          "unless it was already trusted before this install ran (see \"Open question\" in " <>
-          "README.md: whether trust is scoped to this path or inherited from the parent " <>
-          "process launching it is not yet settled)."
+        "macOS reports this helper trusted for Accessibility control - most likely nothing " <>
+          "else to do. Treat that as advisory, not proof: a never-approved build has read " <>
+          "as trusted three times (see \"Open question\" in README.md), so this may be " <>
+          "reporting the parent process's grant rather than this path's. If the tools are " <>
+          "later refused, launch Seshat from this same terminal before re-checking the path."
       )
     else
       Mix.shell().info("""

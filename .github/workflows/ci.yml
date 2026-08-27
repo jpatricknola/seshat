@@ -96,10 +96,18 @@ jobs:
   # the two drift) and runs the one command that needs neither Live nor granted
   # permission.
   #
-  # It proves compilation and structured permission failure. It cannot prove
-  # trusted cross-process control: a GitHub runner has no Ableton Live and no
-  # Accessibility grant, which is exactly why `permission` must come back as a
-  # well-formed refusal rather than a crash.
+  # It proves compilation and that `permission` answers in protocol. It cannot
+  # prove trusted cross-process control: a GitHub runner has no Ableton Live.
+  #
+  # It also cannot assume the runner is *untrusted*. This step used to assert a
+  # refusal, on the reasoning that a fresh runner has no Accessibility grant --
+  # and it failed on 2026-08-27, because the runner answered
+  # `{"ok":true,"protocol_version":1,"trusted":true}`. That is the third
+  # independent observation of a never-approved binary reporting trusted (see
+  # the `mix ax.install` moduledoc); macOS appears to attribute Accessibility
+  # trust to the responsible parent process, not to the executable. So the
+  # assertion here is the part that holds either way: the reply is well-formed,
+  # and `trusted` agrees with `ok`, `code` and the exit status.
   helper:
     name: Build the macOS Accessibility helper
     runs-on: macos-latest
@@ -112,23 +120,30 @@ jobs:
             -framework AppKit -framework ApplicationServices \
             -o "$RUNNER_TEMP/seshat-ax" native/seshat_ax/main.m
 
-      - name: An untrusted runner reports permission_required, in protocol
+      - name: The permission command answers in protocol
         run: |
           set +e
           OUTPUT=$("$RUNNER_TEMP/seshat-ax" permission)
           STATUS=$?
           set -e
           echo "$OUTPUT"
-          if [ "$STATUS" -eq 0 ]; then
-            echo "::error::permission exited 0 on a runner that cannot be trusted."
-            exit 1
-          fi
-          echo "$OUTPUT" | python3 -c '
-          import json, sys
+          echo "$OUTPUT" | STATUS="$STATUS" python3 -c '
+          import json, os, sys
           payload = json.load(sys.stdin)
-          assert payload["ok"] is False, payload
-          assert payload["code"] == "permission_required", payload
-          assert payload["trusted"] is False, payload
+          status = int(os.environ["STATUS"])
           assert payload["protocol_version"] == 1, payload
-          print("permission_required reported in protocol")
+          trusted = payload["trusted"]
+          if trusted is True:
+              # Not what a fresh runner was expected to report; see the comment
+              # above. Still a valid reply, so hold it to the trusted contract.
+              assert payload["ok"] is True, payload
+              assert status == 0, (status, payload)
+              print("trusted on a runner that was never granted permission")
+          elif trusted is False:
+              assert payload["ok"] is False, payload
+              assert payload["code"] == "permission_required", payload
+              assert status == 2, (status, payload)
+              print("permission_required reported in protocol")
+          else:
+              raise AssertionError(payload)
           '
