@@ -321,10 +321,13 @@ reports 0.23 s per 5 s with CoreML. It supports continuation and
 inpainting, so a bar-ahead loop — generate bar N+1 conditioned on bar N's
 tail, steered by the prompt in force — is buildable with nothing new on
 disk. It has no fast loop and steers only at bar boundaries, so it can only
-ever be the slow-loop texture player. It is still worth running *first*
-because it costs nothing: if continuation stays coherent over 16 bars, the
-texture-player half of the feature needs no new model, and only the fast
-loop needs MRT2. [10]
+ever be the slow-loop texture player. An earlier draft had it running
+*first* because it costs nothing, on the theory that a coherent 16-bar
+continuation would spare installing a second model for the texture-player
+half. That theory does not survive the fast loop: MRT2 is installed for the
+collaborator regardless, and a slow-loop-only SA3 texture player is strictly
+worse than MRT2's in-place steering. Spike A0 is therefore run only if A1
+is blocked ([one-model-or-two.md](one-model-or-two.md) §5–6). [10]
 
 ### 5.4 The rest
 
@@ -605,8 +608,8 @@ to the whole feature.
 
 | Spike | Subject | What it measures |
 |---|---|---|
-| **A0** | SA3 continuation loop (free, installed) | 16 bars generated one bar ahead by continuation; coherence and tempo hold by ear and onset grid. Decides whether the texture-player half needs a new model |
-| **A1** | **Magenta RealTime 2** (`uv pip install "magenta-rt[mlx]"`, ~1 GB) | Tempo adherence to prompt text; drift over 32 bars (decides Design 1 vs 2); control latency; time-to-first-audio; whether a prompt change needs a reset. **Then the fast loop:** play a chord sequence in over MIDI, listen for whether the output follows it and how fast |
+| **A0** | SA3 continuation loop (free, installed) — **demoted: run only if A1 is blocked** | 16 bars generated one bar ahead by continuation; coherence and tempo hold by ear and onset grid. Its purpose was to spare installing a second model for the texture-player half; once MRT2 is installed for the fast loop anyway, a slow-loop-only SA3 texture player is strictly worse than MRT2's in-place steering ([one-model-or-two.md §6](one-model-or-two.md)) |
+| **A1** | **Magenta RealTime 2** (`uv pip install "magenta-rt[mlx]"`, ~1 GB) | Tempo adherence to prompt text; drift over 32 bars (decides Design 1 vs 2); control latency; time-to-first-audio; whether a prompt change needs a reset. **Then the fast loop:** play a chord sequence in over MIDI, listen for whether the output follows it and how fast. **Then the clip questions** ([one-model-or-two.md §6](one-model-or-two.md)): offline real-time factor of `mrt2_small` and `mrt2_base` via `mrt mlx generate --duration` on this machine — unpublished anywhere, and the number that decides whether MRT2 can render clips at all; whether a pianoroll fed from `get_clip_notes` makes an offline render *follow* the harmony or merely avoid it; and the trim/downbeat cost of turning a `--duration` render into a bar-exact clip |
 | **A2** | Lyria RealTime (needs a key) | Same protocol minus the fast loop, as the quality comparison. Run only if A1 falls short — it is the only arm with a vendor, a watermark and a bill |
 | **N** | Notochord (pip, CPU) | IAC bus into a Live MIDI track; harmonise a played line; judge whether it feels like a partner. Runs in parallel with A1 |
 | **B** | Local bridge | Only for the outside-Live topology: play the stream into a virtual audio device with stable, known latency |

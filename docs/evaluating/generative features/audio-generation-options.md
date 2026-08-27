@@ -88,9 +88,12 @@ Files and `timings.csv` live in `~/.seshat/audio-spike/`.
    or a 4-bar loop — same price. SA3-small makes the loop case free and
    ~instant, and iteration ("again, but darker") is the actual usage
    pattern.
-6. **Stable Audio 2.5's audio-to-audio** (`strength` 0.6–0.9) is the one
-   capability no local small model matches — "make a variation of this
-   clip" later.
+6. **Audio-to-audio is local too.** The MLX runtime's CLI takes
+   `--init-audio` with `--init-noise-level` (0.4–0.8 typical; lower keeps
+   more of the source), plus `--inpaint-range` for region regeneration and
+   continuation — verified in the installed copy's `optimized/mlx/README.md`
+   and `docs/workflows/inference.md` on 2026-08-27. An earlier draft said
+   only the 2.5 API had this; "make a variation of this clip" needs no cloud.
 7. **Direct clip import can replace browser indexing, but is not implemented
    in Seshat.** Stable Audio 3's
    experimental Ableton integration calls `ClipSlot.create_audio_clip(path)`.
@@ -99,6 +102,18 @@ Files and `timings.csv` live in `~/.seshat/audio-spike/`.
    User Library. That means a fork change, address documentation and tests,
    `mix abletonosc.install`, and a Live restart before this route can import
    anything.
+   **A second import route appeared 2026-08-26:** Live 12.4.5 ships the
+   Ableton Extensions SDK (public beta, Suite only) — JavaScript/TypeScript
+   extensions inside Live with `AudioClip`/`MidiClip`/`ClipSlot`/`DrumRack`
+   access, audio-file import and audio-clip creation, MIDI-clip writing,
+   undo transactions, context-menu entries, `renderPreFxAudio()` offline
+   bounce, Node core APIs and network fetch; no realtime audio, no Max for
+   Live bridge, no auto-run at startup. A third-party Basic Pitch extension
+   already imports audio and transcribes it to MIDI inside Live. The
+   installed 12.4.3 is one point release short. This is not evaluated here —
+   it is a bridge question ([bridge-options.md](../bridge-options.md)'s
+   territory) and deserves its own doc before either import route is
+   planned.
 
 ## Recommended architecture
 

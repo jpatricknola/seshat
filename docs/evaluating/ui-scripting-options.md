@@ -136,7 +136,22 @@ Candidate uses, ordered by current value:
 2. **Named menu commands with no current LOM equivalent.** Each command still
    needs an individual value and safety case. The View menu is not an example:
    `Application.View` already exposes `show_view`, `hide_view`, and
-   `is_view_visible`.
+   `is_view_visible`. Two concrete examples, both verified absent from Live
+   12.4.3's `LomTypes.pyc` on 2026-08-27: **Stem Separation** (12.3+, Suite
+   only; vocals/drums/bass/other onto new tracks) and **Convert
+   Harmony/Melody/Drums to New MIDI Track** (Live 9+, Standard and Suite).
+   Both are stronger targets than Audio Settings was, because their read-back
+   is on the OSC side, not AX: new tracks arrive as structural pushes into
+   `Session.State`, converted notes are readable through `get_clip_notes`,
+   and a count-before/count-after guard bounds misdelivery the way
+   `create_track` already does. The generation epic
+   ([generative features/](generative%20features/)) would use them for Route
+   C's separate-and-transcribe stages without shipping a separator or
+   transcriber. Per-target spike questions: whether each command is reachable
+   from the menu bar (enumerable) or only the clip context menu; whether Stem
+   Separation raises a mode dialog (`press_current_dialog_button` covers it);
+   enabled state on the wrong clip type or edition; and completion detection
+   for a run that takes seconds to minutes.
 3. **Exact presentation state not present in the LOM.** AX can answer bounded
    questions about exposed controls more cheaply than a screenshot and vision
    round-trip. Dialog count and message text no longer qualify because the LOM

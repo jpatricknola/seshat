@@ -829,6 +829,15 @@ run a blinded product bake-off:
    bounded bass engine), and **joint C** (one rhythm-section render → source
    separation → two transcription passes). These arms change several factors;
    their ranking answers what to ship, not why one won.
+   **For the context-aware prompts only** (bass against existing Session-view
+   MIDI), add a fifth arm: **MRT2 offline render → transcription**, with the
+   existing clip's notes fed through Magenta RealTime 2's per-frame pianoroll
+   conditioning. It is the only local generator with symbolic input; SA3
+   has tempo/key text and nothing else to offer those prompts. Do not run it
+   for blank-project prompts, where SA3's measured bar-exactness and speed
+   stand. Gated on Spike A1's offline real-time factor in
+   [live-improv-exploration.md §12](live-improv-exploration.md#L601); see
+   [one-model-or-two.md](one-model-or-two.md).
    For single-part prompts, compare only the applicable backends separately:
    GMD retrieval, GrooVAE (if cleared), and SA3→IDM for drums; Route C for
    bass and harmony. Do not infer a single-part winner from the
@@ -862,7 +871,13 @@ run a blinded product bake-off:
   section. Compare candidate separators on bass/drum bleed, onset damage,
   local latency, licence, and Apple deployment before treating joint C as an
   implemented route. Inspect both code and checkpoint terms: popular
-  separators commonly license those artifacts differently.
+  separators commonly license those artifacts differently. **Or ship no
+  separator at all:** Live 12.3+ Suite has native Stem Separation and Live
+  9+ has Convert Harmony/Melody/Drums to New MIDI Track — neither in the LOM
+  (verified against 12.4.3, 2026-08-27), both candidates for the named-AX
+  rung in [ui-scripting-options.md](../ui-scripting-options.md) with
+  OSC-side read-back. That keeps Seshat's dependency and licence surface at
+  zero for both stages, at the cost of a Suite gate and a UI-scripting spike.
 - **How does the one high-level tool enforce atomicity?** The product decision
   is settled: one request creates all related tracks in one undo step. The plan
   must define rollback or cleanup for a failed later part, how the second stage
@@ -874,8 +889,14 @@ run a blinded product bake-off:
   a Drum Rack may map arbitrary notes. Seshat cannot currently read that
   layout — there is no
   `/live/device/...` drum-pad address in the fork or in
-  [abletonosc-api-docs.md](../../abletonosc-api-docs.md). Treat a pad-read address
-  as a prerequisite only if the plan brings rack output into scope.
+  [abletonosc-api-docs.md](../../abletonosc-api-docs.md). **The LOM can,
+  since Live 12.3:** `DrumChain.in_note` (get/set/observe the MIDI note that
+  triggers a chain; -1 = All Notes) and `RackDevice.insert_chain` are
+  present in the installed 12.4.3's `_MxDCore/LomTypes.pyc` (checked
+  2026-08-27), alongside `Track.insert_device` and `SimplerDevice.replace_sample`.
+  A pad-read address is therefore one fork handler walking a Drum Rack's
+  chains, not a missing capability. Treat it as a prerequisite only if the
+  plan brings rack output into scope.
 - **Large note batches already need chunking.** `Seshat.Commands.Registry`
   sends all notes in one `/live/clip/add/notes` datagram, while the public
   schema sets no maximum. That is an existing `write_midi_notes` defect rather

@@ -252,7 +252,15 @@ on return and master tracks — the sends system is now fully self-serve. Keep
 it current: when something ships, run the `/ship` skill
 (or by hand: remove its issue there, archive its plan doc). [docs/archive/](docs/archive/)
 holds superseded point-in-time plans and decision records; never treat those
-as current documentation.
+as current documentation. Before a feature brief or set of user stories
+becomes a roadmap item, run the `/evaluate` skill: it decomposes the request
+into capabilities and checks what Live already does for each — tool layer,
+fork, LOM, Extensions SDK, then UI-only features reachable through
+Accessibility — *before* surveying external models, libraries and
+services, writing the result into [docs/evaluating/](docs/evaluating/).
+That ordering exists because the 2026-08 generation research surveyed
+transcribers and separators for a week without noticing Live Suite ships
+both natively.
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
 Catalog persistence is atomic and the catalog notices its own staleness,
