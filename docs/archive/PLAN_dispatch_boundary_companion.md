@@ -1,5 +1,20 @@
 # Plan: consume the AbletonOSC dispatch-boundary merge
 
+> **Archived 2026-08-27 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. It is a backfill doc: the
+> work landed on `main` in `8955aed` (PR
+> [jpatricknola/seshat#66](https://github.com/jpatricknola/seshat/pull/66)) —
+> the submodule pin bump, the `/live/error` dispatch clause in
+> [../../lib/seshat/osc/transport.ex](../../lib/seshat/osc/transport.ex), the
+> commit-naming rework of
+> [../../lib/mix/tasks/abletonosc.install.ex](../../lib/mix/tasks/abletonosc.install.ex),
+> and the payload-shape regex in
+> [../../test/seshat/osc/vendored_addresses_test.exs](../../test/seshat/osc/vendored_addresses_test.exs).
+> The one follow-up it surfaced — using the correlated *setter* failure
+> envelope, which `Transport.send_message/2` still throws away — is a planner
+> note under the verify-before-mutate item in
+> [../ROADMAP.md](../ROADMAP.md), not carried here.
+
 > **Backfill.** This branch skipped `/plan` — the work began as a review of
 > [jpatricknola/AbletonOSC#1](https://github.com/jpatricknola/AbletonOSC/pull/1)
 > and became the companion update once that PR merged. The doc exists so the
