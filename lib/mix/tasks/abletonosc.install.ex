@@ -51,7 +51,8 @@ defmodule Mix.Tasks.Abletonosc.Install do
   *other* half of that trap (`git submodule update --init` detaches, and a
   commit made there belongs to no branch), and checking out `master` from it
   would abandon that work while the task reported a plausible commit; that is
-  refused, with the branch-it-first recipe.
+  refused with instructions to recover the commit into the standalone fork
+  clone. New fork development never belongs in this submodule.
 
   If git refuses the fast-forward for any reason — the branch has diverged, the
   tree has uncommitted changes, the network is unreachable — its own message is
@@ -213,9 +214,10 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
     #{indent(Enum.join(entries, "\n"))}
 
-    Commit them in the submodule (see .claude/rules/osc.md - editing bridge
-    Python is two commits), or install them anyway, knowing the deployed
-    Python is not any commit:
+    Do not commit them in this submodule. Reproduce the changes in the
+    standalone AbletonOSC clone, merge them to the fork's origin/master, then
+    update this checkout and bump the Seshat pin (see .claude/rules/osc.md).
+    Or install them anyway, knowing the deployed tree is not any commit:
 
         mix abletonosc.install --allow-dirty
     """)
@@ -257,11 +259,10 @@ defmodule Mix.Tasks.Abletonosc.Install do
 
   # The detached-HEAD checkout above is safe only while the detached commit is
   # already on origin/#{@branch}. It usually is - that is the stale-pin state
-  # this task exists for. But .claude/rules/osc.md's step 1 exists because
-  # `git submodule update --init` leaves a detached HEAD and a commit made there
-  # "belongs to no branch": someone who edits and commits bridge Python without
-  # checking out master first is sitting on exactly such a commit, with a
-  # *clean* tree, so refuse_if_dirty!/1 sees nothing wrong.
+  # this task exists for. But `git submodule update --init` leaves a detached
+  # HEAD, and an accidental commit made in this consumer checkout can therefore
+  # "belong to no branch". It still has a *clean* tree, so
+  # refuse_if_dirty!/1 sees nothing wrong.
   #
   # Checking out #{@branch} from there abandons that work. Git says so on
   # stderr, but git!/3 discards output on success, so the user sees only "was on
@@ -288,11 +289,10 @@ defmodule Mix.Tasks.Abletonosc.Install do
       all, and the install would deploy #{@branch} while reporting a commit that
       no longer describes anything reachable.
 
-      Put it on a branch first (see .claude/rules/osc.md - editing bridge Python
-      is two commits):
-
-          git -C #{@source_dir} branch <name> HEAD
-          git -C #{@source_dir} checkout <name>
+      Do not put new development on a branch in this submodule. Recover the
+      commit into a topic branch in the standalone AbletonOSC clone, merge it
+      through the fork's pull request workflow, then return this checkout to
+      the merged origin/#{@branch} commit (see .claude/rules/osc.md).
 
       Or install this detached commit exactly as it stands:
 

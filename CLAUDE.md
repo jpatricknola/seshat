@@ -141,7 +141,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
 | [lib/mix/tasks/ax.install.ex](lib/mix/tasks/ax.install.ex) | `mix ax.install` — macOS-only. Compiles the helper with warnings as errors and renames it over `~/.seshat/bin/seshat-ax` only on success, then reports whether macOS still trusts it. Deliberately outside `mix compile` and the Linux CI job |
-| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Owns every wire fact: `API.md` (addresses, reply shapes, measured behaviour), `SESHAT.md` (every divergence from upstream), `FORK_GAPS.md` (LOM members without an address), `issues.md` (fork defects). See "Before using any OSC address" |
+| [priv/AbletonOSC/](priv/AbletonOSC/) | **Pinned consumer submodule, never a development checkout** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Read its wire facts here, but make every fork edit and commit in the standalone fork clone (currently `/Users/patrick/ableton-osc`), merge it there, then advance this gitlink to the merged `origin/master` commit. Owns `API.md` (addresses, reply shapes, measured behaviour), `SESHAT.md` (every divergence from upstream), `FORK_GAPS.md` (LOM members without an address), and `issues.md` (fork defects). See "Before using any OSC address" |
 | [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — fast-forwards the submodule to `origin/master`, then copies the fork wholesale into Live's Remote Scripts, **naming the commit it deployed**. Refuses rather than misreport: a dirty checkout, a detached HEAD carrying unbranched commits, or an old Seshat revision whose pin the fork has moved past. `--no-pull` installs the checkout as it stands, `--allow-dirty` includes uncommitted edits |
 
 ## Adding a tool
@@ -180,9 +180,15 @@ The fork's other docs, each the sole record of its subject:
 
 Any new address goes into the fork the same way (a handler module of ours, or
 an addition to an upstream file), documented in `API.md` in the same fork
-commit. Editing the fork is two commits — one in the submodule, one bumping
-the pin here (doc-only fork commits need no pin bump until Python changes
-ride along). `vendored_addresses_test` is the tripwire in both directions:
+commit. **Never edit or commit in `priv/AbletonOSC`.** It is only Seshat's
+pinned consumer checkout. Make the fork commit in the standalone fork clone
+(currently `/Users/patrick/ableton-osc`), merge it to the fork's canonical
+`origin/master`, then bump the gitlink here to that merged commit. This applies
+to documentation-only edits too: without the pin, another Seshat checkout
+still sees the old fork documentation even after the fork commit was pushed.
+Runtime Python changes additionally require
+`mix abletonosc.install` and a Live restart; documentation-only changes do not.
+`vendored_addresses_test` is the tripwire in both directions:
 every fork-only address `lib/` sends must be registered in Python, everything
 Python registers must be in `API.md`, and the three invisible divergences
 (the `_stop_listen` fix, the loopback bind, the absent reply retargeting) are
@@ -214,10 +220,11 @@ address still answering.
 ## Design decisions worth knowing
 
 - **AbletonOSC is one bridge, not the architecture.** `OSC.Transport` isolates the wire mechanics (UDP, OSC encoding, reply correlation); the `/live/...` address strings deliberately live inline in `Handlers`, `Registry`, and `Session.State` — no abstraction layer, all sites greppable via `"/live/`. If the bridge ever changed, the stable seam is the tool contract in `Definitions`: the tool names and schemas stay, everything below `Handlers` gets reimplemented. Alternatives were weighed in [docs/evaluating/bridge-options.md](docs/evaluating/bridge-options.md) — staying on AbletonOSC is a decision, not an accident.
-- **We maintain the bridge.** Seshat runs [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), a fork of `ideoforms/AbletonOSC`, as a submodule at `priv/AbletonOSC`; `mix abletonosc.install` copies it wholesale into Live's Remote Scripts. Forked 2026-07-28 because two things could no longer be done by patching: a second dict-assignment override, and edits to upstream files with no `add_handler` seam at all ([docs/archive/fork-options.md](docs/archive/fork-options.md) records the reasoning; the fork's own `SESHAT.md` lists every divergence and the merge hazards). Two consequences worth internalising: **editing bridge Python is two commits** — one in the submodule, one bumping the pin here — and **git worktrees don't populate submodules**, so a fresh worktree needs `git submodule update --init` or the Python-grepping tests fail.
+- **We maintain the bridge.** Seshat runs [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), a fork of `ideoforms/AbletonOSC`, as a submodule at `priv/AbletonOSC`; `mix abletonosc.install` copies it wholesale into Live's Remote Scripts. Forked 2026-07-28 because two things could no longer be done by patching: a second dict-assignment override, and edits to upstream files with no `add_handler` seam at all ([docs/archive/fork-options.md](docs/archive/fork-options.md) records the reasoning; the fork's own `SESHAT.md` lists every divergence and the merge hazards). Two consequences worth internalising: **never develop or commit inside the Seshat submodule** — edit, commit, push and merge in the standalone AbletonOSC clone, then advance Seshat's pin to the merged canonical commit, including for documentation-only changes — and **git worktrees don't populate submodules**, so a fresh worktree needs `git submodule update --init` or the Python-grepping tests fail. Only runtime-file changes require `mix abletonosc.install` and a Live restart.
 - **MCP is the only model-facing entry point.** It needs no API key — the user's client subscription covers the reasoning. Phoenix remains because it hosts streamable HTTP MCP; `Req` remains available for outbound service integrations.
 - **Only one Seshat can read Ableton at a time.** AbletonOSC replies to a fixed port (11001), so the second instance to start is deaf — it can send but never receives. `.mcp.json` therefore points MCP clients at the running server's HTTP endpoint rather than spawning `mix mcp`, which means the server must be running for the tools to exist. Reasoning and rejected alternatives in [docs/evaluating/osc-port-contention.md](docs/evaluating/osc-port-contention.md).
 - **The LLM does the resolving.** Track names → indices, "the reverb" → device index, note names → MIDI numbers. Tools stay dumb and mechanical; tool descriptions carry the operational guidance.
+- **Backend completeness is not tool-surface completeness.** AbletonOSC may expose the whole LOM, the AX helper may carry many bounded commands, and generation may use several providers without adding one tool per capability. The stable boundary is model-facing producer intentions → domain operations (validation, sequencing, undo, verification) → OSC/AX/generation adapters. A new address, native command or provider operation is normally a property, target, internal step or read-back behind an existing intention; it earns a tool name only when the model must choose a genuinely different workflow. `Handlers` remains the sole name dispatcher, while substantial algorithms and multi-backend workflows live in focused modules behind it. The full policy and review metrics are in [docs/evaluating/tool-surface-scaling.md](docs/evaluating/tool-surface-scaling.md); the operational gate is [.claude/docs/adding-a-tool.md](.claude/docs/adding-a-tool.md).
 
 ## Current focus
 

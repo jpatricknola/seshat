@@ -10,12 +10,22 @@ Add a new tool to Seshat: **$ARGUMENTS**
 Follow [.claude/docs/adding-a-tool.md](.claude/docs/adding-a-tool.md). Work in
 this order and do not skip the verification step.
 
+0. **Apply the naming and publication test first.** A new backend capability
+   is not automatically a new tool. If this is a target of an existing verb, a
+   property of an existing noun, an internal step/verification read, or one step
+   in an action the producer experiences as a whole, add it behind that existing
+   intention and stop — report which tool or domain operation absorbed it. If a
+   new name is still justified, record the surface measurements and selection
+   check required by `adding-a-tool.md § Before minting a name`.
+
 1. **Find the OSC address** in [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md).
    Do not guess or infer it from a similar address — AbletonOSC's naming is
    irregular and a wrong address fails silently.
 
    If the capability isn't in that file, **we own the bridge and can add it** —
-   `priv/AbletonOSC` is our fork, not a read-only dependency. That is a bigger
+   but `priv/AbletonOSC` is only the pinned consumer checkout. Never edit or
+   commit there; fork development happens in the standalone AbletonOSC clone
+   and reaches Seshat only after merge by advancing the pin. That is a bigger
    job than a tool (Python, a reinstall, a Live restart, a smoke test the pure
    suite can't reach), so say what the address would need to be and let the user
    decide whether to take it on before you start writing Python. The workflow,
@@ -31,10 +41,12 @@ this order and do not skip the verification step.
 
 3. **Add the handler** — a `do_call/2` clause in
    [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex), above the
-   catch-all at the bottom. Params are string-keyed. If the operation needs
-   more than one OSC message or any sequencing, add a `%Command{}` clause to
-   [lib/seshat/commands/registry.ex](lib/seshat/commands/registry.ex) instead
-   and call `execute/1`.
+   catch-all at the bottom. Params are string-keyed. A bounded ordered OSC
+   mutation sequence belongs in a `%Command{}` clause in
+   [lib/seshat/commands/registry.ex](lib/seshat/commands/registry.ex). A
+   substantial algorithm, multi-backend workflow or lifecycle belongs in a
+   focused domain module behind the handler instead; Registry is not a generic
+   workflow engine.
 
 4. **Bump the tool count** in
    [test/seshat/tools/definitions_test.exs](test/seshat/tools/definitions_test.exs).
