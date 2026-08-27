@@ -1,0 +1,401 @@
+defmodule Seshat.AX.ClientTest do
+  @moduledoc """
+  The native process protocol, exercised against fixture executables.
+
+  Nothing here calls macOS Accessibility, and nothing here runs the *installed*
+  helper: every test points `:ax_helper_path` at a small shell script it wrote
+  itself. That is the whole layer this suite can reach — whether Live's
+  identifiers, popup actions, focus restoration and Settings cleanup work is a
+  live check (`docs/smoke_tests/auto/audio-output.md`), because no test rig can
+  stand in for Live's own UI.
+  """
+
+  use ExUnit.Case, async: false
+
+  alias Seshat.AX.Client
+
+  setup do
+    # A short outer deadline so the timeout path costs milliseconds instead of
+    # the real five seconds. The default itself is asserted below.
+    Application.put_env(:seshat, :ax_call_timeout, 300)
+    on_exit(fn -> Application.delete_env(:seshat, :ax_call_timeout) end)
+
+    :ok
+  end
+
+  # A fixture executable standing in for `seshat-ax`. `body` is shell, so a test
+  # can control stdout, stderr, exit status and duration independently — which
+  # is exactly the surface `Client` has to defend against.
+  defp helper(context, body) do
+    path = Path.join(context.tmp_dir, "seshat-ax")
+    File.write!(path, "#!/bin/sh\n" <> body <> "\n")
+    File.chmod!(path, 0o755)
+
+    Application.put_env(:seshat, :ax_helper_path, path)
+    on_exit(fn -> Application.delete_env(:seshat, :ax_helper_path) end)
+
+    path
+  end
+
+  defp emits(json, status \\ 0) do
+    "printf '%s\\n' '#{json}'\nexit #{status}"
+  end
+
+  describe "helper_path/0" do
+    test "defaults to the stable installed location" do
+      Application.delete_env(:seshat, :ax_helper_path)
+
+      assert Client.helper_path() == Path.expand("~/.seshat/bin/seshat-ax")
+    end
+
+    @tag :tmp_dir
+    test "is overridable, which is how the suite avoids the real helper", context do
+      path = helper(context, emits(~s({"ok":true,"protocol_version":1})))
+
+      assert Client.helper_path() == path
+    end
+  end
+
+  describe "call_timeout/0" do
+    # The number matters: a failure has to land inside the same 5-second budget
+    # the tool call is judged against, not merely "eventually".
+    test "defaults to the 5 seconds the tool budget allows" do
+      Application.delete_env(:seshat, :ax_call_timeout)
+
+      assert Client.call_timeout() == 5_000
+    end
+  end
+
+  describe "list_outputs/0" do
+    @tag :tmp_dir
+    test "decodes the current selection and every choice", context do
+      helper(
+        context,
+        emits(
+          ~s({"ok":true,"current":"Use System: 25 AirPods","devices":["No Device","Use System Device","MacBook Pro Speakers"],"elapsed_ms":412,"protocol_version":1})
+        )
+      )
+
+      assert {:ok, result} = Client.list_outputs()
+      assert result.current == "Use System: 25 AirPods"
+      assert result.devices == ["No Device", "Use System Device", "MacBook Pro Speakers"]
+      assert result.elapsed_ms == 412
+    end
+
+    @tag :tmp_dir
+    test "asks the helper for list-outputs and nothing else", context do
+      helper(
+        context,
+        ~s(printf '{"ok":true,"current":"%s","devices":[],"protocol_version":1}' "$*")
+      )
+
+      assert {:ok, %{current: "list-outputs"}} = Client.list_outputs()
+    end
+
+    # A success whose payload is the wrong shape is a helper that has stopped
+    # speaking this protocol, not a device list of zero.
+    @tag :tmp_dir
+    test "rejects a success carrying no current value", context do
+      helper(context, emits(~s({"ok":true,"devices":[],"protocol_version":1})))
+
+      assert {:error, %{code: :ax_failure}} = Client.list_outputs()
+    end
+
+    @tag :tmp_dir
+    test "rejects a device list that is not all strings", context do
+      helper(context, emits(~s({"ok":true,"current":"X","devices":[1,2],"protocol_version":1})))
+
+      assert {:error, %{code: :ax_failure}} = Client.list_outputs()
+    end
+  end
+
+  describe "set_output/1" do
+    @tag :tmp_dir
+    test "decodes the observed previous and current values", context do
+      helper(
+        context,
+        emits(
+          ~s({"ok":true,"previous":"MacBook Pro Speakers","current":"Use System: 25 AirPods","elapsed_ms":980,"protocol_version":1})
+        )
+      )
+
+      assert {:ok, result} = Client.set_output("Use System Device")
+      assert result.previous == "MacBook Pro Speakers"
+      assert result.current == "Use System: 25 AirPods"
+    end
+
+    # The device name is user-influenced text. It travels as one argv entry, so
+    # no shell ever sees it: a name full of quotes and semicolons arrives at the
+    # helper intact and means nothing else on the way.
+    @tag :tmp_dir
+    test "passes the device name through as one argv entry, unshelled", context do
+      helper(
+        context,
+        ~s(printf '{"ok":true,"previous":"old","current":"%s","protocol_version":1}' "$3")
+      )
+
+      hostile = ~s[Device $(touch /tmp/seshat-pwned); echo x]
+
+      assert {:ok, %{current: ^hostile}} = Client.set_output(hostile)
+      refute File.exists?("/tmp/seshat-pwned")
+    end
+
+    @tag :tmp_dir
+    test "rejects a success missing the read-back value", context do
+      helper(context, emits(~s({"ok":true,"previous":"old","protocol_version":1})))
+
+      assert {:error, %{code: :ax_failure}} = Client.set_output("Anything")
+    end
+  end
+
+  describe "structured errors" do
+    for {code, atom, status} <- [
+          {"permission_required", :permission_required, 2},
+          {"live_not_running", :live_not_running, 3},
+          {"settings_unavailable", :settings_unavailable, 4},
+          {"device_not_found", :device_not_found, 5},
+          {"ax_failure", :ax_failure, 6},
+          {"timeout", :timeout, 7}
+        ] do
+      @tag :tmp_dir
+      test "#{code} becomes a #{atom} failure", context do
+        helper(
+          context,
+          emits(
+            ~s({"ok":false,"code":"#{unquote(code)}","message":"Native said so.","protocol_version":1}),
+            unquote(status)
+          )
+        )
+
+        assert {:error, %{code: unquote(atom), message: message}} = Client.list_outputs()
+        assert is_binary(message) and message != ""
+      end
+    end
+
+    # A code this Seshat has never heard of must not mint an atom from helper
+    # output; it collapses to the generic failure instead.
+    @tag :tmp_dir
+    test "an unrecognised code collapses to ax_failure", context do
+      helper(
+        context,
+        emits(~s({"ok":false,"code":"invented_here","message":"Odd.","protocol_version":1}), 6)
+      )
+
+      assert {:error, %{code: :ax_failure, message: "Odd."}} = Client.list_outputs()
+    end
+
+    @tag :tmp_dir
+    test "permission failures name the install task rather than the native wording", context do
+      helper(
+        context,
+        emits(
+          ~s({"ok":false,"code":"permission_required","message":"Not trusted.","protocol_version":1}),
+          2
+        )
+      )
+
+      assert {:error, %{code: :permission_required, message: message}} = Client.list_outputs()
+      assert message =~ "mix ax.install"
+      assert message =~ "Accessibility"
+    end
+
+    @tag :tmp_dir
+    test "a rejected device carries the names that do exist", context do
+      helper(
+        context,
+        emits(
+          ~s({"ok":false,"code":"device_not_found","message":"No such output.","current":"Speakers","devices":["Speakers","Use System Device"],"protocol_version":1}),
+          5
+        )
+      )
+
+      assert {:error, failure} = Client.set_output("Nope")
+      assert failure.devices == ["Speakers", "Use System Device"]
+      assert failure.current == "Speakers"
+    end
+  end
+
+  describe "a helper that stops speaking the protocol" do
+    @tag :tmp_dir
+    test "non-JSON output is malformed, not relayed", context do
+      helper(context, "echo 'something went wrong'\nexit 1")
+
+      assert {:error, %{code: :ax_failure, message: message}} = Client.list_outputs()
+      refute message =~ "something went wrong"
+      assert message =~ "mix ax.install"
+    end
+
+    @tag :tmp_dir
+    test "no output at all is malformed", context do
+      helper(context, "exit 0")
+
+      assert {:error, %{code: :ax_failure}} = Client.list_outputs()
+    end
+
+    # The exit status is half the protocol. A payload claiming success while the
+    # process failed (or the reverse) is a helper in an unknown state, and
+    # believing either half would be a fabricated result.
+    @tag :tmp_dir
+    test "a success payload with a non-zero exit status is malformed", context do
+      helper(context, emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1}), 3))
+
+      assert {:error, %{code: :ax_failure}} = Client.list_outputs()
+    end
+
+    @tag :tmp_dir
+    test "a failure payload with a zero exit status is malformed", context do
+      helper(
+        context,
+        emits(~s({"ok":false,"code":"ax_failure","message":"Hmm.","protocol_version":1}), 0)
+      )
+
+      assert {:error, %{code: :ax_failure, message: message}} = Client.list_outputs()
+      assert message =~ "unreadable"
+    end
+
+    @tag :tmp_dir
+    test "an oversized response is refused rather than buffered", context do
+      helper(context, "dd if=/dev/zero bs=1024 count=200 2>/dev/null | tr '\\0' 'x' 2>/dev/null")
+
+      assert {:error, %{code: :ax_failure, message: message}} = Client.list_outputs()
+      assert message =~ "more data than its protocol allows"
+    end
+
+    @tag :tmp_dir
+    test "a different protocol version is named, not guessed at", context do
+      helper(context, emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":99})))
+
+      assert {:error, %{code: :version_mismatch, message: message}} = Client.list_outputs()
+      assert message =~ "99"
+      assert message =~ "mix ax.install"
+    end
+
+    @tag :tmp_dir
+    test "a helper that never answers is bounded by the outer deadline", context do
+      helper(context, "sleep 30")
+
+      started = System.monotonic_time(:millisecond)
+      assert {:error, %{code: :timeout, message: message}} = Client.list_outputs()
+      elapsed = System.monotonic_time(:millisecond) - started
+
+      assert elapsed < 2_000
+      assert message =~ "nothing is known to have changed"
+    end
+  end
+
+  describe "a missing installation" do
+    test "names the path and the task that would create it" do
+      Application.put_env(:seshat, :ax_helper_path, "/nonexistent/seshat-ax")
+      on_exit(fn -> Application.delete_env(:seshat, :ax_helper_path) end)
+
+      assert {:error, %{code: :helper_missing, message: message}} = Client.list_outputs()
+      assert message =~ "/nonexistent/seshat-ax"
+      assert message =~ "mix ax.install"
+    end
+
+    @tag :tmp_dir
+    test "a path that exists but cannot be executed fails honestly", context do
+      path = Path.join(context.tmp_dir, "seshat-ax")
+      File.write!(path, "not an executable")
+      File.chmod!(path, 0o644)
+
+      Application.put_env(:seshat, :ax_helper_path, path)
+      on_exit(fn -> Application.delete_env(:seshat, :ax_helper_path) end)
+
+      assert {:error, %{code: :ax_failure, message: message}} = Client.list_outputs()
+      assert message =~ "mix ax.install"
+    end
+  end
+
+  describe "serialization" do
+    # Two clients must not drive the same Settings popup at once — the second
+    # would press a chooser the first opened, or read a value mid-transition.
+    @tag :tmp_dir
+    test "two concurrent calls cannot overlap", context do
+      helper(
+        context,
+        "sleep 0.3\n" <> emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1}))
+      )
+
+      Application.put_env(:seshat, :ax_call_timeout, 5_000)
+
+      started = System.monotonic_time(:millisecond)
+
+      [first, second] =
+        [1, 2]
+        |> Enum.map(fn _ -> Task.async(&Client.list_outputs/0) end)
+        |> Task.await_many(5_000)
+
+      elapsed = System.monotonic_time(:millisecond) - started
+
+      assert {:ok, _} = first
+      assert {:ok, _} = second
+      # Serialized: two 300ms calls take 600ms. Overlapped, they would take 300.
+      assert elapsed >= 600
+    end
+
+    # ...but the AX lock is its own, not the OSC undo lock. An audio-output
+    # change is outside Live's undo history and has no reason to hold ordinary
+    # OSC work behind it. Held deliberately rather than raced into, so this
+    # asserts the two locks are distinct rather than that one happened to be
+    # free.
+    test "holding the AX lock leaves the OSC undo lock free" do
+      parent = self()
+
+      holder =
+        spawn(fn ->
+          :global.trans(
+            Client.lock_id(),
+            fn ->
+              send(parent, :ax_lock_held)
+
+              receive do
+                :release -> :ok
+              end
+            end,
+            [node()]
+          )
+        end)
+
+      assert_receive :ax_lock_held, 1_000
+
+      assert :taken =
+               :global.trans({{Seshat.Tools.Handlers, :undo_step}, self()}, fn -> :taken end, [
+                 node()
+               ])
+
+      send(holder, :release)
+    end
+  end
+
+  describe "the execution boundary" do
+    # The LOM-first rule is only durable if it is mechanical. `Seshat.AX.Client`
+    # is the one module allowed to start a process, so a future tool cannot grow
+    # a second UI-automation path without this failing — the same job
+    # `vendored_addresses_test` does for the fork's address surface.
+    #
+    # `lib/mix/tasks/` is deliberately outside the scope: mix tasks run at a
+    # human's request from a shell, not inside a model's tool call.
+    test "only Seshat.AX.Client may start a native process" do
+      offenders =
+        Path.wildcard("lib/seshat/**/*.ex")
+        |> Enum.filter(fn path ->
+          path != "lib/seshat/ax/client.ex" and
+            File.read!(path) =~ ~r/Port\.open|:spawn_executable|System\.cmd/
+        end)
+
+      assert offenders == [],
+             """
+             These modules under lib/seshat/ execute a subprocess:
+
+             #{Enum.join(offenders, "\n")}
+
+             Seshat.AX.Client is the only module allowed to, so that the macOS
+             Accessibility path stays one auditable door. If a new capability
+             genuinely needs a native helper, it belongs behind that module's
+             protocol — with its own LOM-gap, safety, semantic-target and
+             read-back case argued first.
+             """
+    end
+  end
+end

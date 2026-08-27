@@ -2,6 +2,7 @@ defmodule Seshat.Tools.HandlersTest do
   use ExUnit.Case, async: false
 
   alias Seshat.OSC.Message
+  alias Seshat.Test.FakeAXClient
   alias Seshat.Test.OSCSink
   alias Seshat.Tools.Handlers
 
@@ -4448,6 +4449,135 @@ defmodule Seshat.Tools.HandlersTest do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})
       assert msg =~ "Unknown tool"
+    end
+  end
+
+  # The two Accessibility-backed tools, dispatched for real against a fake
+  # client. The socket is here for the assertion that matters most: these are
+  # the only tools in the file that must put *nothing* on the wire.
+  describe "the audio-output tools" do
+    setup :osc_sink
+
+    test "get_audio_outputs reports the current value and the exact names" do
+      FakeAXClient.install(%{
+        list_outputs:
+          {:ok,
+           %{
+             current: "Use System: 25 AirPods",
+             devices: ["No Device", "Use System Device", "MacBook Pro Speakers"],
+             elapsed_ms: 380
+           }}
+      })
+
+      assert {:ok, message} = Handlers.call("get_audio_outputs", %{})
+
+      assert_receive {:ax_call, :list_outputs, []}
+      assert message =~ ~s("Use System: 25 AirPods")
+      assert message =~ ~s("MacBook Pro Speakers")
+      assert message =~ ~s("Use System Device")
+    end
+
+    test "set_audio_output reports the values Live was observed to hold" do
+      FakeAXClient.install(%{
+        set_output: {:ok, %{previous: "MacBook Pro Speakers", current: "Use System: 25 AirPods"}}
+      })
+
+      assert {:ok, message} =
+               Handlers.call("set_audio_output", %{"device" => "Use System Device"})
+
+      # The exact name the model chose reaches the client untouched: exact
+      # matching is the whole contract between the two tools.
+      assert_receive {:ax_call, :set_output, ["Use System Device"]}
+      assert message =~ ~s("Use System: 25 AirPods")
+      assert message =~ ~s(it was "MacBook Pro Speakers")
+      # Never the requested name presented as the result.
+      refute message =~ ~s(is now "Use System Device")
+    end
+
+    test "an unchanged selection says so rather than claiming a change" do
+      FakeAXClient.install(%{
+        set_output: {:ok, %{previous: "MacBook Pro Speakers", current: "MacBook Pro Speakers"}}
+      })
+
+      assert {:ok, message} =
+               Handlers.call("set_audio_output", %{"device" => "MacBook Pro Speakers"})
+
+      assert message =~ "was already"
+    end
+
+    test "a rejected device name offers the names that do exist" do
+      FakeAXClient.install(%{
+        set_output:
+          {:error,
+           %{
+             code: :device_not_found,
+             message: ~s(Ableton Live has no audio output called "Headphones".),
+             devices: ["Use System Device", "MacBook Pro Speakers"],
+             current: "MacBook Pro Speakers"
+           }}
+      })
+
+      assert {:error, message} = Handlers.call("set_audio_output", %{"device" => "Headphones"})
+
+      assert message =~ ~s(no audio output called "Headphones")
+      assert message =~ ~s("MacBook Pro Speakers")
+      assert message =~ "Choose one of these exact names"
+    end
+
+    test "a missing helper or permission is relayed with its recovery step" do
+      FakeAXClient.install(%{
+        list_outputs:
+          {:error,
+           %{
+             code: :permission_required,
+             message: "macOS has not granted... Run `mix ax.install` ...",
+             devices: nil,
+             current: nil
+           }}
+      })
+
+      assert {:error, message} = Handlers.call("get_audio_outputs", %{})
+      assert message =~ "mix ax.install"
+    end
+
+    test "a missing device parameter is rejected before the helper is asked" do
+      FakeAXClient.install(%{set_output: {:ok, %{previous: "a", current: "b"}}})
+
+      assert {:error, message} = Handlers.call("set_audio_output", %{})
+
+      assert message =~ "required but missing"
+      refute_receive {:ax_call, :set_output, _}
+    end
+
+    # The undo-step opt-out, asserted where it is observable: an ordinary tool
+    # brackets its work with begin/end datagrams, and these two send nothing at
+    # all. An audio device is not part of the Live Set, so there is no undo entry
+    # for a step to demarcate — and nothing for the OSC wire to carry.
+    for {tool, params} <- [
+          {"get_audio_outputs", %{}},
+          {"set_audio_output", %{"device" => "MacBook Pro Speakers"}}
+        ] do
+      test "#{tool} sends no OSC datagram at all" do
+        FakeAXClient.install(%{
+          list_outputs: {:ok, %{current: "MacBook Pro Speakers", devices: [], elapsed_ms: 1}},
+          set_output: {:ok, %{previous: "Use System Device", current: "MacBook Pro Speakers"}}
+        })
+
+        assert {:ok, _} = Handlers.call(unquote(tool), unquote(Macro.escape(params)))
+
+        assert osc_trace() == []
+      end
+    end
+
+    test "an ordinary OSC tool still gets its begin/end pair for comparison" do
+      assert {:ok, _} = Handlers.call("set_track_pan", %{"track" => 0, "value" => 0.0})
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/track/set/panning", [0, +0.0]},
+               {"/live/song/end_undo_step", []}
+             ] = osc_trace()
     end
   end
 end

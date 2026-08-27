@@ -111,6 +111,48 @@ afterwards** (or toggle AbletonOSC off and back on under Preferences >
 Link/Tempo/MIDI > Control Surface) — `/live/api/reload` won't pick up a new
 install, and can leave AbletonOSC with no handlers at all.
 
+### Install the Accessibility helper (macOS, once)
+
+```bash
+mix ax.install
+```
+
+Two tools — `get_audio_outputs` and `set_audio_output` — do not go through
+AbletonOSC at all. Live's application-wide audio *device* preference is not in
+the Live Object Model, so there is no OSC address for it at any version of the
+bridge; the only way to reach it is Live's own Settings window, through macOS
+Accessibility. `mix ax.install` compiles a small native helper from
+`native/seshat_ax/main.m` and installs it at `~/.seshat/bin/seshat-ax`.
+
+Everything else Seshat does still goes through the LOM. The helper's protocol is
+three operations wide — list the outputs, set one, report its own permission
+status — deliberately, so this stays one narrow workflow rather than a second
+control surface.
+
+macOS asks you to approve the helper once, under **System Settings → Privacy &
+Security → Accessibility**; the task prompts for it and prints the path to turn
+on. It needs **no** Automation/Apple Events permission and **no** Screen
+Recording permission, and neither Ableton Live nor Seshat needs restarting
+afterwards. Until it is granted, both tools fail immediately saying so — they
+never open System Settings on their own.
+
+The path is stable because macOS attaches the permission to the executable:
+re-running `mix ax.install` after a change rebuilds in place and keeps the grant.
+Compilation is atomic, so a build that fails leaves the working, already-approved
+helper untouched.
+
+When you ask for an output change, Live briefly comes to the front while the
+helper reads or sets the value, then the application that was frontmost goes
+back in front. A Settings window the helper opened is closed again; one you had
+open already is left open, on the page you had selected. The change is applied to
+Ableton's preferences rather than to your Set, so it is **outside Live's undo
+history** — reverse it by setting the previous device, not with `undo`. It also
+does not touch the macOS system-wide output; `Use System Device` selects
+"follow macOS" inside Live and nothing more.
+
+This is macOS-only. Seshat itself still compiles and tests anywhere; only these
+two tools need the helper.
+
 ### Build the sound catalog (once)
 
 With Ableton Live running, ask the assistant to **reindex the library** (the
@@ -290,3 +332,17 @@ database wasn't readable at reindex time, so everything fell back to
 folder-derived tags. It lives at
 `~/Library/Application Support/Ableton/Live Database/Live-files-*.db`; the
 reindex logs a warning saying why it couldn't be read.
+
+**`get_audio_outputs` / `set_audio_output` say the helper isn't installed or
+isn't trusted.** Run `mix ax.install` (macOS only) and turn on the printed path
+under System Settings → Privacy & Security → Accessibility. No restart of Live
+or Seshat is needed afterwards. If it still says untrusted, check that the entry
+you enabled is `~/.seshat/bin/seshat-ax` and not an older copy left somewhere
+else — the permission follows the executable, not the project.
+
+**`set_audio_output` reports that Live's Settings couldn't be reached.** Live
+was running but its Settings window wouldn't open or the Audio page wasn't
+where the helper expects it. A modal dialog in Live blocks the menu, so dismiss
+anything Live is asking about first. The helper only speaks Live 12's English
+labels; a non-English Live is out of scope, and it will say it could not find
+the control rather than guessing at coordinates.

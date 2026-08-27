@@ -88,3 +88,47 @@ jobs:
 
       - name: Run tests
         run: mix test
+
+  # The Ubuntu job above cannot compile AppKit, so the native Accessibility
+  # helper would otherwise reach a user's machine having never been built by
+  # anyone but its author. This job builds it with the same warnings-as-errors
+  # command `mix ax.install` uses (test/mix/tasks/ax_install_test.exs fails if
+  # the two drift) and runs the one command that needs neither Live nor granted
+  # permission.
+  #
+  # It proves compilation and structured permission failure. It cannot prove
+  # trusted cross-process control: a GitHub runner has no Ableton Live and no
+  # Accessibility grant, which is exactly why `permission` must come back as a
+  # well-formed refusal rather than a crash.
+  helper:
+    name: Build the macOS Accessibility helper
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile native/seshat_ax/main.m
+        run: |
+          /usr/bin/clang -fobjc-arc -Wall -Wextra -Werror -O2 \
+            -framework AppKit -framework ApplicationServices \
+            -o "$RUNNER_TEMP/seshat-ax" native/seshat_ax/main.m
+
+      - name: An untrusted runner reports permission_required, in protocol
+        run: |
+          set +e
+          OUTPUT=$("$RUNNER_TEMP/seshat-ax" permission)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::permission exited 0 on a runner that cannot be trusted."
+            exit 1
+          fi
+          echo "$OUTPUT" | python3 -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          assert payload["ok"] is False, payload
+          assert payload["code"] == "permission_required", payload
+          assert payload["trusted"] is False, payload
+          assert payload["protocol_version"] == 1, payload
+          print("permission_required reported in protocol")
+          '

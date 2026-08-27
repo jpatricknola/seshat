@@ -79,6 +79,15 @@ permission setup out of the request path and measuring what the user waits for.
 - The tool definition must opt out of OSC undo wrapping. Audio preferences are
   outside the Live Set's LOM undo history, and the tool must work without
   emitting unrelated begin/end datagrams.
+- **Implemented on branch `ax-audio-output`, but this entry stays until the
+  latency evidence exists.** Everything reachable without Ableton is built and
+  covered: the native helper, `Seshat.AX.Client`, `mix ax.install`, both tools,
+  the undo opt-out, and a macOS CI build. None of the acceptance criteria above
+  are measurements yet — they need Live running, Accessibility granted, and a
+  real client. Run `/smoke-test audio-output` plus
+  [smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md) §
+  *Headphones resolve and switch within the user-visible budget* before `/ship`
+  touches this item.
 
 ## #2 · Catalog vocabulary — read tag axes, teach the menu proactively
 

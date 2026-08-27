@@ -25,6 +25,11 @@ defmodule Seshat.Tools.Handlers do
   # keep in sync by hand. Same compile-time derivation as `Seshat.MCP.Server`.
   @tool_names MapSet.new(Definitions.all(), & &1.name)
 
+  # ...minus the ones whose definition opts out. `Definitions.unstepped_names/0`
+  # is the single source: a tool declares `undo_step: false` beside its own
+  # description, and nothing here has to be kept in sync by hand.
+  @unstepped_names MapSet.new(Definitions.unstepped_names())
+
   # Browsing and loading are both far slower than a property read: the first
   # walk of a big browser category takes seconds, and a heavy plugin can take
   # tens of seconds to instantiate.
@@ -288,20 +293,34 @@ defmodule Seshat.Tools.Handlers do
   # never sees the original prompt, only the individual MCP calls, so "undo that
   # request" is one `undo` per mutating call — which is what the `undo` tool
   # description teaches the model.
+  #
+  # A tool can opt out, and exactly two do (`get_audio_outputs`,
+  # `set_audio_output`). They reach Live through macOS Accessibility rather than
+  # the LOM, changing an application preference rather than the Set — there is no
+  # undo entry for a `begin`/`end` pair to demarcate, and sending the pair anyway
+  # would put OSC datagrams on the wire for a tool that has no business touching
+  # it (and would queue an audio-device change behind the OSC undo lock for no
+  # reason). The opt-out lives in `Definitions` as `undo_step: false`, so the
+  # claim is checkable from the tool list itself.
   defp dispatch(name, params) do
-    if MapSet.member?(@tool_names, name) do
-      # Anubis serializes calls within one MCP session, but two clients can
-      # still overlap — and `begin_undo_step` is measured *not* to refcount, so
-      # without a global lock one caller's `end` closes another caller's step.
-      # The resource id is shared; `self()` is the lock owner, which OTP
-      # releases if the caller dies.
-      stepped = fn -> undo_stepped(name, params) end
-      :global.trans({{__MODULE__, :undo_step}, self()}, stepped, [node()])
-    else
-      # An unknown tool name must not touch the wire at all: it goes straight to
-      # `do_call/2`'s catch-all, which also keeps pure tests calling `call/2`
-      # without a running `Transport` alive.
-      do_call(name, params)
+    cond do
+      MapSet.member?(@unstepped_names, name) ->
+        do_call(name, params)
+
+      MapSet.member?(@tool_names, name) ->
+        # Anubis serializes calls within one MCP session, but two clients can
+        # still overlap — and `begin_undo_step` is measured *not* to refcount, so
+        # without a global lock one caller's `end` closes another caller's step.
+        # The resource id is shared; `self()` is the lock owner, which OTP
+        # releases if the caller dies.
+        stepped = fn -> undo_stepped(name, params) end
+        :global.trans({{__MODULE__, :undo_step}, self()}, stepped, [node()])
+
+      true ->
+        # An unknown tool name must not touch the wire at all: it goes straight
+        # to `do_call/2`'s catch-all, which also keeps pure tests calling
+        # `call/2` without a running `Transport` alive.
+        do_call(name, params)
     end
   end
 
@@ -3346,7 +3365,72 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # --- Audio output (macOS Accessibility, not OSC) ---
+  #
+  # The only two clauses in this file that never touch `Transport`. Live's
+  # application-wide audio device preference is absent from the Live Object
+  # Model, so it is reached through `Seshat.AX.Client` and the native helper
+  # instead. Nothing else changes: no `%Command{}`, no `Registry`, no
+  # `FollowCam` (there is no Live Set object to select), and nothing enters
+  # `Session.State` — an audio device is application-wide, external to the Set,
+  # and changed rarely enough that reading it on demand is right.
+  #
+  # The client module is configurable so the pure suite can dispatch these
+  # clauses against a fake instead of driving a real UI.
+  defp do_call("get_audio_outputs", _params) do
+    case ax_client().list_outputs() do
+      {:ok, %{current: current, devices: devices}} ->
+        {:ok, format_audio_outputs(current, devices)}
+
+      {:error, failure} ->
+        {:error, audio_error(failure)}
+    end
+  end
+
+  defp do_call("set_audio_output", %{"device" => device}) do
+    case ax_client().set_output(device) do
+      # `previous` and `current` are both values the helper *observed* on Live's
+      # own control — the reply never echoes the requested name as though it were
+      # the result.
+      {:ok, %{previous: previous, current: current}} when previous == current ->
+        {:ok, "Ableton Live's audio output was already \"#{current}\" — nothing changed."}
+
+      {:ok, %{previous: previous, current: current}} ->
+        {:ok,
+         "Ableton Live's audio output is now \"#{current}\" (it was \"#{previous}\"). " <>
+           "Live confirmed the new value itself."}
+
+      {:error, failure} ->
+        {:error, audio_error(failure)}
+    end
+  end
+
   defp do_call(name, _params), do: {:error, "Unknown tool: #{name}"}
+
+  defp ax_client, do: Application.get_env(:seshat, :ax_client, Seshat.AX.Client)
+
+  defp format_audio_outputs(current, []) do
+    "Ableton Live's audio output is \"#{current}\", and it lists no other choices."
+  end
+
+  defp format_audio_outputs(current, devices) do
+    "Ableton Live's audio output is \"#{current}\". Available choices, exactly as Live " <>
+      "spells them: " <> Enum.map_join(devices, ", ", &"\"#{&1}\"") <> "."
+  end
+
+  # Native codes are already rendered as prose by `Seshat.AX.Client`; what is
+  # added here is the recovery path, which is a tool-surface question rather than
+  # a helper one. A rejected device name is the case worth spending words on: the
+  # names are machine-specific, so the model cannot guess a second time, and the
+  # helper already collected the real ones on its way to failing.
+  defp audio_error(%{code: :device_not_found, message: message, devices: devices})
+       when is_list(devices) and devices != [] do
+    message <>
+      " Choose one of these exact names instead: " <>
+      Enum.map_join(devices, ", ", &"\"#{&1}\"") <> "."
+  end
+
+  defp audio_error(%{message: message}), do: message
 
   # An explicit refresh that never completes is caught here rather than left to
   # `serve_session_state/0`'s own catch, which reports a mirror that didn't

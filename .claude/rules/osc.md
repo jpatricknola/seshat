@@ -116,6 +116,26 @@ exist because a typo'd address looks exactly like success.
   addresses are send-only and registered by a loop, so — like `swing_amount` —
   `vendored_addresses_test` greps `song.py` for the literal names instead of
   seeing the registration.
+- **A tool may opt out of the undo step only if its mechanism cannot reach
+  Live's undo history.** `undo_step: false` in a `Definitions` entry makes
+  `Handlers` dispatch it with no lock and no begin/end datagrams; the set is
+  derived by `Definitions.unstepped_names/0`, never hand-listed. Today it is
+  exactly `get_audio_outputs` and `set_audio_output`, which reach Live through
+  macOS Accessibility (`Seshat.AX.Client`) and change an Ableton *preference*
+  rather than the Set — sending OSC for them would put datagrams on the wire for
+  a tool that never touches it. **It is not an optimisation for read-only OSC
+  tools**: those stay wrapped by deliberate policy, per the bullet above. A tool
+  that opts out owes the model a sentence saying the change is outside Live's
+  undo history and how to reverse it, since `undo` cannot.
+- **Nothing under `lib/seshat/` starts a process except `Seshat.AX.Client`.**
+  It is the single door to the native Accessibility helper, and
+  `client_test.exs` greps the tree for `Port.open`, `:spawn_executable` and
+  `System.cmd` to keep it that way. The LOM-first rule — UI scripting only for a
+  concrete operation absent from the current LOM, everything else goes in the
+  fork — is only durable if it is mechanical. A new capability that genuinely
+  needs the helper adds a command to its closed protocol, with its own LOM-gap,
+  safety, semantic-target and read-back case argued first; it does not spawn
+  something of its own.
 - **Two addresses of ours live under a prefix upstream owns**:
   `/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
   from
