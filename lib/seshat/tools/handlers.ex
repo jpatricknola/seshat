@@ -4074,7 +4074,8 @@ defmodule Seshat.Tools.Handlers do
         {:error, Transport.describe_error(reason)}
     end
   catch
-    :exit, _ -> {:error, extension_missing_error("read the master volume", "nothing was changed")}
+    :exit, _ ->
+      {:error, extension_missing_error("read the master volume", "that property was not changed")}
   end
 
   # The index-less master getters reply with a bare value and no envelope, so
@@ -4094,7 +4095,8 @@ defmodule Seshat.Tools.Handlers do
         {:error, Transport.describe_error(reason)}
     end
   catch
-    :exit, _ -> {:error, extension_missing_error("read #{subject}", "nothing was changed")}
+    :exit, _ ->
+      {:error, extension_missing_error("read #{subject}", "that property was not changed")}
   end
 
   defp extension_missing_error(attempted, consequence) do

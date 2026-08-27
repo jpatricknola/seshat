@@ -735,7 +735,41 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #20 · LLM enrichment at reindex
+## #20 · Pin the wording of `edit_notes`' partial-failure message
+
+**Impact 2 · Lift 2 · 1.00 impact-per-effort**
+
+**Goal:** get test coverage on the message `add_edited_notes/3`
+(`lib/seshat/tools/handlers.ex`) returns when the remove half of an
+`edit_notes` call succeeds but the add half fails — "The matched notes were
+removed but the edited replacements could not be sent … Call undo
+immediately to put them back." Nothing in the suite pins its wording today.
+
+**Why:** flagged in the 2026-08-28 review of "Consolidate the tool surface"
+as the single most consequential error path in the note-editing feature —
+notes already gone, replacements never sent, and the only way back is an
+immediate `undo` — with no test protecting the sentence a model would act on
+in that moment. It was left as a non-blocking nit rather than fixed inline
+because the failure can't be provoked through the existing harness:
+`Transport.send_message/2` goes out over loopback UDP via `:gen_udp.send/4`,
+which does not return `{:error, _}` in practice, so `Seshat.Test.OSCSink`
+has nothing to hook to drive this branch through the full call path — the
+same constraint that leaves every other bare error-message helper in
+`Handlers` (`extension_missing_error/2`, `mixer_partial_error/5`,
+`stale_reply_error/2`, and siblings) untested directly today, by consistent
+convention across the module.
+
+**Planner notes:**
+- Fixing this for real means solving it for the whole family, not just this
+  one message — either give `Transport.send_message/2` a way to be
+  injected with a failure in tests (a behaviour/mock swap, or a test-only
+  send path), or accept breaking the module's current privacy convention by
+  exporting one pure formatting function and decide whether that's worth
+  the inconsistency it introduces.
+- Low lift once the mocking question is settled — the message itself is
+  already correct and doesn't need to change, only get pinned.
+
+## #21 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -762,7 +796,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #21 · Monitored refresh worker for `Session.State`
+## #22 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -806,7 +840,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #22 · Device list per track in session state
+## #23 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -827,7 +861,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #23 · Adopt MCP `2026-07-28` when Anubis supports it
+## #24 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -878,7 +912,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #24 · Clip grid in session state — only if usage demands it
+## #25 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 
