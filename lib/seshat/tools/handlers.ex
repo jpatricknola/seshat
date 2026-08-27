@@ -40,7 +40,7 @@ defmodule Seshat.Tools.Handlers do
   # queued on the socket. So a *group* of reads costs one tick between them when
   # it goes out as a `Transport.query_batch/2` burst, which is what the clip,
   # sends and device reads do — a lone guard like these still costs its own.
-  # Measured 2026-08-04; docs/abletonosc-api-docs.md, "Round trips cost ticks,
+  # Measured 2026-08-04; priv/AbletonOSC/API.md, "Round trips cost ticks,
   # not datagrams".
   # A bad index sends no reply on the queried address
   # (AbletonOSC raises inside the callback), but since the structured
@@ -912,7 +912,7 @@ defmodule Seshat.Tools.Handlers do
 
   **These integers were measured against a running Live on 2026-07-31**, one
   clip per enum value, with probe notes chosen so every candidate grid lands
-  somewhere distinguishable. `docs/abletonosc-api-docs.md` and the comment in
+  somewhere distinguishable. `priv/AbletonOSC/API.md` and the comment in
   the fork's `abletonosc/clip.py` both used to claim `5=1/2, 6=1/4, 7=1/8,
   8=1/16, 9=1/32`, and **every row of that was wrong** — both have since been
   corrected to the table below. If you are here because the code and some
@@ -2385,7 +2385,7 @@ defmodule Seshat.Tools.Handlers do
   # the next tick, and a tick answers everything already queued on the socket —
   # so the twelve reads below ride *one* tick together through
   # `Transport.query_batch/2`, which echo-checks each reply against the entry
-  # that asked for it. Measured 2026-08-04; see docs/abletonosc-api-docs.md,
+  # that asked for it. Measured 2026-08-04; see priv/AbletonOSC/API.md,
   # "Round trips cost ticks, not datagrams".
   #
   # `ensure_clip/3` first so an empty slot costs one timeout-free error rather
@@ -3626,7 +3626,7 @@ defmodule Seshat.Tools.Handlers do
   # with no scenes) is unreachable from here.
   #
   # This reply carries **names only — the range is not echoed back**
-  # (docs/abletonosc-api-docs.md), so it cannot ride `query_correlated/4`: there
+  # (priv/AbletonOSC/API.md), so it cannot ride `query_correlated/4`: there
   # is no prefix to verify. The length check against the `num_scenes` the caller
   # just read stands in for it, with the same reissue-once defence. That is
   # weaker than an echo but not weaker than the per-scene loop this replaces: an

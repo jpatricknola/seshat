@@ -48,7 +48,7 @@ nothing re-runs these for you:
 - **A substitution is named as a substitution** — what it covered *and what it
   lost*. Reporting the original as run is the failure this rule exists to stop.
 - **A measurement goes where measurements live** —
-  [../../abletonosc-api-docs.md](../../abletonosc-api-docs.md), dated and
+  [../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md), dated and
   version-stamped, not only in a run report.
 
 Stamp `*Last run:*` on the test itself with the date and a few words on the

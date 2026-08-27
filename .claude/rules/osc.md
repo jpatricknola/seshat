@@ -10,12 +10,13 @@ Wrong OSC addresses **fail silently** — it's UDP with no reply. These rules
 exist because a typo'd address looks exactly like success.
 
 - **Before using any OSC address**, check
-  [docs/abletonosc-api-docs.md](../../docs/abletonosc-api-docs.md) — the
+  [priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md) — the
   canonical list of addresses and their arguments. Never guess an address or
   infer one from a similar-looking pattern; AbletonOSC's naming is not fully
   regular. If the capability isn't in that file, say so instead of inventing
-  an address. Conventions and gotchas (ports, listener pattern, ordering
-  hazards) are in
+  an address. Wire conventions (naming irregularities, listener pattern,
+  what raises, the probe rig) are in that file too; Seshat's own side
+  (ports, value conventions, ordering hazards, reply correlation) is in
   [.claude/docs/ableton-osc-reference.md](../docs/ableton-osc-reference.md).
 - **The bridge is our fork, and editing it is two commits.**
   [priv/AbletonOSC](../../priv/AbletonOSC) is a git submodule

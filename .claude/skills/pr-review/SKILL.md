@@ -53,7 +53,7 @@ that are *absent* from the diff, which no amount of staring at hunks reveals.
    boundary values), error paths that swallow or mangle failures, race
    conditions in GenServer/PubSub code. Seshat-specific traps:
    - Every OSC address must appear verbatim in
-     [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) (or be one of
+     [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) (or be one of
      ours in [priv/AbletonOSC/abletonosc/browser.py](priv/AbletonOSC/abletonosc/browser.py)). UDP
      fails silently — a plausible-looking address is the most dangerous bug
      in this codebase. Check every one.

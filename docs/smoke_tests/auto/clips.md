@@ -124,7 +124,7 @@ clip's audio-only properties still read.
 landed on 0.0, 0.5, 1.0, 1.25, 2.0, 2.5 — every position a 0.25-beat multiple,
 no 0.125 spacing. The decisive one is 1.37 → **1.25**; a 1/32 grid would have
 given 1.375. The table in
-[../abletonosc-api-docs.md](../abletonosc-api-docs.md) still holds.*
+[../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md) still holds.*
 
 `"1/16"` at amount 1.0. Notes land on the grid in the note editor and the reply's
 counts match what visibly moved. **Confirm the landing positions are 0.25-beat
@@ -133,7 +133,7 @@ multiples**; a 0.125 spacing means a 1/32 grid was sent.
 That single observation caught the documented `GridQuantization` table being wrong
 in *every* row; the fix is `Seshat.Tools.Handlers.grid_quantization/1`, not the
 schema. The corrected table, measured 2026-07-31, is in
-[../abletonosc-api-docs.md](../abletonosc-api-docs.md) under `/live/clip/quantize`
+[../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md) under `/live/clip/quantize`
 — this test guards that table and is not a second copy of it.
 
 ## Partial strength moves notes toward the grid

@@ -142,7 +142,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     ]
   }
 
-  @docs "docs/abletonosc-api-docs.md"
+  @docs "priv/AbletonOSC/API.md"
 
   describe "vendored OSC addresses" do
     test "every one the Elixir code uses is registered by a vendored handler" do

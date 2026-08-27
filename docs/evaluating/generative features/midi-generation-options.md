@@ -379,6 +379,16 @@ loops transcribe poorly, which is the same failure already measured below.
 Its evaluation code is a stated TODO, so its published figures cannot be
 reproduced here yet.
 
+**Live has a drum transcriber of its own, and it was not considered here
+until 2026-08-27.** *Convert Drums to New MIDI Track* (Live 9+, Standard and
+Suite) detects kick, snare and hi-hat from transients and writes them onto a
+new Drum Rack track. Zero licence surface, zero dependency, three lanes,
+UI-only (Create / context menu, so the named-AX rung), and the output is a
+track Live designed rather than a note list Seshat places — see
+[live-native-options.md §2.1](live-native-options.md) for the comparison.
+It joins the bake-off as the zero-dependency floor; IDM's spike question
+becomes whether it beats three lanes and a kit we didn't choose.
+
 **Spike IDM before the decision experiment.** Conditioned/C, independent/C,
 and joint-C all require a drum transcriber, so the ear gate cannot compare
 them honestly using ADTOF measurements or the unlicensed ADTOF artifact. The
@@ -467,6 +477,15 @@ Spotify's Basic Pitch, Apache-2.0, ONNX model **225 KB**. Measured:
 - **Do not point Basic Pitch at drums.** It reports drum hits as pitched
   notes (45, 48, 29, 65…) — the pitch-mapping trap in its purest form.
 - Velocity survives as `amplitude` per note, and it varies. Free dynamics.
+
+Live's own *Convert Melody* and *Convert Harmony to New MIDI Track* do the
+same job with no dependency, but need the audio imported and selected
+first, act through a UI-only menu command, and hand back a track with
+Live's piano or synth rack that Seshat then re-instruments. For bass, Basic
+Pitch is measured, instant and returns data Seshat controls — keep it.
+Convert Harmony earns one A/B on the pad render only, because polyphonic
+voicing is Basic Pitch's weak spot and Live's converter is a different
+algorithm ([live-native-options.md §2.2](live-native-options.md)).
 
 Two ecosystem warnings, both hit here: Basic Pitch's last release is
 **2024-08-16** and it calls `scipy.signal.gaussian`, **removed in SciPy
@@ -577,6 +596,17 @@ Separate per-instrument tracks are the first-release default because that is
 the product story being evaluated. A one-Drum-Rack representation can remain a
 later option; it should not weaken the split-track acceptance test.
 
+**A third shape, native to Live and missed until 2026-08-27:** *Slice to New
+MIDI Track* turns the SA3 loop itself into a Drum Rack of Simplers — one pad
+per transient — plus a MIDI clip that plays them in order. The generated
+*sound* survives exactly, the timing is exact by construction, and nothing is
+transcribed; the cost is that slices are chronological, not per instrument,
+so it does not serve the split-track contract. It is the honest answer for
+an audio request that must stay editable rather than "explain the
+limitation." The command is UI-only, but Simpler's slicing API (`slices`,
+`replace_sample`, `playback_mode`) is in the LOM, so a fork-only version may
+exist. [live-native-options.md §2.4](live-native-options.md).
+
 ---
 
 ## Route D — the fourth shape: groove-first constrained generation
@@ -640,6 +670,32 @@ plan must either extract/port the minimal MusicVAE inference path, update the
 dependency tree, or sandbox a pinned runner; it must also verify an explicit
 licence for the hosted checkpoint rather than assuming the code's Apache-2.0
 licence covers weights. GMD itself is clearly CC-BY-4.0.
+
+### D.2a Live's own feel machinery — grooves and MIDI Tools
+
+Added 2026-08-27. Live ships two mechanisms on Route D's problem that this
+route never weighed:
+
+- **The Groove Pool.** ~3,000 shipped grooves (MPC, SP-1200, per-genre
+  swings, live drummers), each a per-position timing / random / velocity
+  offset table. `Clip.groove` is get/set in the LOM; the fork comments it
+  out only because the value is an object rather than a scalar — a handler
+  assigning by pool index is ordinary fork work, and *Commit* bakes it into
+  the notes. **Extract Groove** (UI-only) builds one from any audio or MIDI
+  clip, including an SA3 render, a GMD bar, or the user's existing beat.
+- **MIDI Tools** (12.0, Standard and Suite): *Rhythm*, *Seed*, *Shape*,
+  *Euclidean* generate drum and note patterns from density / accent /
+  velocity parameters; *Time Warp*, *Velocity Shaper*, *Ornament*, *Chop*,
+  *Span*, *Recombine* humanise or vary existing notes. UI-only,
+  parameter-panel targets — the hardest AX case in the folder.
+
+Neither replaces Route D: a groove cannot invent a pattern or orchestrate a
+kit, and the generators are random-within-parameters, not style-aware. But
+grooves cover the *feel transfer* half with no dependency at all, and they
+are the cheapest real answer to §E.2's timing-context problem (extract from
+the section, apply to every generated part). That earns them a place in the
+conditioned arms; MIDI Tools are a later spike.
+[live-native-options.md §2.5](live-native-options.md).
 
 ### D.3 What Route D does not solve
 
@@ -790,9 +846,19 @@ density, and rhythmic accents from those notes. Reading only
 letting Claude guess unconstrained root motion repeats part of the original
 pitch failure.
 
+One conditioning signal is cheaper than all of that and native: **extract
+the section's groove** (Live's *Extract Groove*, works on audio and MIDI
+clips) and assign it to every generated part through the LOM's
+`Clip.groove`. That transfers the existing material's timing and accent
+pattern without deriving anything — harmony and phrase boundaries still
+need the note analysis above, but rhythmic accents do not
+([live-native-options.md §2.5](live-native-options.md)).
+
 Existing audio is a different input. Seshat cannot currently inspect its
 musical content, and Basic Pitch has only been measured on isolated generated
-bass and pad files—not arbitrary user mixes. Existing-audio conditioning is
+bass and pad files—not arbitrary user mixes. Live's own Stem Separation
+(Suite) and Convert commands are the first thing to try on it, because they
+are what the user would reach for by hand. Existing-audio conditioning is
 therefore outside the first-release claim until an input path, source
 assumptions, transcription quality, and latency are measured explicitly.
 
@@ -829,6 +895,15 @@ run a blinded product bake-off:
    bounded bass engine), and **joint C** (one rhythm-section render → source
    separation → two transcription passes). These arms change several factors;
    their ranking answers what to ship, not why one won.
+   **For the context-aware prompts only** (bass against existing Session-view
+   MIDI), add a fifth arm: **MRT2 offline render → transcription**, with the
+   existing clip's notes fed through Magenta RealTime 2's per-frame pianoroll
+   conditioning. It is the only local generator with symbolic input; SA3
+   has tempo/key text and nothing else to offer those prompts. Do not run it
+   for blank-project prompts, where SA3's measured bar-exactness and speed
+   stand. Gated on Spike A1's offline real-time factor in
+   [live-improv-exploration.md §12](live-improv-exploration.md#L601); see
+   [one-model-or-two.md](one-model-or-two.md).
    For single-part prompts, compare only the applicable backends separately:
    GMD retrieval, GrooVAE (if cleared), and SA3→IDM for drums; Route C for
    bass and harmony. Do not infer a single-part winner from the
@@ -862,7 +937,17 @@ run a blinded product bake-off:
   section. Compare candidate separators on bass/drum bleed, onset damage,
   local latency, licence, and Apple deployment before treating joint C as an
   implemented route. Inspect both code and checkpoint terms: popular
-  separators commonly license those artifacts differently.
+  separators commonly license those artifacts differently. **Or ship no
+  separator at all:** Live 12.3+ Suite has native Stem Separation and Live
+  9+ has Convert Harmony/Melody/Drums to New MIDI Track — neither in the LOM
+  (verified against 12.4.3, 2026-08-27), both candidates for the named-AX
+  rung in [ui-scripting-options.md](../ui-scripting-options.md) with
+  OSC-side read-back. That keeps Seshat's dependency and licence surface at
+  zero for both stages, at the cost of a Suite gate and a UI-scripting spike.
+  [live-native-options.md §2.3](live-native-options.md) makes the call:
+  **drop the separator survey; joint C uses Live Stem Separation or does not
+  run.** Its four fixed stems are exactly the rhythm-section render's
+  contents, and the open questions move to the AX spike.
 - **How does the one high-level tool enforce atomicity?** The product decision
   is settled: one request creates all related tracks in one undo step. The plan
   must define rollback or cleanup for a failed later part, how the second stage
@@ -874,8 +959,14 @@ run a blinded product bake-off:
   a Drum Rack may map arbitrary notes. Seshat cannot currently read that
   layout — there is no
   `/live/device/...` drum-pad address in the fork or in
-  [abletonosc-api-docs.md](../../abletonosc-api-docs.md). Treat a pad-read address
-  as a prerequisite only if the plan brings rack output into scope.
+  [../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md). **The LOM can,
+  since Live 12.3:** `DrumChain.in_note` (get/set/observe the MIDI note that
+  triggers a chain; -1 = All Notes) and `RackDevice.insert_chain` are
+  present in the installed 12.4.3's `_MxDCore/LomTypes.pyc` (checked
+  2026-08-27), alongside `Track.insert_device` and `SimplerDevice.replace_sample`.
+  A pad-read address is therefore one fork handler walking a Drum Rack's
+  chains, not a missing capability. Treat it as a prerequisite only if the
+  plan brings rack output into scope.
 - **Large note batches already need chunking.** `Seshat.Commands.Registry`
   sends all notes in one `/live/clip/add/notes` datagram, while the public
   schema sets no maximum. That is an existing `write_midi_notes` defect rather

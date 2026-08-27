@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'After upgrading AbletonOSC, after a batch of new tools, or when a tool silently does nothing',
   phases: [
     { title: 'Extract', detail: 'collect every /live/ address used in lib/' },
-    { title: 'Verify', detail: 'check each batch against docs/abletonosc-api-docs.md' },
+    { title: 'Verify', detail: 'check each batch against priv/AbletonOSC/API.md' },
   ],
 }
 
@@ -80,9 +80,9 @@ const results = await parallel(
       `Audit these OSC call sites from the Seshat codebase against the canonical API reference.
 
 Canonical sources:
-- docs/abletonosc-api-docs.md — the authoritative address list with argument signatures. An address absent from this file does not exist upstream.
+- priv/AbletonOSC/API.md — the authoritative address list with argument signatures. An address absent from this file does not exist upstream.
 - priv/AbletonOSC/abletonosc/browser.py — the ONLY authority for /live/browser/* addresses (they are vendored, not upstream). Check the handler registrations in this file for those.
-- .claude/docs/ableton-osc-reference.md — conventions and gotchas (ordering hazards, listener pattern).
+- .claude/docs/ableton-osc-reference.md — Seshat's consumer-side notes (ordering hazards, reply correlation); wire conventions and the listener pattern are in priv/AbletonOSC/API.md.
 
 For each site below, open the referenced file at the given line to see the real code in context, then verify:
 1. the address exists in the canonical source;

@@ -10,7 +10,7 @@ Add a new tool to Seshat: **$ARGUMENTS**
 Follow [.claude/docs/adding-a-tool.md](.claude/docs/adding-a-tool.md). Work in
 this order and do not skip the verification step.
 
-1. **Find the OSC address** in [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md).
+1. **Find the OSC address** in [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md).
    Do not guess or infer it from a similar address — AbletonOSC's naming is
    irregular and a wrong address fails silently.
 

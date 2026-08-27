@@ -217,7 +217,7 @@ Live version and the schema max needs revisiting.
 
 The 0.0–1.3 bound — read out of Live's own shipped Python, correcting the LOM
 apiref's understated 0.0–1.0 — is recorded on the `groove_amount` rows in
-[../abletonosc-api-docs.md](../abletonosc-api-docs.md#song-getters).
+[../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md#song-getters).
 
 ## The available outputs and current selection agree with Live
 

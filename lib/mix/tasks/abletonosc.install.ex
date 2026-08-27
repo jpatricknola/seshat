@@ -117,7 +117,7 @@ defmodule Mix.Tasks.Abletonosc.Install do
   Restart Ableton Live — or toggle AbletonOSC off and back on under
   Preferences > Link/Tempo/MIDI > Control Surface. `/live/api/reload` is not a
   shortcut: it can leave AbletonOSC with no handlers at all — see the warning in
-  docs/abletonosc-api-docs.md.
+  priv/AbletonOSC/API.md.
   """
 
   use Mix.Task

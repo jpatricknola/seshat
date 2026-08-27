@@ -4100,7 +4100,7 @@ defmodule Seshat.Tools.HandlersTest do
     # one clip per enum value, probe notes chosen so each candidate grid lands
     # somewhere distinguishable, read back with /live/clip/get/notes.
     #
-    # docs/abletonosc-api-docs.md and the fork's clip.py comment both used to say
+    # priv/AbletonOSC/API.md and the fork's clip.py comment both used to say
     # `5=1/2, 6=1/4, 7=1/8, 8=1/16, 9=1/32`, and every row of that was wrong.
     # Both have since been corrected to match this table. If you are here because
     # some other document disagrees with these numbers, the instrument won: do

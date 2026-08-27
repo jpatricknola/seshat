@@ -7,7 +7,7 @@ itself and is not on [ROADMAP.md](../../ROADMAP.md)._
 **Pre-spike.** Nothing in this document is measured; every model figure is
 "reported" from docs, model cards and papers (verified 2026-08-27) and every
 Ableton figure is read out of Seshat's own code and
-[abletonosc-api-docs.md](../../abletonosc-api-docs.md). Sibling docs in this
+[../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md). Sibling docs in this
 folder separate "measured" from "reported" — this one has no "measured"
 column yet, and §12's Spike A1 is what starts filling it. It must not reach
 the roadmap before that spike has run.
@@ -321,10 +321,13 @@ reports 0.23 s per 5 s with CoreML. It supports continuation and
 inpainting, so a bar-ahead loop — generate bar N+1 conditioned on bar N's
 tail, steered by the prompt in force — is buildable with nothing new on
 disk. It has no fast loop and steers only at bar boundaries, so it can only
-ever be the slow-loop texture player. It is still worth running *first*
-because it costs nothing: if continuation stays coherent over 16 bars, the
-texture-player half of the feature needs no new model, and only the fast
-loop needs MRT2. [10]
+ever be the slow-loop texture player. An earlier draft had it running
+*first* because it costs nothing, on the theory that a coherent 16-bar
+continuation would spare installing a second model for the texture-player
+half. That theory does not survive the fast loop: MRT2 is installed for the
+collaborator regardless, and a slow-loop-only SA3 texture player is strictly
+worse than MRT2's in-place steering. Spike A0 is therefore run only if A1
+is blocked ([one-model-or-two.md](one-model-or-two.md) §5–6). [10]
 
 ### 5.4 The rest
 
@@ -505,7 +508,8 @@ Much of what the Ableton side needs exists; the table says which.
 | Clip naming and metadata | `set_clip_name` |
 | Warp the captured clip | `set_clip_properties` (`warping`, `warp_mode`) |
 | MIDI/clip inspection for chord context | `get_clip_notes` |
-| Section markers | **Nothing.** Arrangement locators are not in the fork; scene names are the nearest stand-in |
+| Section markers | **Fork gap, not a Live gap.** Arrangement locators are in the LOM — `Song.cue_points` (listenable), `set_or_delete_cue`, `jump_to_next_cue`, `is_cue_point_selected`, verified in 12.4.3's `LomTypes.pyc` 2026-08-27 — just not in the fork. One handler; scene names need not stand in. [live-native-options.md §2.7](live-native-options.md) |
+| Beat phase for the outside-Live topology | **Ableton Link**, not an OSC beat listener: any peer joining the Link session gets tempo and beat phase directly, with an open-source SDK — the MRT2 process can know where beat one is without the ±100 ms tick jitter estimated below. Changes Spike C's premise. **Link Audio** (12.4) streams audio between Link peers and might replace BlackHole, but no public SDK for the audio half was found; watch item |
 
 Two gaps matter.
 
@@ -534,7 +538,12 @@ Spike A1.
 **Knowing where beat one is.** `NEXT_BAR` scheduling needs phase, and
 Seshat has never needed phase. The beat listener gives it with the jitter
 of one AbletonOSC tick plus a loopback datagram — call it ±100 ms until
-measured. That is fine for scheduling a slow-loop steer and for issuing
+measured. **Ableton Link gives it for free** (added 2026-08-27): Live has
+been a Link peer since 9.5, the SDK is open source, and any process that
+joins the session receives tempo and beat phase directly — so in the
+outside-Live topology the generator process can own its own phase without
+Seshat relaying anything, and Spike C's jitter measurement only matters for
+Seshat's *own* slow-loop scheduling. That is fine for scheduling a slow-loop steer and for issuing
 `record_clip` (Live quantizes the punch-in itself); it is not good enough to
 align a free-running stream in the monitor path, which is one more argument
 for Design 1. In the M4L topology the device has the host clock directly
@@ -605,8 +614,8 @@ to the whole feature.
 
 | Spike | Subject | What it measures |
 |---|---|---|
-| **A0** | SA3 continuation loop (free, installed) | 16 bars generated one bar ahead by continuation; coherence and tempo hold by ear and onset grid. Decides whether the texture-player half needs a new model |
-| **A1** | **Magenta RealTime 2** (`uv pip install "magenta-rt[mlx]"`, ~1 GB) | Tempo adherence to prompt text; drift over 32 bars (decides Design 1 vs 2); control latency; time-to-first-audio; whether a prompt change needs a reset. **Then the fast loop:** play a chord sequence in over MIDI, listen for whether the output follows it and how fast |
+| **A0** | SA3 continuation loop (free, installed) — **demoted: run only if A1 is blocked** | 16 bars generated one bar ahead by continuation; coherence and tempo hold by ear and onset grid. Its purpose was to spare installing a second model for the texture-player half; once MRT2 is installed for the fast loop anyway, a slow-loop-only SA3 texture player is strictly worse than MRT2's in-place steering ([one-model-or-two.md §6](one-model-or-two.md)) |
+| **A1** | **Magenta RealTime 2** (`uv pip install "magenta-rt[mlx]"`, ~1 GB) | Tempo adherence to prompt text; drift over 32 bars (decides Design 1 vs 2); control latency; time-to-first-audio; whether a prompt change needs a reset. **Then the fast loop:** play a chord sequence in over MIDI, listen for whether the output follows it and how fast. **Then the clip questions** ([one-model-or-two.md §6](one-model-or-two.md)): offline real-time factor of `mrt2_small` and `mrt2_base` via `mrt mlx generate --duration` on this machine — unpublished anywhere, and the number that decides whether MRT2 can render clips at all; whether a pianoroll fed from `get_clip_notes` makes an offline render *follow* the harmony or merely avoid it; and the trim/downbeat cost of turning a `--duration` render into a bar-exact clip |
 | **A2** | Lyria RealTime (needs a key) | Same protocol minus the fast loop, as the quality comparison. Run only if A1 falls short — it is the only arm with a vendor, a watermark and a bill |
 | **N** | Notochord (pip, CPU) | IAC bus into a Live MIDI track; harmonise a played line; judge whether it feels like a partner. Runs in parallel with A1 |
 | **B** | Local bridge | Only for the outside-Live topology: play the stream into a virtual audio device with stable, known latency |

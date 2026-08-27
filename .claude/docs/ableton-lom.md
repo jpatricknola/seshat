@@ -71,7 +71,7 @@ send N on every regular track (return 0 = send A). The master is
 The bridge follows the model: upstream AbletonOSC's `/live/track/*` addresses
 reach `Song.tracks` only, so returns and the master are addressable only through
 Seshat's own `/live/return_track/*` and `/live/master/*` extension — see
-[docs/abletonosc-api-docs.md](../../docs/abletonosc-api-docs.md).
+[priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md).
 
 ## Value Ranges
 

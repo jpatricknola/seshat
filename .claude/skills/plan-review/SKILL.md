@@ -49,7 +49,7 @@ step 5, change nothing in the doc.
 
    - **OSC contract, re-derived.** Every address in the plan's contract
      section, checked verbatim against
-     [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) —
+     [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) —
      exact address, exact argument list, reply shape. Derive them yourself;
      do not trust the plan's transcription. Addresses that are ours rather
      than upstream's live in
@@ -182,7 +182,7 @@ pipeline that nothing downstream reviews. Nobody checks you.
 
 2. **Re-derive the decisive facts yourself.** Every OSC address in *both*
    contracts against
-   [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md); every
+   [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md); every
    file path in both plans. A wrong address is invisible in prose, it is
    frequently what actually decides which plan is correct, and you cannot
    take either author's word for it. Where the two plans agree on a contract

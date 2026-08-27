@@ -58,7 +58,7 @@ Two things a test must not be:
 - **A lab notebook.** A check may state the number it expects — "confirm the
   spacing is 0.25" is not runnable otherwise — but it may never be that
   number's only home. Measurements live in
-  [../abletonosc-api-docs.md](../abletonosc-api-docs.md), dated and
+  [../../priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md), dated and
   version-stamped, and operationally in the code that acts on them. Link there.
   A number copied into a checklist is a duplicate nobody keeps in sync, which
   is how the old monolithic checklist rotted.

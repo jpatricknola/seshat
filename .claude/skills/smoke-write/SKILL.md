@@ -17,7 +17,7 @@ needs that don't exist yet. You do not run them.
 **Needs no Ableton.** This is a desk job: the diff, the OSC contract, and the
 rules below. If you find yourself wanting to try something in Live to decide what
 to write, that is a *measurement*, and it belongs in
-[docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) via `/plan` step 5,
+[priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) via `/plan` step 5,
 not here.
 
 ## What you produce

@@ -258,8 +258,8 @@ fails if that is ever pointed back at Live. Nothing in the suite reaches
 | [.claude/docs/adding-a-tool.md](.claude/docs/adding-a-tool.md) | How to add a tool |
 | [.claude/docs/command-flow.md](.claude/docs/command-flow.md) | End-to-end MCP request path |
 | [.claude/docs/ableton-lom.md](.claude/docs/ableton-lom.md) | Ableton's Live Object Model |
-| [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md) | AbletonOSC conventions and gotchas |
-| [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) | Canonical OSC address reference |
+| [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md) | Seshat's consumer-side OSC notes (ports, ordering, correlation) |
+| [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) | Canonical OSC address reference |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | What's not built yet — the living, priority-ordered queue |
 | [docs/archive/PLAN_remaining_osc_tools.md](docs/archive/PLAN_remaining_osc_tools.md) | *Archived* — the tool-coverage plan ROADMAP.md superseded |
 | [docs/archive/PLAN_sound_catalog.md](docs/archive/PLAN_sound_catalog.md) | *Archived* — how the tag-aware sound catalog works, and its open follow-ups |
@@ -268,7 +268,7 @@ fails if that is ever pointed back at Live. Nothing in the suite reaches
 
 **Commands report success but nothing happens in Ableton.** OSC is fire-and-forget
 UDP — a wrong address produces no error. Check the address against
-[docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md).
+[priv/AbletonOSC/API.md](priv/AbletonOSC/API.md).
 
 **Queries time out but sets work.** Something else is bound to port 11001, so
 replies never arrive. Look for an "OSC reply port 11001 is already bound by

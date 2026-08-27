@@ -215,7 +215,7 @@ and **not** a success string.
 This is the one reading the 2026-08-02 probe could not reach without discarding
 the open set. What *was* measured about both properties — plain `bool` attributes,
 not hardwired true, tracking availability independently in both directions — is in
-[../abletonosc-api-docs.md](../abletonosc-api-docs.md#song-getters), and the redo
+[../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md#song-getters), and the redo
 guard stands on it either way. If `undo` reports the request as sent instead,
 `can_undo` alone is always true, and the finding is that the **undo guard should
 be dropped rather than widened**; say so in the report, and fold the reading into

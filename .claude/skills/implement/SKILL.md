@@ -23,7 +23,7 @@ Implement the plan for: **$ARGUMENTS**
      measure. **The plan's reason for leaving it open doesn't bind you** — it
      was written in another session. One-off `mix run` script against
      `Seshat.OSC.Transport` for an address that ships; the probe rig in
-     [ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md) for one
+     [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) for one
      that doesn't. Prefer a non-destructive reading, and ask before spending the
      user's set.
 
@@ -43,7 +43,7 @@ Implement the plan for: **$ARGUMENTS**
      ([adding-a-tool.md](.claude/docs/adding-a-tool.md)); MCP components are
      generated, never hand-written.
    - Re-verify every OSC address against
-     [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) as you use it —
+     [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) as you use it —
      plan-to-code transcription is where a silent-fail typo creeps in.
    - Write that part's promised tests with it, not as a batch at the end.
    - **Python is committed in the submodule**: commit and push inside

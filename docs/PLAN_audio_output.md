@@ -19,7 +19,7 @@ is a failure even if the native AX calls themselves were fast.
 Live’s application-wide audio input/output preferences are absent from the
 installed Live 12.4.3 Live Object Model and from AbletonOSC. The absence was
 rechecked against the installed LOM allowlist, the fork, and
-[abletonosc-api-docs.md](abletonosc-api-docs.md); this is a genuine LOM gap, not
+[../priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md); this is a genuine LOM gap, not
 a missing fork address. The LOM-first rule therefore permits a narrow AX
 implementation while still rejecting AX for anything the fork can expose.
 
@@ -352,7 +352,7 @@ build path is verified without replacing the user-authorized installed helper.
   end-to-end acceptance, and mark the audio-output go/no-go spike complete.
 - `docs/ROADMAP.md`: retain the full issue and link this plan; `/ship` removes
   it only after the feature and live latency evidence land.
-- No change to `docs/abletonosc-api-docs.md`: there is deliberately no OSC
+- No change to `priv/AbletonOSC/API.md`: there is deliberately no OSC
   contract.
 
 ## Testing
