@@ -266,9 +266,10 @@ defmodule Seshat.Commands.Registry do
   Decides whether `/live/song/create_midi_track` (or `_audio_`) actually created
   one, from the track count either side of it.
 
-  The create is a fire-and-forget method call and AbletonOSC's `_call_method`
-  swallows Live API exceptions into its log, so the count is the only signal that
-  reaches us at all. Unlike returns there is no cap to name: regular tracks are
+  The create is a fire-and-forget method call: a Live API exception does reach
+  the wire as a structured `/live/error` since the fork's dispatch-boundary
+  rework, but `send_message/2` has returned before it lands, so the count is the
+  only signal that reaches us at all. Unlike returns there is no cap to name: regular tracks are
   uncapped in Standard/Suite and capped only in Intro/Lite, and nothing on the
   wire reveals the edition — so an unchanged count gets one message naming both
   possible causes rather than asserting either.

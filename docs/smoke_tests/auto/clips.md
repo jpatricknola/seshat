@@ -2,9 +2,11 @@
 
 Every clip setter is fire-and-forget and Live's own rejection of an invalid loop
 range is silent, so `mix test` proves the write-ordering logic and nothing about
-whether the writes land. `/live/clip/quantize` never replies either — success, a
-bad grid integer, and a Remote Scripts copy predating the fork are all the same
-silence on the wire.
+whether the writes land. `/live/clip/quantize` never replies on success either,
+and its two failure modes are indistinguishable from Seshat's side: a bad grid
+integer is reported as a structured `/live/error`, a Remote Scripts copy
+predating the fork answers nothing, and the send has returned before either
+could arrive.
 
 Drive quantize through the tool, not raw OSC: the string→int mapping, the
 before/after diff and the reply wording only exist in `quantize_clip`. Write a
