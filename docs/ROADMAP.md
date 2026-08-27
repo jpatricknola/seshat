@@ -65,12 +65,17 @@ archiving now would strand that record.
   `~/.seshat/bin/seshat-ax`, then grant Accessibility permission when macOS
   prompts. Every run so far used a scratch build at a temp path, never
   installed and never approved.
-- Settle an open question the real install should answer: that scratch
-  build twice reported `trusted: true` without ever being installed or
-  approved, which looks like permission is being attributed to the parent
-  process (the terminal/IDE already trusted) rather than to the executable
-  itself. Confirm permission actually follows `~/.seshat/bin/seshat-ax`
-  before relying on that assumption elsewhere.
+- Settle an open question the real install should answer. A
+  never-installed, never-approved build has now read as `trusted: true`
+  three times: twice from an already-approved terminal, and once on a
+  GitHub Actions runner — a machine granted nothing by anyone, which broke
+  a CI step that had asserted a refusal. So permission does **not** simply
+  follow `~/.seshat/bin/seshat-ax`, and the docs no longer claim it does.
+  Two explanations remain: macOS attributing the grant to the responsible
+  parent process, or those environments being trusted wholesale (a runner
+  as root would be). The experiment that separates them is the same
+  installed build launched from a parent that was approved and from one
+  that was not — run that, not a re-check of the path.
 - Run these through a real MCP client — every run so far has gone through
   `Handlers.call/2` directly, not a client, and all three currently read
   "partly, and not as written" for exactly that reason:

@@ -40,6 +40,23 @@ defmodule Seshat.AX.Client do
   the 5-second budget, and it would not change the JSON protocol or the tool
   contracts.
 
+  ## One deadline, including the wait
+
+  A call's 5,000ms budget starts when the tool handler calls in, not when the
+  helper starts. Calls are serialized — two of them driving the same Settings
+  popup would press each other's menus — so a second caller may have to wait for
+  the first, and that wait is spent from its own budget rather than added to it.
+  A caller that reaches the front with nothing useful left is refused there,
+  before it starts a helper that would pull Live to the front only to time out.
+
+  This is the property the PR review of 2026-08-27 found missing: the deadline
+  used to be created after the lock was acquired, so a second caller waited out
+  the first (up to a full budget) and *then* received a fresh one, taking nearly
+  ten seconds to answer a call this module documented as bounded at five — and
+  worse with a third caller, since nothing bounded the queue. `serialization`
+  in `client_test.exs` pins both halves now: that calls do not overlap, and that
+  a queued caller still answers inside one budget.
+
   ## Deadlines nest
 
   The helper owns a 3.5s action deadline of its own (`kActionDeadline` in
@@ -49,10 +66,13 @@ defmodule Seshat.AX.Client do
   healthy run costs, not a hard bound — the cleanup calls it covers are not
   individually deadline-gated, so each could cost up to `kMessagingTimeout`
   if Live's AX implementation hangs. This module allows 5,000ms around all of
-  it, so a helper that honours its own budget always answers first and a
-  helper that does not is still bounded by *this* deadline — failure lands
-  inside the same 5-second acceptance as success instead of stalling the
-  conversation (round-3 PR review, 2026-08-27). `kCleanupBudget` was cut from
+  it — measured from the handler call, lock wait included — so a helper that
+  honours its own budget always answers first and a helper that does not is
+  still bounded by *this* deadline: failure lands inside the same 5-second
+  acceptance as success instead of stalling the conversation (round-3 PR
+  review, 2026-08-27). A helper that is *already running* for someone else eats
+  into what is left, which is why a queued caller can be refused before it
+  spawns anything. `kCleanupBudget` was cut from
   0.6s to 0.1s in the 2026-08-27 round-2 PR review: the restore it guards is a
   handful of AX reads, not a
   wait, so it never needed to be that large, and at 0.6s it had eaten most of
@@ -93,6 +113,11 @@ defmodule Seshat.AX.Client do
   # naming the tuple itself would keep passing after a rename.
   @spec lock_id(pid()) :: {{module(), atom()}, pid()}
   def lock_id(owner \\ self()), do: {{__MODULE__, :helper}, owner}
+
+  # How often a caller waiting on the AX lock re-checks it, and the least
+  # remaining budget worth starting the helper with. Both feed `acquire/1`.
+  @lock_poll_ms 25
+  @min_run_ms 50
 
   # The protocol carries device names, never an AX tree. Anything larger is a
   # helper that has stopped speaking this protocol.
@@ -192,13 +217,15 @@ defmodule Seshat.AX.Client do
 
   defp run(args, operation) do
     started = System.monotonic_time(:millisecond)
+    # The one deadline for the whole call, fixed *before* the lock is contended
+    # for, so waiting for another call to finish spends this budget rather than
+    # sitting outside it. See "One deadline, including the wait" above.
+    deadline = started + call_timeout()
     path = helper_path()
 
     result =
       if File.regular?(path) do
-        # A lock of this module's own, node-wide, `self()` as owner so OTP
-        # releases it if the caller dies mid-call.
-        :global.trans(lock_id(), fn -> execute(path, args) end, [node()])
+        with_lock(deadline, fn -> execute(path, args, deadline) end)
       else
         {:error,
          failure(
@@ -212,13 +239,58 @@ defmodule Seshat.AX.Client do
     result
   end
 
-  defp execute(path, args) do
+  # A lock of this module's own, node-wide, `self()` as owner so OTP releases it
+  # if the caller dies mid-call.
+  #
+  # `:global.trans/3` is deliberately not used: its retry backoff sleeps for up
+  # to 8 seconds between attempts and takes no deadline, so a caller could wait
+  # far past its own budget and only then start a full one. This admits on the
+  # same lock but polls, and gives up when the budget it was given is gone.
+  defp with_lock(deadline, fun) do
+    case acquire(deadline) do
+      :ok ->
+        try do
+          fun.()
+        after
+          :global.del_lock(lock_id(), [node()])
+        end
+
+      :timeout ->
+        {:error,
+         failure(
+           :timeout,
+           "Another audio-settings request was still running, and this one ran out of time " <>
+             "waiting for it. Nothing was changed. Try again in a moment."
+         )}
+    end
+  end
+
+  defp acquire(deadline) do
+    if :global.set_lock(lock_id(), [node()], 0) do
+      :ok
+    else
+      remaining = deadline - System.monotonic_time(:millisecond)
+
+      # Admission is deadline-aware in both directions: no budget left, and no
+      # budget worth spawning for. Starting the helper with a few milliseconds
+      # to live would pull Live to the front and time out anyway, so a caller
+      # this late is refused before it disturbs anything.
+      if remaining <= @min_run_ms do
+        :timeout
+      else
+        Process.sleep(min(@lock_poll_ms, remaining))
+        acquire(deadline)
+      end
+    end
+  end
+
+  defp execute(path, args, deadline) do
     # `:spawn_executable` with an argv list, never a shell: a device name is
     # user-influenced text and goes to the helper as one argv entry, where no
     # amount of quoting or `;` in it can mean anything.
     port = Port.open({:spawn_executable, path}, [:binary, :exit_status, :hide, args: args])
 
-    collect(port, [], 0, System.monotonic_time(:millisecond) + call_timeout())
+    collect(port, [], 0, deadline)
   rescue
     error ->
       {:error,

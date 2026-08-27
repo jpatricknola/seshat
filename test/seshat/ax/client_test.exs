@@ -334,6 +334,84 @@ defmodule Seshat.AX.ClientTest do
       assert elapsed >= 600
     end
 
+    # The floor above proves calls do not overlap. On its own it also permits
+    # the defect the 2026-08-27 PR review found: a queued caller used to wait
+    # out the call ahead of it *outside* any deadline and then start a fresh
+    # full budget, so two callers could take nearly two budgets between them.
+    # This pins the ceiling that makes the floor safe.
+    @tag :tmp_dir
+    test "a queued call is bounded by its own budget, not the one ahead of it", context do
+      # Longer than the budget below: the first caller will still be holding the
+      # helper when the second gives up, which is the case under test.
+      helper(
+        context,
+        # stderr silenced: this helper outlives the port that reads it, so its
+        # final write lands on a closed pipe. That SIGPIPE is the documented way
+        # a helper dies (see `close/1`), not a fault worth printing mid-suite.
+        "exec 2>/dev/null\nsleep 1.5\n" <>
+          emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1}))
+      )
+
+      Application.put_env(:seshat, :ax_call_timeout, 400)
+      on_exit(fn -> Application.delete_env(:seshat, :ax_call_timeout) end)
+
+      first = Task.async(&Client.list_outputs/0)
+      # Let the first caller take the lock, so the second is genuinely queued
+      # behind it rather than racing it for admission.
+      Process.sleep(100)
+
+      started = System.monotonic_time(:millisecond)
+      second = Client.list_outputs()
+      elapsed = System.monotonic_time(:millisecond) - started
+
+      assert {:error, %{code: :timeout}} = second
+
+      # One budget, plus the poll interval and scheduling slack — not the 1.5s
+      # the call ahead of it is still spending, and not a second full budget on
+      # top of that wait.
+      assert elapsed < 700, "queued caller took #{elapsed}ms, expected under one 400ms budget"
+
+      Task.await(first, 5_000)
+    end
+
+    # The other half of deadline-aware admission: a caller with nothing useful
+    # left does not start a helper at all. Starting one would pull Live to the
+    # front for a call already destined to time out.
+    @tag :tmp_dir
+    test "a caller that waits out its budget never starts the helper", context do
+      path = helper(context, "touch #{context.tmp_dir}/ran\n" <> emits(~s({"ok":true})))
+      _ = path
+
+      Application.put_env(:seshat, :ax_call_timeout, 200)
+      on_exit(fn -> Application.delete_env(:seshat, :ax_call_timeout) end)
+
+      parent = self()
+
+      holder =
+        spawn(fn ->
+          :global.trans(
+            Client.lock_id(),
+            fn ->
+              send(parent, :held)
+
+              receive do
+                :release -> :ok
+              end
+            end,
+            [node()]
+          )
+        end)
+
+      assert_receive :held, 1_000
+
+      assert {:error, %{code: :timeout}} = Client.list_outputs()
+
+      refute File.exists?(Path.join(context.tmp_dir, "ran")),
+             "the helper was started despite the call having no budget left"
+
+      send(holder, :release)
+    end
+
     # ...but the AX lock is its own, not the OSC undo lock. An audio-output
     # change is outside Live's undo history and has no reason to hold ordinary
     # OSC work behind it. Held deliberately rather than raced into, so this
