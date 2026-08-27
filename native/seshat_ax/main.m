@@ -643,9 +643,36 @@ static NSDictionary *AudioOutputTransaction(BOOL setting, NSString *wanted) {
   NSArray<NSString *> *titles = @[];
 
   if (result == nil) {
-    // The names live in the chooser and nowhere else, so both commands open it.
+    // Never adopt a chooser that was already open. `ChooserPopUp` identifies
+    // Live's chooser implementation, not the Audio Output Device control that
+    // opened it, so an unrelated chooser could otherwise be mistaken for the
+    // device list. Dismiss anything pre-existing, then open the target popup
+    // ourselves so the chooser below has an observed origin.
     chooser = ChooserPopup(application);
-    if (chooser == NULL) {
+    if (chooser != NULL) {
+      AXUIElementPerformAction(chooser, kAXCancelAction);
+      CFRelease(chooser);
+      chooser = NULL;
+
+      while (!PastDeadline()) {
+        chooser = ChooserPopup(application);
+        if (chooser == NULL) break;
+
+        CFRelease(chooser);
+        chooser = NULL;
+        Pause();
+      }
+
+      AXUIElementRef remainingChooser = ChooserPopup(application);
+      if (remainingChooser != NULL) {
+        CFRelease(remainingChooser);
+        result = Failure(PastDeadline() ? kCodeTimeout : kCodeAXFailure,
+                         @"Live's existing chooser would not close.");
+      }
+    }
+
+    // The names live in the chooser and nowhere else, so both commands open it.
+    if (result == nil) {
       if (AXUIElementPerformAction(popup, kAXPressAction) != kAXErrorSuccess) {
         result = Failure(kCodeAXFailure, @"Live's audio output chooser would not open.");
       } else {
@@ -766,7 +793,7 @@ static NSDictionary *AudioOutputTransaction(BOOL setting, NSString *wanted) {
     CFRelease(chooser);
   }
 
-  if (changedPage && !openedSettings && originalPage.length > 0) {
+  if (changedPage && originalPage.length > 0) {
     PressIdentifier(settings, originalPage);
   }
 

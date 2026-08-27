@@ -433,7 +433,11 @@ defmodule Seshat.AX.ClientTest do
     # with ~40ms left, where the shipped 25ms interval would be a race.
     @tag :tmp_dir
     test "a lock released inside the polling window still refuses a spent caller", context do
-      helper(context, "touch #{context.tmp_dir}/ran\n" <> emits(~s({"ok":true})))
+      helper(
+        context,
+        "touch #{context.tmp_dir}/ran\n" <>
+          emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1}))
+      )
 
       Application.put_env(:seshat, :ax_call_timeout, 340)
       Application.put_env(:seshat, :ax_lock_poll_ms, 300)
@@ -460,6 +464,13 @@ defmodule Seshat.AX.ClientTest do
 
       refute File.exists?(Path.join(context.tmp_dir, "ran")),
              "the helper was started after the lock freed with the budget already spent"
+
+      # Prove the release above is part of the stimulus, not incidental cleanup:
+      # a fresh-budget call must take the now-free lock and run immediately.
+      # Without `release.()`, this call times out behind the holder and the test
+      # fails even though the spent caller's timeout and absent marker still pass.
+      assert {:ok, %{current: "X", devices: []}} = Client.list_outputs()
+      assert File.exists?(Path.join(context.tmp_dir, "ran"))
     end
 
     # ...but the AX lock is its own, not the OSC undo lock. An audio-output
