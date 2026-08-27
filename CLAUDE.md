@@ -36,17 +36,32 @@ Seshat.MCP.Server
         │
         ▼
             Seshat.Tools.Handlers      ← the only place tool names are dispatched
-                  │           │
-                  │           │ multi-step sequences only
-                  │           ▼ (create_track, create_return_track, write_midi_notes)
-                  │    Seshat.Commands.Registry
-                  │           │ ← Command struct → ordered OSC messages
-                  ▼           ▼
-            Seshat.OSC.Transport       ← GenServer over :gen_udp
-                       │
-                       ▼
+                  │           │                       │
+                  │           │ multi-step             │ get_audio_outputs /
+                  │           │ sequences only          │ set_audio_output only
+                  │           ▼ (create_track, etc.)     ▼
+                  │    Seshat.Commands.Registry     Seshat.AX.Client
+                  │           │ ← Command struct         │ one native process
+                  │           │   → ordered OSC msgs        │ per call, no OSC
+                  ▼           ▼                            ▼
+            Seshat.OSC.Transport            native/seshat_ax (seshat-ax)
+             GenServer over :gen_udp                        │ macOS Accessibility API
+                       │                                     ▼
+                       ▼                        Ableton Live's Settings window
             AbletonOSC → Ableton Live
 ```
+
+Two tools take a second path below `Handlers` that never touches `Transport`
+or AbletonOSC at all: Live's application-wide audio *device* preference isn't
+in the Live Object Model at any version of the bridge, so `get_audio_outputs`
+and `set_audio_output` reach it through `Seshat.AX.Client`, which spawns the
+native helper at [native/seshat_ax/main.m](native/seshat_ax/main.m) once per
+call to drive Live's Settings window via the macOS Accessibility API — the one
+door out of `lib/seshat/` allowed to start a process
+(`test/seshat/ax/client_test.exs` greps the rest of `lib/` to keep it that
+way). Both tools opt out of the undo-step wrapping every other tool gets
+(`undo_step: false`) and out of the OSC undo-step lock, because the mechanism
+they use cannot reach Live's undo history or its OSC socket either.
 
 `Seshat.Instructions` carries the session-level conventions no single tool
 description can and is sent as MCP server `instructions` at connect time. One

@@ -4549,6 +4549,57 @@ defmodule Seshat.Tools.HandlersTest do
       refute_receive {:ax_call, :set_output, _}
     end
 
+    # PR review, 2026-08-27: an empty string satisfies the schema's `required`
+    # (there is no `minLength`), and used to reach the helper, which rejected
+    # it with its own CLI usage text — an Objective-C command-line detail on
+    # the model-facing surface, exactly what the rest of this protocol works
+    # to keep off it.
+    for blank <- ["", "   ", "\t"] do
+      test "a blank device parameter (#{inspect(blank)}) is rejected before the helper is asked" do
+        FakeAXClient.install(%{set_output: {:ok, %{previous: "a", current: "b"}}})
+
+        assert {:error, message} =
+                 Handlers.call("set_audio_output", %{"device" => unquote(blank)})
+
+        assert message =~ "cannot be blank"
+        refute message =~ "set-output requires"
+        refute_receive {:ax_call, :set_output, _}
+      end
+    end
+
+    # PR review, 2026-08-27: "Use System Device" is the one choice whose
+    # displayed value is not its own name — Live resolves and shows it as
+    # "Use System: <macOS device>", which appears in no chooser title. Both
+    # reply shapes that can surface that string now say so, so a caller that
+    # remembers it and tries to send it straight back is warned before it
+    # wastes a round trip on `device_not_found`.
+    test "a current value beginning \"Use System:\" explains what to send instead" do
+      FakeAXClient.install(%{
+        list_outputs:
+          {:ok,
+           %{
+             current: "Use System: 25 AirPods",
+             devices: ["No Device", "Use System Device", "MacBook Pro Speakers"],
+             elapsed_ms: 1
+           }}
+      })
+
+      assert {:ok, message} = Handlers.call("get_audio_outputs", %{})
+
+      assert message =~ "send \"Use System Device\" itself, not this string"
+    end
+
+    test "a resolved previous value in a set reply gets the same explanation" do
+      FakeAXClient.install(%{
+        set_output: {:ok, %{previous: "Use System: 25 AirPods", current: "MacBook Pro Speakers"}}
+      })
+
+      assert {:ok, message} =
+               Handlers.call("set_audio_output", %{"device" => "MacBook Pro Speakers"})
+
+      assert message =~ "send \"Use System Device\" itself, not this string"
+    end
+
     # The undo-step opt-out, asserted where it is observable: an ordinary tool
     # brackets its work with begin/end datagrams, and these two send nothing at
     # all. An audio device is not part of the Live Set, so there is no undo entry

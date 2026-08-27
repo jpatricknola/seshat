@@ -39,10 +39,26 @@
 // role. No step falls back to sibling order or coordinates. Every UI change the
 // helper makes, it undoes: a chooser it opened is dismissed, a Settings page it
 // switched is switched back, a Settings window it opened is closed, and the
-// application that was frontmost when it started is brought back.
+// application that was frontmost when it started is brought back — on every
+// exit from AudioOutputTransaction, success or failure, not only the ones that
+// got as far as reading a value. That used to not be true: an early `return`
+// on a Settings window that never opened (a modal dialog in front of it, a
+// menu item a future Live relabels) skipped the shared cleanup below and left
+// Live frontmost forever (2026-08-27 PR review round). There is now exactly
+// one `return NULL`-shaped path out of this function: every failure sets
+// `result` and falls through, which is what makes the cleanup block
+// unconditional rather than one of several exits to keep in sync.
 //
-// One monotonic deadline (kActionDeadline) bounds the whole action, so a hung
-// AX call cannot outlive the Elixir side's own Port deadline.
+// One monotonic deadline (kActionDeadline) bounds the actionable work —
+// everything through observing the result. Restoring the UI afterwards runs
+// under its own short budgets (kCleanupBudget, kRestoreBudget) instead of
+// inheriting whatever is left of that deadline: a run that timed out
+// mid-selection still owes the user their Settings page and their frontmost
+// application back, and both restores are bounded by search depth rather than
+// by wall time, so extending past the action deadline does not reopen the
+// "hung AX call" risk kActionDeadline exists to close. The sum of every phase
+// still lands inside the Elixir side's own Port deadline — see the constants
+// below.
 
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -88,6 +104,18 @@ static const NSInteger kSettingsOpenAttempts = 3;
 // Its own budget, outside the action deadline, so a failed action still cleans
 // up; the sum stays inside the Elixir side's 5,000ms Port timeout.
 static const NSTimeInterval kRestoreBudget = 0.6;
+
+// The cleanup block's own allowance, set as `gDeadline`'s new value right
+// before that block runs (see the comment there). Putting a switched Settings
+// page back is a bounded-depth search (kSettingsSearchDepth), not an unbounded
+// wait, so extending past a spent kActionDeadline cannot hang — it can only
+// let a restore that would otherwise bail out on `PastDeadline()` actually run.
+// Without this, a run that timed out mid-selection left Settings on the Audio
+// page forever, contradicting the promise this file's header makes (2026-08-27
+// PR review round). 3.5s (kActionDeadline) + 0.6s (this) + 0.6s
+// (kRestoreBudget) is 4.7s worst case, still inside the Elixir side's 5,000ms
+// Port timeout.
+static const NSTimeInterval kCleanupBudget = 0.6;
 
 // Output is bounded on purpose: this protocol carries device names, never an AX
 // tree. A machine with more audio devices than this has other problems.
@@ -532,38 +560,46 @@ static NSDictionary *AudioOutputTransaction(BOOL setting, NSString *wanted) {
     }
 
     if (settings == NULL) {
-      CFRelease(application);
-      return Failure(PastDeadline() ? kCodeTimeout : kCodeSettingsUnavailable,
-                     error == kAXErrorSuccess
-                         ? @"Live's Settings window did not open."
-                         : @"Live's Settings menu item could not be pressed.");
-    }
-
-    openedSettings = YES;
-  }
-
-  originalPage = SelectedPageIdentifier(settings);
-
-  audioGroup = FindElement(settings, kSettingsSearchDepth, MatchIdentifier(@"audio"));
-  if (audioGroup == NULL) {
-    if (PressIdentifier(settings, @"audioTabButton")) changedPage = YES;
-
-    while (audioGroup == NULL && !PastDeadline()) {
-      Pause();
-      audioGroup = FindElement(settings, kSettingsSearchDepth, MatchIdentifier(@"audio"));
+      // Not a `return`: every exit from here on, success or failure, goes
+      // through the one cleanup block at the bottom of this function, which is
+      // what puts the frontmost application back. Setting `result` instead
+      // lets that happen — every block below is already gated on
+      // `result == nil`, so nothing further runs, and control falls straight
+      // through to cleanup with `settings` still NULL and `openedSettings`
+      // still NO, both of which the cleanup block already handles correctly.
+      result = Failure(PastDeadline() ? kCodeTimeout : kCodeSettingsUnavailable,
+                       error == kAXErrorSuccess
+                           ? @"Live's Settings window did not open."
+                           : @"Live's Settings menu item could not be pressed.");
+    } else {
+      openedSettings = YES;
     }
   }
 
-  if (audioGroup != NULL) {
-    popup = FindElement(audioGroup, kPopupSearchDepth, ^BOOL(AXUIElementRef element) {
-      return [StringAttribute(element, kAXDescriptionAttribute)
-          isEqualToString:@"Audio Output Device"];
-    });
-  }
+  if (result == nil) {
+    originalPage = SelectedPageIdentifier(settings);
 
-  if (popup == NULL) {
-    result = Failure(PastDeadline() ? kCodeTimeout : kCodeSettingsUnavailable,
-                     @"Live's Audio Output Device control could not be found in Settings.");
+    audioGroup = FindElement(settings, kSettingsSearchDepth, MatchIdentifier(@"audio"));
+    if (audioGroup == NULL) {
+      if (PressIdentifier(settings, @"audioTabButton")) changedPage = YES;
+
+      while (audioGroup == NULL && !PastDeadline()) {
+        Pause();
+        audioGroup = FindElement(settings, kSettingsSearchDepth, MatchIdentifier(@"audio"));
+      }
+    }
+
+    if (audioGroup != NULL) {
+      popup = FindElement(audioGroup, kPopupSearchDepth, ^BOOL(AXUIElementRef element) {
+        return [StringAttribute(element, kAXDescriptionAttribute)
+            isEqualToString:@"Audio Output Device"];
+      });
+    }
+
+    if (popup == NULL) {
+      result = Failure(PastDeadline() ? kCodeTimeout : kCodeSettingsUnavailable,
+                       @"Live's Audio Output Device control could not be found in Settings.");
+    }
   }
 
   NSString *previous = nil;
@@ -677,6 +713,17 @@ static NSDictionary *AudioOutputTransaction(BOOL setting, NSString *wanted) {
   }
 
   // --- Cleanup: every path, success and failure alike ---
+
+  // From here on, `PastDeadline()` governs restoring the UI, not doing the
+  // requested action — and a spent kActionDeadline must not silently cancel
+  // the restore. `PressIdentifier` below calls `FindElement`, which bails
+  // immediately once `PastDeadline()` is true; without this extension, a run
+  // that used up its whole action deadline reaching a result would find
+  // `originalPage`'s restore silently do nothing, leaving Settings on the
+  // Audio page (2026-08-27 PR review round). kCleanupBudget is a search
+  // allowance, not a wait: nothing between here and the function's return
+  // polls or sleeps against it.
+  gDeadline = Now() + kCleanupBudget;
 
   if (chooser != NULL) {
     AXUIElementPerformAction(popup, kAXCancelAction);

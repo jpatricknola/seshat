@@ -125,9 +125,9 @@ Accessibility. `mix ax.install` compiles a small native helper from
 `native/seshat_ax/main.m` and installs it at `~/.seshat/bin/seshat-ax`.
 
 Everything else Seshat does still goes through the LOM. The helper's protocol is
-three operations wide — list the outputs, set one, report its own permission
-status — deliberately, so this stays one narrow workflow rather than a second
-control surface.
+four commands wide — report its own version, report its own permission status,
+list the outputs, set one — deliberately, so this stays one narrow workflow
+rather than a second control surface.
 
 macOS asks you to approve the helper once, under **System Settings → Privacy &
 Security → Accessibility**; the task prompts for it and prints the path to turn
@@ -136,10 +136,23 @@ Recording permission, and neither Ableton Live nor Seshat needs restarting
 afterwards. Until it is granted, both tools fail immediately saying so — they
 never open System Settings on their own.
 
-The path is stable because macOS attaches the permission to the executable:
-re-running `mix ax.install` after a change rebuilds in place and keeps the grant.
-Compilation is atomic, so a build that fails leaves the working, already-approved
-helper untouched.
+The path is stable because macOS is expected to attach the permission to the
+executable at that path: re-running `mix ax.install` after a change rebuilds
+in place and, as measured 2026-08-03, keeps the grant. Compilation is atomic,
+so a build that fails leaves the working, already-approved helper untouched.
+
+**Open question, not yet resolved:** whether trust is scoped that narrowly is
+still an assumption, not something this project has confirmed. A PR review
+(2026-08-27) ran a helper built fresh to a scratch path — never installed,
+never approved on its own — from the same terminal session, and it reported
+itself trusted anyway, which is at least as consistent with macOS attributing
+Accessibility trust to the *parent* process (the terminal) as to this
+executable's path. Nobody has run the controlled comparison (same build,
+different parent) that would tell those two apart. If trust does follow the
+parent, a user who launches Seshat from a different parent process than the
+one they approved under could be refused despite having approved the right
+path — the troubleshooting entry below would then be incomplete, not wrong.
+Treat this as unverified until someone checks it during a real onboarding run.
 
 When you ask for an output change, Live briefly comes to the front while the
 helper reads or sets the value, then the application that was frontmost goes
@@ -338,7 +351,12 @@ isn't trusted.** Run `mix ax.install` (macOS only) and turn on the printed path
 under System Settings → Privacy & Security → Accessibility. No restart of Live
 or Seshat is needed afterwards. If it still says untrusted, check that the entry
 you enabled is `~/.seshat/bin/seshat-ax` and not an older copy left somewhere
-else — the permission follows the executable, not the project.
+else. Assumed cause: the permission follows the executable, not the project —
+but that specific attribution is unverified (see the "Open question" note
+under [Install the Accessibility helper](#install-the-accessibility-helper-macos-once)).
+If the right path is enabled and it is still refused, the more likely cause in
+practice is launching Seshat from a different parent process (a different
+terminal app, a supervisor) than the one you approved under.
 
 **`set_audio_output` reports that Live's Settings couldn't be reached.** Live
 was running but its Settings window wouldn't open or the Audio page wasn't

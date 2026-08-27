@@ -376,17 +376,27 @@ defmodule Seshat.AX.ClientTest do
     #
     # `lib/mix/tasks/` is deliberately outside the scope: mix tasks run at a
     # human's request from a shell, not inside a model's tool call.
+    #
+    # The pattern is widened past `Port.open`/`:spawn_executable`/`System.cmd`
+    # (PR review, 2026-08-27): `System.shell/2`, `:os.cmd/1` and
+    # `:erlang.open_port/2` all start a process too and were invisible to the
+    # narrower regex. The wildcard now covers all of `lib/` (so
+    # `lib/seshat_web/**` is scanned too) rather than stopping at
+    # `lib/seshat/**`, which exempted the web tree from a boundary nothing
+    # about it is meant to be exempt from.
     test "only Seshat.AX.Client may start a native process" do
       offenders =
-        Path.wildcard("lib/seshat/**/*.ex")
+        Path.wildcard("lib/**/*.ex")
+        |> Enum.reject(&String.starts_with?(&1, "lib/mix/tasks/"))
         |> Enum.filter(fn path ->
           path != "lib/seshat/ax/client.ex" and
-            File.read!(path) =~ ~r/Port\.open|:spawn_executable|System\.cmd/
+            File.read!(path) =~
+              ~r/Port\.open|:spawn_executable|System\.cmd|System\.shell|:os\.cmd|:erlang\.open_port/
         end)
 
       assert offenders == [],
              """
-             These modules under lib/seshat/ execute a subprocess:
+             These modules execute a subprocess:
 
              #{Enum.join(offenders, "\n")}
 

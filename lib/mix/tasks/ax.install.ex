@@ -6,9 +6,11 @@ defmodule Mix.Tasks.Ax.Install do
   preference is not in the Live Object Model, so the two audio-output tools go
   through the macOS Accessibility API instead — and the BEAM cannot call it. This
   task compiles `native/seshat_ax/main.m` and installs the result at a stable
-  path, which is the whole reason the path is stable: macOS attaches
-  Accessibility trust to the executable, and a helper that moved would have to be
-  re-approved every time.
+  path, which is why the path is stable: macOS is assumed to attach Accessibility
+  trust to the executable there, so a helper that moved would have to be
+  re-approved. That assumption is about *where* the trust is scoped, and is
+  narrower than what has actually been measured — see "Permission is one-time
+  onboarding" below.
 
   ## Usage
 
@@ -31,6 +33,15 @@ defmodule Mix.Tasks.Ax.Install do
   The spike observed trust surviving repeated recompiles at one stable path, but
   this task does not assume it: after replacing the executable it asks the helper
   whether it is still trusted and tells you if it is not.
+
+  What that spike did not test is *what* macOS actually keyed the grant on — the
+  installed path, or the parent process that launched it (a PR review,
+  2026-08-27, saw a never-installed, never-approved helper built to a scratch
+  path report itself trusted when run from an already-approved terminal
+  session, which points at the parent rather than the path). See README.md's
+  "Open question" note under "Install the Accessibility helper"; nothing here
+  depends on resolving it, but a user moving between parent processes might
+  see different results than this task's own docs anticipate.
 
   ## Building is atomic
 

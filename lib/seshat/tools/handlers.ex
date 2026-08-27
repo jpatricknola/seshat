@@ -3387,21 +3387,22 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # An empty or whitespace-only string is a shape `required` cannot catch
+  # (there is no `minLength` in `Validation`/`MCP.Schema` today) but the
+  # helper's own CLI parsing does — as `set-output requires --device <name>.`,
+  # its bare usage text, if this clause let it through. That would put an
+  # Objective-C command-line detail on the tool surface, exactly what the rest
+  # of this protocol works to keep off it, so it is rejected here instead with
+  # wording the model can act on, before the helper is ever started.
   defp do_call("set_audio_output", %{"device" => device}) do
-    case ax_client().set_output(device) do
-      # `previous` and `current` are both values the helper *observed* on Live's
-      # own control — the reply never echoes the requested name as though it were
-      # the result.
-      {:ok, %{previous: previous, current: current}} when previous == current ->
-        {:ok, "Ableton Live's audio output was already \"#{current}\" — nothing changed."}
+    case String.trim(device) do
+      "" ->
+        {:error,
+         "\"device\" cannot be blank. Call get_audio_outputs first and pass one of the exact " <>
+           "names it returns."}
 
-      {:ok, %{previous: previous, current: current}} ->
-        {:ok,
-         "Ableton Live's audio output is now \"#{current}\" (it was \"#{previous}\"). " <>
-           "Live confirmed the new value itself."}
-
-      {:error, failure} ->
-        {:error, audio_error(failure)}
+      _ ->
+        do_set_audio_output(device)
     end
   end
 
@@ -3409,13 +3410,56 @@ defmodule Seshat.Tools.Handlers do
 
   defp ax_client, do: Application.get_env(:seshat, :ax_client, Seshat.AX.Client)
 
+  defp do_set_audio_output(device) do
+    case ax_client().set_output(device) do
+      # `previous` and `current` are both values the helper *observed* on Live's
+      # own control — the reply never echoes the requested name as though it were
+      # the result.
+      {:ok, %{previous: previous, current: current}} when previous == current ->
+        {:ok,
+         "Ableton Live's audio output was already \"#{current}\" — nothing changed." <>
+           use_system_hint(current)}
+
+      {:ok, %{previous: previous, current: current}} ->
+        {:ok,
+         "Ableton Live's audio output is now \"#{current}\" (it was \"#{previous}\"). " <>
+           "Live confirmed the new value itself." <>
+           use_system_hint(current) <> use_system_hint(previous)}
+
+      {:error, failure} ->
+        {:error, audio_error(failure)}
+    end
+  end
+
   defp format_audio_outputs(current, []) do
-    "Ableton Live's audio output is \"#{current}\", and it lists no other choices."
+    "Ableton Live's audio output is \"#{current}\", and it lists no other choices." <>
+      use_system_hint(current)
   end
 
   defp format_audio_outputs(current, devices) do
     "Ableton Live's audio output is \"#{current}\". Available choices, exactly as Live " <>
-      "spells them: " <> Enum.map_join(devices, ", ", &"\"#{&1}\"") <> "."
+      "spells them: " <>
+      Enum.map_join(devices, ", ", &"\"#{&1}\"") <>
+      "." <>
+      use_system_hint(current)
+  end
+
+  # `current`/`previous` are read straight off Live's own popup
+  # (`ValueReflects` in native/seshat_ax/main.m), and for every choice but one
+  # that is also the exact name `set_audio_output` matches against. "Use
+  # System Device" is the exception: Live resolves it and displays it as
+  # "Use System: <the macOS device>", a string that appears in no chooser
+  # title. Reported plainly, a caller that remembers this value — to restore
+  # it later, say — and sends it straight back gets `device_not_found` after a
+  # wasted round trip; this note closes that the first time the value is seen,
+  # rather than relying on the recovery path to explain it after the fact.
+  defp use_system_hint(value) do
+    if String.starts_with?(value, "Use System:") do
+      " (That is Live's own resolved description of \"Use System Device\" — send " <>
+        "\"Use System Device\" itself, not this string, to select or restore it.)"
+    else
+      ""
+    end
   end
 
   # Native codes are already rendered as prose by `Seshat.AX.Client`; what is

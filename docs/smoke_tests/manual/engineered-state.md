@@ -263,3 +263,40 @@ window it did not open.
 Settings closed afterwards means the helper cannot tell a window it opened
 from one it found already open. Settings left on the Audio page means the
 selected-page restore step was skipped.
+
+## A blocked Settings window still gives focus back
+
+*Why manual: requires Live showing a modal dialog when the call is made — a
+state no tool can create and no automated test can reach without a live Live*
+*Last run: —*
+
+PR review (2026-08-27) found that `native/seshat_ax/main.m`'s
+`AudioOutputTransaction` used to `return` early, skipping its own cleanup
+block, on the one path where Live's Settings window never opens at all — and
+that early return never restored the frontmost application. Fixed in the same
+round by routing that path through the shared cleanup instead (see
+`kCleanupBudget` and the comment above the `settings == NULL` branch), but
+nothing in `mix test` can drive real AX against a real modal, so this is the
+live check that closes the loop.
+
+Provoke a modal in Live that blocks the `Settings...` menu item — closing the
+last open Live Set with unsaved changes is a reliable one — and, with a
+non-Live application frontmost, call `get_audio_outputs` (or `set_audio_output`
+with any device name) while the dialog is still up. The call must fail —
+`settings_unavailable`, or `timeout` if the three retries run out the clock
+first — and the application that was frontmost before the call must be
+frontmost again afterwards. Live's dialog is allowed to have come to the front
+while the helper tried the menu; the helper must not leave it there.
+
+Live (or its dialog) left frontmost after the call means the fix regressed:
+the early exit on a Settings window that never opened is skipping the shared
+restore again. Dismiss the dialog before running anything else against Live.
+
+The same round also fixed a narrower defect only reachable by an actual
+timeout mid-selection — a switched Settings page failing to restore because
+the restore search itself respected the already-expired action deadline
+(`kCleanupBudget` is the fix). That path needs Live to genuinely miss its
+window while under load and isn't reliably reproducible by hand; there is no
+check for it here beyond the mechanism reasoning above and the compile-time
+proof that `kCleanupBudget` extends `gDeadline` before any restore search
+runs.

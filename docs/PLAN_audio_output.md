@@ -407,13 +407,27 @@ routed audio hardware, or a real client’s model loop. Run with `/smoke-test`.
 - `smoke_tests/auto/mcp-surface.md § A changed property carries what you intended`
   — `set_audio_output.device` is a required string on the advertised wire
   schema.
+- `smoke_tests/manual/engineered-state.md § A blocked Settings window still gives focus back`
+  — added in the 2026-08-27 PR review round, closing the round's blocking
+  finding: a Settings window that never opens (a modal dialog in front of it)
+  must not leave Live's UI focus changed forever. Manual because the blocking
+  state cannot be created by any tool.
 
 **Uncovered:** first-time Accessibility consent (one-time manual onboarding,
 not a normal request); unplugging the selected device during the AX action (not
 deterministically reproducible); non-English Live labels (out of scope); and
 Bluetooth/CoreAudio behavior on hardware other than the devices installed on
 this Mac. The macOS CI job proves compilation and structured permission failure,
-not trusted cross-process control.
+not trusted cross-process control. Also uncovered, from the same review round:
+whether Accessibility trust is actually scoped to the installed executable's
+path rather than to the process that launched it — a reviewer's own
+never-installed build reported itself trusted when run from an
+already-approved terminal, which points at the parent process. README.md's
+"Open question" note under "Install the Accessibility helper" and
+`mix ax.install`'s moduledoc both say so now; resolving it needs a controlled
+comparison on a real machine (same build, different parent processes), which
+is exactly the kind of experiment this repo's own process rules do not let an
+agent phase run unsupervised.
 
 ## Out of scope
 

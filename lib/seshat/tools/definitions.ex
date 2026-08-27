@@ -1782,10 +1782,13 @@ defmodule Seshat.Tools.Definitions do
           "current selection. Call this before set_audio_output when the user gives a human " <>
           "description such as \"headphones\" or the installed device name is not already " <>
           "known; device names are machine-specific. Resolve the user's wording to one exact " <>
-          "returned name, then call set_audio_output in the same request. This may briefly " <>
-          "bring Live to the foreground while it reads Audio Settings, then restores the prior " <>
-          "application and Settings visibility. macOS only, and it needs Seshat's " <>
-          "Accessibility helper (mix ax.install) — the error says so if it is missing.",
+          "returned name, then call set_audio_output in the same request. A current value " <>
+          "beginning \"Use System:\" is Live's own resolved description of the \"Use System " <>
+          "Device\" choice, not a name of its own — pass \"Use System Device\" itself, not that " <>
+          "string, to select or restore it. This may briefly bring Live to the foreground while " <>
+          "it reads Audio Settings, then restores the prior application and Settings " <>
+          "visibility. macOS only, and it needs Seshat's Accessibility helper (mix ax.install) " <>
+          "— the error says so if it is missing.",
       parameters: %{type: "object", properties: %{}, required: []}
     },
     %{
