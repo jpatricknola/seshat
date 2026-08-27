@@ -244,3 +244,22 @@ than zeroed.
 A timeout here with MIDI clips reading fine means the audio batch is sending
 a property an audio clip doesn't carry (or vice versa — the
 `@clip_audio_only_properties` guard drifting from Live's reality).
+
+## An open Settings window survives an audio-output read
+
+*Why manual: requires opening Settings by hand to a chosen page — a state no
+tool can create — and eyes on the window afterwards*
+*Last run: —*
+
+Open Live's Settings by hand and select a non-Audio page (Display & Input,
+say). Call `get_audio_outputs` once. The reply must carry the same devices and
+current value as the Settings-closed read
+([../auto/audio-output.md](../auto/audio-output.md) § The available outputs
+and current selection agree with Live), and afterwards Settings must still be
+open with your chosen page selected again — the helper may visit the Audio
+page mid-read, but it must put back the page it found and must not close a
+window it did not open.
+
+Settings closed afterwards means the helper cannot tell a window it opened
+from one it found already open. Settings left on the Audio page means the
+selected-page restore step was skipped.

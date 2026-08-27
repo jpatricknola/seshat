@@ -161,7 +161,7 @@ one domain; do not introduce a Swift dependency (the installed Swift compiler
 and SDK were mismatched during the spike, while `clang` compiled the same API
 successfully).
 
-Implement the three-command JSON protocol and bounded selector path above.
+Implement the four-command JSON protocol and bounded selector path above.
 Additional requirements:
 
 - `AXIsProcessTrustedWithOptions` receives `prompt: false` for normal commands;
@@ -328,6 +328,12 @@ Cover without Live or Accessibility permission:
    the existing defensive-end/begin/action/end trace.
 5. Undo/redo prompt tests: audio-output changes are explicitly excluded from
    the counted Ableton steps and routed back through `set_audio_output`.
+6. Boundary tripwire, in `client_test.exs`: grep `lib/seshat/` and assert
+   `Port.open`, `:spawn_executable`, and `System.cmd` appear only in
+   `lib/seshat/ax/client.ex` — pinning the "only Elixir module allowed to
+   execute the native helper" claim the way `vendored_addresses_test` pins the
+   fork's address surface. With the `undo_step: false` set pinned in item 3,
+   no future tool can quietly grow a second AX or subprocess path.
 
 Add a small `macos-latest` CI job that compiles the Objective-C source with the
 same warnings-as-errors command as `mix ax.install`, runs only the permission
@@ -379,11 +385,16 @@ Nothing in `mix test` reaches AX, Live’s Settings, macOS foreground behavior,
 routed audio hardware, or a real client’s model loop. Run with `/smoke-test`.
 
 - `smoke_tests/auto/audio-output.md § The available outputs and current selection agree with Live`
-  — semantic discovery, bounded direct-tool latency, and preservation of both
-  initially closed and initially open Settings state.
+  — semantic discovery, bounded direct-tool latency, reply stability across
+  repeated reads, and foreground restoration from the Settings-closed state.
+- `smoke_tests/manual/engineered-state.md § An open Settings window survives an audio-output read`
+  — preservation of an initially open Settings window and its selected page.
+  Manual because that starting state cannot be created by any tool and the
+  window must be judged by eye.
 - `smoke_tests/auto/audio-output.md § A named output changes, verifies, and restores`
-  — exact-name set, audible hardware movement, independent read-back, 5-second
-  tool budget, and foreground/window cleanup.
+  — exact-name set, independent read-back, 5-second tool budget, and
+  foreground cleanup; audible hardware movement is judged by ear in the
+  manual conversation check below.
 - `smoke_tests/auto/audio-output.md § An unavailable output fails quickly and changes nothing`
   — agent-runnable exact-match error, fresh recovery choices, unchanged state,
   and bounded failure.
