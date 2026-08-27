@@ -7,7 +7,7 @@ defmodule Seshat.Tools.DefinitionsTest do
     test "returns a list of tool definitions" do
       tools = Definitions.all()
       assert is_list(tools)
-      assert length(tools) == 65
+      assert length(tools) == 67
     end
 
     test "each tool has required fields" do
@@ -43,6 +43,7 @@ defmodule Seshat.Tools.DefinitionsTest do
         set_master_volume set_master_pan set_cue_volume
         record_clip stop_recording capture_midi
         get_clip_properties set_clip_properties quantize_clip
+        get_audio_outputs set_audio_output
       )
 
       names = Enum.map(Definitions.all(), & &1.name)
@@ -75,7 +76,11 @@ defmodule Seshat.Tools.DefinitionsTest do
 
     test "every index-shaped property declares minimum: 0" do
       for {tool, path, name, spec} <- all_properties(),
-          name in @index_properties do
+          name in @index_properties,
+          # `set_audio_output.device` borrows the name for a display string, not
+          # an index into a Live collection. The hazard being pinned here is
+          # Python's negative indexing, which only an integer can reach.
+          spec[:type] != "string" do
         assert Map.get(spec, :minimum) == 0,
                "#{tool}.#{path} must declare minimum: 0 — a negative index selects from the " <>
                  "end of the collection in AbletonOSC's Python"
@@ -229,10 +234,90 @@ defmodule Seshat.Tools.DefinitionsTest do
         assert tool(unquote(name)).description =~
                  "Verify a batch once at the end with get_session_state, never after each call"
       end
+
+      # The AX-backed audio-output change is not in Live's history at all, so
+      # counting it would send the model one undo too many — reverting a real
+      # edit the user never asked to lose.
+      test "#{name} excludes set_audio_output from the counted steps" do
+        description = tool(unquote(name)).description
+
+        assert description =~ "set_audio_output"
+        assert description =~ "outside Live's undo history"
+      end
+    end
+
+    test "undo routes an audio-output change back through its own tool" do
+      description = tool("undo").description
+
+      assert description =~ "never count it as a step"
+      assert description =~ "reverse it by calling set_audio_output with the previous device"
+    end
+
+    test "undo now scopes 'one step per call' to changes in the Live Set" do
+      assert tool("undo").description =~ "changes the Live Set creates one step"
     end
 
     defp tool(name) do
       Enum.find(Definitions.all(), &(&1.name == name)) || flunk("no #{name} tool defined")
+    end
+  end
+
+  describe "the audio-output tools" do
+    test "get_audio_outputs teaches the model to resolve before setting" do
+      description = tool("get_audio_outputs").description
+
+      assert description =~ "device names are machine-specific"
+      assert description =~ "Resolve the user's wording to one exact returned name"
+      # Latency is a user-visible acceptance criterion, and two round trips in
+      # one request is the only way it is met — the model must not go back to
+      # the user between the read and the set.
+      assert description =~ "call set_audio_output in the same request"
+      assert description =~ "mix ax.install"
+    end
+
+    test "set_audio_output demands an exact name and forbids inventing one" do
+      description = tool("set_audio_output").description
+
+      assert description =~ "exact name returned by get_audio_outputs"
+      assert description =~ "never invent a device"
+      assert description =~ "Use System Device"
+      assert description =~ "reads Live's resulting value back"
+      assert description =~ "outside Live's undo history"
+    end
+
+    test "set_audio_output takes one required string device" do
+      tool = tool("set_audio_output")
+
+      assert tool.parameters.required == ["device"]
+      assert tool.parameters.properties["device"].type == "string"
+      assert tool.parameters.properties["device"].description =~ "Exact display name"
+    end
+
+    test "get_audio_outputs takes no parameters" do
+      assert tool("get_audio_outputs").parameters == %{
+               type: "object",
+               properties: %{},
+               required: []
+             }
+    end
+  end
+
+  describe "unstepped_names/0" do
+    # The undo-step opt-out is what lets a tool dispatch without touching the
+    # OSC wire at all. Pinning the exact set is the tripwire: a tool that grows
+    # `undo_step: false` for convenience — or a second AX path added quietly —
+    # fails here rather than silently escaping Live's undo grouping.
+    test "exactly the two Accessibility-backed tools opt out of the undo step" do
+      assert Enum.sort(Definitions.unstepped_names()) == ["get_audio_outputs", "set_audio_output"]
+    end
+
+    test "every other tool is undo-stepped by default, without saying so" do
+      stepped = Definitions.all() |> Enum.reject(&(&1.name in Definitions.unstepped_names()))
+
+      for tool <- stepped do
+        refute Map.has_key?(tool, :undo_step),
+               "#{tool.name} declares undo_step; the default is the whole point"
+      end
     end
   end
 end

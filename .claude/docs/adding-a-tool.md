@@ -79,6 +79,30 @@ node-wide `:global.trans` lock for the handler's full duration, so a
 long-running tool (a slow `load_device`, a `reindex_library` export) blocks
 every other tool call, not just concurrent undo steps, until it returns.
 
+There is one opt-out, and it is narrower than it looks. A definition carrying
+`undo_step: false` dispatches with no lock and no begin/end datagrams:
+
+```elixir
+%{
+  name: "get_audio_outputs",
+  undo_step: false,
+  description: "...",
+  parameters: %{type: "object", properties: %{}, required: []}
+}
+```
+
+**It is for a tool whose mechanism cannot contribute to Live's undo history at
+all** — today, only the two Accessibility-backed audio-output tools, which
+change an Ableton *preference* through macOS UI rather than editing the Live
+Set. It is not for a read-only OSC tool: those stay wrapped deliberately,
+because an empty begin/end pair is measured free while a hand-maintained list of
+mutating tools fails silently the first time a new tool forgets to join it.
+
+If you reach for it, the tool almost certainly also needs a sentence in its
+description telling the model the change is outside Live's undo history and how
+to reverse it — `undo` will not. `definitions_test` pins the opted-out set by
+name, so adding one is a deliberate, reviewed edit rather than a quiet flag.
+
 ### 3. Update the count — `test/seshat/tools/definitions_test.exs`
 
 The `assert length(tools) == N` there is a deliberate tripwire. Bump it.

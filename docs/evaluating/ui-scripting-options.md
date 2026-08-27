@@ -269,6 +269,45 @@ for bringing Live to the foreground.
 References: [macOS Privacy & Security settings](https://support.apple.com/guide/mac-help/change-privacy-security-settings-on-mac-mchl211c911f/mac),
 [AXUIElement API](https://developer.apple.com/documentation/applicationservices/axuielement_h).
 
+### Production helper — measured 27 Aug 2026
+
+The shipped helper (`native/seshat_ax/main.m`) was exercised directly against
+Live 12.4.3 on macOS 15.7.4 while it was being written. These are *native*
+measurements — one process invocation, no MCP, no model — and they are not the
+feature's acceptance, which is measured through a real client in
+[smoke_tests/manual/conversation.md](../smoke_tests/manual/conversation.md).
+
+- `list-outputs` returned `Use System: MacBook Pro Speakers (0 In, 2 Out)` with
+  the three installed choices, in 0.33–1.04s wall clock across ten consecutive
+  runs, every reply identical.
+- `set-output` to an explicit device, an idempotent repeat, and back to
+  `Use System Device` all succeeded with the value read back off Live's own
+  popup (0.45–0.80s). The `Use System:` prefix verification behaved as the spike
+  predicted.
+- A nonexistent device name failed in 0.79s carrying the three real names and an
+  unchanged current value.
+- After every run the previously frontmost application was frontmost again and
+  Live held one window — the Settings window the helper opened was closed.
+
+Two defects were found and fixed by these runs, both invisible to any test that
+does not drive a real application:
+
+1. **Waiting on `NSRunningApplication.active` hangs.** That flag is updated by a
+   workspace notification, so a command-line tool that sleeps rather than running
+   its runloop never sees it change. The first version spent its entire deadline
+   waiting to activate Live and returned `timeout` having pressed nothing.
+2. **Every third back-to-back run failed to open Settings.** Restoring the
+   previous application was fire-and-forget, so it landed *during* the next run,
+   which then saw Live frontmost, skipped activation, and left the run after that
+   pressing a menu Live was not listening to. The helper now waits for the
+   restore, re-activates before every attempt at the menu, and retries the press.
+   Ten consecutive runs then passed.
+
+The lesson generalises beyond this feature: AX correctness is bound up with
+macOS *activation* state, which is asynchronous, notification-delivered, and
+shared with whatever else is on the machine. Any future AX operation has to
+treat it as a first-class part of the transaction rather than a preamble.
+
 ## Spike protocol and result
 
 This evidence-gathering spike is complete; it is not the implementation plan.
@@ -301,6 +340,16 @@ Answer these questions:
    and record the exact permissions each route requests. A browser-visibility
    toggle is a suitable harmless test once the fork exposes
    `is_view_visible`.
+
+**Question 3 — the go/no-go — is answered, and the first outcome below is the
+one that happened.** The complete audio-device round trip succeeded on
+2026-08-03, the roadmap entry was written scoped exactly as that outcome
+requires, and the implementation is
+[PLAN_audio_output.md](../PLAN_audio_output.md): two tools, a bounded native
+helper, read-back verification, and the LOM-first rule left in force. Nothing
+here validates a second control surface — questions 1, 4, 5 and 6 remain open
+research, and each future AX operation still needs its own LOM-gap, safety,
+semantic-target and read-back case.
 
 Outcomes:
 

@@ -481,9 +481,12 @@ defmodule Seshat.Tools.Definitions do
     %{
       name: "undo",
       description:
-        "Undo exactly one Ableton undo step. Each mutating Seshat tool call that changes Live " <>
-          "creates one step — not each user message — and a multi-part call such as " <>
-          "write_midi_notes is still one step. If the user asks to undo or revert the previous " <>
+        "Undo exactly one Ableton undo step. Each mutating Seshat tool call that changes the " <>
+          "Live Set creates one step — not each user message — and a multi-part call such as " <>
+          "write_midi_notes is still one step. set_audio_output is the exception: it changes a " <>
+          "macOS-level Ableton preference, not the Set, so it is outside Live's undo history " <>
+          "entirely — never count it as a step, and reverse it by calling set_audio_output with " <>
+          "the previous device instead. If the user asks to undo or revert the previous " <>
           "request, review the tool calls used to fulfill it and call undo once for every call " <>
           "that changed Live, newest first; include a partially completed call, but do not count " <>
           "read-only, validation-rejected, or no-change calls. Use undo only when the change to " <>
@@ -505,7 +508,9 @@ defmodule Seshat.Tools.Definitions do
       description:
         "Redo exactly one undone Ableton step. If the user asks to redo a whole request that " <>
           "required several mutating tool calls, call redo once per step that was undone, in the " <>
-          "original order. Any new edit can clear Live's redo history. The reply confirms the " <>
+          "original order. set_audio_output is outside Live's undo history and was never a " <>
+          "step, so never count it here either — reapply it with set_audio_output. " <>
+          "Any new edit can clear Live's redo history. The reply confirms the " <>
           "request was sent, not that Live's history moved — Ableton does not acknowledge " <>
           "redo. If Live reports no redo step available, stop calling redo and tell the user; " <>
           "do not retry unless history has changed. Verify a batch once at the end with " <>
@@ -1758,9 +1763,79 @@ defmodule Seshat.Tools.Definitions do
         },
         required: ["track", "clip_slot", "grid", "amount"]
       }
+    },
+    # --- Audio output (macOS Accessibility, not OSC) ---
+    #
+    # The only two tools that do not go through the Live Object Model. Live's
+    # application-wide audio device preference is not in the LOM at all, so they
+    # reach it through `Seshat.AX.Client` and the native helper instead — and
+    # because that is not a Live Set change, it cannot be an entry in Live's undo
+    # history. `undo_step: false` is what tells `Seshat.Tools.Handlers` to
+    # dispatch them without the begin/end pair every other tool gets; see that
+    # module's dispatch section for why the opt-out is metadata here rather than
+    # a hand-kept list there.
+    %{
+      name: "get_audio_outputs",
+      undo_step: false,
+      description:
+        "List the audio output choices currently available in Ableton Live and report Live's " <>
+          "current selection. Call this before set_audio_output when the user gives a human " <>
+          "description such as \"headphones\" or the installed device name is not already " <>
+          "known; device names are machine-specific. Resolve the user's wording to one exact " <>
+          "returned name, then call set_audio_output in the same request. A current value " <>
+          "beginning \"Use System:\" is Live's own resolved description of the \"Use System " <>
+          "Device\" choice, not a name of its own — pass \"Use System Device\" itself, not that " <>
+          "string, to select or restore it. This may briefly bring Live to the foreground while " <>
+          "it reads Audio Settings, then restores the prior application and Settings " <>
+          "visibility. macOS only, and it needs Seshat's Accessibility helper (mix ax.install) " <>
+          "— the error says so if it is missing.",
+      parameters: %{type: "object", properties: %{}, required: []}
+    },
+    %{
+      name: "set_audio_output",
+      undo_step: false,
+      description:
+        "Set Ableton Live's application-wide audio output to an exact name returned by " <>
+          "get_audio_outputs. For \"headphones\", \"speakers\", or another generic target, " <>
+          "call get_audio_outputs first and resolve it to an installed name; never invent a " <>
+          "device. \"Use System Device\" is a real choice when the user wants Live to follow " <>
+          "macOS. Switching can briefly interrupt audio. The tool selects by semantic " <>
+          "Accessibility elements, reads Live's resulting value back, restores the prior " <>
+          "application and Settings visibility, and reports an error rather than success when " <>
+          "verification fails. This change is outside Live's undo history; change it back with " <>
+          "this tool, not undo.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "device" => %{
+            type: "string",
+            description: "Exact display name returned by get_audio_outputs."
+          }
+        },
+        required: ["device"]
+      }
     }
   ]
 
   @doc "Returns all tool definitions as format-agnostic maps."
   def all, do: @tools
+
+  @doc """
+  The names of tools that must **not** be wrapped in an Ableton undo step.
+
+  Every tool is undo-stepped unless its definition says `undo_step: false`, so a
+  tool added later is covered by construction — the same reasoning as
+  `Seshat.Tools.Validation` reading the schemas rather than hand-listing rules.
+
+  The opt-out is for a tool whose mechanism *cannot* contribute to Live's undo
+  history: today that means the macOS Accessibility path, which changes an
+  application preference rather than the Live Set. It is not a convenience for
+  read-only OSC tools — those stay wrapped deliberately, because an empty
+  begin/end pair is measured free and a hand-maintained list of mutating tools
+  would fail silently the first time a new tool forgot to join it.
+  """
+  @spec unstepped_names() :: [String.t()]
+  def unstepped_names do
+    for tool <- @tools, Map.get(tool, :undo_step, true) == false, do: tool.name
+  end
 end

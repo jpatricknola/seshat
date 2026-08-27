@@ -161,7 +161,7 @@ one domain; do not introduce a Swift dependency (the installed Swift compiler
 and SDK were mismatched during the spike, while `clang` compiled the same API
 successfully).
 
-Implement the three-command JSON protocol and bounded selector path above.
+Implement the four-command JSON protocol and bounded selector path above.
 Additional requirements:
 
 - `AXIsProcessTrustedWithOptions` receives `prompt: false` for normal commands;
@@ -328,12 +328,22 @@ Cover without Live or Accessibility permission:
    the existing defensive-end/begin/action/end trace.
 5. Undo/redo prompt tests: audio-output changes are explicitly excluded from
    the counted Ableton steps and routed back through `set_audio_output`.
+6. Boundary tripwire, in `client_test.exs`: grep `lib/seshat/` and assert
+   `Port.open`, `:spawn_executable`, and `System.cmd` appear only in
+   `lib/seshat/ax/client.ex` — pinning the "only Elixir module allowed to
+   execute the native helper" claim the way `vendored_addresses_test` pins the
+   fork's address surface. With the `undo_step: false` set pinned in item 3,
+   no future tool can quietly grow a second AX or subprocess path.
 
 Add a small `macos-latest` CI job that compiles the Objective-C source with the
 same warnings-as-errors command as `mix ax.install`, runs only the permission
-status command, and asserts it returns valid `permission_required` JSON in the
-untrusted runner. The existing Ubuntu Elixir job remains unchanged. Neither CI
-job controls a real application.
+status command, and asserts the reply is well-formed and internally consistent.
+It originally asserted `permission_required` on the reasoning that a fresh
+runner holds no grant; that assertion failed on its first run (2026-08-27) —
+the runner reported `trusted: true` — so the step now accepts either answer and
+checks that `trusted` agrees with `ok`, `code` and the exit status. The existing
+Ubuntu Elixir job remains unchanged. Neither CI job controls a real
+application.
 
 `mix precommit` remains the Elixir bar. On macOS, also run
 `mix ax.install --no-prompt --destination <temporary path>` so the exact native
@@ -379,11 +389,16 @@ Nothing in `mix test` reaches AX, Live’s Settings, macOS foreground behavior,
 routed audio hardware, or a real client’s model loop. Run with `/smoke-test`.
 
 - `smoke_tests/auto/audio-output.md § The available outputs and current selection agree with Live`
-  — semantic discovery, bounded direct-tool latency, and preservation of both
-  initially closed and initially open Settings state.
+  — semantic discovery, bounded direct-tool latency, reply stability across
+  repeated reads, and foreground restoration from the Settings-closed state.
+- `smoke_tests/manual/engineered-state.md § An open Settings window survives an audio-output read`
+  — preservation of an initially open Settings window and its selected page.
+  Manual because that starting state cannot be created by any tool and the
+  window must be judged by eye.
 - `smoke_tests/auto/audio-output.md § A named output changes, verifies, and restores`
-  — exact-name set, audible hardware movement, independent read-back, 5-second
-  tool budget, and foreground/window cleanup.
+  — exact-name set, independent read-back, 5-second tool budget, and
+  foreground cleanup; audible hardware movement is judged by ear in the
+  manual conversation check below.
 - `smoke_tests/auto/audio-output.md § An unavailable output fails quickly and changes nothing`
   — agent-runnable exact-match error, fresh recovery choices, unchanged state,
   and bounded failure.
@@ -396,13 +411,33 @@ routed audio hardware, or a real client’s model loop. Run with `/smoke-test`.
 - `smoke_tests/auto/mcp-surface.md § A changed property carries what you intended`
   — `set_audio_output.device` is a required string on the advertised wire
   schema.
+- `smoke_tests/manual/engineered-state.md § A blocked Settings window still gives focus back`
+  — added in the 2026-08-27 PR review round, closing the round's blocking
+  finding: a Settings window that never opens (a modal dialog in front of it)
+  must not leave Live's UI focus changed forever. Manual because the blocking
+  state cannot be created by any tool.
 
 **Uncovered:** first-time Accessibility consent (one-time manual onboarding,
 not a normal request); unplugging the selected device during the AX action (not
 deterministically reproducible); non-English Live labels (out of scope); and
 Bluetooth/CoreAudio behavior on hardware other than the devices installed on
-this Mac. The macOS CI job proves compilation and structured permission failure,
-not trusted cross-process control.
+this Mac. The macOS CI job proves compilation and a well-formed permission
+reply, not trusted cross-process control.
+
+Also uncovered, and now with evidence against the assumption it rests on:
+whether Accessibility trust is scoped to the installed executable's path.
+Three observations on 2026-08-27 say a never-approved build can read as
+trusted — two PR reviews running a scratch build from an already-approved
+terminal, and the macOS CI runner, a machine with no grant at all, which is
+what broke the CI step above. The terminal cases point at parent-process
+attribution; the CI case is equally consistent with that environment being
+trusted wholesale (a runner as root would be), so the two explanations are
+still not separated. README.md's "Open question" note under "Install the
+Accessibility helper" and `mix ax.install`'s moduledoc both carry the
+corrected picture. Resolving it needs the one comparison nobody has run: the
+same installed build launched from an approved parent and from an unapproved
+one, on a real machine — the kind of experiment this repo's process rules do
+not let an agent phase run unsupervised.
 
 ## Out of scope
 

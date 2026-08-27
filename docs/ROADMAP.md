@@ -18,7 +18,7 @@ at its quotient.
 **Dependencies outrank the quotient.** The quotient orders work that is *ready*;
 it never places an issue above something that has to land first. Where an issue
 is gated, it says so under its scores and its gate sits above it — which is why
-"Search eval harness" leads the queue at a quotient of 0.67, ahead of six
+"Search eval harness" sits near the top at a quotient of 0.67, ahead of six
 catalog levers that score better and cannot start until it exists. Sort
 prerequisites first, then rank the ready work by quotient inside that. A related
 trap: impact scores *user-visible* value, so pure plumbing scores low however
@@ -37,7 +37,64 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #1 · AX-backed audio output — verify the remainder
+
+**Impact 5 · Lift 8 · 0.62 impact-per-effort**
+
+**Ranked above its quotient by decision on 2026-08-27** — implementation has
+since landed on branch `ax-audio-output`; what is left is verification, not
+code. Restore it to its quotient position once this entry closes out.
+
+**Implemented and reviewed already — do not re-implement.**
+`get_audio_outputs` and `set_audio_output` exist end to end: the native AX
+helper (`native/seshat_ax/main.m`, a closed four-command JSON protocol —
+version, permission, list-outputs, set-output, with no generic press/dump/
+keystroke command), `Seshat.AX.Client`, `mix ax.install`, the `undo_step:
+false` opt-out (pinned by test to exactly these two tools), and a macOS CI
+build. Three review rounds ran; two blocking findings surfaced and were both
+fixed: `AudioOutputTransaction`'s early return skipped its own cleanup block,
+leaving the user's frontmost app changed after a merely read-only question;
+and later, a chooser was `CFRelease`d and NULLed before its press result was
+checked, so a rejected press could leave Live's audio-output popup menu
+hanging open. Plan: [PLAN_audio_output.md](PLAN_audio_output.md) — kept in
+place rather than archived, because its citations are still unrun and
+archiving now would strand that record.
+
+**What's left — verification only, needs a human:**
+- Install the helper for real: `mix ax.install` into
+  `~/.seshat/bin/seshat-ax`, then grant Accessibility permission when macOS
+  prompts. Every run so far used a scratch build at a temp path, never
+  installed and never approved.
+- Settle an open question the real install should answer. A
+  never-installed, never-approved build has now read as `trusted: true`
+  three times: twice from an already-approved terminal, and once on a
+  GitHub Actions runner — a machine granted nothing by anyone, which broke
+  a CI step that had asserted a refusal. So permission does **not** simply
+  follow `~/.seshat/bin/seshat-ax`, and the docs no longer claim it does.
+  Two explanations remain: macOS attributing the grant to the responsible
+  parent process, or those environments being trusted wholesale (a runner
+  as root would be). The experiment that separates them is the same
+  installed build launched from a parent that was approved and from one
+  that was not — run that, not a re-check of the path.
+- Run these through a real MCP client — every run so far has gone through
+  `Handlers.call/2` directly, not a client, and all three currently read
+  "partly, and not as written" for exactly that reason:
+  [smoke_tests/auto/audio-output.md](smoke_tests/auto/audio-output.md) §
+  *The available outputs and current selection agree with Live*, §
+  *A named output changes, verifies, and restores*, § *An unavailable output
+  fails quickly and changes nothing*.
+- [smoke_tests/manual/engineered-state.md](smoke_tests/manual/engineered-state.md)
+  § *An open Settings window survives an audio-output read* and § *A blocked
+  Settings window still gives focus back* — both still `Last run: —`.
+- [smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md) §
+  *Headphones resolve and switch within the user-visible budget* — the
+  plan's actual acceptance criterion (three fresh local-client requests each
+  change Live's verified value within 10 seconds), still unrun.
+- A second physical audio output on the test machine, for the audible half
+  of that last check — this machine currently has only one, so nothing has
+  moved audibly yet.
+
+## #2 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Impact 8 · Lift 4 · 2.00 impact-per-effort**
 
@@ -74,7 +131,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #2 · Search eval harness — numbers before opinions
+## #3 · Search eval harness — numbers before opinions
 
 **Impact 2 · Lift 3 · 0.67 impact-per-effort**
 
@@ -103,7 +160,7 @@ benchmark informally (see
 formalize that rather than inventing a new one. Runs offline against the
 catalog — no Ableton needed.
 
-## #3 · Widen the search slate at tied score bands
+## #4 · Widen the search slate at tied score bands
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -124,7 +181,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #4 · A rejected index says which index, and what to call next
+## #5 · A rejected index says which index, and what to call next
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -185,7 +242,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #5 · Browser preview audition
+## #6 · Browser preview audition
 
 **Impact 7 · Lift 3 · 2.33 impact-per-effort**
 
@@ -213,7 +270,7 @@ what decides.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #6 · `start_new_project` — the setup wizard, and prompt budget back
+## #7 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -271,7 +328,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   want, so prefer building it before that item even though ratio separates
   them.
 
-## #7 · `write_midi_notes` must chunk large note batches
+## #8 · `write_midi_notes` must chunk large note batches
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -308,7 +365,7 @@ this item moves ahead of it.
 - Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
   surface needs valid dense clips to work, not become validation errors.
 
-## #8 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #9 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Impact 4 · Lift 2 · 2.00 impact-per-effort**
 
@@ -337,7 +394,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #9 · Read-only audio input display — warn before a silent take
+## #10 · Read-only audio input display — warn before a silent take
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -368,7 +425,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #10 · Modify a note in place
+## #11 · Modify a note in place
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -383,7 +440,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #11 · `screenshot_live` — let Seshat see the screen
+## #12 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -409,7 +466,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #12 · Opt-in `samples` index
+## #13 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -433,7 +490,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #13 · Accepted-search memory
+## #14 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
@@ -457,7 +514,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #14 · Producer personas — switchable musical taste
+## #15 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -492,7 +549,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #15 · Verify destructive mutations before reporting success
+## #16 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -564,7 +621,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #16 · User XMP tags
+## #17 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -583,7 +640,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #17 · Small OSC breadth — grab bag
+## #18 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -606,7 +663,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #18 · LLM enrichment at reindex
+## #19 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -632,43 +689,6 @@ detuned vocabulary exists to carry them.
 - As a producer asking for "a warm, slightly out-of-tune electric piano,"
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
-
-## #19 · AX-backed audio output — the first narrow UI workflow
-
-**Impact 5 · Lift 8 · 0.62 impact-per-effort**
-
-**Goal:** `get_audio_outputs` and `set_audio_output` tools that let a user say
-“switch Live to the headphones,” resolve the installed device name, change
-Live's application-wide output through semantic macOS Accessibility elements,
-verify the result, and restore the UI within a user-visible latency budget.
-
-**Why:** audio-device selection is absent from Live 12.4.3's LOM, so OSC cannot
-reach it. The 2026-08-03 spike succeeded without coordinates, keystrokes,
-AppleScript, or screenshots: it enumerated the named choices, selected a second
-device, read the value back, and restored the original. The native round trip
-took 1.55 seconds, but an exploratory conversational turn took 37 seconds while
-code was compiled on demand — shipping value depends on moving compilation and
-permission setup out of the request path and measuring what the user waits for.
-
-**User stories:**
-- As a producer whose sound is coming from the laptop, I can say “switch Live
-  to the headphones” and hear it move promptly without opening Settings myself.
-- As a producer, a successful reply means Live's selected output was read back,
-  not merely that a UI action was attempted.
-- As a producer, Live's Settings and application focus return to how I had them;
-  changing output does not leave cleanup work on screen.
-
-**Planner notes:**
-- [Implementation plan: AX-backed audio-output selection](PLAN_audio_output.md).
-- LOM-first remains absolute. The reusable AX boundary is available only to a
-  concrete, independently verified LOM gap with named elements and read-back;
-  this is not a generic UI-control tool.
-- Acceptance: three fresh local-client “headphones” requests each change Live's
-  verified value within 10 seconds; the setter's own MCP call finishes within 5
-  seconds. Permission onboarding is one-time and outside that normal path.
-- The tool definition must opt out of OSC undo wrapping. Audio preferences are
-  outside the Live Set's LOM undo history, and the tool must work without
-  emitting unrelated begin/end datagrams.
 
 ## #20 · Monitored refresh worker for `Session.State`
 

@@ -88,3 +88,62 @@ jobs:
 
       - name: Run tests
         run: mix test
+
+  # The Ubuntu job above cannot compile AppKit, so the native Accessibility
+  # helper would otherwise reach a user's machine having never been built by
+  # anyone but its author. This job builds it with the same warnings-as-errors
+  # command `mix ax.install` uses (test/mix/tasks/ax_install_test.exs fails if
+  # the two drift) and runs the one command that needs neither Live nor granted
+  # permission.
+  #
+  # It proves compilation and that `permission` answers in protocol. It cannot
+  # prove trusted cross-process control: a GitHub runner has no Ableton Live.
+  #
+  # It also cannot assume the runner is *untrusted*. This step used to assert a
+  # refusal, on the reasoning that a fresh runner has no Accessibility grant --
+  # and it failed on 2026-08-27, because the runner answered
+  # `{"ok":true,"protocol_version":1,"trusted":true}`. That is the third
+  # independent observation of a never-approved binary reporting trusted (see
+  # the `mix ax.install` moduledoc); macOS appears to attribute Accessibility
+  # trust to the responsible parent process, not to the executable. So the
+  # assertion here is the part that holds either way: the reply is well-formed,
+  # and `trusted` agrees with `ok`, `code` and the exit status.
+  helper:
+    name: Build the macOS Accessibility helper
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile native/seshat_ax/main.m
+        run: |
+          /usr/bin/clang -fobjc-arc -Wall -Wextra -Werror -O2 \
+            -framework AppKit -framework ApplicationServices \
+            -o "$RUNNER_TEMP/seshat-ax" native/seshat_ax/main.m
+
+      - name: The permission command answers in protocol
+        run: |
+          set +e
+          OUTPUT=$("$RUNNER_TEMP/seshat-ax" permission)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          echo "$OUTPUT" | STATUS="$STATUS" python3 -c '
+          import json, os, sys
+          payload = json.load(sys.stdin)
+          status = int(os.environ["STATUS"])
+          assert payload["protocol_version"] == 1, payload
+          trusted = payload["trusted"]
+          if trusted is True:
+              # Not what a fresh runner was expected to report; see the comment
+              # above. Still a valid reply, so hold it to the trusted contract.
+              assert payload["ok"] is True, payload
+              assert status == 0, (status, payload)
+              print("trusted on a runner that was never granted permission")
+          elif trusted is False:
+              assert payload["ok"] is False, payload
+              assert payload["code"] == "permission_required", payload
+              assert status == 2, (status, payload)
+              print("permission_required reported in protocol")
+          else:
+              raise AssertionError(payload)
+          '

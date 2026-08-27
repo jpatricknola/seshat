@@ -45,7 +45,8 @@ track 0 (indices 0–1) — there is no device 7. Chain: 0: Reverb, 1: EQ Eight.
 range" (165ms) — note that this path **still carries the prefix**, because
 `delete_device` is not a batched read; the batched reads render the same class
 of rejection through `remote_error/1` instead, which is the inconsistency
-ROADMAP #26 now describes. Previous run, 2026-08-03 — passed, but **the
+ROADMAP's "A rejected index says which index, and what to call next" now
+describes. Previous run, 2026-08-03 — passed, but **the
 bad-track-index premise was stale and is corrected below.** All three paths
 answered in ≤0.24s (whole `mcp_call.py` round trip). `delete_device` device 7 on a 2-device chain → "There are 2
 device(s) on track 1 (indices 0–1) — there is no device 7. Chain: 0: E-Piano

@@ -36,17 +36,32 @@ Seshat.MCP.Server
         │
         ▼
             Seshat.Tools.Handlers      ← the only place tool names are dispatched
-                  │           │
-                  │           │ multi-step sequences only
-                  │           ▼ (create_track, create_return_track, write_midi_notes)
-                  │    Seshat.Commands.Registry
-                  │           │ ← Command struct → ordered OSC messages
-                  ▼           ▼
-            Seshat.OSC.Transport       ← GenServer over :gen_udp
-                       │
-                       ▼
+                  │           │                           │
+                  │           │ multi-step                │ get_audio_outputs /
+                  │           │ sequences only            │ set_audio_output only
+                  │           ▼ (create_track, etc.)      ▼
+                  │    Seshat.Commands.Registry       Seshat.AX.Client
+                  │           │ ← Command struct          │ one native process
+                  │           │ → ordered OSC msgs        │ per call, no OSC
+                  ▼           ▼                           ▼
+            Seshat.OSC.Transport                      native/seshat_ax (seshat-ax)
+             ← GenServer over :gen_udp                    │
+                       │                                  ▼  ← macOS Accessibility API
+                       ▼                              Ableton Live's Settings window
             AbletonOSC → Ableton Live
 ```
+
+Two tools take a second path below `Handlers` that never touches `Transport`
+or AbletonOSC at all: Live's application-wide audio *device* preference isn't
+in the Live Object Model at any version of the bridge, so `get_audio_outputs`
+and `set_audio_output` reach it through `Seshat.AX.Client`, which spawns the
+native helper at [native/seshat_ax/main.m](native/seshat_ax/main.m) once per
+call to drive Live's Settings window via the macOS Accessibility API — the one
+door out of `lib/seshat/` allowed to start a process
+(`test/seshat/ax/client_test.exs` greps the rest of `lib/` to keep it that
+way). Both tools opt out of the undo-step wrapping every other tool gets
+(`undo_step: false`) and out of the OSC undo-step lock, because the mechanism
+they use cannot reach Live's undo history or its OSC socket either.
 
 `Seshat.Instructions` carries the session-level conventions no single tool
 description can and is sent as MCP server `instructions` at connect time. One
@@ -121,8 +136,11 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/music/pitch.ex](lib/seshat/music/pitch.ex) | MIDI pitch → note name, shared by the notes reader and session state |
 | [lib/seshat/library/catalog.ex](lib/seshat/library/catalog.ex) | Tag-aware sound catalog — ETS + `~/.seshat/catalog.json`, merge and search |
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
+| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools — the only module under `lib/seshat/` allowed to start a process, pinned by a grep test |
+| [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a four-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for |
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
+| [lib/mix/tasks/ax.install.ex](lib/mix/tasks/ax.install.ex) | `mix ax.install` — macOS-only. Compiles the helper with warnings as errors and renames it over `~/.seshat/bin/seshat-ax` only on success, then reports whether macOS still trusts it. Deliberately outside `mix compile` and the Linux CI job |
 | [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Owns every wire fact: `API.md` (addresses, reply shapes, measured behaviour), `SESHAT.md` (every divergence from upstream), `FORK_GAPS.md` (LOM members without an address), `issues.md` (fork defects). See "Before using any OSC address" |
 | [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — fast-forwards the submodule to `origin/master`, then copies the fork wholesale into Live's Remote Scripts, **naming the commit it deployed**. Refuses rather than misreport: a dirty checkout, a detached HEAD carrying unbranched commits, or an old Seshat revision whose pin the fork has moved past. `--no-pull` installs the checkout as it stands, `--allow-dirty` includes uncommitted edits |
 
@@ -491,6 +509,15 @@ boundary. Read-only tools are wrapped too — empty pairs are measured free,
 so no mutating-tool list has to be hand-maintained — while `undo` and `redo`
 stay unwrapped and each sends a defensive lone `end_undo_step` first, so a
 `begin` leaked by a BEAM death can't fold a later undo into stale grouping.
+**There is now one narrow opt-out**, added with the AX audio-output tools: a
+definition carrying `undo_step: false` dispatches with no lock and no
+begin/end datagrams, and `Handlers` derives that set from
+`Definitions.unstepped_names/0` rather than a hand-kept list. It is for a tool
+whose mechanism *cannot* contribute to Live's undo history — today only the two
+Accessibility-backed tools, which change an Ableton preference rather than the
+Set — never a convenience for read-only OSC tools, which stay wrapped for the
+reason above. `definitions_test` pins the set to exactly those two names, and
+`handlers_test` proves each sends zero OSC datagrams.
 The `undo`/`redo` tool descriptions now teach the model that one step is one
 tool call, not one user message, so "undo that request" after a multi-track
 create means one `undo` per call that changed Live, newest first. Plan
