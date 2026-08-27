@@ -194,6 +194,28 @@ you can narrow by — try one and confirm it narrows. Confirm the model presents
 fire → "next" (delete + load) → "keep that one" — the set ends holding only the
 winner. Then an effect A/B via `bypass_device`.
 
+## Mixer and note edits route to one call each
+
+*Why manual: requires a fresh conversational request; judges which tool the model reaches for*
+*Last run: —*
+
+The 2026-08-27 consolidation bet that one `set_mixer` and one `edit_notes`
+route better than the thirteen and three names they replaced. In a fresh
+conversation with a set of a few named tracks and a return: "bring the master
+down a touch and mute the reverb return," then, with a MIDI clip open, "make
+the third note a little quieter."
+
+Expect exactly two `set_mixer` calls for the first — one `target: "master"`
+with a lower volume, one `target: "return"` with `mute: true` — with no
+attempt at a `set_master_volume` or `set_return_track_mute` that no longer
+exists, and no refusal about a missing property. For the second, expect
+`get_clip_notes` then **one** `edit_notes` whose window is that note's pitch
+and start, not a `write_midi_notes` after a delete. The replies speak music.
+
+A guessed old name means the description didn't carry the routing; a
+read-delete-rewrite means `get_clip_notes`'s rewritten edit-loop sentence
+didn't land.
+
 ## Show-first sequencing
 
 *Why manual: requires a fresh conversational request and manual starting view*

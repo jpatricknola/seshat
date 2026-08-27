@@ -18,41 +18,49 @@ exist because a typo'd address looks exactly like success.
   what raises, the probe rig) are in that file too; Seshat's own side
   (ports, value conventions, ordering hazards, reply correlation) is in
   [.claude/docs/ableton-osc-reference.md](../docs/ableton-osc-reference.md).
-- **The bridge is our fork, and editing it is two commits.**
-  [priv/AbletonOSC](../../priv/AbletonOSC) is a git submodule
-  ([jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC)), so an
-  address upstream lacks is ours to add rather than ours to work around. The
-  sequence, in order, with the trap in each step:
+- **The bridge is our fork, but this submodule is never its development
+  checkout.** [priv/AbletonOSC](../../priv/AbletonOSC) is Seshat's pinned,
+  disposable consumer checkout of
+  [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC). **Never
+  edit or commit fork files here, and never create a development/topic branch
+  here.** Local commits in a submodule create an unnecessary second line of
+  development and diverge as soon as the canonical fork moves. Do all fork
+  development in the standalone clone (on this machine,
+  `/Users/patrick/ableton-osc`) or another standalone clone of that repository.
 
-  1. `git -C priv/AbletonOSC checkout master` **first**. `git submodule update
-     --init` leaves a *detached HEAD*, and a commit made there belongs to no
-     branch and pushes nowhere. `mix abletonosc.install` refuses to run against
-     a detached HEAD carrying commits rather than silently abandoning them, but
-     that is a backstop, not a substitute for doing this first.
-  2. Edit the Python, then `commit` and `push` **inside** `priv/AbletonOSC`.
+  An address upstream lacks is ours to add rather than ours to work around.
+  The sequence, in order:
 
-     While this step is mid-flight the submodule is dirty, and
-     `mix abletonosc.install` refuses a dirty checkout — it names the commit it
-     deploys, and an uncommitted edit makes that name a lie. To install and
-     audition your edit before committing it, pass `--allow-dirty`; the report
-     then says the deployed Python is not any commit. `mix test` is unaffected
-     either way.
-  3. `git add priv/AbletonOSC` from the Seshat root — that stages the new SHA,
-     not the files. Put it in the same Seshat commit as the Elixir side, so the
-     pin and the code depending on it move together.
-  4. `mix abletonosc.install` and **restart Live**. The tests grep the submodule
-     in this repo; Live runs the *copy* in Remote Scripts. Skip this and a green
-     suite is telling you about Python that Live has never loaded. That failure
-     mode is new with the fork — treat a passing test on unreinstalled Python as
-     no evidence at all.
+  1. In the standalone fork clone, start a topic branch from the current
+     `origin/master`. Edit, test, commit and push there, then merge through the
+     fork's required pull request workflow. Documentation-only changes follow
+     exactly the same fork workflow.
+  2. Only after the fork change is on canonical `origin/master`, update
+     `priv/AbletonOSC` to that merged commit. Do not pin Seshat to an unpushed
+     commit or a topic-branch-only commit.
+  3. `git add priv/AbletonOSC` from the Seshat root — that stages only the new
+     gitlink SHA. Put it in the same Seshat commit as the Elixir side when the
+     two depend on each other, so the pin and its consumer move together.
+  4. When runtime files changed, run `mix abletonosc.install` and **restart
+     Live**. The tests grep the submodule in this repo; Live runs the *copy* in
+     Remote Scripts. Skip this after a Python change and a green suite is
+     telling you about Python that Live has never loaded. That failure mode is
+     new with the fork — treat a passing test on unreinstalled Python as no
+     evidence at all. Documentation-only changes still require steps 1–3, but
+     not installation or restart because Live does not consume them.
 
-     The task **fetches and fast-forwards the submodule to `origin/master`
-     before copying**, and prints the commit it installed. That is the fix for
-     the 2026-08-05 failure where a merged fork PR was installed, restarted
-     around and smoke-tested against — as two-day-old Python, because merging on
-     GitHub moves the remote and nothing in this repo moves the checkout. Use
-     `--no-pull` to install the checkout exactly as it stands: offline work, or
-     deliberately bisecting an older bridge against Live.
+  A dirty or locally committed `priv/AbletonOSC` is a recovery situation, not a
+  development workflow. Reproduce or cherry-pick the work into a standalone
+  fork branch, merge it there, then return the submodule to the merged
+  `origin/master` commit before advancing Seshat's pin.
+
+  The task **fetches and fast-forwards the submodule to `origin/master` before
+  copying**, and prints the commit it installed. That is the fix for the
+  2026-08-05 failure where a merged fork PR was installed, restarted around and
+  smoke-tested against — as two-day-old Python, because merging on GitHub moves
+  the remote and nothing in this repo moves the checkout. Use `--no-pull` to
+  install the checkout exactly as it stands: offline work, or deliberately
+  bisecting an older bridge against Live.
 
   A fresh git worktree (`/lifecycle`, worktree-isolated agents) has an empty
   `priv/AbletonOSC` until step 0, `git submodule update --init`; the

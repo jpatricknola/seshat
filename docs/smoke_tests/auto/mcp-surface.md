@@ -21,6 +21,28 @@ at connect, so after a server restart the cached list is the *old* schema and
 proves nothing. This is also how you tell "the server is wrong" from "my client
 is stale".
 
+## The surface budget is measured, not guessed
+
+*Last run: —*
+
+`python3 .claude/skills/smoke-test/scripts/mcp_call.py stats` against a freshly
+restarted server. Record all four values here: advertised tool count, compact
+JSON bytes for the complete `tools/list` array, largest individual tool, and
+that tool's compact JSON bytes.
+
+The consolidation plans from a 67-tool / 62,784-byte baseline to 52 tools. Use
+the byte comparison only if `stats` reproduces the old baseline when run on the
+pre-consolidation definitions; otherwise state that the encoding method changed
+and establish this output as the new baseline. The count must match
+`Definitions.all()`, total bytes must fall, and the largest tool must still be a
+cohesive noun/workflow rather than a miscellaneous bag assembled to save names.
+
+A smaller count with larger total bytes is not automatically a failure, but it
+must be explained by removed repetition or better routing text. A largest tool
+whose fields have unrelated targeting, safety or verification semantics is a
+design failure even when the total shrank — split it by workflow before calling
+the consolidation successful.
+
 ## A changed property carries what you intended
 
 *Last run: 2026-08-02 — `set_track_pan.value` carries `minimum`/`maximum`*
@@ -68,3 +90,28 @@ the write gone out, Live would have clamped it to 1.0.*
 After the rejection above, read the target back. A refusal that silently *did*
 send is the thing worth catching, and no reply string can show it to you.
 
+
+## A mutating tool with nothing required survives the client
+
+*Last run: —*
+
+`set_mixer` is the first *mutating* tool whose schema has `required: []` and
+an optional `target` enum — everything on it is optional because the handler
+decides what a target needs. The list-level risk is the one at the top of this
+file.
+
+`mcp_call.py schema set_mixer target` shows the enum
+`["track", "return", "master", "cue"]` and `set_mixer` absent from `required`;
+`schema set_mixer volume` carries `minimum` 0 and `maximum` 1. Then
+`call set_mixer '{"track": 0, "pan": -1.0}'` reaches Ableton (pan reads back
+`50L`), `call set_mixer '{"track": 0}'` returns a *tool result* saying no
+property was given, and `call set_mixer '{"track": 0, "gain": 0.5}'` returns a
+tool result that names the six properties `set_mixer` does take (the
+Elixir-side validator ignores keys the schema doesn't name, so this lands as
+"no property given") — never a JSON-RPC `-32602` for either. If Peri rejects
+the unknown key on the wire instead, `Seshat.MCP.Server`'s `-32602` rewrite
+still turns it into a tool result; record which path answered.
+
+A `-32602` here is Peri rejecting before `Validation`'s wording can be
+delivered; the tool list itself disappearing is the schema being refused
+wholesale.

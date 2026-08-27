@@ -70,9 +70,12 @@ in the LOM but not in the fork is a **fork gap** — plan it as Python, never
 as UI scripting, and **record it in the fork's
 [priv/AbletonOSC/FORK_GAPS.md](priv/AbletonOSC/FORK_GAPS.md)** (member,
 evidence tier, verification source and date, shape to build, consumer) in
-the same pass — that is a submodule edit, so it lands as a fork commit
-(doc-only, so no pin bump); check that file first so you don't re-record
-one. If Live is running, the probe rig under "Measuring the Live
+the same pass. Never edit the copy under `priv/AbletonOSC`: make and merge the
+documentation commit in the standalone fork clone (currently
+`/Users/patrick/ableton-osc`), then update the Seshat submodule pin to the
+merged `origin/master` commit even though it is doc-only (no install or Live
+restart is needed); check that file first so you don't
+re-record one. If Live is running, the probe rig under "Measuring the Live
 API without building the feature first" in
 [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md)
 answers behavioural questions in minutes.
