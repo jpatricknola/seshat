@@ -231,3 +231,72 @@ check is wrong in `query_scene_names`
 ([lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)). An
 error advising a re-read on a quiet set means the length check is comparing
 against the wrong count.
+
+## `edit_notes` rewrites only the window
+
+*Last run: —*
+
+`edit_notes` is read → `/live/clip/remove/notes` → `/live/clip/add/notes` →
+read, in one undo step. The measured shape (2026-08-27) and the two
+conversions it depends on — velocity re-sent as an integer, mute as `0|1` —
+are in [priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md) and in the
+handler; this test is that they still hold.
+
+On a fresh MIDI track, `write_midi_notes` four notes with off-grid values:
+pitch 60 at 0.0 (duration 0.3333, velocity 100), pitch 60 at 1.6667 (1.75,
+37), pitch 64 at 0.25 (0.5, 100), pitch 67 at 2.125 (0.125, 127).
+`get_clip_notes`, then `edit_notes start_pitch: 60, pitch_span: 1,
+velocity_delta: 10`, then `get_clip_notes` again.
+
+The reply says 2 notes matched and 2 read back. The two pitch-60 notes show
+velocity 110 and 47 with their start and duration **unchanged to every printed
+digit**; the pitch-64 and pitch-67 notes are identical to the first read. One
+`undo` restores the first read exactly.
+
+A note count that dropped means the `add` datagram was rejected — check the
+velocity/mute types on the wire. Starts or durations that moved means the
+handler rounded what it read. An untouched note that changed means the remove
+window was wider than the read window.
+
+## A window edit that would leave the range is refused
+
+*Last run: —*
+
+Same clip. `edit_notes start_pitch: 67, pitch_span: 1, transpose: 60` (G4 →
+G9, past 127) and `edit_notes shift: -1.0` on the whole clip (the 0.0 note
+would go negative).
+
+Both refuse before sending, each naming what would have left the range and
+how many notes; `get_clip_notes` is identical to before. A `transpose: -12`
+on the same window succeeds and reads back as pitch 55.
+
+Notes piled onto pitch 127 or 0, or a note at a negative start, means the
+refusal is happening after the rewrite.
+
+## `delete: true` empties the window and nothing else
+
+*Last run: —*
+
+Same clip. `edit_notes start_time: 2.0, time_span: 1.0, delete: true`. The
+window is beats 2–3; the pitch-60 note starting at 1.6667 sounds into it but
+does not *start* in it.
+
+The reply says 1 note matched (pitch 67 at 2.125) and 0 remain in the window;
+`get_clip_notes` shows three notes, the 1.6667 note among them. One `undo`
+brings the fourth back.
+
+The 1.6667 note gone means the window was matched by overlap rather than by
+start — the measured semantics of `remove/notes` — and the description's
+promise is wrong.
+
+## Renaming rides `set_clip_properties`
+
+*Last run: —*
+
+`set_clip_properties name: "Verse A", looping: true` on an existing clip, one
+call. The reply echoes both read back; `get_clip_slots` shows the new name on
+the right slot; `get_clip_properties` shows looping on.
+
+A reply that lists `looping` but not `name`, or a name reported with a number
+formatter's output, means the string property missed the write list or the
+formatter.

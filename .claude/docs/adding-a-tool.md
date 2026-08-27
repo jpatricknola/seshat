@@ -4,6 +4,43 @@ Tools are defined once and surfaced over MCP automatically. Tool definitions
 are the single model-facing contract; there is no separate command schema to
 keep in sync.
 
+## Before minting a name
+
+The backend capability inventory is deliberately much larger than the tool
+surface. A new AbletonOSC address, AX helper command, LOM member or generation
+provider operation does **not** imply a new model-facing tool.
+
+Apply this routing test first:
+
+1. Same verb, different destination → add a `target` value to the existing
+   tool.
+2. Same noun, another cohesive property → add an optional property to the
+   existing tool.
+3. One action as the producer experiences it, even when it takes several
+   primitives → one high-level tool whose domain operation composes them.
+4. Knowledge needed only while another action runs → put it in that action's
+   reply, or in `Session.State` when it is listened to and read frequently.
+5. Mint a name only when the model must choose a genuinely different verb,
+   noun, or workflow.
+
+Completing `priv/AbletonOSC/FORK_GAPS.md` is bridge work, not a publication
+queue. Close gaps freely; publish them through the smallest existing intention
+that fits. Provider names, OSC addresses, AX command names and pipeline stages
+stay below the tool contract unless the producer genuinely chooses among them.
+
+Consolidation has a cohesion limit. A property bag or action enum stays one
+tool only while its values share the same noun/workflow, targeting shape,
+safety and verification semantics. Split when those differ. Never create a
+generic AX remote or a miscellaneous action enum merely to keep the count down.
+
+**80 tools is the review line.** The test suite stops an unreviewed 81st tool.
+Any plan that adds a name records why none of the shapes above fit, plus the
+before/after tool count, serialized `tools/list` bytes, largest schema, new
+near-neighbour names, conditional validation cases, and a representative
+fresh-conversation selection check. Past roughly 90 tools, measure client
+support for modal tool sets before adopting them. The standing reasoning is in
+[tool-surface-scaling.md](../../docs/evaluating/tool-surface-scaling.md).
+
 ## The four steps
 
 ### 1. Define it — `lib/seshat/tools/definitions.ex`
@@ -67,9 +104,25 @@ Return `{:ok, message}` or `{:error, reason}`. The message goes straight back to
 the model, so make it state what actually happened — the model uses it to
 decide whether to keep going.
 
-For anything multi-step or stateful, add a `%Command{}` clause to
-`Seshat.Commands.Registry` instead and call `execute/1`. Registry is where
-sequences live (create-then-name a track, ensure-clip-then-add-notes).
+For a short, ordered OSC mutation sequence representable as a `%Command{}`, add
+a clause to `Seshat.Commands.Registry` and call `execute/1`. Registry owns
+bounded wire sequences such as create-then-name a track or
+ensure-clip-then-add-notes; it is not a generic workflow engine.
+
+Keep `Handlers` as the sole dispatcher, not the home of every future domain
+implementation. A literal single-message call can stay in its clause. Extract a
+focused module when the operation has independently testable arithmetic,
+substantial cross-field validation, several backend steps, provider adapters,
+or a lifecycle of its own. Those domain modules may compose Registry commands,
+OSC reads, AX commands and provider adapters; the handler should validate/
+dispatch and format the outcome. Generation backends and AX/OSC mechanics stay
+behind that seam.
+
+When a consolidated schema has conditional rules that supported JSON Schema
+cannot express, preflight them before any transport call. Collect all missing,
+conflicting and target-unsupported fields, reject the whole call, and name the
+accepted alternatives. If a third tool needs the same kind of support matrix,
+extract a shared convention rather than growing another bespoke validator.
 
 Every tool registered in `Definitions` is automatically wrapped in its own
 Ableton undo step — `Handlers.call/2` sends `begin_undo_step`/`end_undo_step`
@@ -112,6 +165,10 @@ that way — no prose anywhere restates it (the README and `CLAUDE.md` both
 deliberately describe the surface without a number, because a count copied into
 a sentence goes stale silently and nothing fails).
 
+Keep the separate `length(tools) <= 80` review-line assertion. The exact count
+changes normally; the ceiling must fail independently so an implementer cannot
+cross it by mechanically bumping the expected count.
+
 ### 4. Verify
 
 ```
@@ -121,6 +178,12 @@ mix precommit
 `Seshat.MCP.ToolsTest` will confirm the tool appears on the MCP server with a
 matching schema. If the name doesn't round-trip through `Macro.camelize/1` →
 `Macro.underscore/1`, that test fails — stick to `lower_snake_case` names.
+
+For any surface change, also run the real-handshake surface-stat check in
+`docs/smoke_tests/auto/mcp-surface.md`. Record the advertised count and compact
+JSON byte size, inspect the largest schema, and run the fresh-conversation
+selection check named by the feature's plan. Count is only a proxy: fewer tools
+that route worse is a regression.
 
 ## What you do NOT do
 

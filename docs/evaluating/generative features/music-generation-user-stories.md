@@ -21,6 +21,14 @@ rendered audio, where the term is unambiguous.
   related tracks is one high-level generation operation and one Ableton undo
   step. It must not be implemented as a loose conversation-time chain of
   independently undoable track, device, and note mutations.
+- **The tool names the producer action, not the generation stack.** Provider
+  selection, per-part models, sound resolution, Live-native conversions,
+  rendering and import are domain-operation steps behind the tool contract.
+  Changing the bake-off winner changes an adapter, not `Definitions`.
+  Revision gets another name only if it proves to be a genuinely different
+  producer workflow; otherwise it is an action or parameter on the same
+  high-level operation. See
+  [tool-surface-scaling.md](../tool-surface-scaling.md#architecture-boundary--complete-capability-bounded-intent).
 - **MIDI is the default output.** It is the editable form and the feature's
   main differentiator. An explicit audio request selects audio; the response
   always names the form that was created.
