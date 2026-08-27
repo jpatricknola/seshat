@@ -11,13 +11,19 @@ Ranking criteria is **impact-per-effort**, mission impact weighed against cost. 
 
 Every issue carries its scores on the line under its heading — **impact** (1-10,
 user-visible value: how much better the producer's experience gets) and **lift**
-(1-10, work required: 1 is a quick PR), with the quotient that sets the rank. The
-whole queue was scored and reordered on that quotient on 2026-08-27. Score a new
-issue the same way and insert it at its quotient. Two caveats the numbers cannot
-carry, both live in the queue today: impact scores *user-visible* value, so pure
-plumbing ("Search eval harness") scores low however necessary it is; and a
-quotient is not a dependency, so an item may outrank something it is gated on —
-where that happens the item says so.
+(1-10, work required: 1 is a quick PR), with the quotient. The whole queue was
+scored and reordered on 2026-08-27. Score a new issue the same way and insert it
+at its quotient.
+
+**Dependencies outrank the quotient.** The quotient orders work that is *ready*;
+it never places an issue above something that has to land first. Where an issue
+is gated, it says so under its scores and its gate sits above it — which is why
+"Search eval harness" leads the queue at a quotient of 0.67, ahead of six
+catalog levers that score better and cannot start until it exists. Sort
+prerequisites first, then rank the ready work by quotient inside that. A related
+trap: impact scores *user-visible* value, so pure plumbing scores low however
+necessary it is. Read a low quotient near the top as "cheap thing that unblocks
+expensive things," not as a mis-rank.
 
 **Removing an issue from the roadmap**
 Issue numbers are ranks, not stable identifiers - when something ships, delete all trace of it from the roadmap and let the rest renumber (the `/ship` skill handles this). If a shipped issue had a detailed plan doc, move that doc to [archive/](archive/) with a status banner. Nothing else about a ship stays here — this file documents future work only, and ship history lives in git, CLAUDE.md's Current focus, and [archive/](archive/). A shipped issue is mentioned below only where an *open* item needs it as context.  **Cite an issue by its title, never by its rank**
@@ -31,14 +37,79 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Widen the search slate at tied score bands
+## #1 · Catalog vocabulary — read tag axes, teach the menu proactively
+
+**Impact 8 · Lift 4 · 2.00 impact-per-effort**
+
+**Goal:** read the tag *axes* (Character, Genres, Type, …) and the
+preset→device relation out of Ableton's database, and surface the real
+vocabulary proactively in tool replies — so the model sees the menu before
+ordering, instead of guessing tags and learning only from failures.
+
+**Why:** this is levers №1+№2 of
+[sound-search-options.md](evaluating/sound-search-options.md) — read that doc before
+planning; it grounds every claim in measurements. The top of the search
+funnel leaks first-attempt vocabulary misses ("warm" isn't a tag here, `Soft`
+is), and the axes fix real traps the flat tag list creates (`Distortion` the
+device tag vs. `Distorted` the character tag). Highest certain win left in
+the catalog area, at Low/Low-Med effort. №2 also enables future levers, which
+is why they ship together.
+
+**User stories:**
+- As a producer asking for "a warm pad," the first slate is right because
+  Seshat already knows this library's word for it is `Soft` — it sees the
+  menu before ordering instead of guessing and learning from misses.
+- As a producer asking for "something distorted," I get presets with a
+  distorted *character*, not everything touched by the Distortion *device* —
+  the axes keep those apart.
+
+**Planner notes:**
+- The axis lives in `files.parent_id`, which
+  `Seshat.Library.AbletonDB.read_tags/1` currently discards; the
+  preset→device map is the `file_devices` table (4,535 rows on the dev
+  machine).
+- Vocabulary is per-machine (depends on installed Packs) — it must flow
+  through replies/catalog data, never be hardcoded in a tool description.
+  That rule already governs `search_library`'s design.
+- Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
+  migration shims (see CLAUDE.md).
+
+## #2 · Search eval harness — numbers before opinions
+
+**Impact 2 · Lift 3 · 0.67 impact-per-effort**
+
+**Goal:** a repeatable harness that scores `search_library` relevance against
+a fixed set of realistic "describe a sound" queries, so every further catalog
+lever gets measured instead of argued.
+
+**Why:** lever №9 of [sound-search-options.md](evaluating/sound-search-options.md),
+estimated at a morning's work. It exists to **gate the six catalog levers**:
+"Widen the search slate at tied score bands", "Browser preview audition",
+"Opt-in `samples` index", "Accepted-search memory", "User XMP tags" and "LLM
+enrichment at reindex". After "Catalog vocabulary" lands, the eval decides
+whether any of them is still worth buying. "Catalog vocabulary" itself is not
+gated — it is a certain win with or without numbers.
+
+**Its quotient understates it, and its rank corrects for that.** Impact 2 scores
+the *user-visible* value, which is zero — nobody hears a harness. All six gated
+levers score better, so on quotient alone this would sit near the bottom of the
+queue with every item that depends on it above it. It ranks second instead
+because the dependency wins: this and "Catalog vocabulary" are the only two
+issues in the catalog block that can be started today.
+
+**Planner notes:** the result-quality work already used a six-query/77-slot
+benchmark informally (see
+[archive/PLAN_catalog_result_quality.md](archive/PLAN_catalog_result_quality.md));
+formalize that rather than inventing a new one. Runs offline against the
+catalog — no Ableton needed.
+
+## #3 · Widen the search slate at tied score bands
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
-**Gated on "Search eval harness — numbers before opinions"** — buy only if
-the eval still shows the miss it targets after "Catalog vocabulary" lands.
-Ranked above its own gate by impact-per-effort; the harness has to land
-first regardless.
+**Gated on "Search eval harness — numbers before opinions"**, which ranks
+above it for that reason — buy this only if the eval still shows the miss it
+targets once "Catalog vocabulary" has landed.
 
 **Goal:** when the score band straddling the result cut is large (the ~46
 identical-tag `E-Piano *` presets), show more of the band rather than
@@ -53,7 +124,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #2 · A rejected index says which index, and what to call next
+## #4 · A rejected index says which index, and what to call next
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -114,14 +185,13 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #3 · Browser preview audition
+## #5 · Browser preview audition
 
 **Impact 7 · Lift 3 · 2.33 impact-per-effort**
 
-**Gated on "Search eval harness — numbers before opinions"** — buy only if
-the eval still shows the miss it targets after "Catalog vocabulary" lands.
-Ranked above its own gate by impact-per-effort; the harness has to land
-first regardless.
+**Gated on "Search eval harness — numbers before opinions"**, which ranks
+above it for that reason — buy this only if the eval still shows the miss it
+targets once "Catalog vocabulary" has landed.
 
 **Goal:** play a preset's browser preview instead of loading it, so the agent
 can flip through ten candidates in the time one heavy preset takes to
@@ -143,44 +213,7 @@ what decides.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #4 · Catalog vocabulary — read tag axes, teach the menu proactively
-
-**Impact 8 · Lift 4 · 2.00 impact-per-effort**
-
-**Goal:** read the tag *axes* (Character, Genres, Type, …) and the
-preset→device relation out of Ableton's database, and surface the real
-vocabulary proactively in tool replies — so the model sees the menu before
-ordering, instead of guessing tags and learning only from failures.
-
-**Why:** this is levers №1+№2 of
-[sound-search-options.md](evaluating/sound-search-options.md) — read that doc before
-planning; it grounds every claim in measurements. The top of the search
-funnel leaks first-attempt vocabulary misses ("warm" isn't a tag here, `Soft`
-is), and the axes fix real traps the flat tag list creates (`Distortion` the
-device tag vs. `Distorted` the character tag). Highest certain win left in
-the catalog area, at Low/Low-Med effort. №2 also enables future levers, which
-is why they ship together.
-
-**User stories:**
-- As a producer asking for "a warm pad," the first slate is right because
-  Seshat already knows this library's word for it is `Soft` — it sees the
-  menu before ordering instead of guessing and learning from misses.
-- As a producer asking for "something distorted," I get presets with a
-  distorted *character*, not everything touched by the Distortion *device* —
-  the axes keep those apart.
-
-**Planner notes:**
-- The axis lives in `files.parent_id`, which
-  `Seshat.Library.AbletonDB.read_tags/1` currently discards; the
-  preset→device map is the `file_devices` table (4,535 rows on the dev
-  machine).
-- Vocabulary is per-machine (depends on installed Packs) — it must flow
-  through replies/catalog data, never be hardcoded in a tool description.
-  That rule already governs `search_library`'s design.
-- Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
-  migration shims (see CLAUDE.md).
-
-## #5 · `start_new_project` — the setup wizard, and prompt budget back
+## #6 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -238,7 +271,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   want, so prefer building it before that item even though ratio separates
   them.
 
-## #6 · `write_midi_notes` must chunk large note batches
+## #7 · `write_midi_notes` must chunk large note batches
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -275,7 +308,7 @@ this item moves ahead of it.
 - Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
   surface needs valid dense clips to work, not become validation errors.
 
-## #7 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #8 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Impact 4 · Lift 2 · 2.00 impact-per-effort**
 
@@ -304,7 +337,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #8 · Read-only audio input display — warn before a silent take
+## #9 · Read-only audio input display — warn before a silent take
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -335,7 +368,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #9 · Modify a note in place
+## #10 · Modify a note in place
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -350,7 +383,7 @@ read → remove range → rewrite.
   clean edit — not a read, a range delete, and a rewrite that can clip the
   notes around it.
 
-## #10 · `screenshot_live` — let Seshat see the screen
+## #11 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -376,14 +409,13 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #11 · Opt-in `samples` index
+## #12 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
-**Gated on "Search eval harness — numbers before opinions"** — buy only if
-the eval still shows the miss it targets after "Catalog vocabulary" lands.
-Ranked above its own gate by impact-per-effort; the harness has to land
-first regardless.
+**Gated on "Search eval harness — numbers before opinions"**, which ranks
+above it for that reason — buy this only if the eval still shows the miss it
+targets once "Catalog vocabulary" has landed.
 
 **Goal:** index the `samples` category (3,567 items) into the catalog,
 returned **only** when `category: samples` is explicitly requested.
@@ -401,14 +433,13 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #12 · Accepted-search memory
+## #13 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
-**Gated on "Search eval harness — numbers before opinions"** — buy only if
-the eval still shows the miss it targets after "Catalog vocabulary" lands.
-Ranked above its own gate by impact-per-effort; the harness has to land
-first regardless.
+**Gated on "Search eval harness — numbers before opinions"**, which ranks
+above it for that reason — buy this only if the eval still shows the miss it
+targets once "Catalog vocabulary" has landed.
 
 **Goal:** remember what a description resolved to — "this request led to this
 accepted preset" — and let it bias future rankings.
@@ -426,7 +457,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #13 · Producer personas — switchable musical taste
+## #14 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -461,7 +492,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #14 · Verify destructive mutations before reporting success
+## #15 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -533,14 +564,13 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #15 · User XMP tags
+## #16 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
-**Gated on "Search eval harness — numbers before opinions"** — buy only if
-the eval still shows the miss it targets after "Catalog vocabulary" lands.
-Ranked above its own gate by impact-per-effort; the harness has to land
-first regardless.
+**Gated on "Search eval harness — numbers before opinions"**, which ranks
+above it for that reason — buy this only if the eval still shows the miss it
+targets once "Catalog vocabulary" has landed.
 
 **Goal:** read the user's own tags from
 `User Library/Ableton Folder Info/12/`.
@@ -553,7 +583,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #16 · Small OSC breadth — grab bag
+## #17 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -576,14 +606,13 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #17 · LLM enrichment at reindex
+## #18 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
-**Gated on "Search eval harness — numbers before opinions"** — buy only if
-the eval still shows the miss it targets after "Catalog vocabulary" lands.
-Ranked above its own gate by impact-per-effort; the harness has to land
-first regardless.
+**Gated on "Search eval harness — numbers before opinions"**, which ranks
+above it for that reason — buy this only if the eval still shows the miss it
+targets once "Catalog vocabulary" has landed.
 
 **Goal:** generate tags/descriptions for untagged and third-party items at
 reindex time, using an external model service or an MCP-client-driven tagging
@@ -603,34 +632,6 @@ detuned vocabulary exists to carry them.
 - As a producer asking for "a warm, slightly out-of-tune electric piano,"
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
-
-## #18 · Search eval harness — numbers before opinions
-
-**Impact 2 · Lift 3 · 0.67 impact-per-effort**
-
-**Goal:** a repeatable harness that scores `search_library` relevance against
-a fixed set of realistic "describe a sound" queries, so every further catalog
-lever gets measured instead of argued.
-
-**Why:** lever №9 of [sound-search-options.md](evaluating/sound-search-options.md),
-estimated at a morning's work. It exists to **gate the six catalog levers**:
-"Widen the search slate at tied score bands", "Browser preview audition",
-"Opt-in `samples` index", "Accepted-search memory", "User XMP tags" and "LLM
-enrichment at reindex". After "Catalog vocabulary" lands, the eval decides
-whether any of them is still worth buying. "Catalog vocabulary" itself is not
-gated — it is a certain win with or without numbers.
-
-**Its rank understates it.** Impact 2 scores the *user-visible* value, which is
-zero: nobody hears a harness. Every gated lever therefore outranks it on
-ratio, which inverts the dependency — so build this before any of them
-regardless of where the queue puts it. The scores rank work; they do not
-resolve ordering constraints between items.
-
-**Planner notes:** the result-quality work already used a six-query/77-slot
-benchmark informally (see
-[archive/PLAN_catalog_result_quality.md](archive/PLAN_catalog_result_quality.md));
-formalize that rather than inventing a new one. Runs offline against the
-catalog — no Ableton needed.
 
 ## #19 · AX-backed audio output — the first narrow UI workflow
 
