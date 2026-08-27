@@ -213,10 +213,11 @@ Two places, and the choice is not a matter of taste:
 1. **The tool description** — anything that matters when using *this* tool:
    chord intervals, drum-map pitches, warp modes, index bases, which tool to
    call first, how to present the result. This is the default, and it is the
-   only one with no length limit (~57KB of schemas ships every
-   request — 52 tools, measured 2026-08-28 over the MCP-converted schemas;
-   `mcp_call.py stats` measures the client-visible number over a real
-   handshake).
+   only one with no length limit (58,709 bytes of schemas ship in every
+   request — 52 tools, largest `set_clip_properties` at 3,585 bytes, measured
+   2026-08-28 client-side with `mcp_call.py stats` over a real `tools/list`
+   handshake; the Elixir-side estimate was 57,450, so add ~2% when guessing
+   from `Definitions`).
 2. **`Seshat.Instructions`** — only what belongs to *no* tool: register, what
    to do when a request is outside the tools entirely, the fact that the view
    has already moved. Hard-capped at 2,048 characters, because Claude Desktop

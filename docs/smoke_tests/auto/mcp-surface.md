@@ -11,7 +11,7 @@ handshake against `http://localhost:4000/mcp`.
 
 ## The tool list survives a real handshake
 
-*Last run: 2026-08-02 — 65 tools, matching `Definitions.all()`*
+*Last run: 2026-08-28 — 52 tools, matching `Definitions.all()`*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py list`. The count must
 match `Definitions.all()`.
@@ -23,17 +23,18 @@ is stale".
 
 ## The surface budget is measured, not guessed
 
-*Last run: —*
+*Last run: 2026-08-28 — **52 tools / 58,709 bytes / largest `set_clip_properties` at 3,585 bytes**, from `mcp_call.py stats` against the server started 02:07 that day on this branch. The 67-tool / 62,784-byte planning figure was never produced by `stats`, so the two are not comparable and this output is the new baseline; the like-for-like Elixir-side pair (62,784 → 57,450) is the only "bytes fell" evidence. `set_clip_properties` is one noun (a clip's own playback properties) — cohesive.*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py stats` against a freshly
 restarted server. Record all four values here: advertised tool count, compact
 JSON bytes for the complete `tools/list` array, largest individual tool, and
 that tool's compact JSON bytes.
 
-The consolidation plans from a 67-tool / 62,784-byte baseline to 52 tools.
+The consolidation planned from a 67-tool / 62,784-byte baseline to 52 tools.
 For reference, encoding the MCP-converted schemas Elixir-side on 2026-08-28 gave
-52 tools / 57,450 bytes, largest `set_clip_properties` at 3,555 — that is *not*
-this check's answer, only the shape to expect from one. Use
+52 tools / 57,450 bytes, largest `set_clip_properties` at 3,555 — the
+client-visible number from `stats` the same day was 58,709 / 3,585, about 2%
+more, and is the one to quote. Use
 the byte comparison only if `stats` reproduces the old baseline when run on the
 pre-consolidation definitions; otherwise state that the encoding method changed
 and establish this output as the new baseline. The count must match
@@ -48,8 +49,7 @@ the consolidation successful.
 
 ## A changed property carries what you intended
 
-*Last run: — (the 2026-08-02 run read `set_track_pan.value`, a tool the
-2026-08-27 consolidation removed; `set_mixer.pan` is the same shape)*
+*Last run: 2026-08-28 — `schema set_mixer pan` came back as a plain `{"type": "number", "minimum": -1.0, "maximum": 1.0}` with its description; no `oneOf` wrapper on this property.*
 
 `mcp_call.py schema <tool> <property>` for whatever moved. Recorded 2026-07-30,
 when bounds moved into the advertised schema: the encoded shape became
@@ -58,11 +58,7 @@ Bounds *inside* `oneOf` branches were the untested combination.
 
 ## A rejected call comes back readable, not as a protocol error
 
-*Last run: — (the 2026-08-03 run passed on `set_track_pan`, removed by the
-2026-08-27 consolidation: it came back as `result` with `"isError": true` and
-the text "Invalid parameters for set_track_pan — nothing was sent to
-Ableton:\n- value: must be at most 1.0 (got 2.0) — Pan position…", no `error`
-key, no `-32602`, no Peri internals)*
+*Last run: 2026-08-28 — `result` with `"isError": true`, text "Invalid parameters for set_mixer — nothing was sent to Ableton:\n- pan: must be at most 1.0 (got 2.0) — -1.0 = hard left…"; no `error` key, no `-32602`, no Peri internals.*
 
 `mcp_call.py call set_mixer '{"track": 0, "pan": 2.0}'` must return a
 `result` with `"isError": true` whose text names the bound and the value
@@ -79,7 +75,7 @@ the transcript, not as an opaque protocol error.
 
 ## An unknown tool name stays a JSON-RPC `-32602`
 
-*Last run: 2026-08-02 — `-32602`, `Tool not found: no_such_tool`*
+*Last run: 2026-08-28 — `-32602`, `Tool not found: no_such_tool`*
 
 `mcp_call.py call no_such_tool '{}'`. That is what the MCP spec says an unknown
 tool is, and it is the discriminator keeping the rewrite from swallowing real
@@ -87,10 +83,7 @@ protocol errors.
 
 ## The rejected value never reached Live
 
-*Last run: — (the 2026-08-03 run passed on `set_track_pan`: track 0's pan read
-0.0 before the rejected `value: 2.0` call and still read 0.0 afterwards via
-`get_session_state(refresh: true)`, a fresh read from Live rather than the
-mirror. `set_mixer`'s `pan` is the same path and has not been run.)*
+*Last run: 2026-08-28 — track 0 pan read 0.0 via `get_session_state(refresh: true)` after the rejected `pan: 2.0`; a subsequent `pan: -1.0` over the same path read back -1.0 fresh from Live, so the path itself works and the refusal did not send.*
 
 After the rejection above, read the target back. A refusal that silently *did*
 send is the thing worth catching, and no reply string can show it to you.
@@ -98,7 +91,7 @@ send is the thing worth catching, and no reply string can show it to you.
 
 ## A mutating tool with nothing required survives the client
 
-*Last run: —*
+*Last run: 2026-08-28 — list survived (52 tools); `set_mixer` `required: []` on the wire, `target` enum `[track, return, master, cue]`, `volume` min 0.0 / max 1.0; `pan: -1.0` reached Live (fresh read -1.0 = 50L); `{"track": 0}` and `{"track": 0, "gain": 0.5}` both returned a tool result "Nothing to set — pass at least one of volume, pan, mute, solo, arm, name. Keys the schema does not name are dropped…" — the Elixir validator path answered both, never a `-32602`.*
 
 `set_mixer` is the first *mutating* tool whose schema has `required: []` and
 an optional `target` enum — everything on it is optional because the handler

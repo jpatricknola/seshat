@@ -277,18 +277,18 @@ its own roadmap item rather than a local fix — "Pin the wording of
 `edit_notes`' partial-failure message" — because `Transport.send_message/2`
 cannot be made to fail against the test harness, so testing it means picking
 a mocking strategy for a whole family of similarly-shaped error helpers, not
-a one-line change. **Live verification has not run.** All ten new/renamed
-automated citations in `docs/smoke_tests/auto/{mixer,clips,mcp-surface}.md`
-and the one manual `conversation.md` routing check still read `Last run: —`;
-run `/smoke-test mixer`, `/smoke-test clips`, `/smoke-test mcp-surface` and
-get a person through the manual check before trusting the new tools against
-real Live. `priv/AbletonOSC/FORK_GAPS.md`'s note-modification row (pointing
+a one-line change. **Live verification ran 2026-08-28** — `/smoke-test mixer`, `clips` and
+`mcp-surface` all green against Live 12.4.5 on fork `bc171b7`, every
+citation stamped; one test was corrected on the way (`transpose: 60` on G4
+is 127, legal — the refusal check now uses 61) and one wording defect
+surfaced (`edit_notes`' window phrase, ROADMAP). The manual
+`conversation.md` routing check still needs a person. `priv/AbletonOSC/FORK_GAPS.md`'s note-modification row (pointing
 at the now-removed "Modify a note in place") is a known carry-over — the
 standalone fork clone was mid-way through an unmerged branch when this
 shipped — and `.claude/skills/smoke-test/scripts/mcp_call.py`'s new `stats`
-command still needs a run against a live server to confirm the client-
-visible schema byte count the plan measured Elixir-side (~57KB). Plan
-archived at
+command measured the client-visible surface on 2026-08-28: 52 tools,
+58,709 bytes, largest `set_clip_properties` at 3,585 (the Elixir-side
+estimate was 57,450). Plan archived at
 [docs/archive/PLAN_consolidate_tool_surface.md](docs/archive/PLAN_consolidate_tool_surface.md).
 
 **ROADMAP.md ranks features, defects and security work in one queue.**

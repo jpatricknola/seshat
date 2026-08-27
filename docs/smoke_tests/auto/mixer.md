@@ -16,7 +16,7 @@ Set-up: at least two regular tracks and one return track (create one with
 
 ## One `set_mixer` call moves several controls
 
-*Last run: —*
+*Last run: 2026-08-28 — volume 0.6/pan −0.5/mute true in one call all read back from the mirror (volume=0.6, pan=-0.5, [muted]); a single `undo` restored all three (0.85, 0.0, unmuted).*
 
 On track 1 (index 0), in **one** call: `volume: 0.6, pan: -0.5, mute: true`.
 Then `get_session_state` without `refresh: true`.
@@ -32,7 +32,7 @@ call escaped the undo-step wrap.
 
 ## A property the target lacks is refused with nothing sent
 
-*Last run: —*
+*Last run: 2026-08-28 — both refused before sending: "A return track has no arm — it has volume, pan, mute, solo, name. Nothing in this call was sent." / "The master has no mute — it has volume, pan."; return 0 volume still 0.85 in the mirror and Log.txt has zero `Setting property for return_track` lines.*
 
 `set_mixer target: "return", track: 0, arm: true, volume: 0.7`, then
 `set_mixer target: "master", mute: true`.
@@ -48,7 +48,7 @@ pre-send check.
 
 ## Master and cue ignore `track`, and read back their old value
 
-*Last run: —*
+*Last run: 2026-08-28 — `track: 7` on master raised no error; replies read "volume 0.85 (≈ 0 dB) — was 0.85" and "Cue: volume 0.5 (≈ -14 dB) — was 0.7 (≈ -6 dB)"; cue restored to 0.7 afterwards.*
 
 Read the master fader in Live, then `set_mixer target: "master", track: 7,
 volume: 0.85` (an index far past the track count) and
@@ -63,7 +63,7 @@ An "Index out of range" error means `track` leaked into the master/cue branch.
 
 ## Boundaries and a bad return index
 
-*Last run: —*
+*Last run: 2026-08-28 — last track read back volume=1.0 (+6 dB) pan=1.0 (50R), track 0 volume=0.0; return 99 refused in 0.37s wall-clock via mcp_call.py: "Return track 99 does not exist — this set has 1 return track(s)", mirror unchanged.*
 
 `set_mixer track: <last index>, volume: 1.0, pan: 1.0` — the last regular
 track — reads back at +6 dB and `50R`. `set_mixer track: 0, volume: 0.0` reads

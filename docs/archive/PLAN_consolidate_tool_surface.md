@@ -629,27 +629,37 @@ New, all with `Last run: —`:
 
 - `smoke_tests/auto/mixer.md § One set_mixer call moves several controls` —
   the fan-out; one property missing from the mirror is a wrong branch.
+  *2026-08-28: passed — volume 0.6 / pan −0.5 / mute in one call all in the mirror; one `undo` restored all three.*
 - `smoke_tests/auto/mixer.md § A property the target lacks is refused with
   nothing sent` — the all-or-nothing pre-send check.
+  *2026-08-28: passed — `arm` on a return and `mute` on the master each refused by name, return volume unchanged, zero `Setting property for return_track` lines in Log.txt.*
 - `smoke_tests/auto/mixer.md § Master and cue ignore track, and read back
   their old value` — the optional-`track` decision, live.
+  *2026-08-28: passed — `track: 7` on master raised nothing; both replies carried "was …".*
 - `smoke_tests/auto/mixer.md § Boundaries and a bad return index` — 0.0/1.0
   and ±1.0, plus the vendored guard's immediate error.
+  *2026-08-28: passed — +6 dB / 50R and −inf read back; return 99 refused in 0.37s naming "1 return track(s)".*
 - `smoke_tests/auto/clips.md § edit_notes rewrites only the window` — the
   measured round trip, including the velocity-int / mute-0|1 conversion
   that a verbatim re-send gets wrong.
+  *2026-08-28: passed — vel 110/47 with starts and durations unchanged to every digit, other notes identical, one `undo` restored the first read. Reply leaks the `9999.0` time sentinel (ROADMAP #19).*
 - `smoke_tests/auto/clips.md § A window edit that would leave the range is
   refused` — refusal before the sends.
+  *2026-08-28: passed after correcting the test — `transpose: 60` on G4 is exactly 127 and legal; `61` and `shift: -1.0` both refused before sending, clip untouched, `-12` read back as 55.*
 - `smoke_tests/auto/clips.md § delete: true empties the window and nothing
   else` — match-by-start semantics.
+  *2026-08-28: semantics passed — the 1.6667 note survived, one `undo` restored the fourth — but the reply said "in the whole clip" for a beats-2–3 window (ROADMAP #19).*
 - `smoke_tests/auto/clips.md § Renaming rides set_clip_properties` — the
   string property through the numeric write/read-back path.
+  *2026-08-28: passed — `name` and `looping` echoed in one reply, name on the right slot in `get_clip_slots`.*
 - `smoke_tests/auto/mcp-surface.md § A mutating tool with nothing required
   survives the client` — list-level risk of `required: []`, and the two
   handler-side rejections arriving as tool results.
+  *2026-08-28: passed — 52-tool list survived, `required: []` on the wire, `pan: -1.0` read back fresh from Live, both empty-call shapes answered as tool results by the Elixir validator, never `-32602`.*
 - `smoke_tests/auto/mcp-surface.md § The surface budget is measured, not
   guessed` — the real advertised count/bytes and largest-schema cohesion
   check, rather than treating the count alone as success.
+  *2026-08-28: measured — 52 tools / 58,709 bytes / `set_clip_properties` 3,585; not comparable to the 62,784 planning figure (different method), recorded as the new baseline.*
 - `smoke_tests/manual/conversation.md § Mixer and note edits route to one
   call each` — the whole bet: does one name route better than thirteen.
 
