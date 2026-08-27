@@ -81,6 +81,12 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   # docs alongside them (they are all documented already). song.py is the other
   # upstream file we add to, but it stays out of @handler_files: its additions
   # are list entries, not add_handler calls (see the last two describes).
+  #
+  # view.py registers three more of ours — `get/selected_track_identity` and its
+  # start/stop listener pair — which are deliberately absent here: this list is
+  # also the "still sent by lib/" pin below, and nothing under lib/ sends them
+  # yet. The whole-file registration pin further down is what keeps an upstream
+  # merge from dropping them. Move them up here when a tool starts sending them.
   @vendored_view_addresses [
     "/live/view/show_view",
     "/live/view/hide_view",
@@ -212,9 +218,13 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     # midimap.py was exactly that until the 2026-08-03 PR #62 counter-review
     # caught it. This census makes the lists self-verifying: any Python file
     # in the fork that registers an address must be claimed by one of them.
+    # The fork's own Python test suites are excluded: they register addresses
+    # against a stub server inside fixtures, which ship nothing to Live and so
+    # have nothing to document.
     test "every fork file that registers an address is covered by a doc-coverage list" do
       registering =
         Path.wildcard("#{@source}/**/*.py")
+        |> Enum.reject(&(&1 =~ ~r"/tests(_unit)?/"))
         |> Enum.filter(&(File.read!(&1) =~ "osc_server.add_handler("))
         |> Enum.sort()
 
@@ -396,21 +406,22 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              ]
     end
 
-    # view.py is upstream's file with four of ours added, so unlike the three
+    # view.py is upstream's file with seven of ours added, so unlike the three
     # handlers above this list is mostly upstream's. Pinning the whole of it is
-    # what makes an upstream merge that drops our four addresses fail here rather
+    # what makes an upstream merge that drops our seven addresses fail here rather
     # than in Live: nothing else notices, because every *other* address still
     # answers and ours fail the way all OSC fails — silently. `hide_view` fails
     # that way too despite the tool reading it back: without the address the
     # read-after reports the pane still visible, which is indistinguishable from
     # Live simply refusing to hide it.
-    test "the view handler registers upstream's twelve addresses plus Seshat's four" do
+    test "the view handler registers upstream's twelve addresses plus Seshat's seven" do
       assert Enum.sort(registered_addresses(@view_file)) == [
                "/live/view/get/is_view_visible",
                "/live/view/get/selected_clip",
                "/live/view/get/selected_device",
                "/live/view/get/selected_scene",
                "/live/view/get/selected_track",
+               "/live/view/get/selected_track_identity",
                "/live/view/hide_view",
                "/live/view/set/detail_clip",
                "/live/view/set/selected_clip",
@@ -420,8 +431,10 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                "/live/view/show_view",
                "/live/view/start_listen/selected_scene",
                "/live/view/start_listen/selected_track",
+               "/live/view/start_listen/selected_track_identity",
                "/live/view/stop_listen/selected_scene",
-               "/live/view/stop_listen/selected_track"
+               "/live/view/stop_listen/selected_track",
+               "/live/view/stop_listen/selected_track_identity"
              ]
     end
 
