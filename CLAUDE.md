@@ -44,9 +44,9 @@ Seshat.MCP.Server
                   │           │ ← Command struct          │ one native process
                   │           │ → ordered OSC msgs        │ per call, no OSC
                   ▼           ▼                           ▼
-            Seshat.OSC.Transport                      native/seshat_ax (seshat-ax)  ← macOS Accessibility API
+            Seshat.OSC.Transport                      native/seshat_ax (seshat-ax)
              ← GenServer over :gen_udp                    │
-                       │                                  ▼
+                       │                                  ▼  ← macOS Accessibility API
                        ▼                              Ableton Live's Settings window
             AbletonOSC → Ableton Live
 ```

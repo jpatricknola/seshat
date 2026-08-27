@@ -45,12 +45,16 @@ defmodule Seshat.AX.Client do
   The helper owns a 3.5s action deadline of its own (`kActionDeadline` in
   `main.m`), plus its own short, separately-bounded allowances for restoring
   the UI afterwards (`kCleanupBudget` 0.1s, `kRestoreBudget` 0.6s, so ~4.2s
-  worst case) and reports `timeout` rather than hanging. This module allows
-  5,000ms around all of it, so a helper that honours its own budget always
-  answers first and a helper that does not is still bounded — failure lands
+  nominal) and reports `timeout` rather than hanging. That 4.2s is what a
+  healthy run costs, not a hard bound — the cleanup calls it covers are not
+  individually deadline-gated, so each could cost up to `kMessagingTimeout`
+  if Live's AX implementation hangs. This module allows 5,000ms around all of
+  it, so a helper that honours its own budget always answers first and a
+  helper that does not is still bounded by *this* deadline — failure lands
   inside the same 5-second acceptance as success instead of stalling the
-  conversation. `kCleanupBudget` was cut from 0.6s to 0.1s in the 2026-08-27
-  round-2 PR review: the restore it guards is a handful of AX reads, not a
+  conversation (round-3 PR review, 2026-08-27). `kCleanupBudget` was cut from
+  0.6s to 0.1s in the 2026-08-27 round-2 PR review: the restore it guards is a
+  handful of AX reads, not a
   wait, so it never needed to be that large, and at 0.6s it had eaten most of
   the ~900ms margin this module's 5,000ms carried before `kCleanupBudget`
   existed at all.
@@ -261,13 +265,15 @@ defmodule Seshat.AX.Client do
     end
   end
 
-  # Closing the port closes our end; the helper's own ~4.2s worst-case deadline
+  # Closing the port closes our end; the helper's own ~4.2s nominal deadline
   # (see the moduledoc) is what ends the *process*, and it ends it by SIGPIPE at
   # the helper's next `fwrite` to a pipe nobody is reading any more, not by a
   # kill — so a helper that is already past its deadline when we give up can
   # still be driving Live's UI for a little longer regardless of what we do
-  # here. Either way it cannot outlive its own deadline, which is the property
-  # that matters.
+  # here. Either way it cannot outlive *this module's* 5,000ms Port timeout,
+  # which is the actual bound and the property that matters — the helper's own
+  # 4.2s is what a healthy run costs, not a hard limit on the process's
+  # lifetime (round-3 PR review, 2026-08-27).
   #
   # `Port.close/1` only detaches our end; it does not retract a message that
   # already arrived. A `{:data, _}` or `{:exit_status, _}` delivered in the gap

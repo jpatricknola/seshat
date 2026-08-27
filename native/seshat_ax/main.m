@@ -118,13 +118,20 @@ static const NSTimeInterval kRestoreBudget = 0.6;
 // healthy system (microseconds each, per the file header), never a poll or a
 // sleep, so it does not need to be anywhere near kRestoreBudget's size to do
 // its job. A first cut of 0.6s here (round-1 PR review) left only 300ms
-// between the helper's own nominal worst case and the Elixir side's 5,000ms
-// Port timeout — most of the ~900ms margin the file ran with before that
-// change existed at all — so this is deliberately cut back to restore most of
-// it: 3.5s (kActionDeadline) + 0.1s (this) + 0.6s (kRestoreBudget) is 4.2s
-// worst case, ~800ms inside the Elixir side's 5,000ms Port timeout (round-2 PR
+// between the helper's own nominal total and the Elixir side's 5,000ms Port
+// timeout — most of the ~900ms margin the file ran with before that change
+// existed at all — so this is deliberately cut back to restore most of it:
+// 3.5s (kActionDeadline) + 0.1s (this) + 0.6s (kRestoreBudget) is 4.2s
+// nominal, ~800ms inside the Elixir side's 5,000ms Port timeout (round-2 PR
 // review, 2026-08-27). See `Seshat.AX.Client`'s moduledoc for the matching
 // number on the Elixir side.
+//
+// "Nominal," not a bound: the cleanup calls below (the two `kAXCancelAction`
+// sends, the close button's attribute read and press) are not individually
+// deadline-gated, so each can cost up to kMessagingTimeout if Live's AX
+// implementation hangs rather than answering quickly. 4.2s is what a healthy
+// run costs; the actual worst case is bounded by the Elixir side's 5,000ms
+// Port timeout, not by anything summed here (round-3 PR review, 2026-08-27).
 static const NSTimeInterval kCleanupBudget = 0.1;
 
 // Output is bounded on purpose: this protocol carries device names, never an AX
@@ -742,7 +749,16 @@ static NSDictionary *AudioOutputTransaction(BOOL setting, NSString *wanted) {
   // Audio page (2026-08-27 PR review round). kCleanupBudget is a search
   // allowance, not a wait: nothing between here and the function's return
   // polls or sleeps against it.
-  gDeadline = Now() + kCleanupBudget;
+  //
+  // `MAX`, not a plain assignment: a run that reached its result well inside
+  // kActionDeadline still has most of that budget left, and a bare `gDeadline
+  // = Now() + kCleanupBudget` threw the unspent remainder away on every run,
+  // not only a timed-out one — shrinking a fast call's page-restore search to
+  // 100ms where it previously had seconds (round-3 PR review, 2026-08-27).
+  // `MAX` keeps this line's one job, extending a spent deadline so the restore
+  // is not silently skipped, without taking anything from a run that never
+  // needed the extension.
+  gDeadline = MAX(gDeadline, Now() + kCleanupBudget);
 
   if (chooser != NULL) {
     AXUIElementPerformAction(popup, kAXCancelAction);
