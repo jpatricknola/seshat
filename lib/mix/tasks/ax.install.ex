@@ -126,7 +126,12 @@ defmodule Mix.Tasks.Ax.Install do
     {output, _status} = System.cmd(destination, arguments, stderr_to_stdout: true)
 
     if trusted?(output) do
-      Mix.shell().info("macOS trusts this helper for Accessibility control - nothing else to do.")
+      Mix.shell().info(
+        "macOS reports this helper trusted for Accessibility control - nothing else to do, " <>
+          "unless it was already trusted before this install ran (see \"Open question\" in " <>
+          "README.md: whether trust is scoped to this path or inherited from the parent " <>
+          "process launching it is not yet settled)."
+      )
     else
       Mix.shell().info("""
 

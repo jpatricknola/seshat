@@ -112,10 +112,20 @@ static const NSTimeInterval kRestoreBudget = 0.6;
 // let a restore that would otherwise bail out on `PastDeadline()` actually run.
 // Without this, a run that timed out mid-selection left Settings on the Audio
 // page forever, contradicting the promise this file's header makes (2026-08-27
-// PR review round). 3.5s (kActionDeadline) + 0.6s (this) + 0.6s
-// (kRestoreBudget) is 4.7s worst case, still inside the Elixir side's 5,000ms
-// Port timeout.
-static const NSTimeInterval kCleanupBudget = 0.6;
+// PR review round).
+//
+// Deliberately small: the restore it guards is a handful of AX reads on a
+// healthy system (microseconds each, per the file header), never a poll or a
+// sleep, so it does not need to be anywhere near kRestoreBudget's size to do
+// its job. A first cut of 0.6s here (round-1 PR review) left only 300ms
+// between the helper's own nominal worst case and the Elixir side's 5,000ms
+// Port timeout — most of the ~900ms margin the file ran with before that
+// change existed at all — so this is deliberately cut back to restore most of
+// it: 3.5s (kActionDeadline) + 0.1s (this) + 0.6s (kRestoreBudget) is 4.2s
+// worst case, ~800ms inside the Elixir side's 5,000ms Port timeout (round-2 PR
+// review, 2026-08-27). See `Seshat.AX.Client`'s moduledoc for the matching
+// number on the Elixir side.
+static const NSTimeInterval kCleanupBudget = 0.1;
 
 // Output is bounded on purpose: this protocol carries device names, never an AX
 // tree. A machine with more audio devices than this has other problems.
@@ -683,9 +693,18 @@ static NSDictionary *AudioOutputTransaction(BOOL setting, NSString *wanted) {
     } else {
       AXUIElementRef choice = (__bridge AXUIElementRef)itemElements[match];
       AXError error = AXUIElementPerformAction(choice, kAXPressAction);
-      CFRelease(chooser);
-      chooser = NULL;
 
+      // `chooser` is deliberately NOT released or nulled here, on either
+      // branch below: doing so before the outcome is known left a rejected
+      // press (or a press that succeeded but whose read-back then timed out)
+      // with the cleanup block's `if (chooser != NULL)` already false, so
+      // `kAXCancelAction` was never sent and Live's popup could be left open
+      // over the Settings window (round-2 PR review, 2026-08-27 — the same
+      // invariant round 1 fixed for the missing-Settings-window path: every
+      // exit falls through to the one cleanup block instead of skipping it).
+      // The cleanup block below now always runs `kAXCancelAction` against it;
+      // that is a harmless no-op on the ordinary success path, where
+      // selecting the item has already closed the menu itself.
       if (error != kAXErrorSuccess) {
         result = Failure(kCodeAXFailure, @"Live rejected the audio output selection.");
       } else {

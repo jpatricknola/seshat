@@ -36,18 +36,18 @@ Seshat.MCP.Server
         │
         ▼
             Seshat.Tools.Handlers      ← the only place tool names are dispatched
-                  │           │                       │
-                  │           │ multi-step             │ get_audio_outputs /
-                  │           │ sequences only          │ set_audio_output only
-                  │           ▼ (create_track, etc.)     ▼
-                  │    Seshat.Commands.Registry     Seshat.AX.Client
-                  │           │ ← Command struct         │ one native process
-                  │           │   → ordered OSC msgs        │ per call, no OSC
-                  ▼           ▼                            ▼
-            Seshat.OSC.Transport            native/seshat_ax (seshat-ax)
-             GenServer over :gen_udp                        │ macOS Accessibility API
-                       │                                     ▼
-                       ▼                        Ableton Live's Settings window
+                  │           │                           │
+                  │           │ multi-step                │ get_audio_outputs /
+                  │           │ sequences only            │ set_audio_output only
+                  │           ▼ (create_track, etc.)      ▼
+                  │    Seshat.Commands.Registry       Seshat.AX.Client
+                  │           │ ← Command struct          │ one native process
+                  │           │ → ordered OSC msgs        │ per call, no OSC
+                  ▼           ▼                           ▼
+            Seshat.OSC.Transport                      native/seshat_ax (seshat-ax)  ← macOS Accessibility API
+             ← GenServer over :gen_udp                    │
+                       │                                  ▼
+                       ▼                              Ableton Live's Settings window
             AbletonOSC → Ableton Live
 ```
 

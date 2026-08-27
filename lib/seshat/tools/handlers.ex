@@ -3421,10 +3421,22 @@ defmodule Seshat.Tools.Handlers do
            use_system_hint(current)}
 
       {:ok, %{previous: previous, current: current}} ->
+        # Never both: the hint's own wording doesn't say which value it is
+        # about, so appending it twice (previous and current both starting
+        # "Use System:", e.g. macOS's resolved default changing between reads)
+        # read as though Live had returned the same note about two different
+        # things (round-2 PR review, 2026-08-27). `current` wins when both
+        # qualify, since it's what the caller now has to act on.
+        hint =
+          if String.starts_with?(current, "Use System:") do
+            use_system_hint(current)
+          else
+            use_system_hint(previous)
+          end
+
         {:ok,
          "Ableton Live's audio output is now \"#{current}\" (it was \"#{previous}\"). " <>
-           "Live confirmed the new value itself." <>
-           use_system_hint(current) <> use_system_hint(previous)}
+           "Live confirmed the new value itself." <> hint}
 
       {:error, failure} ->
         {:error, audio_error(failure)}

@@ -127,15 +127,17 @@ exist because a typo'd address looks exactly like success.
   tools**: those stay wrapped by deliberate policy, per the bullet above. A tool
   that opts out owes the model a sentence saying the change is outside Live's
   undo history and how to reverse it, since `undo` cannot.
-- **Nothing under `lib/seshat/` starts a process except `Seshat.AX.Client`.**
-  It is the single door to the native Accessibility helper, and
-  `client_test.exs` greps the tree for `Port.open`, `:spawn_executable` and
-  `System.cmd` to keep it that way. The LOM-first rule — UI scripting only for a
-  concrete operation absent from the current LOM, everything else goes in the
-  fork — is only durable if it is mechanical. A new capability that genuinely
-  needs the helper adds a command to its closed protocol, with its own LOM-gap,
-  safety, semantic-target and read-back case argued first; it does not spawn
-  something of its own.
+- **Nothing under `lib/` (outside `lib/mix/tasks/`) starts a process except
+  `Seshat.AX.Client`.** It is the single door to the native Accessibility
+  helper, and `client_test.exs` greps `lib/**/*.ex` — minus `lib/mix/tasks/`,
+  where a human-invoked task like `mix ax.install` is expected to run a
+  subprocess — for `Port.open`, `:spawn_executable`, `System.cmd`,
+  `System.shell`, `:os.cmd` and `:erlang.open_port` to keep it that way. The
+  LOM-first rule — UI scripting only for a concrete operation absent from the
+  current LOM, everything else goes in the fork — is only durable if it is
+  mechanical. A new capability that genuinely needs the helper adds a command
+  to its closed protocol, with its own LOM-gap, safety, semantic-target and
+  read-back case argued first; it does not spawn something of its own.
 - **Two addresses of ours live under a prefix upstream owns**:
   `/live/song/start_listen/tracks` and `/live/song/start_listen/return_tracks`,
   from

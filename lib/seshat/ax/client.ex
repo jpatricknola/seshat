@@ -14,12 +14,14 @@ defmodule Seshat.AX.Client do
   ## The boundary is the point
 
   `Seshat.Tools.Handlers` never spawns anything. Neither does anything else under
-  `lib/seshat/`, and `test/seshat/ax/client_test.exs` greps the tree to keep it
-  that way: `Port.open`, `:spawn_executable` and `System.cmd` appear here and
-  nowhere else. That is the mechanism behind the LOM-first rule — a future tool
-  cannot quietly grow a second UI-automation path, because there is one door and
-  it is watched, the same way `vendored_addresses_test` watches the fork's
-  address surface.
+  `lib/` (outside `lib/mix/tasks/`, where a human-invoked task like `mix
+  ax.install` is expected to run a subprocess), and
+  `test/seshat/ax/client_test.exs` greps the tree to keep it that way:
+  `Port.open`, `:spawn_executable`, `System.cmd`, `System.shell`, `:os.cmd` and
+  `:erlang.open_port` all appear here and nowhere else. That is the mechanism
+  behind the LOM-first rule — a future tool cannot quietly grow a second
+  UI-automation path, because there is one door and it is watched, the same
+  way `vendored_addresses_test` watches the fork's address surface.
 
   The helper's protocol is closed for the same reason. It offers audio-output
   listing, audio-output setting, and a permission check. There is no "press this
@@ -42,12 +44,16 @@ defmodule Seshat.AX.Client do
 
   The helper owns a 3.5s action deadline of its own (`kActionDeadline` in
   `main.m`), plus its own short, separately-bounded allowances for restoring
-  the UI afterwards (`kCleanupBudget`, `kRestoreBudget` — 0.6s each, so ~4.7s
+  the UI afterwards (`kCleanupBudget` 0.1s, `kRestoreBudget` 0.6s, so ~4.2s
   worst case) and reports `timeout` rather than hanging. This module allows
   5,000ms around all of it, so a helper that honours its own budget always
   answers first and a helper that does not is still bounded — failure lands
   inside the same 5-second acceptance as success instead of stalling the
-  conversation.
+  conversation. `kCleanupBudget` was cut from 0.6s to 0.1s in the 2026-08-27
+  round-2 PR review: the restore it guards is a handful of AX reads, not a
+  wait, so it never needed to be that large, and at 0.6s it had eaten most of
+  the ~900ms margin this module's 5,000ms carried before `kCleanupBudget`
+  existed at all.
 
   Calls are serialised node-wide by a lock of this module's own. Two clients must
   not drive the same Settings popup at once. It is deliberately *not* the OSC
@@ -255,7 +261,7 @@ defmodule Seshat.AX.Client do
     end
   end
 
-  # Closing the port closes our end; the helper's own ~4.7s worst-case deadline
+  # Closing the port closes our end; the helper's own ~4.2s worst-case deadline
   # (see the moduledoc) is what ends the *process*, and it ends it by SIGPIPE at
   # the helper's next `fwrite` to a pipe nobody is reading any more, not by a
   # kill — so a helper that is already past its deadline when we give up can
@@ -268,17 +274,24 @@ defmodule Seshat.AX.Client do
   # between the `after` clause firing and this function running would
   # otherwise sit in the caller's mailbox — under `mix mcp` the caller is a
   # long-lived GenServer, so that surfaces as a stray, unmatched `handle_info`
-  # rather than something confined to this one call. The flush drains it.
+  # rather than something confined to this one call. `drain/1` empties the
+  # mailbox of every such message rather than at most one: a single `receive
+  # ... after 0` (round-1 PR review) removed one message and stopped, so a
+  # `{:data, _}` and `{:exit_status, _}` that both arrived in that gap left the
+  # second one sitting for the long-lived caller regardless (round-2 PR
+  # review, 2026-08-27).
   defp close(port) do
     if Port.info(port), do: Port.close(port)
 
+    drain(port)
+  end
+
+  defp drain(port) do
     receive do
-      {^port, _message} -> :ok
+      {^port, _message} -> drain(port)
     after
       0 -> :ok
     end
-
-    :ok
   end
 
   defp decode("", _status), do: {:error, malformed()}
