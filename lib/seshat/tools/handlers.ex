@@ -2687,10 +2687,13 @@ defmodule Seshat.Tools.Handlers do
   # Transport-direct rather than a %Command{}: one logical operation, and
   # Registry is for the three multi-step mutation sequences it owns.
   #
-  # The address never replies. Success, a bad grid integer, and a Remote
-  # Scripts copy that predates the fork are all the same silence on the wire,
-  # so the tool's honesty comes from reading the notes back either side of the
-  # send and diffing them — the same shape as capture_midi's grid snapshot and
+  # The address never replies on success, and the two failure modes are
+  # indistinguishable *from here*: a bad grid integer is reported on the wire
+  # as `/live/error ["request", "/live/clip/quantize", …]` and a Remote
+  # Scripts copy predating the fork answers nothing at all, but this is a
+  # `send_message/2` that has returned before either could land. So the tool's
+  # honesty comes from reading the notes back either side of the send and
+  # diffing them — the same shape as capture_midi's grid snapshot and
   # delete_device's count re-read. AbletonOSC processes datagrams in arrival
   # order and `clip.quantize()` runs synchronously inside its callback, so the
   # second read sees the post-quantize clip.
