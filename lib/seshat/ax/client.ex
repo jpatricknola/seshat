@@ -119,6 +119,13 @@ defmodule Seshat.AX.Client do
   @lock_poll_ms 25
   @min_run_ms 50
 
+  @doc false
+  # Overridable for the same reason as `call_timeout/0`: a suite proving what
+  # happens when the lock frees inside a polling window has to be able to place
+  # that window, rather than race a 25ms one.
+  @spec lock_poll_ms() :: pos_integer()
+  def lock_poll_ms, do: Application.get_env(:seshat, :ax_lock_poll_ms, @lock_poll_ms)
+
   # The protocol carries device names, never an AX tree. Anything larger is a
   # helper that has stopped speaking this protocol.
   @max_response_bytes 64 * 1024
@@ -265,24 +272,50 @@ defmodule Seshat.AX.Client do
     end
   end
 
+  # Admission is deadline-aware in both directions: no budget left, and no budget
+  # worth spawning for. Starting the helper with a few milliseconds to live would
+  # pull Live to the front and time out anyway, so a caller this late is refused
+  # before it disturbs anything.
+  #
+  # The budget is therefore checked *before* the lock is attempted, not only when
+  # the attempt fails. Checking it on the failure branch alone (as this did when
+  # first written) leaves the disturbance it exists to prevent: the owner ahead
+  # can release during the final polling sleep, and the next attempt then
+  # succeeds and admits a caller whose budget is already gone (2026-08-27 PR
+  # review).
   defp acquire(deadline) do
-    if :global.set_lock(lock_id(), [node()], 0) do
-      :ok
+    if spent?(deadline) do
+      :timeout
     else
-      remaining = deadline - System.monotonic_time(:millisecond)
-
-      # Admission is deadline-aware in both directions: no budget left, and no
-      # budget worth spawning for. Starting the helper with a few milliseconds
-      # to live would pull Live to the front and time out anyway, so a caller
-      # this late is refused before it disturbs anything.
-      if remaining <= @min_run_ms do
-        :timeout
-      else
-        Process.sleep(min(@lock_poll_ms, remaining))
-        acquire(deadline)
-      end
+      attempt(deadline)
     end
   end
+
+  defp attempt(deadline) do
+    if :global.set_lock(lock_id(), [node()], 0) do
+      admit(deadline)
+    else
+      Process.sleep(min(lock_poll_ms(), max(deadline - System.monotonic_time(:millisecond), 1)))
+      acquire(deadline)
+    end
+  end
+
+  # Re-checked with the lock in hand. Nothing schedulable separates this from the
+  # check in `acquire/1` — `set_lock/3` with no retries does not block — so this
+  # covers only the narrow case of being descheduled across the threshold while
+  # taking the lock. It is here because the cost of being wrong is a helper that
+  # takes Live's foreground for a call that cannot finish, and the cost of the
+  # guard is one comparison and a lock release.
+  defp admit(deadline) do
+    if spent?(deadline) do
+      :global.del_lock(lock_id(), [node()])
+      :timeout
+    else
+      :ok
+    end
+  end
+
+  defp spent?(deadline), do: deadline - System.monotonic_time(:millisecond) <= @min_run_ms
 
   defp execute(path, args, deadline) do
     # `:spawn_executable` with an argv list, never a shell: a device name is

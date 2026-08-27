@@ -41,6 +41,38 @@ defmodule Seshat.AX.ClientTest do
     "printf '%s\\n' '#{json}'\nexit #{status}"
   end
 
+  # Takes the AX lock in another process and returns once it is actually held,
+  # so a test's queue precondition is observed rather than timed. The returned
+  # function releases it and waits for the holder to exit.
+  defp hold_ax_lock do
+    parent = self()
+
+    holder =
+      spawn(fn ->
+        :global.trans(
+          Client.lock_id(),
+          fn ->
+            send(parent, :ax_lock_held)
+
+            receive do
+              :release -> :ok
+            end
+          end,
+          [node()]
+        )
+      end)
+
+    assert_receive :ax_lock_held, 1_000
+
+    reference = Process.monitor(holder)
+
+    {holder,
+     fn ->
+       send(holder, :release)
+       assert_receive {:DOWN, ^reference, :process, ^holder, _}, 1_000
+     end}
+  end
+
   describe "helper_path/0" do
     test "defaults to the stable installed location" do
       Application.delete_env(:seshat, :ax_helper_path)
@@ -339,39 +371,32 @@ defmodule Seshat.AX.ClientTest do
     # out the call ahead of it *outside* any deadline and then start a fresh
     # full budget, so two callers could take nearly two budgets between them.
     # This pins the ceiling that makes the floor safe.
+    #
+    # The queue precondition is established by holding the lock and waiting for
+    # the holder to say so, never by sleeping long enough to assume it: the
+    # repository's testing rules rule out `Process.sleep/1` as a synchroniser
+    # (2026-08-27 PR review).
     @tag :tmp_dir
     test "a queued call is bounded by its own budget, not the one ahead of it", context do
-      # Longer than the budget below: the first caller will still be holding the
-      # helper when the second gives up, which is the case under test.
-      helper(
-        context,
-        # stderr silenced: this helper outlives the port that reads it, so its
-        # final write lands on a closed pipe. That SIGPIPE is the documented way
-        # a helper dies (see `close/1`), not a fault worth printing mid-suite.
-        "exec 2>/dev/null\nsleep 1.5\n" <>
-          emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1}))
-      )
+      helper(context, emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1})))
 
       Application.put_env(:seshat, :ax_call_timeout, 400)
       on_exit(fn -> Application.delete_env(:seshat, :ax_call_timeout) end)
 
-      first = Task.async(&Client.list_outputs/0)
-      # Let the first caller take the lock, so the second is genuinely queued
-      # behind it rather than racing it for admission.
-      Process.sleep(100)
+      {_holder, release} = hold_ax_lock()
 
       started = System.monotonic_time(:millisecond)
-      second = Client.list_outputs()
+      queued = Client.list_outputs()
       elapsed = System.monotonic_time(:millisecond) - started
 
-      assert {:error, %{code: :timeout}} = second
+      assert {:error, %{code: :timeout}} = queued
 
-      # One budget, plus the poll interval and scheduling slack — not the 1.5s
-      # the call ahead of it is still spending, and not a second full budget on
-      # top of that wait.
+      # One budget plus scheduling slack. Before the fix this waited for the
+      # holder instead — which, with a holder that never releases, means the
+      # call never returns at all.
       assert elapsed < 700, "queued caller took #{elapsed}ms, expected under one 400ms budget"
 
-      Task.await(first, 5_000)
+      release.()
     end
 
     # The other half of deadline-aware admission: a caller with nothing useful
@@ -379,37 +404,71 @@ defmodule Seshat.AX.ClientTest do
     # front for a call already destined to time out.
     @tag :tmp_dir
     test "a caller that waits out its budget never starts the helper", context do
-      path = helper(context, "touch #{context.tmp_dir}/ran\n" <> emits(~s({"ok":true})))
-      _ = path
+      helper(context, "touch #{context.tmp_dir}/ran\n" <> emits(~s({"ok":true})))
 
       Application.put_env(:seshat, :ax_call_timeout, 200)
       on_exit(fn -> Application.delete_env(:seshat, :ax_call_timeout) end)
 
-      parent = self()
-
-      holder =
-        spawn(fn ->
-          :global.trans(
-            Client.lock_id(),
-            fn ->
-              send(parent, :held)
-
-              receive do
-                :release -> :ok
-              end
-            end,
-            [node()]
-          )
-        end)
-
-      assert_receive :held, 1_000
+      {_holder, release} = hold_ax_lock()
 
       assert {:error, %{code: :timeout}} = Client.list_outputs()
 
       refute File.exists?(Path.join(context.tmp_dir, "ran")),
              "the helper was started despite the call having no budget left"
 
-      send(holder, :release)
+      release.()
+    end
+
+    # The boundary the first version of the admission loop got wrong: it checked
+    # the budget only when the lock attempt *failed*, so a lock released during
+    # the final polling sleep was taken by a caller whose budget was already
+    # gone — and the helper ran, taking Live's foreground for a call that could
+    # not finish.
+    #
+    # Placing that window needs two things. The caller must have attempted the
+    # lock before the release, or it is simply admitted early with a full budget
+    # — hence the `:calling` handshake, since "has attempted and failed" is not
+    # observable from outside and the attempt follows that message by
+    # microseconds. And the polling window must be wide enough to release into,
+    # which is what `:ax_lock_poll_ms` is for: at 300ms the release lands mid-
+    # sleep with ~140ms of margin either side, where the shipped 25ms interval
+    # would be a race. The sleep places the stimulus under test; it is not
+    # waiting for an outcome.
+    @tag :tmp_dir
+    test "a lock released inside the polling window still refuses a spent caller", context do
+      helper(context, "touch #{context.tmp_dir}/ran\n" <> emits(~s({"ok":true})))
+
+      Application.put_env(:seshat, :ax_call_timeout, 340)
+      Application.put_env(:seshat, :ax_lock_poll_ms, 300)
+
+      on_exit(fn ->
+        Application.delete_env(:seshat, :ax_call_timeout)
+        Application.delete_env(:seshat, :ax_lock_poll_ms)
+      end)
+
+      {_holder, release} = hold_ax_lock()
+
+      parent = self()
+
+      caller =
+        Task.async(fn ->
+          send(parent, :calling)
+          Client.list_outputs()
+        end)
+
+      assert_receive :calling, 1_000
+
+      # The caller is now inside its 300ms sleep, holding 340ms of budget.
+      # Releasing here means it wakes to a free lock and ~40ms left — under the
+      # 50ms floor, so it must refuse rather than spawn.
+      Process.sleep(150)
+      release.()
+
+      assert {:error, %{code: :timeout, message: message}} = Task.await(caller, 5_000)
+      assert message =~ "Another audio-settings request"
+
+      refute File.exists?(Path.join(context.tmp_dir, "ran")),
+             "the helper was started after the lock freed with the budget already spent"
     end
 
     # ...but the AX lock is its own, not the OSC undo lock. An audio-output
