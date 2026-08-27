@@ -2522,13 +2522,14 @@ defmodule Seshat.Tools.Handlers do
   defp do_call("edit_notes", %{"track" => track} = params) do
     slot = Map.get(params, "clip_slot", 0)
     window = edit_window(params)
+    phrase = window_phrase(params)
     changes = NoteEdit.changes(params)
 
     with :ok <- NoteEdit.validate(changes),
          :ok <- ensure_clip(track, slot),
          :ok <- ensure_midi_clip(track, slot),
          {:ok, matched} <- read_note_window(track, slot, window) do
-      rewrite_notes(track, slot, window, changes, matched)
+      rewrite_notes(track, slot, window, phrase, changes, matched)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
@@ -5591,25 +5592,23 @@ defmodule Seshat.Tools.Handlers do
   # An empty window is a question about an empty range, not a failure: the model
   # asked what is there and the answer is "nothing". Saying so — and saying why,
   # since match-by-start is the surprising half — beats an error it would retry.
-  defp rewrite_notes(track, slot, window, _changes, []) do
+  defp rewrite_notes(track, slot, _window, phrase, _changes, []) do
     {:ok,
-     "No notes start inside #{window_phrase(window)} in the clip in slot #{slot} on track " <>
+     "No notes start inside #{phrase} in slot #{slot} on track " <>
        "#{track}, so nothing was changed. A note that begins before the window and sounds " <>
        "into it does not match — call get_clip_notes to see what is actually there."}
   end
 
-  defp rewrite_notes(track, slot, window, changes, matched) do
+  defp rewrite_notes(track, slot, window, phrase, changes, matched) do
     if NoteEdit.delete?(changes) do
-      delete_note_window(track, slot, window, matched)
+      delete_note_window(track, slot, window, phrase, matched)
     else
-      edit_note_window(track, slot, window, changes, matched)
+      edit_note_window(track, slot, window, phrase, changes, matched)
     end
   end
 
-  defp delete_note_window(track, slot, window, matched) do
-    subject =
-      "#{note_count(length(matched))} in #{window_phrase(window)} of the clip in slot " <>
-        "#{slot} on track #{track}"
+  defp delete_note_window(track, slot, window, phrase, matched) do
+    subject = "#{note_count(length(matched))} in #{phrase} in slot #{slot} on track #{track}"
 
     case Transport.send_message("/live/clip/remove/notes", [track, slot | window]) do
       :ok ->
@@ -5625,12 +5624,12 @@ defmodule Seshat.Tools.Handlers do
   # failure would be unrecoverable, so it gets its own wording: the notes are
   # gone and the replacements never went out, which is an `undo` away from being
   # fixed and must not be dressed up as a success.
-  defp edit_note_window(track, slot, window, changes, matched) do
+  defp edit_note_window(track, slot, window, phrase, changes, matched) do
     with {:ok, edited, clamped} <- NoteEdit.apply(matched, changes),
          :ok <- remove_before_add(track, slot, window),
          :ok <- add_edited_notes(track, slot, edited) do
       FollowCam.steer("edit_notes", %{track: track, slot: slot})
-      confirm_edited_notes(track, slot, window, changes, matched, edited, clamped)
+      confirm_edited_notes(track, slot, window, phrase, changes, matched, edited, clamped)
     end
   end
 
@@ -5697,11 +5696,10 @@ defmodule Seshat.Tools.Handlers do
   # remove landed) — without the second, a remove Live ignored followed by an add
   # it accepted reads back as the originals *plus* the replacements, and a
   # transpose that duplicated the phrase would be confirmed as an edit.
-  defp confirm_edited_notes(track, slot, window, changes, matched, edited, clamped) do
+  defp confirm_edited_notes(track, slot, window, phrase, changes, matched, edited, clamped) do
     summary =
-      "Edited #{note_count(length(edited))} in #{window_phrase(window)} of the clip in slot " <>
-        "#{slot} on track #{track} — #{describe_note_changes(changes)}." <>
-        clamped_note(clamped)
+      "Edited #{note_count(length(edited))} in #{phrase} in slot #{slot} on track #{track} — " <>
+        "#{describe_note_changes(changes)}." <> clamped_note(clamped)
 
     case read_note_window(track, slot, readback_window(window, edited)) do
       {:ok, found} ->
@@ -5789,29 +5787,37 @@ defmodule Seshat.Tools.Handlers do
   defp clamped_note(count),
     do: " #{note_count(count)} hit the 1-127 velocity limit and stopped there."
 
-  # Says the window that was actually used, half by half: a pitch half at its
-  # default is silent, a time half at its default is silent, and only both
-  # silent is "the whole clip". The 9999.0 `time_span` default never prints —
-  # it is a sentinel for "to the end", and reads as one.
-  defp window_phrase([start_pitch, pitch_span, start_time, time_span]) do
-    halves = [pitch_phrase(start_pitch, pitch_span), time_phrase(start_time, time_span)]
+  # Names the window the caller asked for, from the *keys* they supplied —
+  # never from the normalised values, because `[0, 128, 0.0, 9999.0]` is both
+  # "pitch-only" and "start_time: 0 with no span", and only the params tell
+  # those apart. Each half renders only when given, so the 9999.0 sentinel never
+  # prints; the phrase owns its noun ("… of the clip" / "the whole clip") so
+  # callers write "in #{phrase} in slot N" and never double it.
+  defp window_phrase(params) do
+    pitch =
+      if Map.has_key?(params, "start_pitch") or Map.has_key?(params, "pitch_span") do
+        low = Map.get(params, "start_pitch", 0)
+        "pitches #{low}-#{min(low + Map.get(params, "pitch_span", 128) - 1, 127)}"
+      end
 
-    case Enum.reject(halves, &is_nil/1) do
+    time =
+      cond do
+        Map.has_key?(params, "time_span") ->
+          start = Map.get(params, "start_time", 0.0) / 1.0
+          "beats #{format_number(start)}-#{format_number(start + params["time_span"])}"
+
+        Map.has_key?(params, "start_time") ->
+          "beats #{format_number(params["start_time"] / 1.0)} onward"
+
+        true ->
+          nil
+      end
+
+    case Enum.reject([pitch, time], &is_nil/1) do
       [] -> "the whole clip"
-      given -> Enum.join(given, ", ")
+      halves -> Enum.join(halves, ", ") <> " of the clip"
     end
   end
-
-  defp pitch_phrase(0, 128), do: nil
-  defp pitch_phrase(start, span), do: "pitches #{start}-#{min(start + span - 1, 127)}"
-
-  defp time_phrase(start, span) when start <= 0.0 and span >= 9999.0, do: nil
-
-  defp time_phrase(start, span) when span >= 9999.0,
-    do: "beats #{format_number(start / 1.0)} onward"
-
-  defp time_phrase(start, span),
-    do: "beats #{format_number(start / 1.0)}-#{format_number((start + span) / 1.0)}"
 
   defp describe_note_changes(changes) do
     ~w(transpose velocity velocity_delta duration shift)

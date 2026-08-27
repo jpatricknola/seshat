@@ -4710,7 +4710,7 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert {"/live/clip/remove/notes", [0, 0, 42, 1, 0.0, 9999.0]} in trace
       assert count_queries(trace, "/live/clip/add/notes") == 0
-      assert message =~ "Deleted 1 note in pitches 42-42 of the clip"
+      assert message =~ "Deleted 1 note in pitches 42-42 of the clip in slot 0 on track 0."
       refute message =~ "9999"
       assert message =~ "reads back empty"
     end
@@ -4740,7 +4740,7 @@ defmodule Seshat.Tools.HandlersTest do
       )
 
       assert {:ok, message} = Task.await(call)
-      assert message =~ "Deleted 1 note in beats 2.0-3.0 of the clip"
+      assert message =~ "Deleted 1 note in beats 2.0-3.0 of the clip in slot 0 on track 0."
       refute message =~ "whole clip"
       refute message =~ "pitches"
     end
@@ -4767,7 +4767,7 @@ defmodule Seshat.Tools.HandlersTest do
       )
 
       assert {:ok, message} = Task.await(call)
-      assert message =~ "in beats 4.0 onward of the clip"
+      assert message =~ "Deleted 1 note in beats 4.0 onward of the clip in slot 0 on track 0."
       refute message =~ "9999"
 
       call =
@@ -4785,7 +4785,39 @@ defmodule Seshat.Tools.HandlersTest do
       )
 
       assert {:ok, message} = Task.await(call)
-      assert message =~ "in the whole clip"
+      assert message =~ "Deleted 1 note in the whole clip in slot 0 on track 0."
+      refute message =~ "of the clip"
+    end
+
+    # `start_time: 0` with no span normalises to the same `[0, 128, 0.0, 9999.0]`
+    # as a pitch-only window, but it is not the catch-all: it starts at beat 0
+    # and excludes negative-start notes. The phrase must come from the keys
+    # supplied, not the normalised values.
+    test "an explicit start_time of 0 is not reported as the whole clip", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_time" => 0,
+            "delete" => true
+          })
+        end)
+
+      trace =
+        scripted_trace(
+          sink,
+          note_guards() ++
+            [
+              {"/live/clip/get/notes", [0, 0, 42, 0.0, 0.25, 90.0, false]},
+              {"/live/clip/get/notes", [0, 0]}
+            ]
+        )
+
+      assert {:ok, message} = Task.await(call)
+      assert {"/live/clip/remove/notes", [0, 0, 0, 128, 0.0, 9999.0]} in trace
+      assert message =~ "Deleted 1 note in beats 0.0 onward of the clip in slot 0 on track 0."
+      refute message =~ "whole clip"
     end
 
     test "an empty window changes nothing and says why", %{sink: sink} do
@@ -4800,7 +4832,7 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert count_queries(trace, "/live/clip/remove/notes") == 0
       assert count_queries(trace, "/live/clip/add/notes") == 0
-      assert message =~ "No notes start inside"
+      assert message =~ "No notes start inside the whole clip in slot 0 on track 0"
       assert message =~ "nothing was changed"
     end
 
