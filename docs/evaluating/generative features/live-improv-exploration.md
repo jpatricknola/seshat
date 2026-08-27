@@ -7,7 +7,7 @@ itself and is not on [ROADMAP.md](../../ROADMAP.md)._
 **Pre-spike.** Nothing in this document is measured; every model figure is
 "reported" from docs, model cards and papers (verified 2026-08-27) and every
 Ableton figure is read out of Seshat's own code and
-[abletonosc-api-docs.md](../../abletonosc-api-docs.md). Sibling docs in this
+[../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md). Sibling docs in this
 folder separate "measured" from "reported" — this one has no "measured"
 column yet, and §12's Spike A1 is what starts filling it. It must not reach
 the roadmap before that spike has run.
@@ -508,7 +508,8 @@ Much of what the Ableton side needs exists; the table says which.
 | Clip naming and metadata | `set_clip_name` |
 | Warp the captured clip | `set_clip_properties` (`warping`, `warp_mode`) |
 | MIDI/clip inspection for chord context | `get_clip_notes` |
-| Section markers | **Nothing.** Arrangement locators are not in the fork; scene names are the nearest stand-in |
+| Section markers | **Fork gap, not a Live gap.** Arrangement locators are in the LOM — `Song.cue_points` (listenable), `set_or_delete_cue`, `jump_to_next_cue`, `is_cue_point_selected`, verified in 12.4.3's `LomTypes.pyc` 2026-08-27 — just not in the fork. One handler; scene names need not stand in. [live-native-options.md §2.7](live-native-options.md) |
+| Beat phase for the outside-Live topology | **Ableton Link**, not an OSC beat listener: any peer joining the Link session gets tempo and beat phase directly, with an open-source SDK — the MRT2 process can know where beat one is without the ±100 ms tick jitter estimated below. Changes Spike C's premise. **Link Audio** (12.4) streams audio between Link peers and might replace BlackHole, but no public SDK for the audio half was found; watch item |
 
 Two gaps matter.
 
@@ -537,7 +538,12 @@ Spike A1.
 **Knowing where beat one is.** `NEXT_BAR` scheduling needs phase, and
 Seshat has never needed phase. The beat listener gives it with the jitter
 of one AbletonOSC tick plus a loopback datagram — call it ±100 ms until
-measured. That is fine for scheduling a slow-loop steer and for issuing
+measured. **Ableton Link gives it for free** (added 2026-08-27): Live has
+been a Link peer since 9.5, the SDK is open source, and any process that
+joins the session receives tempo and beat phase directly — so in the
+outside-Live topology the generator process can own its own phase without
+Seshat relaying anything, and Spike C's jitter measurement only matters for
+Seshat's *own* slow-loop scheduling. That is fine for scheduling a slow-loop steer and for issuing
 `record_clip` (Live quantizes the punch-in itself); it is not good enough to
 align a free-running stream in the monitor path, which is one more argument
 for Design 1. In the M4L topology the device has the host clock directly

@@ -42,7 +42,7 @@ point maintained by Seshat.
 ## Failure modes to know
 
 - **Wrong OSC address** — silent. Always check
-  [docs/abletonosc-api-docs.md](../../docs/abletonosc-api-docs.md).
+  [priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md).
 - **Ableton not running** — queries time out; sends cannot detect the absence.
 - **Port 11001 in use** — a second Seshat can send but cannot receive replies.
 - **Atom vs string keys** — normalized in `Handlers.call/2`.

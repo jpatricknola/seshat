@@ -384,7 +384,7 @@ values, and the resulting brace is not the one asked for.
 - Ordering logic is pure-testable — the existing write-ordering tests in
   `handlers_test.exs` are the place. What is not pure-testable is whether Live
   aliases as described; that is a measurement, and it belongs in
-  [abletonosc-api-docs.md](abletonosc-api-docs.md) once made.
+  [../priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md) once made.
 - The live check already exists as
   `smoke_tests/auto/clips.md § The loop pair with looping off`, where a failure is
   currently the *expected* result. Cite it from the plan, and when this ships,
@@ -797,25 +797,6 @@ above (a fast-fail losing a diagnostic it already has), different site.
   [SECURITY_BACKLOG.md](evaluating/SECURITY_BACKLOG.md) for the two triggers that activate
   them. Note that authentication alone does not make Seshat multi-user — one
   transport, one mirror, one Ableton.
-- **The vendored Python test harness reloads AbletonOSC on import.**
-  `priv/AbletonOSC/tests/__init__.py` sends `/live/api/reload` at module level,
-  outside any fixture, so even `pytest --collect-only` reloads the Remote Script
-  in a live session. Declined 2026-07-30: it is upstream's harness and we never
-  run it — `mix test` only *greps* the vendored Python
-  (`vendored_addresses_test`), and nothing here invokes `pytest`. Fixing it
-  means carrying a divergence in a file we do not execute through every upstream
-  merge. Instead: don't run `pytest` against a Live session that matters.
-  **Reconsider if** we ever adopt the Python suite as part of our own
-  verification.
-- **`pythonosc`'s dispatcher has an invalid escape sequence.**
-  `priv/AbletonOSC/pythonosc/dispatcher.py` uses `'[\w|\+]*'`, which emits a
-  `SyntaxWarning` and treats `|` as a literal class member. Declined 2026-07-30:
-  this is `pythonosc` vendored inside AbletonOSC vendored inside our fork — two
-  levels from code we own — and editing it buys one silenced warning for a
-  `SESHAT.md` divergence entry and a merge conflict surface. **Reconsider if**
-  an Ableton release bumps the bundled Python to a version where this is an
-  error, or if the file needs changing for another reason — then fix it in
-  passing. Upstream `pythonosc` is the right owner.
 - **A PubSub restart would leave `Session.State` permanently unsubscribed.**
   State subscribes only in `init/1`, and it is a `:one_for_one` sibling of
   `Phoenix.PubSub`, so a PubSub restart leaves it registered in a dead registry

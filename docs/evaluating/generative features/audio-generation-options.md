@@ -141,6 +141,12 @@ Files and `timings.csv` live in `~/.seshat/audio-spike/`.
 
 - SA3 quality by ear on the target material slate, BPM adherence on Live's
   grid, loop cleanliness, and whether medium earns an escalation surface.
+- **Which editable shape an audio request gets** (added 2026-08-27): once
+  the WAV is in Live, *Slice to New MIDI Track* turns it into a Drum Rack of
+  its own slices plus a MIDI clip — the generated sound kept exactly, every
+  hit re-orderable — and *Extract Groove* lifts its timing into the Groove
+  Pool for other parts. Both native, both UI-only; Simpler's slicing API is
+  in the LOM. [live-native-options.md §2.4–2.5](live-native-options.md).
 - Implement and live-test the absent `ClipSlot.create_audio_clip(path)` fork
   address, including verification, address documentation, install/restart
   instructions, and behavior when the target slot is occupied.

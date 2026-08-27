@@ -70,7 +70,7 @@ defmodule Seshat.OSC.Transport do
   scheduling quantum, not the datagram: `manager.py` schedules `tick()` once
   per 100ms, and each tick's `osc_server.process()` drains everything already
   queued on the socket and answers it inline. Measured 2026-08-04 against Live
-  12 (recorded in `docs/abletonosc-api-docs.md`): a serialized query costs one
+  12 (recorded in `priv/AbletonOSC/API.md`): a serialized query costs one
   tick each, a burst of 63 costs *one tick between them*, and the fork's bulk
   endpoints cost exactly the same one tick a burst does. So a group of reads
   that has to be serialized here pays 100ms per member for nothing.

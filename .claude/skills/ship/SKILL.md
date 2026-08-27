@@ -80,7 +80,7 @@ are often no-ops, but check rather than assume.
    matching doc.
 
    If the feature touched `priv/AbletonOSC`, check two more: every new address
-   is in [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md), and the
+   is in [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md), and the
    divergence is listed in the fork's `SESHAT.md`. `vendored_addresses_test`
    enforces the first only for our own prefixes (`/live/browser/*`,
    `/live/return_track/*`, `/live/master/*`, the two song-structure

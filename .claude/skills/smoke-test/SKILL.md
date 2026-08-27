@@ -166,7 +166,7 @@ coverage. Four rules:
 4. **A run that measures something records it where measurements live.** Half
    these tests exist to read a number off Live — a dial reading, a display string,
    whether a property ever goes false. When you observe one, add it to
-   [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) dated and
+   [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) dated and
    version-stamped alongside the ones already there, and correct anything it
    contradicts. A measurement that lives only in a run report is one the next
    person re-derives from the LOM apiref, which is exactly how the quantize grid

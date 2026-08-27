@@ -15,7 +15,7 @@ a silent `hide_view` setter — and two new tools, `hide_view` and
 **This plan has a Python half.** Both Live Object Model methods
 (`Application.View.is_view_visible(name)`, `Application.View.hide_view(name)`)
 are confirmed present in Live 12's own shipped Python (see the roadmap entry
-and [evaluating/lom-to-fork-gap-audit.md](../evaluating/lom-to-fork-gap-audit.md))
+and the fork's `FORK_GAPS.md`)
 but have no OSC address in the fork. That means the two-commit fork workflow —
 a commit in `priv/AbletonOSC`, then a pin bump here — plus
 `mix abletonosc.install` and a Live restart, and **no test in this repo

@@ -278,7 +278,7 @@ callback ever returns. The dispatcher never sees an exception, so the wildcard
 skip set is not involved. The first draft of this test asserted those four
 would be *absent*, on the strength of a reference-doc claim that they raise;
 they do not, the doc was corrected, and the measurement is now in
-[abletonosc-api-docs.md](../../abletonosc-api-docs.md).
+[../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md).
 
 **What this does not prove.** It does not exercise the merge's fan-out
 *isolation* fix, which only changes behaviour for exceptions **outside**

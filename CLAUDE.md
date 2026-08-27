@@ -123,7 +123,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
-| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Seshat's three handlers (`abletonosc/browser.py`, `return_track.py`, `song_structure.py`) live inside it as ordinary modules, alongside our fixes and additions to upstream's own code (four view addresses in `view.py`, the two undo-step addresses in `song.py`, the structured `/live/error` request-context payload split across `osc_server.py` and `manager.py`) and one deliberate behaviour change (loopback-only bind, no reply retargeting, in `osc_server.py`). `SESHAT.md` at its root lists every divergence |
+| [priv/AbletonOSC/](priv/AbletonOSC/) | **Git submodule** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Owns every wire fact: `API.md` (addresses, reply shapes, measured behaviour), `SESHAT.md` (every divergence from upstream), `FORK_GAPS.md` (LOM members without an address), `issues.md` (fork defects). See "Before using any OSC address" |
 | [lib/mix/tasks/abletonosc.install.ex](lib/mix/tasks/abletonosc.install.ex) | `mix abletonosc.install` — fast-forwards the submodule to `origin/master`, then copies the fork wholesale into Live's Remote Scripts, **naming the commit it deployed**. Refuses rather than misreport: a dirty checkout, a detached HEAD carrying unbranched commits, or an old Seshat revision whose pin the fork has moved past. `--no-pull` installs the checkout as it stands, `--allow-dirty` includes uncommitted edits |
 
 ## Adding a tool
@@ -136,80 +136,40 @@ one by hand.
 
 ## Before using any OSC address
 
-Check [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md). It is the
-canonical list of addresses and their arguments. Do not guess an address or
-infer one from a pattern — AbletonOSC's naming is not fully regular, and a
-wrong address fails silently (it's UDP, with no reply).
+**The fork owns every fact about the wire; Seshat cites them.** Check
+[priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) — the canonical list of
+addresses, arguments, reply shapes and measured Live behaviour. Do not guess
+an address or infer one from a pattern — AbletonOSC's naming is not fully
+regular, and a wrong address fails silently (it's UDP, with no reply).
 [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md)
-collects the conventions and gotchas the address tables don't show (ports,
-irregular naming, listener pattern, ordering hazards).
+holds only Seshat's side of the datagram (ports, value conventions, ordering
+hazards, how `Transport` correlates replies) and never restates a wire fact.
 
-Some of those addresses are ours, not upstream's — they exist only in the fork
-at `priv/AbletonOSC`, in three handler modules of our own plus additions to two
-upstream files (and one upstream file whose *behaviour* we change, below):
+The fork's other docs, each the sole record of its subject:
 
-- `/live/browser/*` — `abletonosc/browser.py`. Upstream has no browser API at all.
-- `/live/return_track/*` and `/live/master/*` — `abletonosc/return_track.py`.
-  Upstream's track addresses only reach `song.tracks` (regular tracks), not
-  returns or the master. That includes
-  `/live/view/set/selected_track`, which is why selecting a return needs
-  `/live/return_track/select`.
-- `/live/song/start_listen/tracks` and `.../return_tracks` —
-  `abletonosc/song_structure.py`. Addresses of ours living under a
-  prefix upstream otherwise owns; upstream can only listen to *scalar* song
-  properties.
-- `/live/view/show_view`, `/live/view/hide_view`,
-  `/live/view/get/is_view_visible` and `/live/view/set/detail_clip` — added to
-  upstream's own `abletonosc/view.py`. Upstream can *select* a track, scene,
-  clip or device but cannot show the pane it lives in (what the follow cam
-  needs), put a pane away, or say which panes are open. The three setters are
-  silent; the getter always replies in the ok/error envelope, because a caller
-  waits on it.
-- `/live/song/begin_undo_step` and `/live/song/end_undo_step` — two entries in
-  the generic methods list of upstream's own `abletonosc/song.py`. Upstream has
-  no way to demarcate an undo step, so Live groups script-driven mutations by
-  its own activity-sensitive rules and one `undo` can revert a whole
-  conversation. `Seshat.Tools.Handlers.call/2` wraps every tool dispatch in a
-  pair, making one tool call exactly one undo step. Send-only, like `undo`
-  itself.
-- `/live/error`'s structured payload — `abletonosc/osc_server.py`'s dispatch
-  boundary and `manager.py`'s `LiveOSCErrorLogHandler.emit`. Upstream's
-  `/live/error` carries only a formatted log string, with no address or
-  arguments to say which request failed, so a rejected query could only wait
-  out its full timeout. A failing request now also sends `("request", address,
-  message, arg_count, ...request_args)` directly on `/live/error`, marked
-  `extra: {osc_request_error: true}` so the log relay's own `("log", message)`
-  copy of the same failure is skipped — one rejection, one datagram.
-  `Seshat.OSC.Transport` matches it against the in-flight query and fails fast
-  instead of waiting out `@query_timeout`; see its "Failed-query correlation"
-  section. Which failures the envelope covers is in
-  [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md)'s Status Messages
-  section — it is not every rejection in the fork, and the set widened once
-  already when both dispatch branches were funnelled through `_dispatch`.
+- [priv/AbletonOSC/SESHAT.md](priv/AbletonOSC/SESHAT.md) — every divergence
+  from `ideoforms/AbletonOSC`: Seshat's own handler modules
+  (`browser.py`, `return_track.py`, `song_structure.py`), additions to
+  upstream files (`view.py`, `song.py`, the structured `/live/error` payload
+  in `osc_server.py`/`manager.py`), fixes to upstream code (`_stop_listen`),
+  the deliberate loopback-bind behaviour change, and the merge hazards.
+- [priv/AbletonOSC/FORK_GAPS.md](priv/AbletonOSC/FORK_GAPS.md) — LOM members
+  the fork does not yet expose. Check it before calling anything a Live limit;
+  add to it when research finds another; remove the entry in the commit that
+  lands the address.
+- [priv/AbletonOSC/issues.md](priv/AbletonOSC/issues.md) — fork-side defects
+  and declined items. A bridge bug goes there, not in `docs/ROADMAP.md`.
 
-Any future address upstream doesn't provide goes into one of those files the
-same way. `vendored_addresses_test` is the tripwire in both directions: every
-such address `lib/` sends must be registered in Python, and everything Python
-registers must be in the address docs.
-
-The fork also **fixes** upstream code, most importantly
-`AbletonOSCHandler._stop_listen`, which unbound a listener from the wrong object
-once an index had been reused — delete a track, rename another, and the mirror
-gets one track's name under another's index. Seshat used to patch that from
-outside with a `track_listeners.py` override; that file is gone. And it
-deliberately **changes** upstream behaviour in one file, `abletonosc/osc_server.py`:
-the command socket binds `127.0.0.1:11000` instead of the wildcard address, and
-`process()` no longer retargets the default reply destination to the last
-datagram's sender, so listener pushes and status sends always go to
-`127.0.0.1:11001`. Upstream's defaults are reasonable for driving Live from a
-phone on the LAN and wrong here — every OSC address controls Live and nothing on
-the wire authenticates. That is a third kind of divergence, neither an extension
-nor a bug fix, and it is why `osc_server.py` belongs in the list above when a
-future upstream merge asks which files we have touched.
-`vendored_addresses_test` greps for all three — the `_stop_listen` fix, the
-loopback bind, and the absent retargeting — because losing any of them in an
-upstream merge would be completely invisible: every address still answers, and
-on this machine everything still works.
+Any new address goes into the fork the same way (a handler module of ours, or
+an addition to an upstream file), documented in `API.md` in the same fork
+commit. Editing the fork is two commits — one in the submodule, one bumping
+the pin here (doc-only fork commits need no pin bump until Python changes
+ride along). `vendored_addresses_test` is the tripwire in both directions:
+every fork-only address `lib/` sends must be registered in Python, everything
+Python registers must be in `API.md`, and the three invisible divergences
+(the `_stop_listen` fix, the loopback bind, the absent reply retargeting) are
+grepped for because losing any of them in an upstream merge would leave every
+address still answering.
 
 ## Verification
 
@@ -395,7 +355,7 @@ open: at in-process spacing AbletonOSC really does process set-then-get in
 arrival order, so the read-back never races the set, and Live applies no
 quantization for the 4-decimal comparison to trip over. Those three
 measurements are now in
-[docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) beside the
+[priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) beside the
 Track-listener note. Echo checks at every raw reply decode shipped 2026-08-03, closing what had
 been the queue's top item. `Seshat.OSC.Transport` correlates replies by
 address alone, so a reply abandoned by an earlier timeout can still answer
@@ -598,7 +558,11 @@ Suite's own shipped Python (Move's transport script clamps and renders it as
 a percentage), correcting the LOM apiref's understated 0.0–1.0. The two tools
 stay deliberately separate rather than merging into one: `groove_amount` only
 scales a groove already assigned to a clip from Live's Groove Pool, which
-Seshat cannot assign (`Clip.groove` is an unserializable LOM object), so its
+Seshat does not yet assign — `Clip.groove` is get/set in the LOM, but the
+value is a `Groove` object rather than a scalar, so the fork comments it out
+and a handler assigning by `Song.groove_pool.grooves` index is still unbuilt
+(a fork gap, not a Live limit; see
+[docs/evaluating/generative features/live-native-options.md](docs/evaluating/generative%20features/live-native-options.md)) — so its
 description routes the model to `set_swing_amount` plus `quantize_clip`
 instead of promising an effect that groove alone can't deliver on plain MIDI.
 `set_time_signature` shipped 2026-07-31: one tool sending upstream's
@@ -616,7 +580,7 @@ reason.) `quantize_clip` shipped
 amount via the Live Object Model's `Clip.quantize`, using a string grid enum
 (`"1/16"`, `"1/8T"`, …) that hides a `GridQuantization` integer table
 corrected against measurements of live Ableton — the previously documented
-table was wrong in every row (`docs/abletonosc-api-docs.md`, the fork's
+table was wrong in every row (`priv/AbletonOSC/API.md`, the fork's
 `clip.py` comment, and `Seshat.Tools.Handlers.grid_quantization/1` all carry
 the fix). The defect that used to top the
 queue is fixed: `create_track`

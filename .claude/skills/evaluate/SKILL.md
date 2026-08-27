@@ -1,6 +1,6 @@
 ---
 name: evaluate
-description: Evaluate how a requested feature or set of user stories could be built — decompose it into capabilities, check what Ableton Live already does for each (tool layer → fork → LOM → Extensions SDK → UI-only via Accessibility) before surveying external models, libraries and services, then write a docs/evaluating/*.md options doc with a verdict or the smallest experiment that would produce one. Use when the user hands over a feature brief, a user-stories doc, or says "research/evaluate how we'd do X".
+description: Evaluate how a requested feature or set of user stories could be built — decompose it into capabilities, check what Ableton Live already does for each (tool layer → fork → LOM → Extensions SDK → UI-only via Accessibility) first.  Then survey external models, libraries and services, then write a docs/evaluating/*.md options doc with a verdict or the smallest experiment that would produce one. Use when the user hands over a feature brief, a user-stories doc, or says "research/evaluate how we'd do X".
 argument-hint: [a feature brief, a user-stories doc path, or a roadmap item]
 ---
 
@@ -35,7 +35,7 @@ rows of every table that follows; candidates are columns. Check
 [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/evaluating/](docs/evaluating/)
 for prior evidence per row — don't rediscover what
 [bridge-options.md](docs/evaluating/bridge-options.md),
-[lom-to-fork-gap-audit.md](docs/evaluating/lom-to-fork-gap-audit.md) or
+[priv/AbletonOSC/FORK_GAPS.md](priv/AbletonOSC/FORK_GAPS.md) or
 [ui-scripting-options.md](docs/evaluating/ui-scripting-options.md) already
 settled, and don't relitigate verdicts recorded in memory or the brief.
 
@@ -56,7 +56,7 @@ Intro) for anything found.
 **2.1 Seshat's tool layer.** [lib/seshat/tools/definitions.ex](lib/seshat/tools/definitions.ex)
 — does a tool already do it, or nearly?
 
-**2.2 The fork.** [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md)
+**2.2 The fork.** [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md)
 and `priv/AbletonOSC/abletonosc/*.py` — is there an address? A missing
 address is ours to add (the `/plan` skill covers the cost); it is not a
 capability gap.
@@ -67,9 +67,14 @@ shipped Python under `App-Resources/MIDI Remote Scripts` (Push/Move scripts
 show how Ableton itself calls things), then the
 [Cycling '74 LOM apiref](https://docs.cycling74.com/apiref/lom/). Something
 in the LOM but not in the fork is a **fork gap** — plan it as Python, never
-as UI scripting. If Live is running, the probe rig under "Measuring the Live
+as UI scripting, and **record it in the fork's
+[priv/AbletonOSC/FORK_GAPS.md](priv/AbletonOSC/FORK_GAPS.md)** (member,
+evidence tier, verification source and date, shape to build, consumer) in
+the same pass — that is a submodule edit, so it lands as a fork commit
+(doc-only, so no pin bump); check that file first so you don't re-record
+one. If Live is running, the probe rig under "Measuring the Live
 API without building the feature first" in
-[.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md)
+[priv/AbletonOSC/API.md](priv/AbletonOSC/API.md)
 answers behavioural questions in minutes.
 
 **2.4 Extensions SDK** (Live 12.4.5+, public beta, Suite). JavaScript/TypeScript

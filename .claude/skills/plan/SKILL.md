@@ -24,7 +24,7 @@ be able to say yes/no to each one.
    their keep — the best plan docs in [docs/archive/](docs/archive/) are
    valuable because of what research *changed* about the obvious approach.
    - Verify every OSC address in
-     [docs/abletonosc-api-docs.md](docs/abletonosc-api-docs.md) — exact
+     [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md) — exact
      address, exact argument list, reply shape. If the capability isn't
      there, **the plan gains a Python half** — `priv/AbletonOSC` is our fork,
      so a missing address is ours to add, whether that means a new handler
@@ -107,7 +107,7 @@ be able to say yes/no to each one.
    what you touch and undo it afterwards, but don't refuse to touch anything.
    The rig is written up under "Measuring the Live API without building the
    feature first" in
-   [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md):
+   [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md):
    a temporary probe handler in the *installed* Remote Scripts copy,
    `/live/api/reload` plus a probe address over fire-and-forget UDP, answers
    read out of Live's `Log.txt`, then `mix abletonosc.install` to restore. No

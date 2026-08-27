@@ -203,7 +203,7 @@ redesign at all.
 
 **Resolved 2026-08-04 — benchmarked, and the answer was none of the three.**
 The comparison this correction called for was run against live Ableton and is
-recorded in `docs/abletonosc-api-docs.md` § "Round trips cost ticks, not
+recorded in `priv/AbletonOSC/API.md` § "Round trips cost ticks, not
 datagrams" (reasoning in `docs/archive/PLAN_batched_queries.md`). The ~100ms is
 AbletonOSC's 100ms `tick()`, not per-datagram cost: a tick drains and answers
 *everything* already queued on the socket, so a burst of 63 mixed reads was
@@ -233,7 +233,7 @@ correlates by address alone. A straggler from an earlier timed-out query can
 supply another track's names, and the separate replies can describe two
 different devices. This is precisely the hazard Seshat's own API docs cite as
 the reason this fork's combined return/master endpoints exist
-(`docs/abletonosc-api-docs.md:1020-1032`). The fix already exists for
+(`priv/AbletonOSC/API.md:1020-1032`). The fix already exists for
 returns/master; regular tracks never got it.
 
 **Correction (2026-08-03):** this section originally called those two "the
@@ -349,7 +349,7 @@ evidence, not the queue.
    name in one reply. Seshat's `query_scene_names/1` (`handlers.ex:3417-3429`)
    does one query per scene beside a comment asserting "No bulk scene-name
    address exists." The endpoint is also missing from
-   `docs/abletonosc-api-docs.md`, which is presumably how the comment
+   `priv/AbletonOSC/API.md`, which is presumably how the comment
    survived. **Resolved in PR #62:** the endpoint is now documented.
    **Resolved 2026-08-03:** "Echo checks at every raw reply decode" switched
    `query_scene_names/1` itself onto this address — one query, length-checked
@@ -397,7 +397,7 @@ evidence, not the queue.
    file after its serialized export query resolves, so a later export and sweep
    can overlap that read.
 
-### 4a. Full doc-coverage diff (`docs/abletonosc-api-docs.md` vs. registered addresses)
+### 4a. Full doc-coverage diff (`priv/AbletonOSC/API.md` vs. registered addresses)
 
 A static AST extraction of every `add_handler` registration in this fork
 (literal calls plus the `properties_r`/`properties_rw`/`methods` loop
@@ -500,6 +500,6 @@ Seshat side (at submodule pin `4584e13`): `lib/seshat/osc/transport.ex`,
 `lib/seshat/tools/handlers.ex`, `lib/seshat/commands/registry.ex`,
 `test/seshat/osc/transport_test.exs`,
 `test/seshat/osc/vendored_addresses_test.exs`, `docs/ROADMAP.md`,
-`docs/abletonosc-api-docs.md`, `docs/evaluating/bridge-options.md`,
+`priv/AbletonOSC/API.md`, `docs/evaluating/bridge-options.md`,
 `docs/evaluating/osc-port-contention.md`, `docs/smoke_tests/auto/mirror.md`,
 `docs/smoke_tests/auto/recording.md`, `.claude/rules/osc.md`.
