@@ -295,8 +295,19 @@ defmodule Seshat.AX.Client do
     if :global.set_lock(lock_id(), [node()], 0) do
       admit(deadline)
     else
+      notify_lock_poll()
       Process.sleep(min(lock_poll_ms(), max(deadline - System.monotonic_time(:millisecond), 1)))
       acquire(deadline)
+    end
+  end
+
+  # Test-only observation point for the otherwise invisible state between a
+  # failed lock attempt and its retry. Production has no observer configured,
+  # so the normal path is a single environment read and no message.
+  defp notify_lock_poll do
+    case Application.get_env(:seshat, :ax_lock_poll_observer) do
+      observer when is_pid(observer) -> send(observer, :ax_lock_polling)
+      _ -> :ok
     end
   end
 

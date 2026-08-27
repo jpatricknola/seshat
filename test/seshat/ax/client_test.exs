@@ -427,41 +427,32 @@ defmodule Seshat.AX.ClientTest do
     #
     # Placing that window needs two things. The caller must have attempted the
     # lock before the release, or it is simply admitted early with a full budget
-    # — hence the `:calling` handshake, since "has attempted and failed" is not
-    # observable from outside and the attempt follows that message by
-    # microseconds. And the polling window must be wide enough to release into,
-    # which is what `:ax_lock_poll_ms` is for: at 300ms the release lands mid-
-    # sleep with ~140ms of margin either side, where the shipped 25ms interval
-    # would be a race. The sleep places the stimulus under test; it is not
-    # waiting for an outcome.
+    # — `:ax_lock_poll_observer` makes that otherwise invisible state observable.
+    # And the polling window must be wide enough that waking from it spends the
+    # budget, which is what `:ax_lock_poll_ms` is for: at 300ms the caller wakes
+    # with ~40ms left, where the shipped 25ms interval would be a race.
     @tag :tmp_dir
     test "a lock released inside the polling window still refuses a spent caller", context do
       helper(context, "touch #{context.tmp_dir}/ran\n" <> emits(~s({"ok":true})))
 
       Application.put_env(:seshat, :ax_call_timeout, 340)
       Application.put_env(:seshat, :ax_lock_poll_ms, 300)
+      Application.put_env(:seshat, :ax_lock_poll_observer, self())
 
       on_exit(fn ->
         Application.delete_env(:seshat, :ax_call_timeout)
         Application.delete_env(:seshat, :ax_lock_poll_ms)
+        Application.delete_env(:seshat, :ax_lock_poll_observer)
       end)
 
       {_holder, release} = hold_ax_lock()
 
-      parent = self()
+      caller = Task.async(&Client.list_outputs/0)
 
-      caller =
-        Task.async(fn ->
-          send(parent, :calling)
-          Client.list_outputs()
-        end)
-
-      assert_receive :calling, 1_000
-
-      # The caller is now inside its 300ms sleep, holding 340ms of budget.
-      # Releasing here means it wakes to a free lock and ~40ms left — under the
-      # 50ms floor, so it must refuse rather than spawn.
-      Process.sleep(150)
+      # The failed attempt has happened and the caller is about to sleep for
+      # 300ms. Releasing now means it wakes to a free lock and ~40ms left —
+      # under the 50ms floor, so it must refuse rather than spawn.
+      assert_receive :ax_lock_polling, 1_000
       release.()
 
       assert {:error, %{code: :timeout, message: message}} = Task.await(caller, 5_000)
