@@ -4755,6 +4755,72 @@ defmodule Seshat.Tools.HandlersTest do
       assert {"/live/clip/remove/notes", [0, 0, 0, 128, -8192.0, 16384.0]} in trace
     end
 
+    # Both writes are silent and either can fail alone. If Live ignores the
+    # remove but accepts the add, the read-back holds the original *and* its
+    # transposed copy — every expected note is present, so an "all present"
+    # check alone would confirm a duplicated phrase as an edit.
+    test "an original that survives the remove is reported, not confirmed", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_pitch" => 60,
+            "pitch_span" => 1,
+            "start_time" => 0.0,
+            "time_span" => 4.0,
+            "transpose" => 12
+          })
+        end)
+
+      trace =
+        scripted_trace(
+          sink,
+          note_guards() ++
+            [
+              {"/live/clip/get/notes", [0, 0, 60, 0.5, 0.25, 100.0, false]},
+              {"/live/clip/get/notes",
+               [0, 0, 60, 0.5, 0.25, 100.0, false, 72, 0.5, 0.25, 100.0, false]}
+            ]
+        )
+
+      assert {:error, message} = Task.await(call)
+
+      assert {"/live/clip/remove/notes", [0, 0, 60, 1, 0.0, 4.0]} in trace
+      assert {"/live/clip/add/notes", [0, 0, 72, 0.5, 0.25, 100, 0]} in trace
+      refute message =~ "Read back and confirmed"
+      assert message =~ "1 note still read back unchanged"
+      assert message =~ "Undo"
+    end
+
+    # A velocity-only edit keeps pitch and start, so the read-back legitimately
+    # holds a note at the matched key — the leftover check must count against
+    # what the edit expects, not treat every matched key as a survivor.
+    test "an edit that keeps a note's key is still confirmed", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_pitch" => 60,
+            "pitch_span" => 1,
+            "transpose" => 0
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 60, 0.5, 0.25, 100.0, false]},
+            {"/live/clip/get/notes", [0, 0, 60, 0.5, 0.25, 100.0, false]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Read back and confirmed"
+    end
+
     test "a transpose that would leave Live's range is refused before any write", %{sink: sink} do
       call =
         Task.async(fn ->

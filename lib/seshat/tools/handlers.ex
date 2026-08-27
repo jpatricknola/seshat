@@ -5630,7 +5630,7 @@ defmodule Seshat.Tools.Handlers do
          :ok <- remove_before_add(track, slot, window),
          :ok <- add_edited_notes(track, slot, edited) do
       FollowCam.steer("edit_notes", %{track: track, slot: slot})
-      confirm_edited_notes(track, slot, window, changes, edited, clamped)
+      confirm_edited_notes(track, slot, window, changes, matched, edited, clamped)
     end
   end
 
@@ -5690,7 +5690,14 @@ defmodule Seshat.Tools.Handlers do
   # call never touched, so the check is "every expected note is present", never
   # "the count matches" — comparing counts here would invent a mismatch out of an
   # innocent neighbour.
-  defp confirm_edited_notes(track, slot, window, changes, edited, clamped) do
+  #
+  # Two checks, because the remove and the add are both silent and either can
+  # fail alone. Every edited note must be present (the add landed), and no
+  # matched note may survive beyond the copies the edit itself expects (the
+  # remove landed) — without the second, a remove Live ignored followed by an add
+  # it accepted reads back as the originals *plus* the replacements, and a
+  # transpose that duplicated the phrase would be confirmed as an edit.
+  defp confirm_edited_notes(track, slot, window, changes, matched, edited, clamped) do
     summary =
       "Edited #{note_count(length(edited))} in #{window_phrase(window)} of the clip in slot " <>
         "#{slot} on track #{track} — #{describe_note_changes(changes)}." <>
@@ -5698,11 +5705,17 @@ defmodule Seshat.Tools.Handlers do
 
     case read_note_window(track, slot, readback_window(window, edited)) do
       {:ok, found} ->
-        case missing_note_keys(edited, found) do
-          [] ->
+        case {missing_note_keys(edited, found), leftover_note_keys(matched, edited, found)} do
+          {[], []} ->
             {:ok, "#{summary} Read back and confirmed."}
 
-          missing ->
+          {[], leftover} ->
+            {:error,
+             "#{summary} But #{note_count(length(leftover))} still read back unchanged " <>
+               "alongside the edited copies, so the removal did not land and the phrase is " <>
+               "now duplicated. Undo, then check with get_clip_notes."}
+
+          {missing, _leftover} ->
             {:error,
              "#{summary} But #{note_count(length(missing))} did not read back as expected, " <>
                "so what Live holds is not what was asked for. Check with get_clip_notes, and " <>
@@ -5752,6 +5765,20 @@ defmodule Seshat.Tools.Handlers do
       end
     end)
     |> elem(0)
+  end
+
+  # A matched note's key may legitimately appear in the read-back as many times
+  # as the edit itself produces it (a velocity-only change keeps pitch and start,
+  # an identity edit keeps everything). Any copy beyond that is an original the
+  # remove should have taken.
+  defp leftover_note_keys(matched, edited, found) do
+    found_counts = found |> Enum.map(&note_key/1) |> Enum.frequencies()
+    expected_counts = edited |> Enum.map(&note_key/1) |> Enum.frequencies()
+
+    matched
+    |> Enum.map(&note_key/1)
+    |> Enum.uniq()
+    |> Enum.filter(fn key -> Map.get(found_counts, key, 0) > Map.get(expected_counts, key, 0) end)
   end
 
   defp note_count(1), do: "1 note"
