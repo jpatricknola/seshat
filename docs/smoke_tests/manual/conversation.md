@@ -196,25 +196,28 @@ winner. Then an effect A/B via `bypass_device`.
 
 ## Mixer and note edits route to one call each
 
-*Why manual: requires a fresh conversational request; judges which tool the model reaches for*
+*Why manual: judges whether the replies speak music — the routing half is automated by `mix routing.eval`*
 *Last run: —*
 
 The 2026-08-27 consolidation bet that one `set_mixer` and one `edit_notes`
-route better than the thirteen and three names they replaced. In a fresh
+route better than the thirteen and three names they replaced. **Which tool the
+model reaches for is no longer judged here**: `mix routing.eval` runs the same
+two prompts through a fresh headless client against a record-only server and
+scores the calls deterministically ([PLAN_routing_evals.md](../../PLAN_routing_evals.md)
+while it is in flight; `CLAUDE.md` § Verification once shipped). Run that for
+the routing verdict.
+
+What remains for a person is the residue no trace can score. In a fresh
 conversation with a set of a few named tracks and a return: "bring the master
-down a touch and mute the reverb return," then, with a MIDI clip open, "make
-the third note a little quieter."
+down a touch and mute the reverb return," then, naming the track and clip,
+"in the Bass track's first clip, make the third note a little quieter."
 
-Expect exactly two `set_mixer` calls for the first — one `target: "master"`
-with a lower volume, one `target: "return"` with `mute: true` — with no
-attempt at a `set_master_volume` or `set_return_track_mute` that no longer
-exists, and no refusal about a missing property. For the second, expect
-`get_clip_notes` then **one** `edit_notes` whose window is that note's pitch
-and start, not a `write_midi_notes` after a delete. The replies speak music.
-
-A guessed old name means the description didn't carry the routing; a
-read-delete-rewrite means `get_clip_notes`'s rewritten edit-loop sentence
-didn't land.
+Expect both replies to speak music — the master "came down a touch", the
+reverb "is muted", the third note "a little softer" — with no tool names, no
+`target: master`, no raw indices or velocities the user never asked for. A
+reply that narrates the calls means the "speak music" rule in
+`Seshat.Instructions` isn't carrying through a consolidated multi-property
+call; that is a finding about the instructions, not the tools.
 
 ## Show-first sequencing
 

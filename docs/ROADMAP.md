@@ -44,7 +44,9 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 **Ranked first by decision on 2026-08-28** — this is the measurement gate for
 the bounded tool-surface architecture before more functionality lands. The
 first slice is the two-case decision experiment below, not a generalized eval
-platform built on faith.
+platform built on faith. Plan: [PLAN_routing_evals.md](PLAN_routing_evals.md)
+— the three kill questions were measured 2026-08-28 (calls reach the stream,
+the run can be isolated, server instructions arrive) and the approach survived.
 
 **Goal:** replace hand-typed fresh-conversation routing checks with one
 agent-runnable command that sends a committed prompt corpus through a fresh
