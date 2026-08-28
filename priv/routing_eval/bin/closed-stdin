@@ -1,0 +1,11 @@
+#!/bin/sh
+# Runs its arguments with stdin redirected from /dev/null.
+#
+# The Claude Code CLI waits three seconds for piped input and warns when stdin
+# is a pipe it never sees a byte on, which is exactly what an Erlang port looks
+# like. `Port.open/2` cannot redirect stdin, so this two-line wrapper does it —
+# and it is a wrapper rather than `sh -c` so the command and its arguments stay
+# positional and are never re-parsed by a shell.
+set -eu
+
+exec "$@" </dev/null

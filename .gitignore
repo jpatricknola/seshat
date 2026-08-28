@@ -42,3 +42,6 @@ __pycache__/
 
 # vscode stuff
 .DS_Store
+
+# Routing-eval run directories — externally metered, machine-specific, never reviewed
+/priv/routing_eval/runs/

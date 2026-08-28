@@ -1,0 +1,29 @@
+{
+  "id": "mixer_master_and_return",
+  "fixture": "named_tracks_and_reverb",
+  "prompt": "Bring the master down a touch and mute the reverb return.",
+  "expect": {
+    "head": {
+      "calls": [
+        {"tool": "set_mixer", "count": 1,
+         "where": {"target": "master", "volume": {"lt": {"fixture": "master.volume"}, "gt": 0.5}}},
+        {"tool": "set_mixer", "count": 1,
+         "where": {"target": "return", "track": 0, "mute": true}}
+      ],
+      "max_mutations": 2,
+      "no_tool_errors": true,
+      "must_not_call": []
+    },
+    "base": {
+      "calls": [
+        {"tool": "set_master_volume", "count": 1,
+         "where": {"value": {"lt": {"fixture": "master.volume"}, "gt": 0.5}}},
+        {"tool": "set_return_track_mute", "count": 1,
+         "where": {"return_track": 0, "muted": true}}
+      ],
+      "max_mutations": 2,
+      "no_tool_errors": true,
+      "must_not_call": []
+    }
+  }
+}
