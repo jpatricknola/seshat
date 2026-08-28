@@ -47,9 +47,11 @@ not prove that the resulting MIDI sounds good. The product output is MIDI in
 Live, so the deciding comparison must be the final rendered MIDI—not source
 audio, model architecture, or proxy statistics.
 
-That is why there is no generation implementation epic on the roadmap yet.
-The roadmap now tracks only the independently real large-datagram defect; the
-listening gate must select a product route before implementation is ranked.
+That is why there is no generation *implementation* epic on the roadmap.
+Since 2026-08-28 the roadmap carries the decision experiment itself ("MIDI
+generation — the decision experiment"), its gate ("Live-native generation
+spike"), and the independently real large-datagram defect; the listening
+gate must select a product route before implementation is ranked.
 
 ### The design space is two axes, not a list of routes
 
