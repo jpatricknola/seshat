@@ -84,30 +84,37 @@ defmodule Seshat.Eval.Recorder do
   end
 
   def handle(%{"method" => "tools/call"} = request, state) do
-    params = request["params"] || %{}
-    name = params["name"]
-    arguments = params["arguments"] || %{}
+    case normalize_call(request["params"] || %{}) do
+      {:ok, name, arguments} ->
+        {text, is_error?, schema_valid?} = run(state, name, arguments)
 
-    {text, is_error?, schema_valid?} = run(state, name, arguments)
+        entry = %{
+          "seq" => state.seq + 1,
+          "name" => name,
+          "arguments" => arguments,
+          "is_error" => is_error?,
+          "schema_valid" => schema_valid?,
+          "kind" => state.surface |> Surface.kind(name) |> Atom.to_string(),
+          "result_preview" => preview(text)
+        }
 
-    entry = %{
-      "seq" => state.seq + 1,
-      "name" => name,
-      "arguments" => arguments,
-      "is_error" => is_error?,
-      "schema_valid" => schema_valid?,
-      "kind" => state.surface |> Surface.kind(name) |> Atom.to_string(),
-      "result_preview" => preview(text)
-    }
+        state = %{state | seq: state.seq + 1, trace: state.trace ++ [entry]}
 
-    state = %{state | seq: state.seq + 1, trace: state.trace ++ [entry]}
+        result = %{
+          "content" => [%{"type" => "text", "text" => text}],
+          "isError" => is_error?
+        }
 
-    result = %{
-      "content" => [%{"type" => "text", "text" => text}],
-      "isError" => is_error?
-    }
+        {reply(request, result), state}
 
-    {reply(request, result), state}
+      :error ->
+        {error_reply(
+           request,
+           -32_602,
+           "Invalid params: \"name\" must be a string and " <>
+             "\"arguments\", if present, must be an object"
+         ), state}
+    end
   end
 
   def handle(%{"method" => method} = request, state) do
@@ -117,6 +124,21 @@ defmodule Seshat.Eval.Recorder do
   def handle(request, state) do
     {error_reply(request, -32_600, "Invalid request"), state}
   end
+
+  # A malformed `tools/call` (missing/non-string name, or arguments that decoded
+  # to something other than a JSON object — the CLI's own contract, but not one
+  # this recorder should trust blindly) is a JSON-RPC protocol error, not a
+  # crash: a shape regression in the client must void one trial, never take the
+  # whole run down with it.
+  defp normalize_call(%{"name" => name} = params) when is_binary(name) do
+    case Map.get(params, "arguments") do
+      nil -> {:ok, name, %{}}
+      arguments when is_map(arguments) -> {:ok, name, arguments}
+      _other -> :error
+    end
+  end
+
+  defp normalize_call(_params), do: :error
 
   # An unknown tool name is a tool result, not a protocol error: the model has to
   # be able to read it and pick something that exists. That is also the single

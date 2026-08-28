@@ -736,7 +736,92 @@ convention across the module.
 - Low lift once the mocking question is settled — the message itself is
   already correct and doesn't need to change, only get pinned.
 
-## #20 · LLM enrichment at reindex
+## #20 · Routing eval report should self-identify which case expectations it scored against
+
+**Impact 2 · Lift 2 · 1.00 impact-per-effort**
+
+**Goal:** `Seshat.Eval.Report`'s header pins the CLI version, the lane-prompt
+hash and each surface's contract digest, but nothing about the case
+expectations a run was scored against. Add a digest of each case's `expect`
+block (per surface, since head and base can be held to different bars) to
+the header or per-case section, so `report.md` is self-contained.
+
+**Why:** flagged in the review of "Automate conversation-routing evaluations"
+(`docs/PLAN_routing_evals.md`). The decision run deliberately scores
+`note_third_quieter` against different bars per surface — head gets
+`max_mutations: 1` plus `must_not_call: ["write_midi_notes"]`, base gets
+`max_mutations: 2` with nothing forbidden — and a reader of `report.md` alone
+sees "semantic success 100% / 100%" with no signal the two columns measured
+different criteria. The plan says so in prose, but `/ship` archives the plan;
+`priv/routing_eval/runs/` is gitignored, so the report is the only thing that
+travels with a PR. Left as a non-blocking nit rather than fixed inline
+because it is a small feature addition (new digest plumbed from the case
+loader through the run map `mix routing.eval` assembles, through
+`Seshat.Eval.Report`, with new test coverage), not a one-line correction.
+
+**Planner notes:**
+- The digest should probably be sha256 of the case's `expect` map for the
+  surface actually used, following the pattern `Seshat.Eval.Surface` already
+  uses for the contract digest.
+- Consider whether the per-case Markdown section should also spell out the
+  gate differences in prose (`max_mutations`, `must_not_call`) rather than
+  only a hash, since a hash alone still sends a PR reader back to the case
+  JSON to see what changed.
+
+## #21 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
+
+**Impact 3 · Lift 3 · 1.00 impact-per-effort**
+
+**Goal:** `Seshat.Eval.Fixture`'s "a read the fixture has no data for answers
+`isError: true`" behavior currently makes any such read count as a tool
+error, and both seed cases set `no_tool_errors: true` in their expectation —
+so a model that probes `get_clip_properties`, `get_track_devices`, or
+`get_clip_notes` on the wrong track before finding the right one fails
+`semantic_success` even when everything it does afterward is correct.
+Give the judge a way to tell "the model invented state" apart from
+"the model looked in the wrong place and recovered," or exclude exploratory
+reads from `no_tool_errors` specifically.
+
+**Why:** flagged in the review of "Automate conversation-routing evaluations"
+(`docs/PLAN_routing_evals.md`). It did not bite in the decision run — zero
+tool errors across all 40 trials on both seed cases — but the plan's own
+Out-of-scope section defers "the general corpus (paraphrases, cue/return/master
+coverage, ~20 cases)" to a second slice, and that is exactly the corpus that
+would widen the discovery surface and start exploratory reads landing. Left
+as a non-blocking nit rather than fixed inline because the second slice
+doesn't exist yet — there is no case in this repo the change would currently
+affect, and picking the right judge semantics (a new verdict field? a
+"forgivable error" allowlist keyed by tool?) is a design call better made
+against real second-slice cases than speculatively.
+
+**Planner notes:**
+- Revisit this before or alongside building the second-slice corpus
+  (`docs/PLAN_routing_evals.md`'s "Out of scope" section), not before.
+- The plan's own justification for the `isError: true` reply itself still
+  holds ("the model must not proceed on invented state") — this item is only
+  about whether that reply should count against `no_tool_errors`.
+
+## #22 · Tighten the process-start grep so it does not shape prose in unrelated modules
+
+**Impact 1 · Lift 1 · 1.00 impact-per-effort**
+
+**Goal:** `test/seshat/ax/client_test.exs`'s grep for `Port.open`,
+`:spawn_executable`, `System.cmd`, `System.shell`, `:os.cmd` and
+`:erlang.open_port` (the invariant that nothing under `lib/` outside
+`Seshat.AX.Client` and `lib/mix/tasks/` starts a process) matches inside
+comments and `@moduledoc` bodies, not just executable code. Narrow it to
+skip comment lines and doc attributes.
+
+**Why:** flagged in the review of "Automate conversation-routing evaluations"
+(`docs/PLAN_routing_evals.md`). `Seshat.Eval.Client`'s moduledoc has to avoid
+writing the literal string `Port.open` even in prose, so the grep does not
+false-positive on a docstring — the invariant itself is intact, but a test
+tripwire is now shaping documentation in an unrelated module. Left as a
+non-blocking nit rather than fixed inline because it touches a shared
+invariant test outside the routing-evals change's own files, not something
+that plan's implementation owns.
+
+## #23 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -763,7 +848,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #21 · Monitored refresh worker for `Session.State`
+## #24 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -807,7 +892,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #22 · Device list per track in session state
+## #25 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -828,7 +913,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #23 · Adopt MCP `2026-07-28` when Anubis supports it
+## #26 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -879,7 +964,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #24 · Clip grid in session state — only if usage demands it
+## #27 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 

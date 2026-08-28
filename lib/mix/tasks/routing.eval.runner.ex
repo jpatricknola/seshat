@@ -131,7 +131,15 @@ defmodule Mix.Tasks.Routing.Eval.Runner do
       _ -> :ok
     end
 
-    if Port.info(port), do: Port.close(port)
+    # Port.info/1 followed by Port.close/1 is a check-then-act race: the port
+    # can finish closing itself (the OS process it drives just died) in the gap
+    # between the two calls, and Port.close/1 raises ArgumentError on a port
+    # that is already gone. That must void one trial, not crash the whole run.
+    try do
+      Port.close(port)
+    rescue
+      ArgumentError -> :ok
+    end
 
     # Drain whatever the port already queued so the mailbox does not leak into
     # the next trial.

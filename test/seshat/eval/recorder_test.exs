@@ -140,6 +140,26 @@ defmodule Seshat.Eval.RecorderTest do
       assert reply["result"]["isError"] == false
       assert [%{"arguments" => %{}}] = state.trace
     end
+
+    test "a call missing its name is a JSON-RPC error, not a crash", %{recorder: recorder} do
+      {[reply], state} =
+        exchange(recorder, [request(1, "tools/call", %{"arguments" => %{}})])
+
+      assert reply["error"]["code"] == -32_602
+      assert state.trace == []
+    end
+
+    test "a call whose arguments decoded to a JSON array is a JSON-RPC error, not a crash", %{
+      recorder: recorder
+    } do
+      {[reply], state} =
+        exchange(recorder, [
+          request(1, "tools/call", %{"name" => "get_session_state", "arguments" => []})
+        ])
+
+      assert reply["error"]["code"] == -32_602
+      assert state.trace == []
+    end
   end
 
   describe "Stdio.serve/2" do

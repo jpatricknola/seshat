@@ -439,6 +439,19 @@ defmodule Seshat.Eval.JudgeTest do
       end
     end
 
+    test "a map value with no recognised operator key raises rather than matching nothing",
+         context do
+      entry = %{"tool" => "set_mixer", "where" => %{"volume" => %{"lte" => 0.8}}}
+
+      assert_raise ArgumentError, ~r/unrecognised matcher operator/, fn ->
+        Judge.matches_entry?(
+          call("set_mixer", %{"volume" => 0.5}),
+          entry,
+          context.fixture
+        )
+      end
+    end
+
     test "a fixture path that does not resolve raises", context do
       entry = %{
         "tool" => "set_mixer",

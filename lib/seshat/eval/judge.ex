@@ -239,6 +239,9 @@ defmodule Seshat.Eval.Judge do
         raise ArgumentError,
               "case file mixes matcher operators with plain keys: #{inspect(keys)}"
 
+      keys != [] ->
+        raise ArgumentError, "case file has unrecognised matcher operator(s): #{inspect(keys)}"
+
       true ->
         []
     end

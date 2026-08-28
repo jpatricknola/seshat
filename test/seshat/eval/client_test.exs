@@ -197,8 +197,15 @@ defmodule Seshat.Eval.ClientTest do
 
     @tag :tmp_dir
     test "kills a hanging client at the timeout and still cleans up", context do
-      fake_cli(context, "sleep 30")
+      pid_file = Path.join(context.tmp_dir, "child.pid")
+      fake_cli(context, "echo $$ > #{pid_file}\nsleep 30")
 
+      before_dirs = routing_eval_temp_dirs()
+
+      # Generous relative to the earlier flag-parsing tests: this one needs the
+      # child to have actually forked and written its pid before the deadline
+      # fires, not just to still be running, so it gives process startup room
+      # to survive a busy `mix test` run rather than racing it at 200ms.
       assert {:error, {:timeout, partial}} =
                Runner.run(
                  prompt: "hello",
@@ -206,11 +213,28 @@ defmodule Seshat.Eval.ClientTest do
                  surface_path: "/dev/null",
                  fixture_path: "/dev/null",
                  trace_path: "/dev/null",
-                 timeout_ms: 200
+                 timeout_ms: 1_000
                )
 
       assert partial == ""
+
+      # The runner's own temp cwd is created and removed inside run/1, with no
+      # handle to it on the error path — diff the tmp dir by the runner's own
+      # naming prefix instead of reading it off a result that does not exist.
+      assert routing_eval_temp_dirs() -- before_dirs == []
+
+      # kill/1 sends SIGKILL by pid before it ever touches the port, so the
+      # hanging child must actually be gone, not merely disconnected from Erlang.
+      pid = pid_file |> File.read!() |> String.trim()
+      {_output, status} = System.cmd("kill", ["-0", pid], stderr_to_stdout: true)
+      assert status != 0
     end
+  end
+
+  defp routing_eval_temp_dirs do
+    System.tmp_dir!()
+    |> File.ls!()
+    |> Enum.filter(&String.starts_with?(&1, "seshat-routing-eval-"))
   end
 
   defp flag(argv, name) do
