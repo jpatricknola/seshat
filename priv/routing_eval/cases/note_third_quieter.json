@@ -1,0 +1,31 @@
+{
+  "id": "note_third_quieter",
+  "fixture": "named_tracks_and_reverb",
+  "prompt": "In the Bass track's first clip, make the third note a little quieter.",
+  "expect": {
+    "head": {
+      "calls": [
+        {"tool": "get_clip_notes", "min_count": 1, "where": {"track": 1}},
+        {"tool": "edit_notes", "count": 1, "after": "get_clip_notes",
+         "where": {"track": 1, "clip_slot": {"absent_or": 0},
+                   "window_selects_exactly": {"fixture": "clips.1:0.notes[2]"},
+                   "velocity_down_from": 100, "delete": {"absent_or": false}}}
+      ],
+      "max_mutations": 1,
+      "no_tool_errors": true,
+      "must_not_call": ["write_midi_notes"]
+    },
+    "base": {
+      "calls": [
+        {"tool": "get_clip_notes", "min_count": 1, "where": {"track": 1}},
+        {"tool": "remove_notes", "count": 1, "after": "get_clip_notes",
+         "where": {"track": 1, "window_selects_exactly": {"fixture": "clips.1:0.notes[2]"}}},
+        {"tool": "write_midi_notes", "count": 1, "after": "remove_notes",
+         "where": {"track": 1, "notes_replace_quieter": {"fixture": "clips.1:0.notes[2]"}}}
+      ],
+      "max_mutations": 2,
+      "no_tool_errors": true,
+      "must_not_call": []
+    }
+  }
+}

@@ -17,6 +17,12 @@ bytes, and the largest single tool. That is the number the context budget
 actually pays, which an Elixir-side approximation over `Definitions` is not —
 it never sees the JSON Schema conversion or the wire encoding.
 
+When nothing is running, `mix routing.snapshot` prints the same surface — the
+instructions plus the published tool array — straight out of the checkout, with
+no server, no handshake and no OSC port bound. Use it when the question is
+"what does the contract say", and this script when the question is "what is the
+running server actually serving".
+
 `call` prints the raw JSON-RPC envelope unabridged, because the discriminator
 usually *is* the envelope: a rejection that arrives as `result` with
 `isError: true` is Seshat's readable message, while an `error` with `-32602` is

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Launched by Claude Code as the routing eval's MCP server (one process per
+# trial). Resolves the repository from its own location *through symlinks* —
+# `mix routing.eval` writes this path from the repo root, but a dev checkout is
+# reachable through `_build/dev/lib/seshat/priv`, whose parent chain is not the
+# repository, so `pwd -P` is load-bearing.
+#
+# MIX_QUIET=1 keeps "Compiling N files" off stdout, which must carry only
+# JSON-RPC. Arguments are passed through positionally; nothing is interpolated
+# into a shell string.
+set -eu
+
+bin_dir=$(cd "$(dirname "$0")" && pwd -P)
+repo=$(cd "$bin_dir/../../.." && pwd -P)
+
+cd "$repo"
+exec env MIX_QUIET=1 mix routing.recorder "$@"

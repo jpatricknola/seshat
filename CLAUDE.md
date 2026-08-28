@@ -140,6 +140,9 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools — the only module under `lib/seshat/` allowed to start a process, pinned by a grep test |
 | [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a four-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for |
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
+| [lib/seshat/eval/](lib/seshat/eval/) | **Routing evals — no OSC, no Ableton, no `Definitions` change.** `Surface` freezes the model-facing contract (instructions + published tools) as JSON; `Recorder` replays one as a record-only MCP server over a `Fixture` synthetic set; `Stream`/`Trial` parse the client's `stream-json` and refuse a trial whose isolation broke; `Judge` scores a trace against a `Case`'s per-surface expectation; `Report` writes the gate table. A grep test keeps the whole tree off the wire |
+| [lib/mix/tasks/routing.eval.ex](lib/mix/tasks/routing.eval.ex) | `mix routing.eval` — the on-demand run. `routing.eval.runner.ex` is the one process-starting half (under `lib/mix/tasks/` on purpose); `routing.recorder.ex` is what Claude Code spawns per trial; `routing.snapshot.ex` prints the current surface with nothing running |
+| [priv/routing_eval/](priv/routing_eval/) | The eval's data: the committed 67-tool `base-c3096d6` snapshot, the fixture, the cases, and the two bounded shell wrappers (`bin/recorder`, `bin/closed-stdin`). `runs/` is gitignored |
 | [lib/mix/tasks/mcp.ex](lib/mix/tasks/mcp.ex) | `mix mcp` — MCP server over stdio |
 | [lib/mix/tasks/ax.install.ex](lib/mix/tasks/ax.install.ex) | `mix ax.install` — macOS-only. Compiles the helper with warnings as errors and renames it over `~/.seshat/bin/seshat-ax` only on success, then reports whether macOS still trusts it. Deliberately outside `mix compile` and the Linux CI job |
 | [priv/AbletonOSC/](priv/AbletonOSC/) | **Pinned consumer submodule, never a development checkout** — [jpatricknola/AbletonOSC](https://github.com/jpatricknola/AbletonOSC), our fork of the bridge. Read its wire facts here, but make every fork edit and commit in the standalone fork clone (currently `/Users/patrick/ableton-osc`), merge it there, then advance this gitlink to the merged `origin/master` commit. Owns `API.md` (addresses, reply shapes, measured behaviour), `SESHAT.md` (every divergence from upstream), `FORK_GAPS.md` (LOM members without an address), and `issues.md` (fork defects). See "Before using any OSC address" |
@@ -200,6 +203,16 @@ address still answering.
 
 - `mix precommit` — compile with warnings-as-errors, unlock unused deps, format, test. Run before declaring work done.
 - `mix test` — full suite, no Ableton required, and safe to run with Live open: wire-reaching tests inject OS-assigned ephemeral UDP ports into `Transport`, so concurrent test runs stay isolated and reach `Seshat.Test.OSCSink`, never AbletonOSC's 11000/11001. MCP components are tested for parity with `Definitions`; `Seshat.Library.AbletonDB` runs against a miniature SQLite fixture the test builds itself.
+- **Routing evals** — `mix routing.eval` pushes committed prompts through a
+  fresh headless Claude Code against a record-only MCP server serving *fixed
+  surface snapshots*, and scores the traces with deterministic predicates. It
+  answers the question `mix test` cannot: which tool the model *picks*. It
+  needs no Ableton and sends no OSC, but it does spend the user's subscription
+  and takes minutes, so it is **on demand only** — never in `mix precommit`,
+  never on a schedule. Run it when a change touches
+  `Seshat.Tools.Definitions`, a tool description or `Seshat.Instructions`, and
+  attach the run's `report.md` to the PR. `mix routing.snapshot` prints the
+  same surface on its own, with no server running and no port bound.
 - Anything reaching `Transport.query/3` needs a live Ableton and will time out (5s default, 15s for browsing, 30s for device loading). Don't write tests at that layer — test the pure layer instead.
 - To exercise the real loop you need Ableton Live running with AbletonOSC installed. See [README.md](README.md). Three pieces divide that work, and keeping them separate is what stops the live layer's checks from accreting into one unrunnable file (which is exactly what happened before 2026-08-02):
   - **[docs/smoke_tests/](docs/smoke_tests/)** holds the tests themselves, split into two folders because **the folder is the run mode** ([README.md](docs/smoke_tests/README.md) states the rules; there is no per-test tag): [auto/](docs/smoke_tests/auto/) is what one agent can run *and judge* alone, one file per subsystem; [manual/](docs/smoke_tests/manual/) needs a person, and is grouped by what the run demands — a conversation, ears, eyes on Live, or a state no tool can create — because set-up cost is what decides whether a manual test ever gets run. They are **regression tests, not acceptance tests**: every setter they cover can silently stop landing next month exactly as easily as on the day it shipped, so passing is never grounds for deletion — a test goes when its tool, address or guarantee goes, and at no other time. Each carries a `Last run` line, the only record anywhere that the live layer was actually exercised.
@@ -247,6 +260,44 @@ services, writing the result into [docs/evaluating/](docs/evaluating/).
 That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
+
+**Routing evals shipped 2026-08-28**, closing the first slice of what had
+been the queue's top item ("Automate conversation-routing evaluations").
+`mix routing.eval` sends a committed prompt corpus through a fresh headless
+Claude Code client against a record-only MCP server serving fixed base/head
+tool-surface snapshots, and scores the resulting traces with deterministic
+predicates — no person reads a transcript, no Ableton runs, no OSC is sent.
+The harness (`lib/seshat/eval/`, `mix routing.eval` / `routing.snapshot` /
+`routing.recorder`) passed its own kill test first: calls reach the client's
+stream, a subscription-authenticated headless run isolates cleanly with
+`--setting-sources ""`, and MCP server `instructions` reach the model — all
+three measured against real Claude Code 2.1.220 traffic and recorded in the
+archived [PLAN_routing_evals.md](docs/archive/PLAN_routing_evals.md).
+
+**What the decision run established, and what it did not.** 40 trials
+(2 cases × 2 surfaces × 2 models × 5 interleaved trials), zero void, scored
+2026-08-28: both the pre-consolidation 67-tool surface (`c3096d6`) and the
+post-consolidation 52-tool surface (`fdd49a6`) routed *correctly* on every
+trial, on both Sonnet 5 and Opus 5 — 100% semantic success, 100% correct
+target on the first mutation, zero refusals, zero schema-invalid calls, on
+base as well as head. Read that as the right result, not a disappointing
+one: consolidation was never done to buy accuracy at 52 tools. Its purpose
+was architectural — a bounded, intention-shaped surface that can absorb the
+functionality still to come without growing one tool per capability and
+eventually confusing the model
+([docs/evaluating/tool-surface-scaling.md](docs/evaluating/tool-surface-scaling.md)).
+The run confirms the consolidation cost nothing on the cases it was shaped
+for, and that head does the same work in fewer operations per intention:
+the note case takes head one mutation and base two (base has no way to edit
+a note in place, so every trial read, deleted and rewrote it), and the mixer
+case ties at two mutations but head spends one tool name where base spends
+two. The harness is the gate for the growth that motivated consolidation —
+run it when the surface changes, and the general corpus (paraphrases,
+cue/return/master coverage) that would actually stress-test routing as
+tools accrete is the second slice, on the roadmap as "Routing evals —
+general corpus and client-realism lane." Two caveats: five trials per cell
+cannot separate 100% from 95%, and two seed cases are a baseline, not a
+benchmark.
 
 **The tool surface is consolidated from 67 tools to 52, no capability lost,
 shipped 2026-08-28**, closing the queue's former top item and absorbing
