@@ -346,6 +346,45 @@ defmodule Seshat.Eval.JudgeTest do
       assert verdict["mutation_count"] == 2
     end
 
+    # The exact reproduction from the PR #78 review: rewriting before deleting
+    # leaves no replacement note in Live, even though both `calls` entries
+    # still individually match — the "after" ordering constraint is what
+    # catches it.
+    test "rewriting before removing fails, even though both calls still match", context do
+      trace = [
+        call("get_clip_notes", %{"track" => 1}, seq: 1),
+        call(
+          "write_midi_notes",
+          %{
+            "track" => 1,
+            "notes" => [
+              %{"pitch" => 39, "start_beat" => 2.0, "duration" => 1.0, "velocity" => 80}
+            ]
+          },
+          seq: 2
+        ),
+        call(
+          "remove_notes",
+          %{
+            "track" => 1,
+            "start_pitch" => 39,
+            "pitch_span" => 1,
+            "start_time" => 2.0,
+            "time_span" => 1.0
+          },
+          seq: 3
+        )
+      ]
+
+      verdict =
+        judge("note_third_quieter", "base-c3096d6", trace, %{
+          fixture: context.fixture,
+          surface: context.base
+        })
+
+      refute verdict["semantic_success"]
+    end
+
     test "rewriting the note louder is not 'quieter'", context do
       trace = [
         call("get_clip_notes", %{"track" => 1}, seq: 1),
@@ -468,6 +507,33 @@ defmodule Seshat.Eval.JudgeTest do
                Judge.deref!(%{"fixture" => "clips.1:0.notes[2]"}, context.fixture)
 
       assert Judge.deref!(%{"fixture" => "master.volume"}, context.fixture) == 0.85
+    end
+
+    test "an \"after\" entry naming a tool with no earlier calls entry raises", context do
+      eval_case = %EvalCase{
+        id: "bogus",
+        fixture: "named_tracks_and_reverb",
+        prompt: "n/a",
+        expect: %{}
+      }
+
+      expectation = %{
+        "calls" => [
+          %{"tool" => "set_mixer", "after" => "get_session_state", "where" => %{}}
+        ]
+      }
+
+      trace = [call("set_mixer", %{}, seq: 1)]
+
+      assert_raise ArgumentError, ~r/does not name an earlier calls entry/, fn ->
+        Judge.judge(eval_case, expectation, %{
+          trace: trace,
+          fixture: context.fixture,
+          surface: context.head,
+          final_text: nil,
+          void_reason: nil
+        })
+      end
     end
   end
 end

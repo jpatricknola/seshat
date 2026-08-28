@@ -397,7 +397,12 @@ pitch/time window of the call, defaults applied, starts exactly the given
 fixture notes and no others), `velocity_down_from` (`velocity < n` or
 `velocity_delta < 0`), `notes_replace_quieter` (the written notes are the
 given note at lower velocity). Unknown matcher keys are a case-file error,
-not a silent pass.
+not a silent pass. A `calls` entry may also carry `"after": "<tool name>"`,
+naming an earlier entry whose last matching call this entry's matched call(s)
+must sort after by `seq` — added post-ship (PR #78 review) once unordered
+matching let a read-then-rewrite-then-delete trace pass the same
+read-then-delete-then-rewrite expectation, deleting the note the model had
+just quietly written.
 
 Per trial the verdict is a map: `semantic_success`, `first_call_valid`,
 `first_mutation_valid`, `all_calls_valid` (each validity field means

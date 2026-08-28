@@ -22,6 +22,13 @@ defmodule Seshat.Eval.Stream do
 
   A void trial is reported and excluded from the rates. It is never silently
   retried: a run whose isolation broke halfway is a fact about the run.
+
+  Isolation proof fails **closed**: a missing `plugins` field, a missing
+  `apiKeySource` field, or a `rate_limit_event` whose `rate_limit_info.status`
+  is absent all void the trial by name, rather than being treated as the
+  clean value they'd collapse to under a bare pattern match. A CLI upgrade
+  that renames or drops one of those fields must show up as a wave of void
+  trials, not a silent pass.
   """
 
   alias Seshat.Eval.Trial
@@ -149,6 +156,7 @@ defmodule Seshat.Eval.Stream do
         servers_reason(init),
         tools_reason(init, expected),
         auth_reason(init),
+        rate_limit_status_reason(trial),
         rate_limit_reason(trial),
         denials_reason(trial),
         result_reason(trial)
@@ -158,10 +166,10 @@ defmodule Seshat.Eval.Stream do
   end
 
   defp plugins_reason(init) do
-    case init["plugins"] do
-      nil -> nil
-      [] -> nil
-      other -> "settings leaked: init reported plugins #{inspect(other)}"
+    case Map.fetch(init, "plugins") do
+      :error -> "isolation unproven: init has no plugins field"
+      {:ok, []} -> nil
+      {:ok, other} -> "settings leaked: init reported plugins #{inspect(other)}"
     end
   end
 
@@ -200,10 +208,10 @@ defmodule Seshat.Eval.Stream do
   # Subscription auth is part of the contract: an API key would bill differently
   # and could route to a different serving stack.
   defp auth_reason(init) do
-    case init["apiKeySource"] do
-      "none" -> nil
-      nil -> nil
-      other -> "auth was not the subscription: apiKeySource #{inspect(other)}"
+    case Map.fetch(init, "apiKeySource") do
+      :error -> "isolation unproven: init has no apiKeySource field"
+      {:ok, "none"} -> nil
+      {:ok, other} -> "auth was not the subscription: apiKeySource #{inspect(other)}"
     end
   end
 
@@ -224,6 +232,23 @@ defmodule Seshat.Eval.Stream do
     end
   end
 
+  # A missing `status` is a distinct failure from a present, non-"allowed"
+  # one: it means the event's shape can no longer be trusted, not that the
+  # account is rate limited. It voids the trial but must never reach
+  # `blocking_rate_limit/1`'s stop-the-run path, which treats an absent
+  # status as the harmless "allowed" case on purpose — see its doc.
+  defp rate_limit_status_reason(%Trial{rate_limits: events}) do
+    Enum.find_value(events, fn event ->
+      info = event["rate_limit_info"] || %{}
+
+      if Map.has_key?(info, "status") do
+        nil
+      else
+        "isolation unproven: rate_limit_event has no rate_limit_info.status field"
+      end
+    end)
+  end
+
   @doc """
   The first `rate_limit_event` whose status is not `"allowed"`, or `nil`.
 
@@ -231,6 +256,11 @@ defmodule Seshat.Eval.Stream do
   the account's window is exhausted — measured on this account as an outright
   failure rather than billed overage — so the runner stops the whole run and
   reports `resetsAt` instead of grinding out void trials.
+
+  A missing `status` is deliberately treated the same as `"allowed"` *here* —
+  it must never stop the whole run on its own — because `void_reason/2`
+  already voids that trial by name via `rate_limit_status_reason/1`. Only a
+  present, non-`"allowed"` status is grounds to stop everything behind it.
   """
   @spec blocking_rate_limit(Trial.t()) :: map() | nil
   def blocking_rate_limit(%Trial{rate_limits: events}) do

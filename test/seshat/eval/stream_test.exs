@@ -87,6 +87,44 @@ defmodule Seshat.Eval.StreamTest do
       assert EvalStream.void_reason(leaked, tools) =~ "plugins"
     end
 
+    # A CLI upgrade that drops or renames a field must fail closed — not
+    # collapse to the same "clean" verdict a present, empty/none value gets.
+    test "a missing plugins field voids the trial", %{trial: trial, tools: tools} do
+      unproven = %{trial | init: Map.delete(trial.init, "plugins")}
+
+      reason = EvalStream.void_reason(unproven, tools)
+      assert reason =~ "isolation unproven"
+      assert reason =~ "plugins"
+    end
+
+    test "a missing apiKeySource field voids the trial", %{trial: trial, tools: tools} do
+      unproven = %{trial | init: Map.delete(trial.init, "apiKeySource")}
+
+      reason = EvalStream.void_reason(unproven, tools)
+      assert reason =~ "isolation unproven"
+      assert reason =~ "apiKeySource"
+    end
+
+    test "a rate-limit event with no status field voids the trial but does not block the run", %{
+      trial: trial,
+      tools: tools
+    } do
+      unproven = %{
+        trial
+        | rate_limits: [
+            %{
+              "type" => "rate_limit_event",
+              "rate_limit_info" => %{"resetsAt" => 1_787_926_800}
+            }
+          ]
+      }
+
+      reason = EvalStream.void_reason(unproven, tools)
+      assert reason =~ "isolation unproven"
+      assert reason =~ "rate_limit_info.status"
+      assert EvalStream.blocking_rate_limit(unproven) == nil
+    end
+
     test "a missing tool voids the trial against the expected surface", %{
       trial: trial,
       tools: tools

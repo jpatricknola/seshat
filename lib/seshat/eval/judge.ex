@@ -33,6 +33,17 @@ defmodule Seshat.Eval.Judge do
     * `notes_replace_quieter` — the written notes are the given fixture notes at
       a lower velocity, same pitch, same start.
 
+  A `calls` entry may also carry `"after": "<tool name>"`, naming an earlier
+  entry in the same `calls` list. The matched call(s) for this entry must all
+  have a `seq` greater than the last matching call's `seq` for the named
+  entry. This exists because entry matching is otherwise order-blind: a case
+  that expects "read, delete, rewrite" is satisfied just as well by "read,
+  rewrite, delete" without it — the latter is destructive (the rewrite is
+  clobbered by the delete) but scores identically absent an ordering
+  constraint. `"after"` is the only ordering primitive; there is no
+  list-level `"ordered": true` shortcut, so a case that cares about order
+  says so on every entry after the first.
+
   ## Why `first_mutation_valid` exists beside `first_call_valid`
 
   The roadmap's literal metric is first-call validity, and both seed cases
@@ -83,7 +94,12 @@ defmodule Seshat.Eval.Judge do
         {entry, Enum.filter(trace, &matches_entry?(&1, entry, fixture))}
       end)
 
-    entries_ok? = Enum.all?(matches, fn {entry, found} -> count_ok?(entry, length(found)) end)
+    entries_ok? =
+      matches
+      |> Enum.with_index()
+      |> Enum.all?(fn {{entry, found}, index} ->
+        count_ok?(entry, length(found)) and ordering_ok?(entry, found, index, matches)
+      end)
 
     max_mutations = Map.get(expectation, "max_mutations")
     must_not_call = Map.get(expectation, "must_not_call", [])
@@ -139,6 +155,36 @@ defmodule Seshat.Eval.Judge do
   defp count_ok?(%{"count" => count}, found), do: found == count
   defp count_ok?(%{"min_count" => min}, found), do: found >= min
   defp count_ok?(_entry, found), do: found >= 1
+
+  # `"after"` names an earlier `calls` entry by tool; the current entry's
+  # matched calls must all sort strictly after that entry's last match. With
+  # no `"after"` key, ordering is unconstrained (the pre-existing behaviour).
+  defp ordering_ok?(%{"after" => nil}, _found, _index, _matches), do: true
+
+  defp ordering_ok?(%{"after" => after_tool}, found, index, matches) do
+    matches
+    |> Enum.take(index)
+    |> Enum.find(fn {earlier_entry, _found} -> earlier_entry["tool"] == after_tool end)
+    |> case do
+      nil ->
+        raise ArgumentError,
+              "case file's \"after\": #{inspect(after_tool)} does not name an earlier calls entry"
+
+      {_earlier_entry, earlier_found} ->
+        seq_after?(found, earlier_found)
+    end
+  end
+
+  defp ordering_ok?(_entry, _found, _index, _matches), do: true
+
+  defp seq_after?(found, earlier_found) do
+    with earlier_seqs when earlier_seqs != [] <- Enum.map(earlier_found, & &1["seq"]),
+         later_seqs when later_seqs != [] <- Enum.map(found, & &1["seq"]) do
+      Enum.min(later_seqs) > Enum.max(earlier_seqs)
+    else
+      _ -> false
+    end
+  end
 
   # "Correct target" means the model's first write was one the case expected at
   # all — not merely well-formed. A trial that mutes the wrong return fails here
