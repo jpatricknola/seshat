@@ -215,9 +215,11 @@ defmodule Seshat.Tools.Handlers do
   # What each strip actually has. Returns have no `arm` (return_track.py
   # registers none); the master has no mute, solo, arm or name setter at all
   # (`Session.State` mirrors none of them either, for the same reason — reading
-  # one raises inside Live); cue is a single fader on the master. A property the
-  # target lacks is refused before anything goes out, so a call is
-  # all-or-nothing rather than partially applied.
+  # one raises inside Live); cue is a single fader on the master. The support
+  # matrix is an atomic preflight: if the target lacks any requested property,
+  # nothing is sent. Once preflight passes, supported properties are written
+  # sequentially over UDP; a later transport failure can therefore leave the
+  # earlier writes applied, which `mixer_partial_error/5` reports honestly.
   @mixer_supported %{
     "track" => ~w(volume pan mute solo arm name),
     "return" => ~w(volume pan mute solo name),

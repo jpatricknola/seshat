@@ -4,9 +4,9 @@ _Written 2026-08-28 against PR #77 `consolidation-continued`, head
 `6d9083f65ec8a35d42b992c71ce63f5afb466377`. Suggested home:
 `docs/HANDOFF_tool_surface.md`._
 
-Two things are in here: a review of PR #77 with the one change I'd make before
-merging, and the problem PR #77 does **not** solve — which is the one that
-prompted it.
+Two things are in here: a review of PR #77, including one blocking finding that
+was fixed after this handoff was written, and the problem PR #77 does **not**
+solve — which is the one that prompted it.
 
 Every line number below is at head `6d9083f` and will drift. Grep the function
 name, not the line.
@@ -15,8 +15,9 @@ name, not the line.
 
 ## Verdict on PR #77
 
-**Merge it, after fix #1 below.** The consolidation axis is right and the
-implementation is sound on independent re-derivation.
+**Merge it.** The consolidation axis is right and the implementation is sound
+on independent re-derivation. Finding #1 below has since been fixed generically
+in schema-driven validation.
 
 ### Land it as a quality fix, not as the scaling fix
 
@@ -64,10 +65,16 @@ oversell one axis and undersell the other:
 
 ---
 
-## 1. Blocking: `set_mixer` silently drops unrecognized property keys
+## 1. Resolved: `set_mixer` silently dropped unrecognized property keys
 
-**The defect.** A call mixing good and misspelled keys applies the good ones and
-says nothing about the rest.
+**Resolved after this handoff was written.** Validation now rejects unknown
+keys for every declared object before dispatch, including nested objects, and
+the published MCP schemas carry `additionalProperties: false`. The regression
+test covers a call containing both valid `volume` and misspelled `panning` and
+proves that it emits zero OSC messages.
+
+**The defect at the reviewed head.** A call mixing good and misspelled keys
+applied the good ones and said nothing about the rest.
 
 `{"track": 0, "volume": 0.6, "panning": -0.5}` sets volume, drops `panning`, and
 replies with a confident success line for volume only. The model has no signal
@@ -119,38 +126,30 @@ property the *target* lacks is refused by name with nothing sent, but a property
 the *schema* lacks is dropped in silence. Same class of error, opposite
 handling, in the same function chain.
 
-**The fix.** Reject unknown keys the same way, before anything is sent.
+**Applied fix.** Rather than adding three handler-specific allowlists, the
+schema validator now compares every object map with its declared `properties`.
+That closes `set_mixer`, `set_clip_properties`, `edit_notes`, every other tool,
+and nested note objects by construction. `ensure_mixer_changes/1` remains for a
+genuinely empty call, with its obsolete "keys are dropped" wording removed.
 
-- In `do_call("set_mixer", params)` (handlers.ex:1789), add a check ahead of
-  `ensure_mixer_changes/1` that diffs `Map.keys(params)` against
-  `@mixer_properties ++ ~w(target track)` and errors naming the offenders.
-  Reuse the existing wording pattern — name the keys, name the legal set, end
-  with "Nothing was sent."
-- Keep `ensure_mixer_changes/1` for the genuinely-empty case; the new check
-  makes its "check its spelling" sentence redundant, so trim that clause.
-- Same treatment for `set_clip_properties` and `edit_notes`, which have the same
-  optional-property-bag shape and therefore the same hole. Check before
-  assuming — I only verified `set_mixer`.
-
-**Test.** `test/seshat/tools/handlers_test.exs`: a `set_mixer` call carrying one
-valid and one invalid property returns `{:error, _}` naming the invalid key, and
-`Seshat.Test.OSCSink` recorded **zero** messages. The zero-sends assertion is
-the point; a test that only checks the string would pass on a partial write.
-
-**Smoke test.** Add to `docs/smoke_tests/auto/mixer.md` beside "A property the
-target lacks is refused with nothing sent" — same shape, misspelled key instead
-of unsupported one.
+**Smoke coverage.** `docs/smoke_tests/auto/mcp-surface.md` now checks the mixed
+valid/unknown call through a real MCP handshake and requires a readable tool
+error with no valid-property write reaching Live. Run 2026-08-28: the first
+pass **failed** — Peri validates in `:strict` mode, which silently drops unknown
+keys rather than rejecting them, so `Validation`'s check never saw `panning` and
+volume was written. Fixed in `ac9424f` by validating the raw arguments in
+`Seshat.MCP.Server.handle_request/2` ahead of Peri; rerun green.
 
 ---
 
-## 2. Non-blocking: "all-or-nothing" is true pre-flight, false on the wire
+## 2. Resolved: "all-or-nothing" is true pre-flight, false on the wire
 
 `apply_mixer/3` stops at first failure, so a multi-property call to a return can
 land partially. `mixer_partial_error/5` reports that honestly — it names what
-"was already sent and may have landed" — so the behaviour is fine. The module
-comment at handlers.ex:219–224 frames it as all-or-nothing without qualifying
-that this covers only the property pre-check. Tighten the wording so the next
-reader does not trust an atomicity that is not there.
+"was already sent and may have landed" — so the behaviour is fine. The comment
+now calls the target/property support check an atomic preflight and explicitly
+states that supported writes are sequential over UDP, so a later transport
+failure can leave earlier writes applied.
 
 ---
 
@@ -319,33 +318,37 @@ trades a loud failure for a quiet one.
 
 ## Suggested next steps, in order
 
-1. **Fix the unknown-key hole in `set_mixer`** (§1), with the zero-sends test.
-   Check `set_clip_properties` and `edit_notes` for the same shape.
-2. **Tighten the all-or-nothing comment** (§2). One-line change.
-3. **Merge PR #77**, and write the ROADMAP entry as a *selection-accuracy* fix
+Completed since this handoff was written: unknown keys are now rejected
+generically by schema-driven validation (including nested objects), every
+published object carries `additionalProperties: false`, and the mixed
+valid/unknown `set_mixer` case has a zero-OSC regression test. The mixer comment
+now distinguishes atomic preflight from sequential UDP writes. The fork carry-
+over was already cleared by fork PR #15: `FORK_GAPS.md` records `edit_notes`,
+and Seshat pins the merged fork commit `bc171b7`.
+
+1. ~~Rerun the MCP-surface smoke checks~~ Done 2026-08-28: client accepts the
+   closed schemas (52 tools / 60,246 bytes, largest `set_clip_properties` at
+   3,614), and the mixed-key refusal is a readable tool result — after the fix
+   noted in §1.
+2. **Merge PR #77**, and write the ROADMAP entry as a *selection-accuracy* fix
    with the tool-count question left open as its own entry. See "Land it as a
    quality fix" above — this is the step most likely to be skipped, and skipping
    it is how the surface reaches ~82 tools with the problem marked solved.
-4. **Run the manual `conversation.md` routing check** — "Mixer and note edits
+3. **Run the manual `conversation.md` routing check** — "Mixer and note edits
    route to one call each." It is the whole bet of the PR and it is the one
    verification still needing a person. Everything else went green 2026-08-28.
-5. **Clear the two known carry-overs**: `priv/AbletonOSC/FORK_GAPS.md`'s
-   note-modification row still points at the removed "Modify a note in place";
-   the fork clone was on an unmerged branch when this shipped.
-6. **Build the tool-selection eval corpus** before the next batch of tools, not
+4. **Build the tool-selection eval corpus** before the next batch of tools, not
    after. It is the prerequisite for everything below it.
-7. **Probe `list_changed` against Claude Desktop and Claude Code.** A one-
+5. **Probe `list_changed` against Claude Desktop and Claude Code.** A one-
    afternoon spike: flip a tool in and out of `Definitions.all()`, fire the
    notification, see whether the client re-fetches and whether the model's
    available set actually changes mid-conversation. The whole scoping direction
    depends on the answer, and the answer is cheap.
-8. **Then** design the core-plus-phases split, informed by 6 and 7.
+6. **Then** design the core-plus-phases split, informed by 4 and 5.
 
 ## Open questions
 
 - Does Claude Desktop re-fetch on `list_changed` mid-conversation, or only at
-  session start? Unverified. Step 7 answers it.
+  session start? Unverified. Step 5 answers it.
 - Which tools are actually hot? Unmeasured. The ~20-tool core above is a guess
   from reading `Definitions`, not from usage.
-- Do `set_clip_properties` and `edit_notes` share the unknown-key hole? Likely
-  from their shape, but only `set_mixer` was read closely.
