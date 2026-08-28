@@ -78,9 +78,13 @@ defmodule Mix.Tasks.Routing.Eval do
     models = models(keep(opts, :model))
     trials = opts[:trials] || @default_trials
 
+    # ASCII only in what goes to the console: the standard IO device takes its
+    # encoding from the locale, and on a non-UTF-8 one a multiplication sign
+    # prints as an escape. `report.md` is written with `File.write!` and keeps
+    # its real characters.
     Mix.shell().info(
-      "Routing eval: #{length(cases)} case(s) × #{length(surfaces)} surface(s) × " <>
-        "#{length(models)} model(s) × #{trials} trial(s) = " <>
+      "Routing eval: #{length(cases)} case(s) x #{length(surfaces)} surface(s) x " <>
+        "#{length(models)} model(s) x #{trials} trial(s) = " <>
         "#{length(cases) * length(surfaces) * length(models) * trials} run(s)"
     )
 
@@ -108,8 +112,7 @@ defmodule Mix.Tasks.Routing.Eval do
     File.write!(Path.join(out, "report.md"), rendered)
     File.write!(Path.join(out, "report.json"), Report.json(run))
 
-    Mix.shell().info("\nWrote #{Path.join(out, "report.md")}")
-    Mix.shell().info(rendered)
+    Mix.shell().info("\nWrote #{Path.join(out, "report.md")} and report.json")
   end
 
   # The model name the CLI actually served, taken from the first trial that
@@ -206,7 +209,7 @@ defmodule Mix.Tasks.Routing.Eval do
     fixture = Fixture.load!(eval_case.fixture)
     fixture_path = Fixture.path("routing_eval/fixtures/#{eval_case.fixture}.json")
 
-    Mix.shell().info("  #{eval_case.id} / #{model["name"]} / #{surface.id} / trial #{index}…")
+    Mix.shell().info("  #{eval_case.id} / #{model["name"]} / #{surface.id} / trial #{index}...")
 
     outcome =
       Runner.run(

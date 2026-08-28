@@ -528,6 +528,86 @@ experiment rather than a regression check:
   transcript, and predicates that separate the surfaces (or show they don't)
   on their own. The *result* — whether head routes better — is a finding for
   the PR and CLAUDE.md, not a pass/fail of this plan.
+
+  **Ran 2026-08-28. 40/40 trials, zero void, every one judged with no
+  transcript read — the harness passes.** Claude Code `2.1.220`, subscription
+  auth, lane prompt `8f12690c551a`, head at `fdd49a6` (52 tools, contract
+  `606717a4a22c`), base at `c3096d6` (67 tools, contract `2799d2c9949a`).
+
+  Case `mixer_master_and_return` — scored:
+
+  | model | surface | valid | void | semantic | target 1st mut | 1st call valid | 1st mut valid | all valid | median muts | refusals |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | `m01` sonnet-5 | `head` | 5 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+  | `m01` sonnet-5 | `base-c3096d6` | 5 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+  | `m02` opus-5 | `head` | 5 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+  | `m02` opus-5 | `base-c3096d6` | 5 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+  | **panel (worst)** | `head` | 10 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+  | **panel (worst)** | `base-c3096d6` | 10 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+
+  Case `note_third_quieter` — scored:
+
+  | model | surface | valid | void | semantic | target 1st mut | 1st call valid | 1st mut valid | all valid | median muts | refusals |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | `m01` sonnet-5 | `head` | 5 | 0 | 100% | 100% | 100% | 100% | 100% | 1 | 0 |
+  | `m01` sonnet-5 | `base-c3096d6` | 5 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+  | `m02` opus-5 | `head` | 5 | 0 | 100% | 100% | 100% | 100% | 100% | 1 | 0 |
+  | `m02` opus-5 | `base-c3096d6` | 5 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+  | **panel (worst)** | `head` | 10 | 0 | 100% | 100% | 100% | 100% | 100% | 1 | 0 |
+  | **panel (worst)** | `base-c3096d6` | 10 | 0 | 100% | 100% | 100% | 100% | 100% | 2 | 0 |
+
+  Every observed call, grouped: the forty traces collapse into four shapes plus
+  one variant, so they are recorded here by shape and argument spread rather
+  than trial by trial (a deviation from this bullet's literal wording — the
+  per-trial listing is in `report.md`, and the run directory is gitignored, so
+  this is the durable record). Nothing was refused, nothing was
+  schema-invalid, and no trial made a call outside these shapes.
+
+  - `mixer_master_and_return` / `head`, 10/10:
+    `get_session_state` → `set_mixer {target: master, volume: v}` →
+    `set_mixer {target: return, track: 0, mute: true}`, with `v ∈ {0.78, 0.8}`.
+  - `mixer_master_and_return` / `base`, 10/10:
+    `get_session_state` → `set_master_volume {value: v}` →
+    `set_return_track_mute {return_track: 0, muted: true}`, `v ∈ {0.75, 0.78, 0.79}`.
+  - `note_third_quieter` / `head`, 9/10:
+    `get_session_state` → `get_clip_slots` → `get_clip_notes {track: 1, clip_slot: 0}` →
+    `edit_notes {track: 1, clip_slot: 0, start_pitch: 39, pitch_span: 1, start_time: 2, time_span: ts, …}`,
+    `ts ∈ {0.001, 0.01, 0.1, 0.5}`, quieter expressed as `velocity: 80` or
+    `velocity_delta ∈ {-15, -18, -20}`. The remaining trial is the same
+    without the `get_clip_slots` detour.
+  - `note_third_quieter` / `base`, 9/10:
+    the same three reads → `remove_notes {track: 1, clip_slot: 0, start_pitch: 39,
+    pitch_span: 1, start_time: 2, time_span: 0.5 | 1}` →
+    `write_midi_notes {track: 1, clip_slot: 0, notes: [{pitch: 39, start_beat: 2,
+    duration: 1, velocity: 75 | 78 | 80 | 82}]}`. The remaining trial is the same
+    without `get_clip_slots`.
+
+  **The finding.** Both surfaces route *correctly*, on both models, in every
+  trial: 100% semantic success, 100% correct target on the first mutation,
+  zero refusals, zero schema-invalid calls, on base as well as head. The
+  consolidation's bet is **not** vindicated on the metric it was argued on —
+  the 67 same-verb names did not confuse either model on these two prompts,
+  and PR #77's claim that intention-shaped names "route better" is, at this
+  sample size and on these cases, unsupported.
+
+  What *does* separate them is the cost of the same intention. The note case
+  takes head one mutation and base two (median 1 vs 2): base has no way to
+  change a note in place, so every trial read the clip, deleted the note and
+  rewrote it — two Live undo steps, two chances for a partial failure, and a
+  full note re-specification the model has to get right from a read. The
+  mixer case ties at two mutations, but head spends one tool name where base
+  spends two. So the honest summary is: **consolidation bought fewer
+  operations per intention, not better routing** — which is a real result and
+  a narrower claim than the one CLAUDE.md currently makes.
+
+  Two caveats worth keeping. Five trials cannot distinguish 100% from 95%,
+  and both cases are the ones the consolidation was *designed* for — a corpus
+  that includes the cue output, sends, and paraphrases that name no track is
+  where base would be expected to struggle, and that corpus is the second
+  slice. The predicates themselves are proven: `window_selects_exactly`
+  accepted four different window strategies (`time_span` from 0.001 to 0.5)
+  as the same intention while `judge_test.exs` shows it rejecting a window
+  that also catches the fourth note.
 - `smoke_tests/manual/conversation.md § Mixer and note edits route to one call
   each` — already narrowed to the "replies speak music" residue; still needs
   a person, still `Last run: —`.
