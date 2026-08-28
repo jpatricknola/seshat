@@ -11,7 +11,7 @@ handshake against `http://localhost:4000/mcp`.
 
 ## The tool list survives a real handshake
 
-*Last run: — (the 2026-08-28 run saw 52 tools; rerun after closed-object schemas added `additionalProperties: false`)*
+*Last run: 2026-08-28 — 52 tools listed over a real handshake with every published object (root and nested) carrying `additionalProperties: false`; matches `Definitions.all()`.*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py list`. The count must
 match `Definitions.all()`.
@@ -23,7 +23,7 @@ is stale".
 
 ## The surface budget is measured, not guessed
 
-*Last run: — (the 2026-08-28 baseline was **52 tools / 58,709 bytes / largest `set_clip_properties` at 3,585 bytes**; rerun because closing every published object changes the byte totals)*
+*Last run: 2026-08-28 (closed schemas) — **52 tools / 60,246 bytes / largest `set_clip_properties` at 3,614 bytes**. Up 1,537 bytes from the same day's 58,709 / 3,585 open-schema baseline: 55 `"additionalProperties":false` members (one per published object, nested ones included), ~28 bytes each, no text change. Total is still below the 62,784-byte 67-tool baseline.*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py stats` against a freshly
 restarted server. Record all four values here: advertised tool count, compact
@@ -91,7 +91,7 @@ send is the thing worth catching, and no reply string can show it to you.
 
 ## A mutating tool with nothing required survives the client and rejects unknown keys
 
-*Last run: — (the 2026-08-28 run covered the optional schema before unknown keys were rejected; rerun against the closed schema)*
+*Last run: 2026-08-28 — enum and bounds as described, `required: []`, root schema closed. `pan: -1.0` reached Live (`50L`, read back -1.0). `{"track": 0}` returned the "Nothing to set" tool result. The mixed-key call returned a tool result naming `panning: unknown parameter` with the accepted keys, and track 0's volume read back unchanged at 0.85. **The first run of this check failed**: Peri's `:strict` mode silently *drops* unknown keys rather than rejecting them, so `panning` never reached `Validation` and `volume 0.6` was written to Live. Fixed the same day by running `Validation` on the raw arguments in `Seshat.MCP.Server.handle_request/2` before Anubis/Peri see them — so the path that answered is `Validation`, ahead of Peri, not the `-32602` rewrite.*
 
 `set_mixer` is the first *mutating* tool whose schema has `required: []` and
 an optional `target` enum — everything on it is optional because the handler

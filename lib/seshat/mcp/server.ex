@@ -24,8 +24,11 @@ defmodule Seshat.MCP.Server do
   no way to learn the bound and retry, though `Seshat.Tools.Validation` already
   writes a model-readable explanation.
 
-  The clause below intercepts those rejections and re-emits them as tool
-  results carrying `Validation`'s message. It relies on three facts about
+  The clause below runs `Validation` on the raw arguments first — Peri's
+  `:strict` mode silently *drops* unknown keys instead of rejecting them, so
+  waiting for its rejection would let a misspelt property through as a
+  partial write — and then intercepts whatever Peri still rejects, re-emitting
+  it as a tool result carrying `Validation`'s message. It relies on three facts about
   Anubis (1.10.0), all verified empirically against this repo's deps:
 
   1. `handle_request/2` is `defoverridable` and the default Anubis injects at
@@ -73,23 +76,49 @@ defmodule Seshat.MCP.Server do
   @impl Anubis.Server
   def handle_request(%{"method" => "tools/call"} = request, frame) do
     request = normalize_arguments(request)
+    params = request["params"] || %{}
+    name = params["name"]
+    arguments = Map.get(params, "arguments", %{})
 
-    case Anubis.Server.Handlers.handle(request, __MODULE__, frame) do
-      {:error, %Error{reason: :invalid_params} = error, frame} = rejection ->
-        params = request["params"] || %{}
-        name = params["name"]
-
-        if is_binary(name) and MapSet.member?(@tool_names, name) do
-          message = rewrite_rejection(name, Map.get(params, "arguments", %{}), error)
-          {:reply, Response.to_protocol(Response.error(Response.tool(), message)), frame}
-        else
-          rejection
-        end
+    with :ok <- prevalidate(name, arguments),
+         {:error, %Error{reason: :invalid_params} = error, frame} <-
+           Anubis.Server.Handlers.handle(request, __MODULE__, frame) do
+      if is_binary(name) and MapSet.member?(@tool_names, name) do
+        message = rewrite_rejection(name, arguments, error)
+        {:reply, Response.to_protocol(Response.error(Response.tool(), message)), frame}
+      else
+        {:error, error, frame}
+      end
+    else
+      {:reject, message} ->
+        {:reply, Response.to_protocol(Response.error(Response.tool(), message)), frame}
 
       other ->
         other
     end
   end
+
+  # Peri validates in `:strict` mode, which *returns only schema keys*: an
+  # unknown key is not an error to it but a value it silently discards, so a
+  # `set_mixer` call carrying `volume` and a misspelt `panning` used to reach
+  # the handler as a valid `volume`-only write (measured 2026-08-28, over a real
+  # handshake). The published `additionalProperties: false` is advice a client
+  # may ignore. So a known tool's map arguments meet `Validation` here, on the
+  # raw decode, before Anubis sees them — unknown keys included. The rewrite
+  # below stays for what this cannot judge: non-map arguments, and anything
+  # Peri rejects that `Validation` does not model.
+  defp prevalidate(name, arguments) when is_binary(name) and is_map(arguments) do
+    if MapSet.member?(@tool_names, name) do
+      case Validation.validate(name, arguments) do
+        :ok -> :ok
+        {:error, message} -> {:reject, message}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp prevalidate(_name, _arguments), do: :ok
 
   # An explicit `"arguments": null` is the one shape neither Anubis nor the
   # rewrite below handles. Peri accepts it and passes `nil` straight through,

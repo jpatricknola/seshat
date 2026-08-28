@@ -97,6 +97,26 @@ defmodule Seshat.MCP.ServerTest do
       assert text =~ "0-indexed regular track number"
     end
 
+    # Peri's `:strict` mode drops unknown keys rather than rejecting them, so
+    # without the pre-validation in `handle_request/2` this call reaches the
+    # handler as a valid `volume`-only write. The zero-sends assertion is the
+    # point: the string alone would pass on a partial write.
+    test "an unknown key beside a valid one is refused by name and nothing is sent" do
+      sink = start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
+
+      start_supervised!(
+        {Seshat.OSC.Transport, send_port: Seshat.Test.OSCSink.port(sink), reply_port: 0}
+      )
+
+      text =
+        rejection_text(call("set_mixer", %{"track" => 0, "volume" => 0.6, "panning" => -0.5}))
+
+      assert text =~ "Invalid parameters for set_mixer"
+      assert text =~ "panning: unknown parameter"
+      assert text =~ ~s("pan")
+      refute_receive {:osc_out, _address, _args}, 100
+    end
+
     test "a string where an integer belongs is named as a type error" do
       text = rejection_text(call("set_mixer", %{"track" => "zero", "pan" => 0.0}))
 
