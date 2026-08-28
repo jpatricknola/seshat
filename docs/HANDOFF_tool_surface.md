@@ -334,21 +334,24 @@ and Seshat pins the merged fork commit `bc171b7`.
    with the tool-count question left open as its own entry. See "Land it as a
    quality fix" above — this is the step most likely to be skipped, and skipping
    it is how the surface reaches ~82 tools with the problem marked solved.
-3. **Run the manual `conversation.md` routing check** — "Mixer and note edits
-   route to one call each." It is the whole bet of the PR and it is the one
-   verification still needing a person. Everything else went green 2026-08-28.
-4. **Build the tool-selection eval corpus** before the next batch of tools, not
-   after. It is the prerequisite for everything below it.
-5. **Probe `list_changed` against Claude Desktop and Claude Code.** A one-
+3. **Build the automated conversation-routing evaluation next** — now roadmap
+   #1 by explicit decision. Its first slice feeds the two manual mixer/note
+   prompts through a headless client and recording MCP server against base and
+   head, rather than asking a person to type and inspect them. The process is
+   evaluated in `docs/evaluating/automated-conversation-routing-evals.md`; the
+   old manual check stays unrun until the harness either replaces it or narrows
+   it to subjective reply quality.
+4. **Probe `list_changed` against Claude Desktop and Claude Code.** A one-
    afternoon spike: flip a tool in and out of `Definitions.all()`, fire the
    notification, see whether the client re-fetches and whether the model's
    available set actually changes mid-conversation. The whole scoping direction
    depends on the answer, and the answer is cheap.
-6. **Then** design the core-plus-phases split, informed by 4 and 5.
+5. **Then** design the core-plus-phases split, informed by the routing corpus
+   and step 4.
 
 ## Open questions
 
 - Does Claude Desktop re-fetch on `list_changed` mid-conversation, or only at
-  session start? Unverified. Step 5 answers it.
+  session start? Unverified. Step 4 answers it.
 - Which tools are actually hot? Unmeasured. The ~20-tool core above is a guess
   from reading `Definitions`, not from usage.

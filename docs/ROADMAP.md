@@ -37,7 +37,59 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · AX-backed audio output — verify the remainder
+## #1 · Automate conversation-routing evaluations
+
+**Impact 8 · Lift 5 · 1.60 impact-per-effort**
+
+**Ranked first by decision on 2026-08-28** — this is the measurement gate for
+the bounded tool-surface architecture before more functionality lands. The
+first slice is the two-case decision experiment below, not a generalized eval
+platform built on faith.
+
+**Goal:** replace hand-typed fresh-conversation routing checks with one
+agent-runnable command that sends a committed prompt corpus through a fresh
+headless model client, records its structured MCP calls against a non-mutating
+fixture server, and scores the trace without a person reading the transcript.
+For a tool-surface change, run the same cases against base and head so the PR
+has evidence of whether routing improved.
+
+**Why:** PR #77's central product bet — that 52 intention-shaped tools route
+better than 67 confusable names — is currently guarded only by an unrun manual
+conversation check. Unit tests prove what happens after a tool is selected;
+they cannot prove that the model selects it, picks the right target, or avoids
+an unnecessary read/delete/rewrite chain. Seshat cannot safely scale its tool
+surface on intuition alone. The evaluated route uses the logged-in Claude Code
+subscription, a record-only MCP server and deterministic predicates, never
+Ableton or OSC. Full reasoning and alternatives:
+[automated-conversation-routing-evals.md](evaluating/automated-conversation-routing-evals.md).
+
+**First slice — the decision experiment:**
+
+- Serve fixed base/head surface snapshots through a recorder exposing only the
+  real schemas and fixture-backed tool results. It must send no OSC and retain
+  tool traces, not hidden model reasoning.
+- Automate the two existing cases from
+  [smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md) §
+  *Mixer and note edits route to one call each*: master decrease + return mute;
+  then read the notes + one targeted `edit_notes`. Make the note case's track
+  and slot explicit — "a MIDI clip is open" is not resolvable by today's tools.
+- Run five fresh, interleaved trials per case per surface with a pinned model,
+  isolated temporary working directory and only the recorder's MCP tools.
+- Judge semantic intent, first-call validity, target/index, mutation count,
+  refusals and unsafe extras with predicates that allow harmless numeric/order
+  variation. Emit a compact Markdown/JSON report naming every observed call.
+- Kill the approach before generalizing it if current Claude Code stream events
+  omit tool calls, subscription-authenticated headless runs cannot be isolated,
+  or either case still needs subjective transcript judgment.
+
+**Acceptance:** one command produces a repeatable base/head comparison without
+Live running or a user typing prompts; the harness itself has deterministic
+tests using captured/fake client output; no external-model run joins
+`mix precommit`; and the manual routing check is either retired or narrowed to
+the genuinely subjective "replies speak music" residue rather than silently
+marked passed.
+
+## #2 · AX-backed audio output — verify the remainder
 
 **Impact 5 · Lift 8 · 0.62 impact-per-effort**
 
@@ -94,7 +146,7 @@ archiving now would strand that record.
   of that last check — this machine currently has only one, so nothing has
   moved audibly yet.
 
-## #2 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #3 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Impact 8 · Lift 4 · 2.00 impact-per-effort**
 
@@ -131,7 +183,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #3 · Search eval harness — numbers before opinions
+## #4 · Search eval harness — numbers before opinions
 
 **Impact 2 · Lift 3 · 0.67 impact-per-effort**
 
@@ -160,7 +212,7 @@ benchmark informally (see
 formalize that rather than inventing a new one. Runs offline against the
 catalog — no Ableton needed.
 
-## #4 · Widen the search slate at tied score bands
+## #5 · Widen the search slate at tied score bands
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -181,7 +233,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #5 · A rejected index says which index, and what to call next
+## #6 · A rejected index says which index, and what to call next
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -242,7 +294,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #6 · Browser preview audition
+## #7 · Browser preview audition
 
 **Impact 7 · Lift 3 · 2.33 impact-per-effort**
 
@@ -270,7 +322,7 @@ what decides.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #7 · `start_new_project` — the setup wizard, and prompt budget back
+## #8 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -328,7 +380,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   want, so prefer building it before that item even though ratio separates
   them.
 
-## #8 · `write_midi_notes` must chunk large note batches
+## #9 · `write_midi_notes` must chunk large note batches
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -365,7 +417,7 @@ this item moves ahead of it.
 - Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
   surface needs valid dense clips to work, not become validation errors.
 
-## #9 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #10 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Impact 4 · Lift 2 · 2.00 impact-per-effort**
 
@@ -394,7 +446,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #10 · Read-only audio input display — warn before a silent take
+## #11 · Read-only audio input display — warn before a silent take
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -425,7 +477,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #11 · `screenshot_live` — let Seshat see the screen
+## #12 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -451,7 +503,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #12 · Opt-in `samples` index
+## #13 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -475,7 +527,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #13 · Accepted-search memory
+## #14 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
@@ -499,7 +551,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #14 · Producer personas — switchable musical taste
+## #15 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -534,7 +586,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #15 · Verify destructive mutations before reporting success
+## #16 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -606,7 +658,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #16 · User XMP tags
+## #17 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -625,7 +677,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #17 · Small OSC breadth — grab bag
+## #18 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -648,7 +700,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #18 · Pin the wording of `edit_notes`' partial-failure message
+## #19 · Pin the wording of `edit_notes`' partial-failure message
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -682,7 +734,7 @@ convention across the module.
 - Low lift once the mocking question is settled — the message itself is
   already correct and doesn't need to change, only get pinned.
 
-## #19 · LLM enrichment at reindex
+## #20 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -709,7 +761,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #20 · Monitored refresh worker for `Session.State`
+## #21 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -753,7 +805,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #21 · Device list per track in session state
+## #22 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -774,7 +826,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #22 · Adopt MCP `2026-07-28` when Anubis supports it
+## #23 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -825,7 +877,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #23 · Clip grid in session state — only if usage demands it
+## #24 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 
