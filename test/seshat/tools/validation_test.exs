@@ -30,7 +30,7 @@ defmodule Seshat.Tools.ValidationTest do
 
     test "rejects a non-integer index" do
       assert {:error, message} =
-               Validation.validate("set_track_pan", %{"track" => 1.5, "value" => 0.0})
+               Validation.validate("set_mixer", %{"track" => 1.5, "pan" => 0.0})
 
       assert message =~ "- track: must be an integer (got 1.5)"
     end
@@ -39,22 +39,22 @@ defmodule Seshat.Tools.ValidationTest do
   describe "numeric ranges" do
     test "rejects a pan above the maximum" do
       assert {:error, message} =
-               Validation.validate("set_track_pan", %{"track" => 0, "value" => 2.0})
+               Validation.validate("set_mixer", %{"track" => 0, "pan" => 2.0})
 
-      assert message =~ "- value: must be at most 1.0 (got 2.0)"
+      assert message =~ "- pan: must be at most 1.0 (got 2.0)"
     end
 
     test "rejects a pan below the minimum" do
       assert {:error, message} =
-               Validation.validate("set_track_pan", %{"track" => 0, "value" => -1.5})
+               Validation.validate("set_mixer", %{"track" => 0, "pan" => -1.5})
 
-      assert message =~ "- value: must be at least -1.0 (got -1.5)"
+      assert message =~ "- pan: must be at least -1.0 (got -1.5)"
     end
 
     test "accepts the exact bounds and an integer where the schema says number" do
-      assert :ok = Validation.validate("set_track_pan", %{"track" => 0, "value" => -1.0})
-      assert :ok = Validation.validate("set_track_pan", %{"track" => 0, "value" => 1.0})
-      assert :ok = Validation.validate("set_track_pan", %{"track" => 0, "value" => 1})
+      assert :ok = Validation.validate("set_mixer", %{"track" => 0, "pan" => -1.0})
+      assert :ok = Validation.validate("set_mixer", %{"track" => 0, "pan" => 1.0})
+      assert :ok = Validation.validate("set_mixer", %{"track" => 0, "pan" => 1})
     end
   end
 
@@ -136,57 +136,55 @@ defmodule Seshat.Tools.ValidationTest do
     end
   end
 
-  describe "the return and master mixer setters" do
-    test "return pan takes the full -1.0…1.0 range and nothing outside it" do
-      assert :ok =
-               Validation.validate("set_return_track_pan", %{"return_track" => 0, "value" => -1.0})
+  # One schema now covers what were thirteen tools, so the bounds are declared
+  # once per property rather than once per target — and `target` decides nothing
+  # at this layer, which is exactly why the handler owns the per-target support
+  # matrix.
+  describe "set_mixer bounds" do
+    test "pan takes the full -1.0…1.0 range and nothing outside it" do
+      assert :ok = Validation.validate("set_mixer", %{"track" => 0, "pan" => -1.0})
+      assert :ok = Validation.validate("set_mixer", %{"track" => 0, "pan" => 1.0})
 
-      assert :ok =
-               Validation.validate("set_return_track_pan", %{"return_track" => 0, "value" => 1.0})
+      assert {:error, message} = Validation.validate("set_mixer", %{"track" => 0, "pan" => 1.5})
+      assert message =~ "- pan: must be at most 1.0 (got 1.5)"
 
-      assert {:error, message} =
-               Validation.validate("set_return_track_pan", %{"return_track" => 0, "value" => 1.5})
-
-      assert message =~ "- value: must be at most 1.0 (got 1.5)"
-
-      assert {:error, message} =
-               Validation.validate("set_return_track_pan", %{"return_track" => 0, "value" => -1.1})
-
-      assert message =~ "- value: must be at least -1.0 (got -1.1)"
+      assert {:error, message} = Validation.validate("set_mixer", %{"track" => 0, "pan" => -1.1})
+      assert message =~ "- pan: must be at least -1.0 (got -1.1)"
     end
 
-    test "master pan takes the same range" do
-      assert :ok = Validation.validate("set_master_pan", %{"value" => -1.0})
-      assert {:error, _} = Validation.validate("set_master_pan", %{"value" => -2.0})
+    # Volume is a fader, not a pan: negative is not a legal position.
+    test "volume is 0.0…1.0, never negative" do
+      assert :ok = Validation.validate("set_mixer", %{"target" => "cue", "volume" => 0.0})
+      assert :ok = Validation.validate("set_mixer", %{"target" => "cue", "volume" => 1.0})
+
+      assert {:error, _} =
+               Validation.validate("set_mixer", %{"target" => "cue", "volume" => -0.1})
+
+      assert {:error, _} = Validation.validate("set_mixer", %{"target" => "cue", "volume" => 1.1})
     end
 
-    # Cue volume is a fader, not a pan: negative is not a legal position.
-    test "cue volume is 0.0…1.0, never negative" do
-      assert :ok = Validation.validate("set_cue_volume", %{"value" => 0.0})
-      assert :ok = Validation.validate("set_cue_volume", %{"value" => 1.0})
-      assert {:error, _} = Validation.validate("set_cue_volume", %{"value" => -0.1})
-      assert {:error, _} = Validation.validate("set_cue_volume", %{"value" => 1.1})
+    test "the flags are booleans, the index floors at 0, and target is an enum" do
+      assert :ok = Validation.validate("set_mixer", %{"track" => 0, "mute" => true})
+
+      assert {:error, message} = Validation.validate("set_mixer", %{"track" => 0, "solo" => 1})
+      assert message =~ "- solo: must be a boolean (got 1)"
+
+      assert {:error, message} =
+               Validation.validate("set_mixer", %{"track" => -1, "mute" => true})
+
+      assert message =~ "- track: must be at least 0 (got -1)"
+
+      assert {:error, message} =
+               Validation.validate("set_mixer", %{"target" => "aux", "volume" => 0.5})
+
+      assert message =~ "target"
     end
 
-    test "the mute and solo flags are booleans, and the return index floors at 0" do
-      assert :ok =
-               Validation.validate("set_return_track_mute", %{
-                 "return_track" => 0,
-                 "muted" => true
-               })
-
-      assert {:error, message} =
-               Validation.validate("set_return_track_solo", %{"return_track" => 0, "soloed" => 1})
-
-      assert message =~ "- soloed: must be a boolean (got 1)"
-
-      assert {:error, message} =
-               Validation.validate("set_return_track_mute", %{
-                 "return_track" => -1,
-                 "muted" => true
-               })
-
-      assert message =~ "- return_track: must be at least 0 (got -1)"
+    # `required: []` means an empty call is schema-valid: the "at least one
+    # property" rule is the handler's, and this pins that the schema does not
+    # try to express it.
+    test "no parameter is required — the handler owns the at-least-one rule" do
+      assert :ok = Validation.validate("set_mixer", %{})
     end
   end
 
@@ -365,15 +363,33 @@ defmodule Seshat.Tools.ValidationTest do
 
       assert message =~ "- notes[0].velocity: required but missing"
     end
+
+    test "rejects an unknown field inside an array element with its full path" do
+      notes = [
+        %{
+          "pitch" => 60,
+          "start_beat" => 0.0,
+          "duration" => 1.0,
+          "velocity" => 100,
+          "velocty" => 90
+        }
+      ]
+
+      assert {:error, message} =
+               Validation.validate("write_midi_notes", %{"track" => 0, "notes" => notes})
+
+      assert message =~ "- notes[0].velocty: unknown parameter"
+      assert message =~ ~s("velocity")
+    end
   end
 
   describe "required params" do
     # Before this existed, a known tool called without a required param fell
     # through the pattern-matched do_call/2 clauses to the catch-all and
-    # reported "Unknown tool: set_track_pan".
+    # reported "Unknown tool: <the tool that was called>".
     test "names the missing param rather than blaming the tool" do
-      assert {:error, message} = Validation.validate("set_track_pan", %{"track" => 0})
-      assert message =~ "- value: required but missing"
+      assert {:error, message} = Validation.validate("set_scene_name", %{"scene" => 0})
+      assert message =~ "- name: required but missing"
       refute message =~ "Unknown tool"
     end
 
@@ -401,8 +417,19 @@ defmodule Seshat.Tools.ValidationTest do
       assert :ok = Validation.validate("no_such_tool", %{"track" => -1})
     end
 
-    test "params the schema doesn't mention are ignored" do
-      assert :ok = Validation.validate("delete_track", %{"track" => 0, "extra" => -99})
+    test "rejects params the schema does not mention and lists the accepted keys" do
+      assert {:error, message} =
+               Validation.validate("delete_track", %{"track" => 0, "extra" => -99})
+
+      assert message =~ "- extra: unknown parameter"
+      assert message =~ ~s(expected one of "target", "track")
+    end
+
+    test "rejects arguments on a tool whose parameter object is empty" do
+      assert {:error, message} = Validation.validate("start_playing", %{"now" => true})
+
+      assert message =~ "- now: unknown parameter"
+      assert message =~ "expected no parameters"
     end
 
     test "a param with no declared bounds is left alone" do
@@ -417,21 +444,21 @@ defmodule Seshat.Tools.ValidationTest do
     test "a string where a number is declared is rejected, not compared" do
       # Elixir's term ordering would happily conclude `"loud" >= -1.0`.
       assert {:error, message} =
-               Validation.validate("set_track_pan", %{"track" => 0, "value" => "loud"})
+               Validation.validate("set_mixer", %{"track" => 0, "pan" => "loud"})
 
-      assert message =~ "- value: must be a number (got \"loud\")"
+      assert message =~ "- pan: must be a number (got \"loud\")"
     end
 
     test "rejects the wrong type for string, boolean and array params" do
       assert {:error, message} =
-               Validation.validate("set_track_name", %{"track" => 0, "name" => 7})
+               Validation.validate("set_mixer", %{"track" => 0, "name" => 7})
 
       assert message =~ "- name: must be a string (got 7)"
 
       assert {:error, message} =
-               Validation.validate("set_track_mute", %{"track" => 0, "muted" => "yes"})
+               Validation.validate("set_mixer", %{"track" => 0, "mute" => "yes"})
 
-      assert message =~ "- muted: must be a boolean (got \"yes\")"
+      assert message =~ "- mute: must be a boolean (got \"yes\")"
 
       assert {:error, message} =
                Validation.validate("write_midi_notes", %{"track" => 0, "notes" => "none"})

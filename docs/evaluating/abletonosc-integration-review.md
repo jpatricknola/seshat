@@ -90,16 +90,17 @@ track in session state", "Clip grid in session state").
 
 ### Write patterns — three tiers
 
-- **Tier A — pure fire-and-forget (~25 tools).** `set_tempo`, track mixer
-  setters, `set_track_arm`, transport controls, `delete_track`, scene
+- **Tier A — pure fire-and-forget (~25 tools).** `set_tempo`, `set_mixer` on
+  a regular track (arm included), transport controls, `delete_track`, scene
   operations, clip fire/stop/delete/duplicate, `set_time_signature`,
-  `remove_notes`, and more. Success is reported when `:gen_udp.send` returns
+  `edit_notes`' remove/add pair, and more. Success is reported when `:gen_udp.send` returns
   `:ok`. Some carry honest hedges (`undo`/`redo`: "this confirms the request
   was sent, not that history moved").
-- **Tier B — guard before, no read-back after.** Sends, return/master mixer
-  setters: the pre-read proves the index exists and yields the "was" value,
-  but the reply presents the *requested* value as achieved. For the
-  return/master mixer setters this is softened by listeners — Live pushes its
+- **Tier B — guard before, no read-back after.** Sends, and `set_mixer` on a
+  return, the master or the cue: the pre-read proves the index exists and
+  yields the "was" value, but the reply presents the *requested* value as
+  achieved. For the return/master/cue mixer writes this is softened by
+  listeners — Live pushes its
   accepted value into the mirror (though the tool result the LLM reads does
   not wait for that push). **Correction (2026-08-03): the original
   justification is false for sends** — `track.py` registers only `get/send`
@@ -109,7 +110,8 @@ track in session state", "Clip grid in session state").
 - **Tier C — verified.** `set_device_parameter` (reads `value_string` back),
   `delete_device` (count sandwich; the vendored variant *replies* with the
   remaining count), `bypass_device`, `set_clip_properties` (full write-back
-  read), `create_track`/`create_return_track` (count-before/count-after in
+  read), `create_track` for regular and return tracks alike
+  (count-before/count-after in
   `Seshat.Commands.Registry`), `record_clip`, `capture_midi` (grid diff),
   `hide_view`.
 
@@ -383,8 +385,8 @@ evidence, not the queue.
    lever (ROADMAP.md "Bulk reads vs. per-address queries").
 6. **Two Tier-A setters sit inside the spirit of the accepted subset of
    roadmap item "Verify destructive mutations before reporting success" but
-   were not called out there:** `set_track_arm` returns
-   "Armed track N" unverified while `record_clip`'s internal `arm_track/1`
+   were not called out there:** `set_mixer`'s `arm` on a regular track reports
+   "armed" unverified while `record_clip`'s internal `arm_track/1`
    exists precisely because Live can refuse to arm; `set_time_signature`
    fires two independent messages and can report a plain error with the
    signature half-applied.

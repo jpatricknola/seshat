@@ -1,7 +1,18 @@
 # Plan: Consolidate the tool surface — 67 tools to 52, no capability lost
 
+> **Archived 2026-08-28 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ (see the PR for the
+> implementer's per-item report, the review's verdict and nits — two applied,
+> two declined — and the assumptions carried through the run). The roadmap's
+> "Consolidate the tool surface" entry and "Modify a note in place" (absorbed
+> into `edit_notes`) are both removed; the wording-coverage follow-up the
+> review raised is now roadmap "Pin the wording of `edit_notes`' partial-
+> failure message"; the `priv/AbletonOSC/FORK_GAPS.md` note-modification row
+> is a known carry-over, recorded on the PR rather than done here because the
+> standalone fork clone was on an unmerged branch.
+
 _Roadmap #1 · planned 2026-08-27 · options in
-[evaluating/tool-surface-scaling.md](evaluating/tool-surface-scaling.md)_
+[evaluating/tool-surface-scaling.md](../evaluating/tool-surface-scaling.md)_
 
 ## Context
 
@@ -72,7 +83,7 @@ Three things research changed about the roadmap entry as written:
 ## OSC contract
 
 Every address below is already in use by a tool this plan removes or
-extends; none is new. Cited from [priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md).
+extends; none is new. Cited from [priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md).
 
 ### `set_mixer` — by target and property
 
@@ -157,7 +168,7 @@ values (start 1.6667, duration 0.3333, velocities 37/100/127):
 
 ### 1. `Definitions` — the new and extended schemas
 
-File: [lib/seshat/tools/definitions.ex](../lib/seshat/tools/definitions.ex).
+File: [lib/seshat/tools/definitions.ex](../../lib/seshat/tools/definitions.ex).
 
 **1a. Add `set_mixer`; remove the thirteen it replaces** — `set_track_volume`,
 `set_track_pan`, `set_track_mute`, `set_track_solo`, `set_track_arm`,
@@ -300,7 +311,7 @@ use set_track_pan", and any `set_track_*` mention in `get_session_state`,
 
 ### 2. `Handlers` — dispatch
 
-File: [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex).
+File: [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex).
 
 **2a. `do_call("set_mixer", params)`.** Shape:
 
@@ -423,7 +434,7 @@ but could not be read back").
 
 ### 3. `FollowCam`
 
-File: [lib/seshat/tools/follow_cam.ex](../lib/seshat/tools/follow_cam.ex).
+File: [lib/seshat/tools/follow_cam.ex](../../lib/seshat/tools/follow_cam.ex).
 
 - `"edit_notes"` joins the clip list; `"remove_notes"` leaves it.
 - `calls("create_return_track", %{return: index})` becomes
@@ -491,18 +502,18 @@ delete_return_track first" → "with delete_track (target: 'return') first".
 
 ### 6. Docs, skill, smoke tests
 
-- [CLAUDE.md](../CLAUDE.md) module map: a row for
+- [CLAUDE.md](../../CLAUDE.md) module map: a row for
   `lib/seshat/tools/note_edit.ex` — "Pure note-edit arithmetic behind
   `edit_notes` (transpose, velocity, duration, shift, delete, range
   refusals); no OSC" — beside the `follow_cam.ex` row.
-- [CLAUDE.md](../CLAUDE.md) design decisions: retain the explicit three-layer
+- [CLAUDE.md](../../CLAUDE.md) design decisions: retain the explicit three-layer
   boundary — model-facing producer intentions → domain operations → OSC/AX/
   generation adapters — and the rule that bridge/provider completeness never
   publishes tools automatically. `Handlers` stays the sole name dispatcher;
   substantial algorithms and multi-backend workflows live in focused modules
   behind it. `Registry` stays limited to bounded `%Command{}` OSC sequences,
   not a generic workflow engine.
-- [docs/evaluating/tool-surface-scaling.md](evaluating/tool-surface-scaling.md):
+- [docs/evaluating/tool-surface-scaling.md](../evaluating/tool-surface-scaling.md):
   retain the standing architecture section added during planning. It records:
   the routing decision every newly closed fork gap takes; cohesion limits for
   property bags and action enums; the boundary between thin dispatch and domain
@@ -512,7 +523,7 @@ delete_return_track first" → "with delete_track (target: 'return') first".
   change. Its recommended sequence makes a repeatable tool-selection prompt
   corpus a gate when generation moves from research onto the roadmap, before
   the first generative tool lands rather than as cleanup afterwards.
-- [.claude/docs/adding-a-tool.md](../.claude/docs/adding-a-tool.md): retain and
+- [.claude/docs/adding-a-tool.md](../../.claude/docs/adding-a-tool.md): retain and
   enforce **"Before minting a name"** ahead of "The four steps":
 
   > A new tool name is justified only when the model must *choose* between
@@ -549,17 +560,17 @@ delete_return_track first" → "with delete_track (target: 'return') first".
 
   Also update the `set_track_send` example if it references a removed
   neighbour, and the "~36KB of schemas" figure to "~60KB".
-- [.claude/skills/add-tool/SKILL.md](../.claude/skills/add-tool/SKILL.md):
+- [.claude/skills/add-tool/SKILL.md](../../.claude/skills/add-tool/SKILL.md):
   step 0 applies the naming/publication test before address research. It stops
   when the capability is a target, property, internal/read-back step, or part
   of an existing high-level action, and otherwise requires the surface
   measurements and selection check before minting a name.
-- [README.md:98-99](../README.md#L98): the return/master sentence names
+- [README.md:98-99](../../README.md#L98): the return/master sentence names
   `create_return_track`, `delete_return_track`, `set_return_track_volume`,
   `set_master_volume` → `create_track`/`delete_track` with `target: 'return'`,
   `set_mixer`.
-- [.claude/docs/command-flow.md:7](../.claude/docs/command-flow.md#L7) and
-  [.claude/skills/smoke-test/scripts/mcp_call.py:10-11](../.claude/skills/smoke-test/scripts/mcp_call.py#L10):
+- [.claude/docs/command-flow.md:7](../../.claude/docs/command-flow.md#L7) and
+  [.claude/skills/smoke-test/scripts/mcp_call.py:10-11](../../.claude/skills/smoke-test/scripts/mcp_call.py#L10):
   the `set_track_pan` example → `set_mixer {"track": 0, "pan": -1.0}`.
 - The same `mcp_call.py` gains `stats`: after a real `tools/list` handshake,
   compact-JSON encode the advertised tool array (`ensure_ascii: false`, no
@@ -571,19 +582,19 @@ delete_return_track first" → "with delete_track (target: 'return') first".
   67-tool/62,784-byte planning baseline only if the compact encoding reproduces
   that baseline (otherwise record the new metric without pretending the two
   methods are comparable).
-- [docs/evaluating/generative features/music-generation-user-stories.md](evaluating/generative%20features/music-generation-user-stories.md):
+- [docs/evaluating/generative features/music-generation-user-stories.md](../evaluating/generative%20features/music-generation-user-stories.md):
   retain the product decision that tools name reversible producer actions, not
   providers or pipeline stages; a bake-off changes an adapter, not
   `Definitions`, and revision earns a separate name only when it proves a
   distinct workflow.
 - Standing capability records
-  [docs/evaluating/abletonosc-integration-review.md](evaluating/abletonosc-integration-review.md)
+  [docs/evaluating/abletonosc-integration-review.md](../evaluating/abletonosc-integration-review.md)
   and
-  [docs/evaluating/generative features/live-improv-exploration.md](evaluating/generative%20features/live-improv-exploration.md):
+  [docs/evaluating/generative features/live-improv-exploration.md](../evaluating/generative%20features/live-improv-exploration.md):
   replace removed model-facing tool names with `set_mixer`, `edit_notes`,
   `create_track track_type: "return"`, and `set_clip_properties` as applicable.
   Do not rewrite OSC address names or archived plan history.
-- [priv/AbletonOSC/FORK_GAPS.md](../priv/AbletonOSC/FORK_GAPS.md): update the
+- [priv/AbletonOSC/FORK_GAPS.md](../../priv/AbletonOSC/FORK_GAPS.md): update the
   note-modification row's disposition "Roadmap **Modify a note in
   place**" → "`edit_notes` composes remove + add today; a widened reply
   with `note_id` would let it preserve probability/deviation/release
@@ -618,27 +629,37 @@ New, all with `Last run: —`:
 
 - `smoke_tests/auto/mixer.md § One set_mixer call moves several controls` —
   the fan-out; one property missing from the mirror is a wrong branch.
+  *2026-08-28: passed — volume 0.6 / pan −0.5 / mute in one call all in the mirror; one `undo` restored all three.*
 - `smoke_tests/auto/mixer.md § A property the target lacks is refused with
   nothing sent` — the all-or-nothing pre-send check.
+  *2026-08-28: passed — `arm` on a return and `mute` on the master each refused by name, return volume unchanged, zero `Setting property for return_track` lines in Log.txt.*
 - `smoke_tests/auto/mixer.md § Master and cue ignore track, and read back
   their old value` — the optional-`track` decision, live.
+  *2026-08-28: passed — `track: 7` on master raised nothing; both replies carried "was …".*
 - `smoke_tests/auto/mixer.md § Boundaries and a bad return index` — 0.0/1.0
   and ±1.0, plus the vendored guard's immediate error.
+  *2026-08-28: passed — +6 dB / 50R and −inf read back; return 99 refused in 0.37s naming "1 return track(s)".*
 - `smoke_tests/auto/clips.md § edit_notes rewrites only the window` — the
   measured round trip, including the velocity-int / mute-0|1 conversion
   that a verbatim re-send gets wrong.
+  *2026-08-28: passed — vel 110/47 with starts and durations unchanged to every digit, other notes identical, one `undo` restored the first read. Reply leaked the `9999.0` time sentinel — fixed on the branch the same day.*
 - `smoke_tests/auto/clips.md § A window edit that would leave the range is
   refused` — refusal before the sends.
+  *2026-08-28: passed after correcting the test — `transpose: 60` on G4 is exactly 127 and legal; `61` and `shift: -1.0` both refused before sending, clip untouched, `-12` read back as 55.*
 - `smoke_tests/auto/clips.md § delete: true empties the window and nothing
   else` — match-by-start semantics.
+  *2026-08-28: semantics passed — the 1.6667 note survived, one `undo` restored the fourth — but the reply said "in the whole clip" for a beats-2–3 window — fixed on the branch the same day.*
 - `smoke_tests/auto/clips.md § Renaming rides set_clip_properties` — the
   string property through the numeric write/read-back path.
+  *2026-08-28: passed — `name` and `looping` echoed in one reply, name on the right slot in `get_clip_slots`.*
 - `smoke_tests/auto/mcp-surface.md § A mutating tool with nothing required
   survives the client` — list-level risk of `required: []`, and the two
   handler-side rejections arriving as tool results.
+  *2026-08-28: passed — 52-tool list survived, `required: []` on the wire, `pan: -1.0` read back fresh from Live, both empty-call shapes answered as tool results by the Elixir validator, never `-32602`.*
 - `smoke_tests/auto/mcp-surface.md § The surface budget is measured, not
   guessed` — the real advertised count/bytes and largest-schema cohesion
   check, rather than treating the count alone as success.
+  *2026-08-28: measured — 52 tools / 58,709 bytes / `set_clip_properties` 3,585; not comparable to the 62,784 planning figure (different method), recorded as the new baseline.*
 - `smoke_tests/manual/conversation.md § Mixer and note edits route to one
   call each` — the whole bet: does one name route better than thirteen.
 

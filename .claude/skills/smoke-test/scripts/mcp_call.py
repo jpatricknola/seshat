@@ -7,8 +7,15 @@ proves nothing. This is also how you tell "the server is wrong" from "my client
 is stale" — the distinction that otherwise costs twenty minutes.
 
     python3 .claude/skills/smoke-test/scripts/mcp_call.py list
-    python3 .claude/skills/smoke-test/scripts/mcp_call.py schema set_track_pan value
-    python3 .claude/skills/smoke-test/scripts/mcp_call.py call set_track_pan '{"track": 0, "value": 2.0}'
+    python3 .claude/skills/smoke-test/scripts/mcp_call.py stats
+    python3 .claude/skills/smoke-test/scripts/mcp_call.py schema set_mixer pan
+    python3 .claude/skills/smoke-test/scripts/mcp_call.py call set_mixer '{"track": 0, "pan": 2.0}'
+
+`stats` measures the *client-visible* contract: it compact-encodes the tool
+array exactly as it came off the handshake and prints the count, the total
+bytes, and the largest single tool. That is the number the context budget
+actually pays, which an Elixir-side approximation over `Definitions` is not —
+it never sees the JSON Schema conversion or the wire encoding.
 
 `call` prints the raw JSON-RPC envelope unabridged, because the discriminator
 usually *is* the envelope: a rejection that arrives as `result` with
@@ -70,6 +77,22 @@ def main(argv):
         listed = tools(sid)
         print(f"tools listed: {len(listed)}")
         print(" ".join(sorted(t["name"] for t in listed)))
+
+    elif command == "stats":
+        listed = tools(sid)
+        encoded = json.dumps(listed, ensure_ascii=False, separators=(",", ":"))
+        largest = max(
+            listed,
+            key=lambda t: len(
+                json.dumps(t, ensure_ascii=False, separators=(",", ":")).encode()
+            ),
+        )
+        largest_bytes = len(
+            json.dumps(largest, ensure_ascii=False, separators=(",", ":")).encode()
+        )
+        print(f"tools listed: {len(listed)}")
+        print(f"advertised bytes (compact JSON, as encoded here): {len(encoded.encode())}")
+        print(f"largest tool: {largest['name']} ({largest_bytes} bytes)")
 
     elif command == "schema":
         name, prop = argv[2], argv[3] if len(argv) > 3 else None

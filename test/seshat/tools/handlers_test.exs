@@ -101,8 +101,45 @@ defmodule Seshat.Tools.HandlersTest do
         replies
 
       {unmatched, [{_addr, reply} | rest]} ->
-        reply_datagram(sink, Message.encode(address, reply))
+        reply_datagram(sink, encode_reply(address, reply))
         unmatched ++ rest
+    end
+  end
+
+  # `Message.encode/2` has no boolean clause, because nothing in Seshat ever
+  # sends one — but AbletonOSC hands Live's raw Python values to its own
+  # encoder, so a note's `mute` arrives as OSC's payload-free `T`/`F` type tag.
+  # A reply built through `Message.encode/2` therefore could not carry the value
+  # whose verbatim re-send takes the Transport GenServer down, which is exactly
+  # what `edit_notes` has to convert. Non-boolean replies fall through to the
+  # real encoder so nothing else in the file changes shape.
+  defp encode_reply(address, args) do
+    if Enum.any?(args, &is_boolean/1) do
+      pad = fn binary ->
+        terminated = binary <> <<0>>
+        terminated <> :binary.copy(<<0>>, rem(4 - rem(byte_size(terminated), 4), 4))
+      end
+
+      tags =
+        Enum.map_join(args, "", fn
+          true -> "T"
+          false -> "F"
+          n when is_integer(n) -> "i"
+          f when is_float(f) -> "f"
+          s when is_binary(s) -> "s"
+        end)
+
+      payload =
+        Enum.map_join(args, "", fn
+          b when is_boolean(b) -> ""
+          n when is_integer(n) -> <<n::big-signed-integer-32>>
+          f when is_float(f) -> <<f::big-float-32>>
+          s when is_binary(s) -> pad.(s)
+        end)
+
+      pad.(address) <> pad.("," <> tags) <> payload
+    else
+      Message.encode(address, args)
     end
   end
 
@@ -129,66 +166,218 @@ defmodule Seshat.Tools.HandlersTest do
     pad.(address) <> pad.(if flag, do: ",T", else: ",F")
   end
 
-  describe "set_track_pan" do
+  # One name, four index spaces, six properties. What these pin is the fan-out:
+  # every property becomes its own datagram, in `@mixer_properties` order, and a
+  # target that lacks a property refuses the whole call before any of it is sent.
+  describe "set_mixer on a regular track" do
     setup :osc_sink
 
-    test "returns ok with valid params" do
-      assert {:ok, msg} = Handlers.call("set_track_pan", %{"track" => 0, "value" => -1.0})
+    test "one property is one datagram, and target defaults to 'track'" do
+      assert {:ok, msg} = Handlers.call("set_mixer", %{"track" => 0, "pan" => -1.0})
+      assert msg =~ "Track 0"
       assert msg =~ "pan"
-      assert msg =~ "track 0"
       assert_receive {:osc_out, "/live/track/set/panning", [0, -1.0]}
     end
 
     test "pans to center" do
-      assert {:ok, _msg} = Handlers.call("set_track_pan", %{"track" => 1, "value" => 0.0})
+      assert {:ok, _msg} = Handlers.call("set_mixer", %{"track" => 1, "pan" => 0.0})
       # `+0.0` not `0.0`: OTP 27+ warns that a bare 0.0 pattern matches only
       # positive zero anyway, and centre pan encodes as +0.0.
       assert_receive {:osc_out, "/live/track/set/panning", [1, +0.0]}
     end
-  end
 
-  describe "set_track_volume" do
-    setup :osc_sink
-
-    test "returns ok with valid params" do
-      assert {:ok, msg} = Handlers.call("set_track_volume", %{"track" => 0, "value" => 0.5})
+    test "volume echoes the dB Live shows" do
+      assert {:ok, msg} = Handlers.call("set_mixer", %{"track" => 0, "volume" => 0.5})
       assert msg =~ "volume"
+      assert msg =~ "dB"
       assert_receive {:osc_out, "/live/track/set/volume", [0, 0.5]}
     end
 
     test "sets volume to max" do
-      assert {:ok, _msg} = Handlers.call("set_track_volume", %{"track" => 2, "value" => 1.0})
+      assert {:ok, _msg} = Handlers.call("set_mixer", %{"track" => 2, "volume" => 1.0})
       assert_receive {:osc_out, "/live/track/set/volume", [2, 1.0]}
     end
-  end
 
-  describe "set_track_mute" do
-    setup :osc_sink
-
-    test "mutes a track" do
-      assert {:ok, msg} = Handlers.call("set_track_mute", %{"track" => 0, "muted" => true})
-      assert msg =~ "Muted track 0"
+    test "booleans go out as 0/1" do
+      assert {:ok, msg} = Handlers.call("set_mixer", %{"track" => 0, "mute" => true})
+      assert msg =~ "muted"
       assert_receive {:osc_out, "/live/track/set/mute", [0, 1]}
+
+      assert {:ok, _msg} = Handlers.call("set_mixer", %{"track" => 0, "mute" => false})
+      assert_receive {:osc_out, "/live/track/set/mute", [0, 0]}
+
+      assert {:ok, msg} = Handlers.call("set_mixer", %{"track" => 0, "solo" => true})
+      assert msg =~ "soloed"
+      assert_receive {:osc_out, "/live/track/set/solo", [0, 1]}
+
+      assert {:ok, _msg} = Handlers.call("set_mixer", %{"track" => 0, "arm" => true})
+      assert_receive {:osc_out, "/live/track/set/arm", [0, 1]}
     end
 
-    test "unmutes a track" do
-      assert {:ok, _msg} = Handlers.call("set_track_mute", %{"track" => 0, "muted" => false})
-      assert_receive {:osc_out, "/live/track/set/mute", [0, 0]}
+    test "name is a string write" do
+      assert {:ok, msg} = Handlers.call("set_mixer", %{"track" => 3, "name" => "Bass"})
+      assert msg =~ "renamed to 'Bass'"
+      assert_receive {:osc_out, "/live/track/set/name", [3, "Bass"]}
+    end
+
+    # The order is `@mixer_properties`', not the params map's — a map has no
+    # order, so without a fixed list the write sequence would vary by hashing.
+    test "several properties fan out to one datagram each, in a fixed order" do
+      assert {:ok, msg} =
+               Handlers.call("set_mixer", %{
+                 "track" => 1,
+                 "name" => "Keys",
+                 "mute" => true,
+                 "volume" => 0.5
+               })
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/track/set/volume", [1, 0.5]},
+               {"/live/track/set/mute", [1, 1]},
+               {"/live/track/set/name", [1, "Keys"]},
+               {"/live/song/end_undo_step", []}
+             ] = osc_trace()
+
+      # A rename in the same call wins over whatever the mirror still holds.
+      assert msg =~ ~s{Track 1 ("Keys")}
+    end
+
+    test "a valid property plus an unknown one is refused before any OSC is sent" do
+      assert {:error, message} =
+               Handlers.call("set_mixer", %{
+                 "track" => 0,
+                 "volume" => 0.6,
+                 "panning" => -0.5
+               })
+
+      assert message =~ "Invalid parameters for set_mixer"
+      assert message =~ "- panning: unknown parameter"
+      assert message =~ ~s("pan")
+      assert message =~ "nothing was sent to Ableton"
+      refute_receive {:osc_out, _, _}
+    end
+
+    test "target 'track' without a track index is refused by name" do
+      assert {:error, message} = Handlers.call("set_mixer", %{"volume" => 0.5})
+
+      assert message =~ "needs track"
+      assert message =~ "Nothing was sent"
+      refute_receive {:osc_out, "/live/track/set/volume", _}
     end
   end
 
-  describe "set_track_solo" do
+  describe "set_mixer on a return track" do
     setup :osc_sink
 
-    test "solos a track" do
-      assert {:ok, msg} = Handlers.call("set_track_solo", %{"track" => 0, "soloed" => true})
-      assert msg =~ "Soloed track 0"
-      assert_receive {:osc_out, "/live/track/set/solo", [0, 1]}
+    test "reads the old value through the guard, then sets, and reports both", %{sink: sink} do
+      task =
+        Task.async(fn ->
+          Handlers.call("set_mixer", %{"target" => "return", "track" => 0, "volume" => 0.5})
+        end)
+
+      trace =
+        scripted_trace(sink, [{"/live/return_track/get/volume", [0, "ok", 0.85]}])
+
+      assert {:ok, message} = Task.await(task)
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/return_track/get/volume", [0]},
+               {"/live/return_track/set/volume", [0, 0.5]},
+               {"/live/song/end_undo_step", []}
+             ] = trace
+
+      assert message =~ "Return 0"
+      assert message =~ "was"
     end
 
-    test "unsolos a track" do
-      assert {:ok, _msg} = Handlers.call("set_track_solo", %{"track" => 0, "soloed" => false})
-      assert_receive {:osc_out, "/live/track/set/solo", [0, 0]}
+    test "arm is refused before anything is sent" do
+      assert {:error, message} =
+               Handlers.call("set_mixer", %{"target" => "return", "track" => 0, "arm" => true})
+
+      assert message =~ "A return track has no arm"
+      assert message =~ "Nothing in this call was sent"
+      refute_receive {:osc_out, "/live/return_track/get/arm", _}
+      refute_receive {:osc_out, "/live/return_track/set/arm", _}
+    end
+
+    # The stale-reply defence `query_echoed/4` carries: a straggler answering
+    # for return 1 must not be read as return 0's old volume.
+    test "a reply echoing another return is not accepted as the was value", %{sink: sink} do
+      task =
+        Task.async(fn ->
+          Handlers.call("set_mixer", %{"target" => "return", "track" => 0, "volume" => 0.5})
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/return_track/get/volume", [1, "ok", 0.5]},
+          {"/live/return_track/get/volume", [0, "ok", 0.85]}
+        ])
+
+      assert {:ok, message} = Task.await(task)
+
+      # Reissued once, then answered correctly.
+      assert count_queries(trace, "/live/return_track/get/volume") == 2
+      assert message =~ "0.85"
+    end
+  end
+
+  describe "set_mixer on the master and cue" do
+    setup :osc_sink
+
+    test "master ignores track and reads its bare-value getter", %{sink: sink} do
+      task =
+        Task.async(fn ->
+          Handlers.call("set_mixer", %{"target" => "master", "track" => 7, "volume" => 0.75})
+        end)
+
+      trace = scripted_trace(sink, [{"/live/master/get/volume", [0.85]}])
+
+      assert {:ok, message} = Task.await(task)
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/master/get/volume", []},
+               {"/live/master/set/volume", [0.75]},
+               {"/live/song/end_undo_step", []}
+             ] = trace
+
+      assert message =~ "Master (shown as Main in Live 12)"
+      refute message =~ "Track 7"
+    end
+
+    test "the master has no mute, and says which properties it does have" do
+      assert {:error, message} =
+               Handlers.call("set_mixer", %{"target" => "master", "mute" => true})
+
+      assert message =~ "The master has no mute"
+      assert message =~ "volume, pan"
+      refute_receive {:osc_out, "/live/master/set/mute", _}
+    end
+
+    test "cue takes volume only, and says what the level is for", %{sink: sink} do
+      task =
+        Task.async(fn -> Handlers.call("set_mixer", %{"target" => "cue", "volume" => 0.25}) end)
+
+      trace = scripted_trace(sink, [{"/live/master/get/cue_volume", [0.85]}])
+
+      assert {:ok, message} = Task.await(task)
+
+      assert {"/live/master/set/cue_volume", [0.25]} in trace
+      assert message =~ "Cue:"
+      assert message =~ "browser-preview"
+    end
+
+    test "cue has no pan" do
+      assert {:error, message} = Handlers.call("set_mixer", %{"target" => "cue", "pan" => 0.5})
+
+      assert message =~ "The cue output has no pan"
+      refute_receive {:osc_out, "/live/master/set/panning", _}
     end
   end
 
@@ -301,7 +490,7 @@ defmodule Seshat.Tools.HandlersTest do
     # MCP delivers Peri-validated params with atom keys, while direct callers
     # may use string keys. Both must reach the same clause.
     test "accepts atom-keyed params" do
-      assert {:ok, msg} = Handlers.call("set_track_pan", %{track: 0, value: -1.0})
+      assert {:ok, msg} = Handlers.call("set_mixer", %{track: 0, pan: -1.0})
       assert msg =~ "pan"
       assert_receive {:osc_out, "/live/track/set/panning", [0, -1.0]}
     end
@@ -323,15 +512,15 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "leaves string-keyed params untouched" do
-      params = %{"track" => 0, "value" => -1.0}
+      params = %{"track" => 0, "pan" => -1.0}
       assert Handlers.stringify_keys(params) == params
     end
 
     # Validation runs on the stringified map, so both key shapes are held to
     # the same schema.
     test "atom-keyed params are validated identically" do
-      assert {:error, message} = Handlers.call("set_track_pan", %{track: 0, value: 2.0})
-      assert message =~ "- value: must be at most 1.0 (got 2.0)"
+      assert {:error, message} = Handlers.call("set_mixer", %{track: 0, pan: 2.0})
+      assert message =~ "- pan: must be at most 1.0 (got 2.0)"
       refute_receive {:osc_out, _, _}
     end
   end
@@ -345,9 +534,9 @@ defmodule Seshat.Tools.HandlersTest do
     # "track -1" as though that were the target.
     test "an out-of-range value is rejected before anything is sent" do
       assert {:error, message} =
-               Handlers.call("set_track_pan", %{"track" => 0, "value" => 2.0})
+               Handlers.call("set_mixer", %{"track" => 0, "pan" => 2.0})
 
-      assert message =~ "Invalid parameters for set_track_pan"
+      assert message =~ "Invalid parameters for set_mixer"
       assert message =~ "nothing was sent to Ableton"
       refute_receive {:osc_out, _, _}
     end
@@ -359,14 +548,14 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "a missing required param names the param, not the tool" do
-      assert {:error, message} = Handlers.call("set_track_mute", %{"track" => 0})
-      assert message =~ "- muted: required but missing"
+      assert {:error, message} = Handlers.call("set_track_send", %{"track" => 0})
+      assert message =~ "- send: required but missing"
       refute message =~ "Unknown tool"
       refute_receive {:osc_out, _, _}
     end
 
     test "valid params still reach the wire" do
-      assert {:ok, _msg} = Handlers.call("set_track_pan", %{"track" => 0, "value" => 1.0})
+      assert {:ok, _msg} = Handlers.call("set_mixer", %{"track" => 0, "pan" => 1.0})
       assert_receive {:osc_out, "/live/track/set/panning", [0, 1.0]}
     end
   end
@@ -402,7 +591,7 @@ defmodule Seshat.Tools.HandlersTest do
     test "every wrapped call closes any leaked step before opening its own" do
       assert {:ok, _msg} = Handlers.call("set_tempo", %{"bpm" => 120.0})
       assert {:error, _msg} = Handlers.call("search_library", %{"query" => "bass"})
-      assert {:ok, _msg} = Handlers.call("set_track_volume", %{"track" => 0, "value" => 0.5})
+      assert {:ok, _msg} = Handlers.call("set_mixer", %{"track" => 0, "volume" => 0.5})
 
       trace = osc_trace()
 
@@ -3373,7 +3562,7 @@ defmodule Seshat.Tools.HandlersTest do
       result = Handlers.format_track_sends(0, [])
 
       assert result =~ "no return tracks"
-      assert result =~ "create_return_track"
+      assert result =~ "create_track (track_type: 'return')"
     end
   end
 
@@ -3425,7 +3614,7 @@ defmodule Seshat.Tools.HandlersTest do
       result = Handlers.format_return_tracks([], master(%{volume: 0.6}))
 
       assert result =~ "No return tracks"
-      assert result =~ "create_return_track"
+      assert result =~ "create_track (track_type: 'return')"
       assert result =~ "Master (shown as Main in Live 12): volume=0.6"
     end
 
@@ -4445,6 +4634,482 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
+  # The composed edit: read the window, remove it, add the rewritten notes,
+  # read it back. Everything here is the sequence and the two wire conversions
+  # (`mute` as 0|1, velocity as an integer) that a verbatim re-send of a
+  # `get/notes` reply gets wrong — it has no OSC type tag for a boolean at all,
+  # so it takes the Transport GenServer down.
+  describe "edit_notes" do
+    setup :osc_sink
+
+    # Slot guard, MIDI guard, the read, then the write pair and the read-back.
+    defp note_guards do
+      [
+        {"/live/clip_slot/get/has_clip", [0, 0, 1]},
+        {"/live/clip/get/is_midi_clip", [0, 0, 1]}
+      ]
+    end
+
+    test "reads, removes, re-adds, and reads back", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_pitch" => 60,
+            "pitch_span" => 1,
+            "start_time" => 0.0,
+            "time_span" => 4.0,
+            "velocity_delta" => 10
+          })
+        end)
+
+      trace =
+        scripted_trace(
+          sink,
+          note_guards() ++
+            [
+              {"/live/clip/get/notes", [0, 0, 60, 0.5, 0.25, 100.0, false]},
+              {"/live/clip/get/notes", [0, 0, 60, 0.5, 0.25, 110.0, false]}
+            ]
+        )
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/clip/get/notes", [0, 0, 60, 1, 0.0, 4.0]} in trace
+      assert {"/live/clip/remove/notes", [0, 0, 60, 1, 0.0, 4.0]} in trace
+
+      # Velocity as an integer and mute as 0|1 — not the float and boolean the
+      # read replied with.
+      assert {"/live/clip/add/notes", [0, 0, 60, 0.5, 0.25, 110, 0]} in trace
+
+      assert message =~ "Edited 1 note"
+      assert message =~ "Read back and confirmed"
+    end
+
+    test "delete: true removes the window and never re-adds", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_pitch" => 42,
+            "pitch_span" => 1,
+            "delete" => true
+          })
+        end)
+
+      trace =
+        scripted_trace(
+          sink,
+          note_guards() ++
+            [
+              {"/live/clip/get/notes", [0, 0, 42, 1.0, 0.25, 90.0, false]},
+              {"/live/clip/get/notes", [0, 0]}
+            ]
+        )
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/clip/remove/notes", [0, 0, 42, 1, 0.0, 9999.0]} in trace
+      assert count_queries(trace, "/live/clip/add/notes") == 0
+      assert message =~ "Deleted 1 note in pitches 42-42 of the clip in slot 0 on track 0."
+      refute message =~ "9999"
+      assert message =~ "reads back empty"
+    end
+
+    # The reply names the window that was used — never the 9999.0 sentinel, and
+    # never "the whole clip" for a window that left only one half at its default
+    # (found live 2026-08-28: a beats-2–3 delete replied "in the whole clip").
+    test "the reply names only the halves of the window that were given", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_time" => 2.0,
+            "time_span" => 1.0,
+            "delete" => true
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 42, 2.0, 0.25, 90.0, false]},
+            {"/live/clip/get/notes", [0, 0]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Deleted 1 note in beats 2.0-3.0 of the clip in slot 0 on track 0."
+      refute message =~ "whole clip"
+      refute message =~ "pitches"
+    end
+
+    test "a start_time with no span reads as onward; no window at all as the whole clip",
+         %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_time" => 4.0,
+            "delete" => true
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 42, 4.0, 0.25, 90.0, false]},
+            {"/live/clip/get/notes", [0, 0]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Deleted 1 note in beats 4.0 onward of the clip in slot 0 on track 0."
+      refute message =~ "9999"
+
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{"track" => 0, "clip_slot" => 0, "delete" => true})
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 42, 4.0, 0.25, 90.0, false]},
+            {"/live/clip/get/notes", [0, 0]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Deleted 1 note in the whole clip in slot 0 on track 0."
+      refute message =~ "of the clip"
+    end
+
+    # `start_time: 0` with no span normalises to the same `[0, 128, 0.0, 9999.0]`
+    # as a pitch-only window, but it is not the catch-all: it starts at beat 0
+    # and excludes negative-start notes. The phrase must come from the keys
+    # supplied, not the normalised values.
+    test "an explicit start_time of 0 is not reported as the whole clip", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_time" => 0,
+            "delete" => true
+          })
+        end)
+
+      trace =
+        scripted_trace(
+          sink,
+          note_guards() ++
+            [
+              {"/live/clip/get/notes", [0, 0, 42, 0.0, 0.25, 90.0, false]},
+              {"/live/clip/get/notes", [0, 0]}
+            ]
+        )
+
+      assert {:ok, message} = Task.await(call)
+      assert {"/live/clip/remove/notes", [0, 0, 0, 128, 0.0, 9999.0]} in trace
+      assert message =~ "Deleted 1 note in beats 0.0 onward of the clip in slot 0 on track 0."
+      refute message =~ "whole clip"
+    end
+
+    test "an empty window changes nothing and says why", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{"track" => 0, "clip_slot" => 0, "transpose" => 12})
+        end)
+
+      trace = scripted_trace(sink, note_guards() ++ [{"/live/clip/get/notes", [0, 0]}])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert count_queries(trace, "/live/clip/remove/notes") == 0
+      assert count_queries(trace, "/live/clip/add/notes") == 0
+      assert message =~ "No notes start inside the whole clip in slot 0 on track 0"
+      assert message =~ "nothing was changed"
+    end
+
+    # With no range param at all the window has to reach below beat 0 and up to
+    # pitch 127 — AbletonOSC's own zero-argument catch-all spans 127 pitches
+    # from 0 and would leave note 127 out.
+    test "omitting the window uses the negative-time, pitch-127 catch-all", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{"track" => 0, "clip_slot" => 0, "velocity" => 64})
+        end)
+
+      trace =
+        scripted_trace(
+          sink,
+          note_guards() ++
+            [
+              {"/live/clip/get/notes", [0, 0, 127, 0.0, 0.25, 100.0, false]},
+              {"/live/clip/get/notes", [0, 0, 127, 0.0, 0.25, 64.0, false]}
+            ]
+        )
+
+      assert {:ok, _message} = Task.await(call)
+
+      assert {"/live/clip/get/notes", [0, 0, 0, 128, -8192.0, 16384.0]} in trace
+      assert {"/live/clip/remove/notes", [0, 0, 0, 128, -8192.0, 16384.0]} in trace
+    end
+
+    # Both writes are silent and either can fail alone. If Live ignores the
+    # remove but accepts the add, the read-back holds the original *and* its
+    # transposed copy — every expected note is present, so an "all present"
+    # check alone would confirm a duplicated phrase as an edit.
+    test "an original that survives the remove is reported, not confirmed", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_pitch" => 60,
+            "pitch_span" => 1,
+            "start_time" => 0.0,
+            "time_span" => 4.0,
+            "transpose" => 12
+          })
+        end)
+
+      trace =
+        scripted_trace(
+          sink,
+          note_guards() ++
+            [
+              {"/live/clip/get/notes", [0, 0, 60, 0.5, 0.25, 100.0, false]},
+              {"/live/clip/get/notes",
+               [0, 0, 60, 0.5, 0.25, 100.0, false, 72, 0.5, 0.25, 100.0, false]}
+            ]
+        )
+
+      assert {:error, message} = Task.await(call)
+
+      assert {"/live/clip/remove/notes", [0, 0, 60, 1, 0.0, 4.0]} in trace
+      assert {"/live/clip/add/notes", [0, 0, 72, 0.5, 0.25, 100, 0]} in trace
+      refute message =~ "Read back and confirmed"
+      assert message =~ "1 note still read back unchanged"
+      assert message =~ "Undo"
+    end
+
+    # A velocity-only edit keeps pitch and start, so the read-back legitimately
+    # holds a note at the matched key — the leftover check must count against
+    # what the edit expects, not treat every matched key as a survivor.
+    test "an edit that keeps a note's key is still confirmed", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_pitch" => 60,
+            "pitch_span" => 1,
+            "transpose" => 0
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 60, 0.5, 0.25, 100.0, false]},
+            {"/live/clip/get/notes", [0, 0, 60, 0.5, 0.25, 100.0, false]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Read back and confirmed"
+    end
+
+    test "a transpose that would leave Live's range is refused before any write", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{"track" => 0, "clip_slot" => 0, "transpose" => 24})
+        end)
+
+      trace =
+        scripted_trace(
+          sink,
+          note_guards() ++ [{"/live/clip/get/notes", [0, 0, 120, 0.0, 0.25, 100.0, false]}]
+        )
+
+      assert {:error, message} = Task.await(call)
+
+      assert count_queries(trace, "/live/clip/remove/notes") == 0
+      assert count_queries(trace, "/live/clip/add/notes") == 0
+      assert message =~ "nothing was changed"
+      assert message =~ "Try a smaller interval"
+    end
+
+    test "no change at all is refused before the clip is even read" do
+      assert {:error, message} = Handlers.call("edit_notes", %{"track" => 0, "clip_slot" => 0})
+
+      assert message =~ "Nothing to change"
+      assert message =~ "get_clip_notes"
+      assert count_queries(osc_trace(), "/live/clip_slot/get/has_clip") == 0
+    end
+
+    test "velocity and velocity_delta together are refused" do
+      assert {:error, message} =
+               Handlers.call("edit_notes", %{
+                 "track" => 0,
+                 "velocity" => 80,
+                 "velocity_delta" => 10
+               })
+
+      assert message =~ "same field two different ways"
+      assert count_queries(osc_trace(), "/live/clip/remove/notes") == 0
+    end
+
+    # The read-back rectangle is the bounding box of the old window and the
+    # edited notes, so it can legitimately contain notes this call never
+    # touched. Comparing counts there would invent a mismatch out of a
+    # neighbour; the check is "every expected note is present".
+    test "an unrelated note inside the read-back rectangle is not a mismatch", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_pitch" => 60,
+            "pitch_span" => 1,
+            "shift" => 1.0
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 60, 0.0, 0.25, 100.0, false]},
+            {"/live/clip/get/notes",
+             [0, 0, 60, 1.0, 0.25, 100.0, false, 67, 3.0, 0.5, 80.0, false]}
+          ]
+      )
+
+      assert {:ok, message} = Task.await(call)
+      assert message =~ "Read back and confirmed"
+    end
+
+    test "a note missing from the read-back is reported rather than claimed", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("edit_notes", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "start_pitch" => 60,
+            "pitch_span" => 1,
+            "transpose" => 2
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        note_guards() ++
+          [
+            {"/live/clip/get/notes", [0, 0, 60, 0.0, 0.25, 100.0, false]},
+            {"/live/clip/get/notes", [0, 0]}
+          ]
+      )
+
+      assert {:error, message} = Task.await(call)
+
+      assert message =~ "did not read back as expected"
+      assert message =~ "get_clip_notes"
+    end
+  end
+
+  describe "create_track with track_type 'return'" do
+    setup :osc_sink
+
+    test "runs the return sequence and steers with the return-only select", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("create_track", %{"track_type" => "return", "name" => "Room Reverb"})
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/return_track/get/count", [1]},
+          {"/live/return_track/get/count", [2]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/song/create_return_track", []} in trace
+      assert {"/live/return_track/set/name", [1, "Room Reverb"]} in trace
+      assert {"/live/return_track/select", [1]} in trace
+
+      assert message =~ "return 1"
+      assert message =~ "load_device (target: 'return', track: 1)"
+    end
+  end
+
+  describe "delete_track with target 'return'" do
+    setup :osc_sink
+
+    test "guards on the return's name, deletes it, and warns about the shift", %{sink: sink} do
+      call =
+        Task.async(fn -> Handlers.call("delete_track", %{"track" => 1, "target" => "return"}) end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/return_track/get/name", [1, "ok", "B-Delay"]},
+          {"/live/return_track/get/count", [1]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/song/delete_return_track", [1]} in trace
+      assert message =~ "B-Delay"
+      assert message =~ "shifted down"
+
+      # The regular-track address is not the one a return delete uses.
+      assert count_queries(trace, "/live/song/delete_track") == 0
+    end
+
+    test "an absent target still deletes a regular track" do
+      assert {:ok, message} = Handlers.call("delete_track", %{"track" => 1})
+      assert message =~ "Deleted track 1"
+      assert_receive {:osc_out, "/live/song/delete_track", [1]}
+    end
+  end
+
+  describe "set_clip_properties renaming" do
+    setup :osc_sink
+
+    test "name rides the ordered write list and is read back", %{sink: sink} do
+      call =
+        Task.async(fn ->
+          Handlers.call("set_clip_properties", %{
+            "track" => 0,
+            "clip_slot" => 2,
+            "name" => "Verse A"
+          })
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip_slot/get/has_clip", [0, 2, 1]},
+          {"/live/clip/get/name", [0, 2, "Verse A"]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert {"/live/clip/set/name", [0, 2, "Verse A"]} in trace
+      assert message =~ "'Verse A'"
+    end
+  end
+
   describe "unknown tool" do
     test "returns error for unknown tool name" do
       assert {:error, msg} = Handlers.call("nonexistent_tool", %{})
@@ -4621,7 +5286,7 @@ defmodule Seshat.Tools.HandlersTest do
     end
 
     test "an ordinary OSC tool still gets its begin/end pair for comparison" do
-      assert {:ok, _} = Handlers.call("set_track_pan", %{"track" => 0, "value" => 0.0})
+      assert {:ok, _} = Handlers.call("set_mixer", %{"track" => 0, "pan" => 0.0})
 
       assert [
                {"/live/song/end_undo_step", []},

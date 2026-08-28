@@ -122,6 +122,7 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/tools/handlers.ex](lib/seshat/tools/handlers.ex) | `call/2` dispatches a tool name + params to a `do_call/2` clause. Single-message tools hit Transport directly; multi-step ones go via Registry. |
 | [lib/seshat/tools/validation.ex](lib/seshat/tools/validation.ex) | Schema-driven parameter validation, called from `Handlers.call/2` before dispatch — reads the declared bounds/types straight out of `Definitions`, so every tool is covered by construction |
 | [lib/seshat/tools/follow_cam.ex](lib/seshat/tools/follow_cam.ex) | View steering — after a create/write/delete succeeds, selects what it touched and shows the pane it's in. `calls/2` is the pure decision; `steer/2` sends it best-effort |
+| [lib/seshat/tools/note_edit.ex](lib/seshat/tools/note_edit.ex) | Pure note-edit arithmetic behind `edit_notes` (transpose, velocity, duration, shift, delete, range refusals); no OSC |
 | [lib/seshat/instructions.ex](lib/seshat/instructions.ex) | MCP session-level guidance — the conventions no single tool description can carry |
 | [lib/seshat/mcp/server.ex](lib/seshat/mcp/server.ex) | Anubis MCP server |
 | [lib/seshat/mcp/tools.ex](lib/seshat/mcp/tools.ex) | Generates one MCP component per tool definition |
@@ -246,6 +247,49 @@ services, writing the result into [docs/evaluating/](docs/evaluating/).
 That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
+
+**The tool surface is consolidated from 67 tools to 52, no capability lost,
+shipped 2026-08-28**, closing the queue's former top item and absorbing
+"Modify a note in place" into it. All Elixir-layer, no fork or OSC change.
+Thirteen same-verb-different-target mixer setters
+(`set_track_volume/pan/mute/solo/arm/name`, the four `set_return_track_*`,
+`set_master_volume/pan`, `set_cue_volume`) collapsed into one `set_mixer`
+(`target: track | return | master | cue`, default `track`), which reports
+each property asked for and refuses by name the ones a target lacks, all-or-
+nothing before anything is sent. `create_return_track`/`delete_return_track`
+folded into `create_track track_type: "return"` / `delete_track target:
+"return"`; `set_clip_name` became a `name` property of
+`set_clip_properties`; `remove_notes` became `edit_notes` — a match (pitch /
+time range) plus a delta (velocity, length, pitch shift, or delete),
+implemented as pure arithmetic in the new
+`lib/seshat/tools/note_edit.ex`, composing a remove and a re-add through
+`Seshat.Commands.Registry` under one undo step. Every "Requires Seshat's
+AbletonOSC extension (mix abletonosc.install)" line was deleted from tool
+descriptions — developer-facing text with no model audience. PR review found
+the implementation correct on independent re-derivation (all 29 addresses
+checked verbatim against `priv/AbletonOSC/API.md`) and surfaced one real bug
+fixed before merge: `NoteEdit.validate/1` refused `delete: true` on its own,
+which broke `edit_notes`' primary use case outright. Two nits were applied
+after review (a README sentence that conflated `create_track`'s
+`track_type` with `delete_track`'s `target`; a contradictory pair of
+guard-timeout sentences on the master/cue mixer path); one was declined as
+its own roadmap item rather than a local fix — "Pin the wording of
+`edit_notes`' partial-failure message" — because `Transport.send_message/2`
+cannot be made to fail against the test harness, so testing it means picking
+a mocking strategy for a whole family of similarly-shaped error helpers, not
+a one-line change. **Live verification ran 2026-08-28** — `/smoke-test mixer`, `clips` and
+`mcp-surface` all green against Live 12.4.5 on fork `bc171b7`, every
+citation stamped; one test was corrected on the way (`transpose: 60` on G4
+is 127, legal — the refusal check now uses 61) and one wording defect
+surfaced (`edit_notes`' window phrase, ROADMAP). The manual
+`conversation.md` routing check still needs a person. `priv/AbletonOSC/FORK_GAPS.md`'s note-modification row (pointing
+at the now-removed "Modify a note in place") is a known carry-over — the
+standalone fork clone was mid-way through an unmerged branch when this
+shipped — and `.claude/skills/smoke-test/scripts/mcp_call.py`'s new `stats`
+command measured the client-visible surface on 2026-08-28: 52 tools,
+58,709 bytes, largest `set_clip_properties` at 3,585 (the Elixir-side
+estimate was 57,450). Plan archived at
+[docs/archive/PLAN_consolidate_tool_surface.md](docs/archive/PLAN_consolidate_tool_surface.md).
 
 **ROADMAP.md ranks features, defects and security work in one queue.**
 Catalog persistence is atomic and the catalog notices its own staleness,

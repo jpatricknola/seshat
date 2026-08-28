@@ -37,74 +37,57 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Consolidate the tool surface — 67 tools to 52, no capability lost
+## #1 · Automate conversation-routing evaluations
 
-**Impact 6 · Lift 3 · 2.00 impact-per-effort**
+**Impact 8 · Lift 5 · 1.60 impact-per-effort**
 
-**Ranked above its quotient by decision on 2026-08-27** — it is the next thing
-built, ahead of the AX verification below, because every tool added after it
-would be added on the wrong pattern and have to be re-shaped later.
+**Ranked first by decision on 2026-08-28** — this is the measurement gate for
+the bounded tool-surface architecture before more functionality lands. The
+first slice is the two-case decision experiment below, not a generalized eval
+platform built on faith.
 
-**Plan:** [PLAN_consolidate_tool_surface.md](PLAN_consolidate_tool_surface.md)
-(2026-08-27).
+**Goal:** replace hand-typed fresh-conversation routing checks with one
+agent-runnable command that sends a committed prompt corpus through a fresh
+headless model client, records its structured MCP calls against a non-mutating
+fixture server, and scores the trace without a person reading the transcript.
+For a tool-surface change, run the same cases against base and head so the PR
+has evidence of whether routing improved.
 
-**Goal:** collapse the same-verb-different-target neighbours in
-`Seshat.Tools.Definitions` into parameterised tools, and write the rule that
-stops them coming back. The full audit, the projected count with the whole
-roadmap and generation epic built (~60), and the levers beyond merging are
-in [evaluating/tool-surface-scaling.md](evaluating/tool-surface-scaling.md).
+**Why:** PR #77's central product bet — that 52 intention-shaped tools route
+better than 67 confusable names — is currently guarded only by an unrun manual
+conversation check. Unit tests prove what happens after a tool is selected;
+they cannot prove that the model selects it, picks the right target, or avoids
+an unnecessary read/delete/rewrite chain. Seshat cannot safely scale its tool
+surface on intuition alone. The evaluated route uses the logged-in Claude Code
+subscription, a record-only MCP server and deterministic predicates, never
+Ableton or OSC. Full reasoning and alternatives:
+[automated-conversation-routing-evals.md](evaluating/automated-conversation-routing-evals.md).
 
-**Why:** 67 tools, 62.8KB of schema (~16k tokens) in every request, and the
-roadmap plus the generation research would add ~30 more on the current
-one-thing-one-tool pattern. The ceiling that bites first is not context but
-selection accuracy: the model mis-picks between confusable names
-(`set_track_volume` / `set_return_track_volume` / `set_master_volume`), and
-the failure is silent. Fewer near-duplicate names is the fix; the pattern
-already exists in the tree (`@device_target`, `set_clip_properties`) and just
-stopped being applied.
+**First slice — the decision experiment:**
 
-**User stories:**
-- As a producer saying "mute the master," it works — today no tool exists and
-  the model has to discover that by absence; after, `set_mixer` refuses the
-  properties a target lacks by name and accepts the rest.
-- As a producer, "make the third note quieter" is one edit, not a read, a range
-  delete and a rewrite — `edit_notes` takes a match and a delta.
+- Serve fixed base/head surface snapshots through a recorder exposing only the
+  real schemas and fixture-backed tool results. It must send no OSC and retain
+  tool traces, not hidden model reasoning.
+- Automate the two existing cases from
+  [smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md) §
+  *Mixer and note edits route to one call each*: master decrease + return mute;
+  then read the notes + one targeted `edit_notes`. Make the note case's track
+  and slot explicit — "a MIDI clip is open" is not resolvable by today's tools.
+- Run five fresh, interleaved trials per case per surface with a pinned model,
+  isolated temporary working directory and only the recorder's MCP tools.
+- Judge semantic intent, first-call validity, target/index, mutation count,
+  refusals and unsafe extras with predicates that allow harmless numeric/order
+  variation. Emit a compact Markdown/JSON report naming every observed call.
+- Kill the approach before generalizing it if current Claude Code stream events
+  omit tool calls, subscription-authenticated headless runs cannot be isolated,
+  or either case still needs subjective transcript judgment.
 
-**Planner notes:**
-- The changes, all at the Elixir layer, no fork or OSC change:
-  - Thirteen mixer setters (`set_track_volume/pan/mute/solo/arm/name`, the
-    four `set_return_track_*`, `set_master_volume/pan`, `set_cue_volume`) →
-    one `set_mixer`: `target: track | return | master | cue` (default
-    `track`), `track` index, optional `volume`, `pan`, `mute`, `solo`,
-    `arm`, `name`, each with its own schema so `Validation` still bounds
-    every value. Reply reports each property asked for; properties the
-    target lacks are refused by name. Follow `set_clip_properties`.
-  - `create_return_track` → `create_track` with `track_type: "return"`;
-    `delete_return_track` → `delete_track` with `target: "return"`.
-  - `set_clip_name` → a `name` property of `set_clip_properties`. (`set_loop`
-    stays: it is the song's arrangement loop, not the clip's — an earlier draft
-    of this entry had it wrong.)
-  - `remove_notes` → `edit_notes`: a match (pitch / time range) plus a delta
-    (velocity, length, pitch shift, or delete). This absorbs "Modify a note
-    in place" below — close that item when this ships.
-  - Delete every copy of "Requires Seshat's AbletonOSC extension (mix
-    abletonosc.install)" from descriptions — 11 of them, addressed to a
-    developer, meaningless to the model.
-- **Do not** merge on property with a polymorphic value, and do not merge
-  `show_view`/`hide_view` or `bypass_device`/`delete_device` — the options doc
-  says why.
-- Write the rule into [.claude/docs/adding-a-tool.md](../.claude/docs/adding-a-tool.md)
-  and the `/add-tool` skill in the same PR: a new name only when the model
-  must choose between it and an existing tool; same verb elsewhere is a
-  `target`; same noun's property is an optional parameter; 80 tools is the
-  review line.
-- Breaking change to the tool contract — fine, nothing is deployed. Update
-  the `docs/smoke_tests/` files that name the removed tools in the same PR;
-  bump the count in `definitions_test.exs`; `Session.State` and `FollowCam`
-  match on tool names in places — grep for each removed name.
-- `mix precommit` covers the pure layer; `/smoke-test` for the mixer file and
-  clips file afterwards, since the wire messages are unchanged but the
-  clauses that send them are new.
+**Acceptance:** one command produces a repeatable base/head comparison without
+Live running or a user typing prompts; the harness itself has deterministic
+tests using captured/fake client output; no external-model run joins
+`mix precommit`; and the manual routing check is either retired or narrowed to
+the genuinely subjective "replies speak music" residue rather than silently
+marked passed.
 
 ## #2 · AX-backed audio output — verify the remainder
 
@@ -494,25 +477,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #12 · Modify a note in place
-
-**Impact 5 · Lift 3 · 1.67 impact-per-effort**
-
-**Absorbed by "Consolidate the tool surface" above** — its `edit_notes`
-(match + delta) is this item. Remove this entry when that ships.
-
-**Goal:** edit one note's velocity/length/pitch directly instead of
-read → remove range → rewrite.
-
-**Why:** the current path works but is three calls and a footgun
-(`remove_notes` ranges). Cleaner, not urgent.
-
-**User stories:**
-- As a producer saying "make the third note a little quieter," that's one
-  clean edit — not a read, a range delete, and a rewrite that can clip the
-  notes around it.
-
-## #13 · `screenshot_live` — let Seshat see the screen
+## #12 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -538,7 +503,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #14 · Opt-in `samples` index
+## #13 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -562,7 +527,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #15 · Accepted-search memory
+## #14 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
@@ -586,7 +551,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #16 · Producer personas — switchable musical taste
+## #15 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -621,7 +586,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #17 · Verify destructive mutations before reporting success
+## #16 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -693,7 +658,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #18 · User XMP tags
+## #17 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -712,7 +677,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #19 · Small OSC breadth — grab bag
+## #18 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -734,6 +699,40 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   Seshat-only sessions. Niche until a user actually has grooves in their
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
+
+## #19 · Pin the wording of `edit_notes`' partial-failure message
+
+**Impact 2 · Lift 2 · 1.00 impact-per-effort**
+
+**Goal:** get test coverage on the message `add_edited_notes/3`
+(`lib/seshat/tools/handlers.ex`) returns when the remove half of an
+`edit_notes` call succeeds but the add half fails — "The matched notes were
+removed but the edited replacements could not be sent … Call undo
+immediately to put them back." Nothing in the suite pins its wording today.
+
+**Why:** flagged in the 2026-08-28 review of "Consolidate the tool surface"
+as the single most consequential error path in the note-editing feature —
+notes already gone, replacements never sent, and the only way back is an
+immediate `undo` — with no test protecting the sentence a model would act on
+in that moment. It was left as a non-blocking nit rather than fixed inline
+because the failure can't be provoked through the existing harness:
+`Transport.send_message/2` goes out over loopback UDP via `:gen_udp.send/4`,
+which does not return `{:error, _}` in practice, so `Seshat.Test.OSCSink`
+has nothing to hook to drive this branch through the full call path — the
+same constraint that leaves every other bare error-message helper in
+`Handlers` (`extension_missing_error/2`, `mixer_partial_error/5`,
+`stale_reply_error/2`, and siblings) untested directly today, by consistent
+convention across the module.
+
+**Planner notes:**
+- Fixing this for real means solving it for the whole family, not just this
+  one message — either give `Transport.send_message/2` a way to be
+  injected with a failure in tests (a behaviour/mock swap, or a test-only
+  send path), or accept breaking the module's current privacy convention by
+  exporting one pure formatting function and decide whether that's worth
+  the inconsistency it introduces.
+- Low lift once the mocking question is settled — the message itself is
+  already correct and doesn't need to change, only get pinned.
 
 ## #20 · LLM enrichment at reindex
 

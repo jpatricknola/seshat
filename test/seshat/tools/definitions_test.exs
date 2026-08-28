@@ -7,7 +7,7 @@ defmodule Seshat.Tools.DefinitionsTest do
     test "returns a list of tool definitions" do
       tools = Definitions.all()
       assert is_list(tools)
-      assert length(tools) == 67
+      assert length(tools) == 52
     end
 
     test "each tool has required fields" do
@@ -21,26 +21,22 @@ defmodule Seshat.Tools.DefinitionsTest do
 
     test "includes all expected tool names" do
       expected = ~w(
-        set_track_pan set_track_volume set_track_mute set_track_solo
+        set_mixer
         create_track write_midi_notes
-        delete_track duplicate_track set_track_name
+        delete_track duplicate_track
         set_tempo set_time_signature set_swing_amount set_groove_amount
-        start_playing stop_playing set_metronome set_track_arm
+        start_playing stop_playing set_metronome
         undo redo
-        fire_clip stop_clip delete_clip duplicate_clip set_clip_name
+        fire_clip stop_clip delete_clip duplicate_clip
         fire_scene create_scene delete_scene duplicate_scene set_scene_name
         set_loop show_view hide_view get_view_state
-        select_track select_scene remove_notes get_clip_notes
+        select_track select_scene edit_notes get_clip_notes
         search_library reindex_library
         list_browser_items load_device
         get_track_devices get_device_parameters set_device_parameter
         delete_device bypass_device
         get_session_state get_clip_slots
         set_track_send get_track_sends
-        create_return_track delete_return_track
-        set_return_track_volume set_return_track_pan
-        set_return_track_mute set_return_track_solo
-        set_master_volume set_master_pan set_cue_volume
         record_clip stop_recording capture_midi
         get_clip_properties set_clip_properties quantize_clip
         get_audio_outputs set_audio_output
@@ -50,6 +46,76 @@ defmodule Seshat.Tools.DefinitionsTest do
 
       for tool <- expected do
         assert tool in names, "missing tool: #{tool}"
+      end
+
+      assert Enum.sort(names) == Enum.sort(expected)
+    end
+
+    # The count assertion above is a change detector; this one is a *review
+    # line*. Crossing it is not a matter of editing a number: it requires a plan
+    # carrying the surface measurements and the selection case that
+    # .claude/docs/adding-a-tool.md demands before a new name is minted.
+    test "the surface stays under the 80-tool review line" do
+      count = length(Definitions.all())
+
+      assert count <= 80,
+             "The tool surface is #{count}. 80 is the review line from " <>
+               ".claude/docs/adding-a-tool.md — raising the exact-count assertion above is " <>
+               "not approval to cross it. A plan adding a definition past this point has to " <>
+               "argue in writing why the capability is not a target value, an optional " <>
+               "property, an internal step of an existing tool, or a read-back, and record " <>
+               "the count/bytes/largest-schema/near-neighbour measurements the doc lists."
+    end
+
+    test "set_mixer and delete_track advertise their targets without requiring one" do
+      mixer = Enum.find(Definitions.all(), &(&1.name == "set_mixer"))
+      delete = Enum.find(Definitions.all(), &(&1.name == "delete_track"))
+
+      assert mixer.parameters.properties["target"].enum == ["track", "return", "master", "cue"]
+      assert mixer.parameters.required == []
+
+      assert delete.parameters.properties["target"].enum == ["track", "return"]
+      refute "target" in delete.parameters.required
+    end
+
+    test "create_track can create a return track" do
+      tool = Enum.find(Definitions.all(), &(&1.name == "create_track"))
+
+      assert tool.parameters.properties["track_type"].enum == ["midi", "audio", "return"]
+      assert tool.description =~ "return track"
+    end
+
+    # The sentence is addressed to a developer: the model cannot run a mix task,
+    # and an uninstalled extension already surfaces where it matters, in the
+    # handler's own error wording.
+    test "no description tells the model to run a mix task" do
+      for tool <- Definitions.all() do
+        refute tool.description =~ "abletonosc.install",
+               "#{tool.name}'s description carries a developer-facing install instruction"
+      end
+    end
+
+    # A description naming a tool that no longer exists sends the model to a
+    # dead end it cannot diagnose.
+    test "no description names a tool that no longer exists" do
+      names = MapSet.new(Definitions.all(), & &1.name)
+
+      removed = ~w(
+        set_track_pan set_track_volume set_track_mute set_track_solo
+        set_track_name set_track_arm set_clip_name remove_notes
+        create_return_track delete_return_track
+        set_return_track_volume set_return_track_pan
+        set_return_track_mute set_return_track_solo
+        set_master_volume set_master_pan set_cue_volume
+      )
+
+      for tool <- Definitions.all(), gone <- removed do
+        refute tool.description =~ gone,
+               "#{tool.name}'s description names the removed tool #{gone}"
+      end
+
+      for gone <- removed do
+        refute MapSet.member?(names, gone)
       end
     end
 
@@ -71,7 +137,7 @@ defmodule Seshat.Tools.DefinitionsTest do
     # negative selects from the *end* of Live's collection, Python-style.
     @index_properties ~w(
       track clip_slot target_track target_clip_slot
-      scene device parameter send return_track
+      scene device parameter send
     )
 
     test "every index-shaped property declares minimum: 0" do

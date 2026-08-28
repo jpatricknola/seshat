@@ -31,7 +31,8 @@ Off" without writing.
 *Why manual: requires cue routing and judgment by ear*
 *Last run: —*
 
-Preview a preset (see [catalog.md](catalog.md)), change `set_cue_volume`, preview
+Preview a preset (see [catalog.md](catalog.md)), change
+`set_mixer target: "cue"`, preview
 again — the preview level follows. The scales are already measured (master pan
 −1.0…1.0 shown as `50L`/`C`/`50R`, cue 0.0…1.0 on track volume's dB curve with
 `0.85` = `0.0 dB`), so this is about audibility, not range.

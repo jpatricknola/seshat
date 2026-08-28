@@ -59,19 +59,33 @@ defmodule Seshat.Tools.Validation do
       Enum.join(found, "\n")
   end
 
-  # Params not named in the schema are ignored: handler clauses already ignore
-  # unknown keys, and Peri governs the MCP wire.
+  # Every object in Definitions is closed: an unknown key is almost always a
+  # misspelling, and silently dropping one can turn a multi-property mutation
+  # into a confident partial success. Check extras here, before dispatch, so
+  # the rule covers root params and nested objects alike regardless of what
+  # Peri or an MCP client does with `additionalProperties`.
   defp violations(%{properties: properties} = schema, params, path) when is_map(params) do
     required = Map.get(schema, :required, [])
+    allowed = properties |> Map.keys() |> Enum.sort()
 
-    properties
-    |> Enum.sort_by(fn {name, _spec} -> name end)
-    |> Enum.flat_map(fn {name, spec} ->
-      case Map.fetch(params, name) do
-        {:ok, value} -> check(spec, value, join(path, name))
-        :error -> missing(name in required, spec, join(path, name))
-      end
-    end)
+    unknown =
+      params
+      |> Map.keys()
+      |> Enum.reject(&Map.has_key?(properties, &1))
+      |> Enum.sort()
+      |> Enum.map(&unknown_violation(join(path, &1), allowed))
+
+    known =
+      properties
+      |> Enum.sort_by(fn {name, _spec} -> name end)
+      |> Enum.flat_map(fn {name, spec} ->
+        case Map.fetch(params, name) do
+          {:ok, value} -> check(spec, value, join(path, name))
+          :error -> missing(name in required, spec, join(path, name))
+        end
+      end)
+
+    unknown ++ known
   end
 
   defp violations(_schema, _params, _path), do: []
@@ -156,6 +170,13 @@ defmodule Seshat.Tools.Validation do
       nil -> "- #{path}: #{text}"
       description -> "- #{path}: #{text} — #{description}"
     end
+  end
+
+  defp unknown_violation(path, []), do: "- #{path}: unknown parameter — expected no parameters"
+
+  defp unknown_violation(path, allowed) do
+    "- #{path}: unknown parameter — expected one of " <>
+      Enum.map_join(allowed, ", ", &inspect/1)
   end
 
   defp join("", name), do: name

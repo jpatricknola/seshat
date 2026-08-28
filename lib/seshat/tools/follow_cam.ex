@@ -72,7 +72,7 @@ defmodule Seshat.Tools.FollowCam do
   def calls(tool, %{track: track, slot: slot})
       when tool in [
              "write_midi_notes",
-             "remove_notes",
+             "edit_notes",
              "duplicate_clip",
              "capture_midi",
              "set_clip_properties",
@@ -125,17 +125,20 @@ defmodule Seshat.Tools.FollowCam do
   # --- Return tracks ---
   #
   # `/live/view/set/selected_track` indexes `song.tracks`, where returns don't
-  # appear, so returns get their own vendored address.
-  def calls("create_return_track", %{return: index}) do
+  # appear, so returns get their own vendored address. These share their tool
+  # names with the regular-track clauses above and are told apart by the fact
+  # key — `:return` rather than `:track` — exactly as the device clauses tell
+  # the three chains apart.
+  def calls("create_track", %{return: index}) do
     [{"/live/return_track/select", [index]}]
   end
 
   # Deleting the last return steers nowhere: the only container left to fall
   # back on is the master, which is out of scope (its one tool is a parameter
   # tweak, and parameter tweaks don't steer).
-  def calls("delete_return_track", %{return: _index, remaining: 0}), do: []
+  def calls("delete_track", %{return: _index, remaining: 0}), do: []
 
-  def calls("delete_return_track", %{return: index, remaining: remaining}) do
+  def calls("delete_track", %{return: index, remaining: remaining}) do
     [{"/live/return_track/select", [min(index, remaining - 1)]}]
   end
 

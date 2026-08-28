@@ -5,7 +5,8 @@ defmodule Seshat.MCP.Schema do
 
   `to_anubis/1` builds what Anubis *validates* against — native Peri types, with
   descriptions carried in `{:meta, type, opts}` wrappers. `to_json_schema/1`
-  builds what the server *publishes* — the definition itself, string-keyed.
+  builds what the server *publishes* — the definition, string-keyed, with
+  every object closed to additional properties to match handler validation.
 
   They are deliberately separate, and the wire no longer comes from Peri's own
   encoder. That encoder renders an `integer | float` union as a `oneOf`, which
@@ -49,7 +50,7 @@ defmodule Seshat.MCP.Schema do
   but publishing that implementation detail as `oneOf` drops the top-level
   `type` discriminator some MCP clients rely on.
   """
-  def to_json_schema(schema), do: stringify_keys(schema)
+  def to_json_schema(schema), do: schema |> close_objects() |> stringify_keys()
 
   # Enum first: an enum spec also carries a `:type`, and the enum is the
   # tighter constraint.
@@ -88,6 +89,19 @@ defmodule Seshat.MCP.Schema do
   # (`{:required, {:meta, type, opts}}`).
   defp maybe_required(type, true), do: {:required, type}
   defp maybe_required(type, false), do: type
+
+  defp close_objects(map) when is_map(map) do
+    closed = Map.new(map, fn {key, value} -> {key, close_objects(value)} end)
+
+    if Map.get(map, :type) == "object" do
+      Map.put(closed, :additionalProperties, false)
+    else
+      closed
+    end
+  end
+
+  defp close_objects(list) when is_list(list), do: Enum.map(list, &close_objects/1)
+  defp close_objects(value), do: value
 
   defp stringify_keys(map) when is_map(map) do
     Map.new(map, fn {key, value} -> {stringify_key(key), stringify_keys(value)} end)

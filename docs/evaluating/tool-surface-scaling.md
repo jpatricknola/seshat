@@ -572,7 +572,9 @@ build the modal set if the client measurement proves it reliable.
    generative tool lands** — realistic utterances covering the nearest name
    collisions, recorded expected tool/action/target and first-call success.
    The consolidation's conversation smoke test is the seed, not the finished
-   harness. Put this on the roadmap when generation itself is promoted from
+   harness. [automated-conversation-routing-evals.md](automated-conversation-routing-evals.md)
+   evaluates a headless client plus record-only MCP server as the automation
+   route. Put this on the roadmap when generation itself is promoted from
    research to roadmap work, as its gate rather than as cleanup after the new
    surface ships.
 6. **Plan the generation epic with its tool surface fixed up front** —

@@ -28,11 +28,11 @@ defmodule Seshat.Tools.FollowCamTest do
     # quantize_clip belongs here for the plainest reason of all: it rewrites the
     # clip's note starts, and the notes visibly snapping in the note editor is
     # the confirmation the reply's counts are describing.
-    test "remove_notes, duplicate_clip, capture_midi, set_clip_properties, stop_recording and quantize_clip steer the same way" do
+    test "edit_notes, duplicate_clip, capture_midi, set_clip_properties, stop_recording and quantize_clip steer the same way" do
       expected = FollowCam.calls("write_midi_notes", %{track: 0, slot: 3})
 
       tools = [
-        "remove_notes",
+        "edit_notes",
         "duplicate_clip",
         "capture_midi",
         "set_clip_properties",
@@ -96,22 +96,22 @@ defmodule Seshat.Tools.FollowCamTest do
     # /live/view/set/selected_track indexes song.tracks, where returns don't
     # appear — hence the vendored address.
     test "create selects the new return through the vendored address" do
-      assert FollowCam.calls("create_return_track", %{return: 2}) ==
+      assert FollowCam.calls("create_track", %{return: 2}) ==
                [{"/live/return_track/select", [2]}]
     end
 
     test "delete clamps onto the return that took its place" do
-      assert FollowCam.calls("delete_return_track", %{return: 2, remaining: 2}) ==
+      assert FollowCam.calls("delete_track", %{return: 2, remaining: 2}) ==
                [{"/live/return_track/select", [1]}]
 
-      assert FollowCam.calls("delete_return_track", %{return: 0, remaining: 3}) ==
+      assert FollowCam.calls("delete_track", %{return: 0, remaining: 3}) ==
                [{"/live/return_track/select", [0]}]
     end
 
     # The only container left would be the master, which is deliberately out of
     # scope: its one tool is a parameter tweak, and parameter tweaks don't steer.
     test "deleting the last return steers nowhere" do
-      assert FollowCam.calls("delete_return_track", %{return: 0, remaining: 0}) == []
+      assert FollowCam.calls("delete_track", %{return: 0, remaining: 0}) == []
     end
   end
 
@@ -295,9 +295,9 @@ defmodule Seshat.Tools.FollowCamTest do
     # every volume nudge is what would make someone ask for the off switch this
     # design doesn't have.
     test "a parameter tweak, a transport call and a rename produce no calls" do
-      assert FollowCam.calls("set_track_volume", %{track: 0}) == []
+      assert FollowCam.calls("set_mixer", %{track: 0}) == []
       assert FollowCam.calls("fire_clip", %{track: 0, slot: 0}) == []
-      assert FollowCam.calls("set_track_name", %{track: 0}) == []
+      assert FollowCam.calls("set_mixer", %{return: 0}) == []
       assert FollowCam.calls("get_session_state", %{}) == []
       assert FollowCam.calls("get_clip_properties", %{track: 0, slot: 0}) == []
     end

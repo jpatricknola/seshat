@@ -50,14 +50,16 @@ mutating-tool list.
 
 ## A multi-message tool is still one step
 
-*Last run: 2026-08-03 — passed, both forms. `create_return_track "Undo Return"`
-(which appeared as return 1 / send B) was gone after a single `undo`. Separately,
+*Last run: 2026-08-03 — passed, both forms, under the tool names of the day
+(the return create was `create_return_track`, since folded into `create_track`).
+`"Undo Return"` (which appeared as return 1 / send B) was gone after a single
+`undo`. Separately,
 `write_midi_notes` adding two notes to the existing 6-note "Sloppy" clip reverted
 in one `undo` to exactly the prior six — no partial remnant, so the three
 messages (create/add/name) revert as a unit.*
 
-`create_return_track`, or a `write_midi_notes` over an existing clip, undone in one
-call. `write_midi_notes` is three OSC messages (create clip, add notes, name it)
+`create_track track_type: "return"`, or a `write_midi_notes` over an existing
+clip, undone in one call. `write_midi_notes` is three OSC messages (create clip, add notes, name it)
 and must revert as a unit, because the wrap encloses the whole dispatch rather
 than each datagram.
 

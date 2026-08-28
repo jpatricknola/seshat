@@ -215,7 +215,7 @@ defmodule Seshat.Commands.Registry do
     {:error,
      "Ableton did not create a return track — the set is already at Live's limit of 12 " <>
        "return tracks. Nothing was created or renamed. Delete a return you no longer need " <>
-       "with delete_return_track first."}
+       "with delete_track (target: 'return') first."}
   end
 
   def ensure_return_created(before_count, after_count) do

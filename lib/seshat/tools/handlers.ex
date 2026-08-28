@@ -17,6 +17,7 @@ defmodule Seshat.Tools.Handlers do
   alias Seshat.Session.State
   alias Seshat.Tools.Definitions
   alias Seshat.Tools.FollowCam
+  alias Seshat.Tools.NoteEdit
   alias Seshat.Tools.Validation
 
   # Which names get an undo step wrapped around them. Validation deliberately
@@ -160,6 +161,10 @@ defmodule Seshat.Tools.Handlers do
 
   # Unpaired properties, written last in this order. Order is fixed rather than
   # map-iteration order so the write list is deterministic and testable.
+  # `name` rides this list rather than getting its own tool: it pairs with
+  # nothing, so its position is arbitrary — last, after the numeric scalars.
+  # It is also the one non-numeric value in the write list, which is why
+  # `clip_property_writes/2`'s return type is `String.t() | number()`.
   @clip_scalar_properties [
     "launch_mode",
     "launch_quantization",
@@ -167,7 +172,8 @@ defmodule Seshat.Tools.Handlers do
     "velocity_amount",
     "gain",
     "warp_mode",
-    "warping"
+    "warping",
+    "name"
   ]
 
   # `Clip` only carries these on an audio clip. Reading one on a MIDI clip does
@@ -198,6 +204,33 @@ defmodule Seshat.Tools.Handlers do
   ]
 
   @clip_audio_reads ["gain", "gain_display_string", "warp_mode", "warping"]
+
+  # --- The mixer (set_mixer) ---
+  #
+  # Fixed order rather than map-iteration order, so a multi-property call's
+  # write list is deterministic and testable — the `@clip_scalar_properties`
+  # precedent.
+  @mixer_properties ~w(volume pan mute solo arm name)
+
+  # What each strip actually has. Returns have no `arm` (return_track.py
+  # registers none); the master has no mute, solo, arm or name setter at all
+  # (`Session.State` mirrors none of them either, for the same reason — reading
+  # one raises inside Live); cue is a single fader on the master. The support
+  # matrix is an atomic preflight: if the target lacks any requested property,
+  # nothing is sent. Once preflight passes, supported properties are written
+  # sequentially over UDP; a later transport failure can therefore leave the
+  # earlier writes applied, which `mixer_partial_error/5` reports honestly.
+  @mixer_supported %{
+    "track" => ~w(volume pan mute solo arm name),
+    "return" => ~w(volume pan mute solo name),
+    "master" => ~w(volume pan),
+    "cue" => ~w(volume)
+  }
+
+  # The two targets whose index means something. The schema cannot express
+  # "required when target is one of these", so the handler reports the omission
+  # by name.
+  @mixer_indexed_targets ~w(track return)
 
   @launch_mode_names %{0 => "Trigger", 1 => "Gate", 2 => "Toggle", 3 => "Repeat"}
 
@@ -1402,7 +1435,7 @@ defmodule Seshat.Tools.Handlers do
 
   AbletonOSC's handler is all-or-nothing: it raises unless it gets exactly zero
   or four range arguments. So one range param from the model means filling in
-  the other three (the same defaults `remove_notes` uses), and no range params
+  the other three (the same defaults `edit_notes` uses), and no range params
   means sending none at all and letting AbletonOSC apply its own catch-all.
   """
   @spec note_range_args(map()) :: list()
@@ -1430,7 +1463,8 @@ defmodule Seshat.Tools.Handlers do
   @spec format_track_sends(integer(), [map()]) :: String.t()
   def format_track_sends(_track, []) do
     "This set has no return tracks, so no track has any sends. Create one with " <>
-      "create_return_track, then load an effect onto it in Live."
+      "create_track (track_type: 'return'), then load an effect onto it with load_device " <>
+      "(target: 'return')."
   end
 
   def format_track_sends(track, sends) do
@@ -1627,7 +1661,7 @@ defmodule Seshat.Tools.Handlers do
 
   def format_return_tracks([], master) do
     "No return tracks in this set — nothing to send to yet; create one with " <>
-      "create_return_track.\n#{master_line(master)}"
+      "create_track (track_type: 'return').\n#{master_line(master)}"
   end
 
   def format_return_tracks(return_tracks, master) do
@@ -1737,35 +1771,65 @@ defmodule Seshat.Tools.Handlers do
   defp format_number(value) when is_float(value), do: Float.round(value, 4)
   defp format_number(value), do: value
 
-  defp do_call("set_track_pan", %{"track" => track, "value" => value}) do
-    case Transport.send_message("/live/track/set/panning", [track, value / 1.0]) do
-      :ok -> {:ok, "Set pan on track #{track} to #{value} (#{pan_display(value)})"}
+  # --- The mixer ---
+  #
+  # One tool over four strips, replacing thirteen names the model had to choose
+  # between. The wire is unchanged: each property still goes out on the address
+  # its old tool used, and the two halves keep their old shapes too.
+  #
+  #   * A **regular track** stays fire-and-forget. Every value it writes has a
+  #     listener behind it (`Session.State`), so Live pushes back whatever it
+  #     accepted and a lost or refused set is corrected within a beat.
+  #   * **Return, master and cue** keep the guard-read-then-set they have always
+  #     had: their addresses come from Seshat's `return_track.py`, so silence
+  #     means "extension not installed" rather than "bad index", and the guard
+  #     is what tells those apart — while supplying the "was" value the reply
+  #     quotes.
+  #
+  # Neither half refreshes the mirror (listeners do that) and neither steers the
+  # view: mixer tweaks and renames are settled non-steering in `FollowCam`.
+  defp do_call("set_mixer", params) do
+    target = Map.get(params, "target", "track")
+    changes = Map.take(params, @mixer_properties)
+
+    with :ok <- ensure_mixer_changes(changes),
+         :ok <- ensure_mixer_supported(target, changes),
+         {:ok, index} <- mixer_index(target, params) do
+      apply_mixer(target, index, ordered_mixer_writes(changes))
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
+  catch
+    # The guard reads own their own exits (`query_echoed/4`, `master_volume/0`),
+    # so what reaches here is a fire-and-forget write losing the transport —
+    # after which the earlier properties in the same call may already be applied.
+    :exit, _ ->
+      {:error,
+       "Lost contact with the OSC transport while setting " <>
+         "#{mixer_property_list(params)} on #{mixer_subject_from(params)}. Some of those may " <>
+         "already have been applied — check with get_session_state once Ableton is running " <>
+         "with AbletonOSC enabled again."}
   end
 
-  defp do_call("set_track_volume", %{"track" => track, "value" => value}) do
-    case Transport.send_message("/live/track/set/volume", [track, value / 1.0]) do
-      :ok -> {:ok, "Set volume on track #{track} to #{value} (#{volume_display(value)})"}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
+  # The only multi-step create: `/live/song/create_return_track` appends, so the
+  # index is only knowable afterwards and the rename has to follow it. Registry
+  # owns that sequencing and hands back the index.
+  defp do_call("create_track", %{"track_type" => "return", "name" => name}) do
+    case Registry.execute(%Command{command: :create_return_track, name: name}) do
+      {:ok, index} ->
+        FollowCam.steer("create_track", %{return: index})
 
-  defp do_call("set_track_mute", %{"track" => track, "muted" => muted}) do
-    value = if muted, do: 1, else: 0
+        {:ok,
+         ~s{Created return track "#{name}" (return #{index} — send #{send_letter(index)} on } <>
+           "every track). It has no effect on it yet, so every send into it is silent: load " <>
+           "one now with load_device (target: 'return', track: #{index})."}
 
-    case Transport.send_message("/live/track/set/mute", [track, value]) do
-      :ok -> {:ok, "#{if muted, do: "Muted", else: "Unmuted"} track #{track}"}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
+      {:error, reason} when is_binary(reason) ->
+        {:error, reason}
 
-  defp do_call("set_track_solo", %{"track" => track, "soloed" => soloed}) do
-    value = if soloed, do: 1, else: 0
-
-    case Transport.send_message("/live/track/set/solo", [track, value]) do
-      :ok -> {:ok, "#{if soloed, do: "Soloed", else: "Unsoloed"} track #{track}"}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1843,6 +1907,37 @@ defmodule Seshat.Tools.Handlers do
          "AbletonOSC enabled, then try again."}
   end
 
+  # Two index spaces behind one tool: `target` picks which. The return branch is
+  # guarded with `get/name` rather than `get/count` — one query catches a bad
+  # index and a missing extension both, and the name is worth having in the
+  # reply.
+  defp do_call("delete_track", %{"track" => index, "target" => "return"}) do
+    with {:ok, name} <-
+           query_echoed(
+             "/live/return_track/get/name",
+             [index],
+             "return track #{index}",
+             @return_extension_hint
+           ),
+         :ok <- Transport.send_message("/live/song/delete_return_track", [index]) do
+      steer_after_delete(
+        "delete_track",
+        %{return: index},
+        "/live/return_track/get/count"
+      )
+
+      State.refresh()
+
+      {:ok,
+       ~s{Deleted return track #{index} "#{name}". The returns after it have shifted down a } <>
+         "place, taking their send letters with them — re-check get_session_state before " <>
+         "touching another send."}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
+    end
+  end
+
   defp do_call("delete_track", %{"track" => track}) do
     case Transport.send_message("/live/song/delete_track", [track]) do
       :ok ->
@@ -1866,13 +1961,6 @@ defmodule Seshat.Tools.Handlers do
 
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_track_name", %{"track" => track, "name" => name}) do
-    case Transport.send_message("/live/track/set/name", [track, name]) do
-      :ok -> {:ok, "Renamed track #{track} to '#{name}'"}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -1950,15 +2038,6 @@ defmodule Seshat.Tools.Handlers do
 
     case Transport.send_message("/live/song/set/metronome", [value]) do
       :ok -> {:ok, "Metronome #{if enabled, do: "on", else: "off"}"}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_track_arm", %{"track" => track, "armed" => armed}) do
-    value = if armed, do: 1, else: 0
-
-    case Transport.send_message("/live/track/set/arm", [track, value]) do
-      :ok -> {:ok, "#{if armed, do: "Armed", else: "Disarmed"} track #{track}"}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
@@ -2057,7 +2136,7 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # --- Sends, return tracks, master ---
+  # --- Sends and the mixer ---
   #
   # Sends belong to the *regular* track that feeds the return, so they use
   # upstream's /live/track/get|set/send. Everything about the returns themselves
@@ -2106,193 +2185,6 @@ defmodule Seshat.Tools.Handlers do
     with {:ok, count} <- return_track_count(),
          {:ok, sends} <- read_sends(track, count) do
       {:ok, format_track_sends(track, sends)}
-    else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  # The only multi-step one: create, then rename at the index the create appended
-  # to. Registry owns the sequencing and hands back that index.
-  defp do_call("create_return_track", %{"name" => name}) do
-    case Registry.execute(%Command{command: :create_return_track, name: name}) do
-      {:ok, index} ->
-        FollowCam.steer("create_return_track", %{return: index})
-
-        {:ok,
-         ~s{Created return track "#{name}" (return #{index} — send #{send_letter(index)} on } <>
-           "every track). It has no effect on it yet, so every send into it is silent: load " <>
-           "one now with load_device (target: 'return', track: #{index})."}
-
-      {:error, reason} when is_binary(reason) ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  # Guarded with get/name rather than get/count: one query catches a bad index and
-  # a missing extension both, and the name is worth having in the reply.
-  defp do_call("delete_return_track", %{"return_track" => index}) do
-    with {:ok, name} <-
-           query_echoed(
-             "/live/return_track/get/name",
-             [index],
-             "return track #{index}",
-             @return_extension_hint
-           ),
-         :ok <- Transport.send_message("/live/song/delete_return_track", [index]) do
-      steer_after_delete(
-        "delete_return_track",
-        %{return: index},
-        "/live/return_track/get/count"
-      )
-
-      State.refresh()
-
-      {:ok,
-       ~s{Deleted return track #{index} "#{name}". The returns after it have shifted down a } <>
-         "place, taking their send letters with them — re-check get_session_state before " <>
-         "touching another send."}
-    else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  # None of the seven scalar setters below — the four return mixer values and the
-  # three master ones — asks `Session.State` to refresh. Each of those seven
-  # values has a listener behind it (`subscribe_return_listeners/1`), so Live
-  # pushes the value it actually accepted into the mirror on its own, exactly as
-  # the regular-track setters have always relied on. A full refresh here bought
-  # nothing and cost a serial re-read of the whole session on the shared
-  # Transport queue, ahead of the next tool's guard query. Nothing writes the new
-  # value into the mirror optimistically either: the push is the single update
-  # path, and Live's accepted value is the source of truth.
-  #
-  # Structural changes (creates, deletes, duplicates) still refresh — they change
-  # what every index means and which Live objects the listeners are bound to.
-  defp do_call("set_return_track_volume", %{"return_track" => index, "value" => value}) do
-    with {:ok, old} <-
-           query_echoed(
-             "/live/return_track/get/volume",
-             [index],
-             "the volume of return track #{index}",
-             @return_extension_hint
-           ),
-         :ok <- Transport.send_message("/live/return_track/set/volume", [index, value / 1.0]) do
-      label = return_track_label(index)
-
-      {:ok,
-       "Set volume on return track #{index}#{label} to #{value} " <>
-         "(#{volume_display(value)}) — was #{format_number(old)} (#{volume_display(old)})"}
-    else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_return_track_pan", %{"return_track" => index, "value" => value}) do
-    with {:ok, old} <-
-           query_echoed(
-             "/live/return_track/get/panning",
-             [index],
-             "the pan of return track #{index}",
-             @return_extension_hint
-           ),
-         :ok <- Transport.send_message("/live/return_track/set/panning", [index, value / 1.0]) do
-      label = return_track_label(index)
-
-      {:ok,
-       "Set pan on return track #{index}#{label} to #{value} (#{pan_display(value)}) — was " <>
-         "#{format_number(old)} (#{pan_display(old)})"}
-    else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_return_track_mute", %{"return_track" => index, "muted" => muted}) do
-    with {:ok, old} <-
-           query_echoed(
-             "/live/return_track/get/mute",
-             [index],
-             "the mute state of return track #{index}",
-             @return_extension_hint
-           ),
-         :ok <-
-           Transport.send_message(
-             "/live/return_track/set/mute",
-             [index, if(muted, do: 1, else: 0)]
-           ) do
-      label = return_track_label(index)
-
-      {:ok,
-       "#{if muted, do: "Muted", else: "Unmuted"} return track #{index}#{label} — was " <>
-         "#{if truthy?(old), do: "muted", else: "unmuted"}. Every track's send into it is " <>
-         "unchanged."}
-    else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_return_track_solo", %{"return_track" => index, "soloed" => soloed}) do
-    with {:ok, old} <-
-           query_echoed(
-             "/live/return_track/get/solo",
-             [index],
-             "the solo state of return track #{index}",
-             @return_extension_hint
-           ),
-         :ok <-
-           Transport.send_message(
-             "/live/return_track/set/solo",
-             [index, if(soloed, do: 1, else: 0)]
-           ) do
-      label = return_track_label(index)
-
-      {:ok,
-       "#{if soloed, do: "Soloed", else: "Unsoloed"} return track #{index}#{label} — was " <>
-         "#{if truthy?(old), do: "soloed", else: "not soloed"}."}
-    else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_master_volume", %{"value" => value}) do
-    with {:ok, old} <- master_volume(),
-         :ok <- Transport.send_message("/live/master/set/volume", [value / 1.0]) do
-      {:ok,
-       "Set master volume to #{value} (#{volume_display(value)}) — was " <>
-         "#{format_number(old)} (#{volume_display(old)})"}
-    else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_master_pan", %{"value" => value}) do
-    with {:ok, old} <- master_bare_float("/live/master/get/panning", "the master pan"),
-         :ok <- Transport.send_message("/live/master/set/panning", [value / 1.0]) do
-      {:ok,
-       "Set the master pan (shown as Main in Live 12) to #{value} (#{pan_display(value)}) — " <>
-         "was #{format_number(old)} (#{pan_display(old)})"}
-    else
-      {:error, reason} when is_binary(reason) -> {:error, reason}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_cue_volume", %{"value" => value}) do
-    with {:ok, old} <- master_bare_float("/live/master/get/cue_volume", "the cue volume"),
-         :ok <- Transport.send_message("/live/master/set/cue_volume", [value / 1.0]) do
-      {:ok,
-       "Set the cue (preview/headphone) volume to #{value} (#{volume_display(value)}) — was " <>
-         "#{format_number(old)} (#{volume_display(old)}). This is the browser-preview level, " <>
-         "not the master output."}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
@@ -2396,13 +2288,6 @@ defmodule Seshat.Tools.Handlers do
 
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
-    end
-  end
-
-  defp do_call("set_clip_name", %{"track" => track, "clip_slot" => slot, "name" => name}) do
-    case Transport.send_message("/live/clip/set/name", [track, slot, name]) do
-      :ok -> {:ok, "Renamed clip on track #{track}, slot #{slot} to '#{name}'"}
-      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   end
 
@@ -2622,28 +2507,46 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Notes ---
 
-  defp do_call("remove_notes", %{"track" => track} = params) do
+  # In-place note editing, composed rather than atomic. Live's own
+  # `apply_note_modifications` is keyed on `note_id`, which the fork's
+  # `/live/clip/get/notes` reply does not carry (FORK_GAPS.md, "Notes flatten to
+  # five fields"), so the only way to change a note through this bridge is to
+  # read it, remove the window it sits in, and add it back changed. `call/2`
+  # already brackets every dispatch in one `begin_undo_step`/`end_undo_step`
+  # pair, so the three datagrams are one undo step in Live — measured
+  # 2026-08-27, one `undo` restored the pre-edit notes exactly.
+  #
+  # Two conversions are load-bearing, not tidiness: `get/notes` answers with
+  # `mute` as an OSC boolean and velocity as a float, while `add/notes` wants
+  # `0|1` and an integer — and `Seshat.OSC.Message` has no type tag for a
+  # boolean at all, so re-sending a reply verbatim takes the Transport
+  # GenServer down (reproduced 2026-08-27; priv/AbletonOSC/API.md).
+  defp do_call("edit_notes", %{"track" => track} = params) do
     slot = Map.get(params, "clip_slot", 0)
-    start_pitch = Map.get(params, "start_pitch", 0)
-    pitch_span = Map.get(params, "pitch_span", 128)
-    start_time = Map.get(params, "start_time", 0.0)
-    time_span = Map.get(params, "time_span", 9999.0)
+    window = edit_window(params)
+    phrase = window_phrase(params)
+    changes = NoteEdit.changes(params)
 
-    case Transport.send_message("/live/clip/remove/notes", [
-           track,
-           slot,
-           start_pitch,
-           pitch_span,
-           start_time / 1.0,
-           time_span / 1.0
-         ]) do
-      :ok ->
-        FollowCam.steer("remove_notes", %{track: track, slot: slot})
-        {:ok, "Removed notes from track #{track}, clip slot #{slot}"}
-
-      {:error, reason} ->
-        {:error, Transport.describe_error(reason)}
+    with :ok <- NoteEdit.validate(changes),
+         :ok <- ensure_clip(track, slot),
+         :ok <- ensure_midi_clip(track, slot),
+         {:ok, matched} <- read_note_window(track, slot, window) do
+      rewrite_notes(track, slot, window, phrase, changes, matched)
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
+  catch
+    # Every read on this path catches its own exit and words the consequence
+    # itself, so an exit reaching here came from one of the two fire-and-forget
+    # writes — after which claiming nothing changed would be the lie
+    # `quantize_clip`'s own exit clause is written to avoid.
+    :exit, _ ->
+      {:error,
+       "Lost contact with the OSC transport while editing the notes in slot " <>
+         "#{Map.get(params, "clip_slot", 0)} on track #{track}. The edit may or may not have " <>
+         "been applied — read the clip back with get_clip_notes once Ableton is running with " <>
+         "AbletonOSC enabled again."}
   end
 
   # Reads only, so no %Command{}/Registry — Registry is for mutation sequences.
@@ -3641,7 +3544,7 @@ defmodule Seshat.Tools.Handlers do
 
   defp maybe_name_clip(_track, _slot, nil), do: :ok
 
-  # Fire-and-forget, like `set_clip_name`'s own send — but this runs *after* a
+  # Fire-and-forget, like `set_clip_properties`' own name send — but this runs *after* a
   # mutation (write_midi_notes, capture_midi) that already succeeded, inside a
   # function whose own `catch :exit` assumes nothing past that point can still
   # exit. Left uncaught, a dead/restarting Transport here would surface as the
@@ -3747,7 +3650,7 @@ defmodule Seshat.Tools.Handlers do
   # One capture is one take, so a multi-track capture gets the same name on every
   # clip it produced. The name is substituted into the clip maps rather than
   # re-read: the after-snapshot predates the rename, so re-reading would cost a
-  # round trip for a string we just wrote — the same trust `set_clip_name`
+  # round trip for a string we just wrote — the same trust `set_clip_properties`
   # extends to its own fire-and-forget send.
   defp captured_success(clips, scenes_added, tempo_before, tempo_after, name) do
     clips = Enum.map(clips, &name_captured_clip(&1, name))
@@ -4174,7 +4077,8 @@ defmodule Seshat.Tools.Handlers do
         {:error, Transport.describe_error(reason)}
     end
   catch
-    :exit, _ -> {:error, extension_missing_error("read the master volume", "nothing was changed")}
+    :exit, _ ->
+      {:error, extension_missing_error("read the master volume", "that property was not changed")}
   end
 
   # The index-less master getters reply with a bare value and no envelope, so
@@ -4194,7 +4098,8 @@ defmodule Seshat.Tools.Handlers do
         {:error, Transport.describe_error(reason)}
     end
   catch
-    :exit, _ -> {:error, extension_missing_error("read #{subject}", "nothing was changed")}
+    :exit, _ ->
+      {:error, extension_missing_error("read #{subject}", "that property was not changed")}
   end
 
   defp extension_missing_error(attempted, consequence) do
@@ -4370,6 +4275,348 @@ defmodule Seshat.Tools.Handlers do
          "The set was sent but reading #{subject} back did not confirm it — verify with " <>
            "get_track_sends."}
     end
+  end
+
+  # --- set_mixer ---
+
+  defp ensure_mixer_changes(changes) when map_size(changes) == 0 do
+    {:error,
+     "Nothing to set — pass at least one of #{Enum.join(@mixer_properties, ", ")}. Nothing " <>
+       "was sent."}
+  end
+
+  defp ensure_mixer_changes(_changes), do: :ok
+
+  defp ensure_mixer_supported(target, changes) do
+    case Map.fetch(@mixer_supported, target) do
+      {:ok, supported} ->
+        unsupported =
+          Enum.filter(@mixer_properties, &(Map.has_key?(changes, &1) and &1 not in supported))
+
+        if unsupported == [] do
+          :ok
+        else
+          {:error,
+           "#{mixer_subject(target, nil)} has no " <>
+             "#{Enum.join(unsupported, " or ")} — it has #{Enum.join(supported, ", ")}. " <>
+             "Nothing in this call was sent. Drop #{Enum.join(unsupported, " and ")} and try " <>
+             "again."}
+        end
+
+      :error ->
+        {:error,
+         "Unknown target '#{target}' — use 'track', 'return', 'master' or 'cue'. Nothing " <>
+           "was sent."}
+    end
+  end
+
+  defp mixer_index(target, params) when target in @mixer_indexed_targets do
+    case Map.get(params, "track") do
+      index when is_integer(index) and index >= 0 ->
+        {:ok, index}
+
+      index when is_float(index) and index >= 0.0 ->
+        {:ok, trunc(index)}
+
+      _missing ->
+        {:error,
+         "target '#{target}' needs track — the 0-based index of the " <>
+           "#{if target == "return", do: "return track (return 0 = send A)", else: "track"}. " <>
+           "See get_session_state. Nothing was sent."}
+    end
+  end
+
+  defp mixer_index(_target, _params), do: {:ok, nil}
+
+  defp ordered_mixer_writes(changes) do
+    @mixer_properties
+    |> Enum.filter(&Map.has_key?(changes, &1))
+    |> Enum.map(&{&1, Map.fetch!(changes, &1)})
+  end
+
+  # Applied in order, one result line each, stopping at the first failure — and
+  # a stop names what already went out, because on the return/master path the
+  # failure is a guard read and the properties before it are already on the
+  # wire (`send_clip_writes/3` reports the same way for the same reason).
+  defp apply_mixer(target, index, writes) do
+    outcome =
+      Enum.reduce_while(writes, {:ok, []}, fn {property, value}, {:ok, done} ->
+        case mixer_write(target, index, property, value) do
+          {:ok, line} ->
+            {:cont, {:ok, [{property, line} | done]}}
+
+          {:error, message} ->
+            {:halt, {:error, mixer_partial_error(target, index, property, message, done)}}
+        end
+      end)
+
+    case outcome do
+      {:ok, done} ->
+        lines = done |> Enum.reverse() |> Enum.map(&elem(&1, 1))
+        {:ok, mixer_reply(target, index, Map.new(writes), lines)}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  defp mixer_partial_error(target, index, property, message, []) do
+    "Could not set #{property} on #{mixer_subject(target, index)}: #{message} Nothing else " <>
+      "in the call was sent."
+  end
+
+  defp mixer_partial_error(target, index, property, message, done) do
+    already = done |> Enum.reverse() |> Enum.map_join(", ", &elem(&1, 0))
+
+    "Could not set #{property} on #{mixer_subject(target, index)}: #{message} " <>
+      "#{already} #{if(length(done) == 1, do: "was", else: "were")} already sent in the same " <>
+      "call and may have landed — check with get_session_state."
+  end
+
+  defp mixer_reply(target, index, changes, lines) do
+    "#{mixer_header(target, index, changes)} #{Enum.join(lines, "; ")}." <> mixer_footer(target)
+  end
+
+  defp mixer_footer("cue"),
+    do: " This is the browser-preview/headphone level, not the master output."
+
+  defp mixer_footer(_target), do: ""
+
+  # The label is cosmetic, so an unavailable or stale mirror costs nothing — but
+  # a rename in this same call wins over the mirrored name, which is by
+  # definition the old one.
+  defp mixer_header("track", index, changes),
+    do: "Track #{index}#{mixer_label(mirrored_track_name(index), changes)}:"
+
+  defp mixer_header("return", index, changes),
+    do: "Return #{index}#{mixer_label(mirrored_return_name(index), changes)}:"
+
+  defp mixer_header("master", _index, _changes), do: "Master (shown as Main in Live 12):"
+  defp mixer_header("cue", _index, _changes), do: "Cue:"
+
+  defp mixer_label(mirrored, changes) do
+    case Map.get(changes, "name", mirrored) do
+      name when is_binary(name) and name != "" -> ~s{ ("#{name}")}
+      _unknown -> ""
+    end
+  end
+
+  defp mirrored_track_name(index) do
+    case Enum.find(State.tracks() || [], &(&1.index == index)) do
+      %{name: name} -> name
+      _missing -> nil
+    end
+  catch
+    :exit, _ -> nil
+  end
+
+  defp mirrored_return_name(index) do
+    case Enum.find(State.return_tracks(), &(&1.index == index)) do
+      %{name: name} -> name
+      _missing -> nil
+    end
+  catch
+    :exit, _ -> nil
+  end
+
+  defp mixer_subject("track", index) when is_integer(index), do: "Track #{index}"
+  defp mixer_subject("track", _index), do: "A regular track"
+  defp mixer_subject("return", index) when is_integer(index), do: "Return track #{index}"
+  defp mixer_subject("return", _index), do: "A return track"
+  defp mixer_subject("master", _index), do: "The master"
+  defp mixer_subject("cue", _index), do: "The cue output"
+  defp mixer_subject(target, _index), do: "Target '#{target}'"
+
+  # Regular tracks: fire-and-forget, exactly as the six tools this replaces
+  # were. Every value here has a listener pushing Live's accepted value back
+  # into `Session.State`, so a refused or lost set is corrected within a beat
+  # and `get_session_state` is the read.
+  defp mixer_write("track", index, "volume", value) do
+    send_mixer(
+      "/live/track/set/volume",
+      [index, value / 1.0],
+      "volume #{format_number(value)} (#{volume_display(value)})"
+    )
+  end
+
+  defp mixer_write("track", index, "pan", value) do
+    send_mixer(
+      "/live/track/set/panning",
+      [index, value / 1.0],
+      "pan #{format_number(value)} (#{pan_display(value)})"
+    )
+  end
+
+  defp mixer_write("track", index, "mute", value) do
+    send_mixer(
+      "/live/track/set/mute",
+      [index, if(truthy?(value), do: 1, else: 0)],
+      if(truthy?(value), do: "muted", else: "unmuted")
+    )
+  end
+
+  defp mixer_write("track", index, "solo", value) do
+    send_mixer(
+      "/live/track/set/solo",
+      [index, if(truthy?(value), do: 1, else: 0)],
+      if(truthy?(value), do: "soloed", else: "unsoloed")
+    )
+  end
+
+  defp mixer_write("track", index, "arm", value) do
+    send_mixer(
+      "/live/track/set/arm",
+      [index, if(truthy?(value), do: 1, else: 0)],
+      if(truthy?(value), do: "armed", else: "disarmed")
+    )
+  end
+
+  defp mixer_write("track", index, "name", value) do
+    send_mixer("/live/track/set/name", [index, value], "renamed to '#{value}'")
+  end
+
+  # Returns: guard-read then set, as before. The guard proves the index exists
+  # and tells a bad index (an error reply) from an uninstalled extension
+  # (silence) apart, and it is where the "was" value comes from.
+  defp mixer_write("return", index, "volume", value) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/volume",
+             [index],
+             "the volume of return track #{index}",
+             @return_extension_hint
+           ) do
+      send_mixer(
+        "/live/return_track/set/volume",
+        [index, value / 1.0],
+        "volume #{format_number(value)} (#{volume_display(value)}) — was " <>
+          "#{format_number(old)} (#{volume_display(old)})"
+      )
+    end
+  end
+
+  defp mixer_write("return", index, "pan", value) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/panning",
+             [index],
+             "the pan of return track #{index}",
+             @return_extension_hint
+           ) do
+      send_mixer(
+        "/live/return_track/set/panning",
+        [index, value / 1.0],
+        "pan #{format_number(value)} (#{pan_display(value)}) — was #{format_number(old)} " <>
+          "(#{pan_display(old)})"
+      )
+    end
+  end
+
+  defp mixer_write("return", index, "mute", value) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/mute",
+             [index],
+             "the mute state of return track #{index}",
+             @return_extension_hint
+           ) do
+      send_mixer(
+        "/live/return_track/set/mute",
+        [index, if(truthy?(value), do: 1, else: 0)],
+        "#{if truthy?(value), do: "muted", else: "unmuted"} — was " <>
+          "#{if truthy?(old), do: "muted", else: "unmuted"} (every track's send into it is " <>
+          "unchanged)"
+      )
+    end
+  end
+
+  defp mixer_write("return", index, "solo", value) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/solo",
+             [index],
+             "the solo state of return track #{index}",
+             @return_extension_hint
+           ) do
+      send_mixer(
+        "/live/return_track/set/solo",
+        [index, if(truthy?(value), do: 1, else: 0)],
+        "#{if truthy?(value), do: "soloed", else: "unsoloed"} — was " <>
+          "#{if truthy?(old), do: "soloed", else: "not soloed"}"
+      )
+    end
+  end
+
+  defp mixer_write("return", index, "name", value) do
+    with {:ok, old} <-
+           query_echoed(
+             "/live/return_track/get/name",
+             [index],
+             "the name of return track #{index}",
+             @return_extension_hint
+           ) do
+      send_mixer(
+        "/live/return_track/set/name",
+        [index, value],
+        "renamed to '#{value}' — was '#{old}'"
+      )
+    end
+  end
+
+  # The master and cue getters take no index, so they carry no envelope to
+  # unwrap and no echo to check: `master_volume/0` and `master_bare_float/2`
+  # are their shape, and a timeout on either means the extension is missing.
+  defp mixer_write("master", _index, "volume", value) do
+    with {:ok, old} <- master_volume() do
+      send_mixer(
+        "/live/master/set/volume",
+        [value / 1.0],
+        "volume #{format_number(value)} (#{volume_display(value)}) — was " <>
+          "#{format_number(old)} (#{volume_display(old)})"
+      )
+    end
+  end
+
+  defp mixer_write("master", _index, "pan", value) do
+    with {:ok, old} <- master_bare_float("/live/master/get/panning", "the master pan") do
+      send_mixer(
+        "/live/master/set/panning",
+        [value / 1.0],
+        "pan #{format_number(value)} (#{pan_display(value)}) — was #{format_number(old)} " <>
+          "(#{pan_display(old)})"
+      )
+    end
+  end
+
+  defp mixer_write("cue", _index, "volume", value) do
+    with {:ok, old} <- master_bare_float("/live/master/get/cue_volume", "the cue volume") do
+      send_mixer(
+        "/live/master/set/cue_volume",
+        [value / 1.0],
+        "volume #{format_number(value)} (#{volume_display(value)}) — was " <>
+          "#{format_number(old)} (#{volume_display(old)})"
+      )
+    end
+  end
+
+  defp send_mixer(address, args, line) do
+    case Transport.send_message(address, args) do
+      :ok -> {:ok, line}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
+    end
+  end
+
+  defp mixer_property_list(params) do
+    case Enum.filter(@mixer_properties, &Map.has_key?(params, &1)) do
+      [] -> "the mixer"
+      properties -> Enum.join(properties, ", ")
+    end
+  end
+
+  defp mixer_subject_from(params) do
+    Map.get(params, "target", "track")
+    |> mixer_subject(Map.get(params, "track"))
+    |> String.downcase()
   end
 
   # Best-effort label from the mirrored state, for a reply that reads better with
@@ -4773,10 +5020,11 @@ defmodule Seshat.Tools.Handlers do
     * Unpaired scalars go last, in `@clip_scalar_properties` order.
 
   Values are coerced to the house wire conventions here too: booleans to 1/0,
-  enums to integers, everything else to floats.
+  enums to integers, every other number to a float. `name` is the one string
+  value in the list and passes through untouched.
   """
   @spec clip_property_writes(map(), map()) ::
-          {:ok, [{String.t(), number()}]} | {:error, String.t()}
+          {:ok, [{String.t(), String.t() | number()}]} | {:error, String.t()}
   def clip_property_writes(current, changes) do
     with :ok <- validate_clip_pairs(changes),
          {:ok, loop_writes} <- clip_pair_writes(current, changes, "loop_start", "loop_end"),
@@ -5062,6 +5310,7 @@ defmodule Seshat.Tools.Handlers do
   defp clip_set_address("gain"), do: "/live/clip/set/gain"
   defp clip_set_address("warp_mode"), do: "/live/clip/set/warp_mode"
   defp clip_set_address("warping"), do: "/live/clip/set/warping"
+  defp clip_set_address("name"), do: "/live/clip/set/name"
 
   # An *unwarped* audio clip counts its length, loop points and markers in
   # seconds, not beats (Live's object model switches the unit on `warping`), so
@@ -5169,6 +5418,7 @@ defmodule Seshat.Tools.Handlers do
     do: enum_name(@launch_quantization_names, value)
 
   defp format_clip_value("warp_mode", value), do: enum_name(@warp_mode_names, value)
+  defp format_clip_value("name", value), do: ~s{'#{value}'}
   defp format_clip_value(_property, value), do: format_number(value)
 
   defp clip_property_list(params) do
@@ -5290,6 +5540,310 @@ defmodule Seshat.Tools.Handlers do
         {:error, message}
     end
   end
+
+  # --- edit_notes ---
+  #
+  # One window value, used four times: the read that decides what matched, the
+  # remove that clears it, the quote in every refusal, and (after a delete) the
+  # emptiness check. So it is resolved once, here, always to four arguments —
+  # never AbletonOSC's zero-argument catch-all, whose defaults (`0, 127, -8192,
+  # 16384`) span 127 pitches from 0 and so leave note 127 out.
+  defp edit_window(params) do
+    if Enum.any?(@range_params, &Map.has_key?(params, &1)) do
+      [
+        Map.get(params, "start_pitch", 0),
+        Map.get(params, "pitch_span", 128),
+        Map.get(params, "start_time", 0.0) / 1.0,
+        Map.get(params, "time_span", 9999.0) / 1.0
+      ]
+    else
+      [0, 128, -8192.0, 16384.0]
+    end
+  end
+
+  # The same correlated read `get_clip_notes` makes — `/live/clip/get/notes`
+  # echoes only the track and slot, never the range it was handed, hence the
+  # explicit `echo:`. Every failure here is before any write, so every failure
+  # may say so.
+  defp read_note_window(track, slot, window) do
+    case query_correlated("/live/clip/get/notes", [track, slot | window], echo: [track, slot]) do
+      {:ok, fields} ->
+        parse_clip_notes(fields)
+
+      {:error, {:stale, _values}} ->
+        {:error, stale_reply_error("the notes in slot #{slot} on track #{track}")}
+
+      {:error, {:remote, message}} ->
+        {:error, remote_error(message)}
+
+      {:error, {:live_error, message}} ->
+        {:error, "#{message}. Nothing was changed — check the indices with get_clip_slots."}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Timed out reading the notes in slot #{slot} on track #{track}, so nothing was " <>
+         "changed. Check the indices with get_clip_slots, and that Ableton is running with " <>
+         "AbletonOSC enabled."}
+  end
+
+  # An empty window is a question about an empty range, not a failure: the model
+  # asked what is there and the answer is "nothing". Saying so — and saying why,
+  # since match-by-start is the surprising half — beats an error it would retry.
+  defp rewrite_notes(track, slot, _window, phrase, _changes, []) do
+    {:ok,
+     "No notes start inside #{phrase} in slot #{slot} on track " <>
+       "#{track}, so nothing was changed. A note that begins before the window and sounds " <>
+       "into it does not match — call get_clip_notes to see what is actually there."}
+  end
+
+  defp rewrite_notes(track, slot, window, phrase, changes, matched) do
+    if NoteEdit.delete?(changes) do
+      delete_note_window(track, slot, window, phrase, matched)
+    else
+      edit_note_window(track, slot, window, phrase, changes, matched)
+    end
+  end
+
+  defp delete_note_window(track, slot, window, phrase, matched) do
+    subject = "#{note_count(length(matched))} in #{phrase} in slot #{slot} on track #{track}"
+
+    case Transport.send_message("/live/clip/remove/notes", [track, slot | window]) do
+      :ok ->
+        FollowCam.steer("edit_notes", %{track: track, slot: slot})
+        confirm_window_empty(track, slot, window, subject)
+
+      {:error, reason} ->
+        {:error, "Nothing was changed: #{Transport.describe_error(reason)}"}
+    end
+  end
+
+  # Remove then add, in that order, both silent. The add is where a partial
+  # failure would be unrecoverable, so it gets its own wording: the notes are
+  # gone and the replacements never went out, which is an `undo` away from being
+  # fixed and must not be dressed up as a success.
+  defp edit_note_window(track, slot, window, phrase, changes, matched) do
+    with {:ok, edited, clamped} <- NoteEdit.apply(matched, changes),
+         :ok <- remove_before_add(track, slot, window),
+         :ok <- add_edited_notes(track, slot, edited) do
+      FollowCam.steer("edit_notes", %{track: track, slot: slot})
+      confirm_edited_notes(track, slot, window, phrase, changes, matched, edited, clamped)
+    end
+  end
+
+  defp remove_before_add(track, slot, window) do
+    case Transport.send_message("/live/clip/remove/notes", [track, slot | window]) do
+      :ok -> :ok
+      {:error, reason} -> {:error, "Nothing was changed: #{Transport.describe_error(reason)}"}
+    end
+  end
+
+  # `mute` as `0|1` and velocity as an integer: the two conversions without
+  # which a read reply cannot be re-sent at all (see the clause's comment).
+  defp add_edited_notes(track, slot, edited) do
+    flat =
+      Enum.flat_map(edited, fn note ->
+        [
+          note.pitch,
+          note.start_time / 1.0,
+          note.duration / 1.0,
+          round(note.velocity),
+          if(note.mute, do: 1, else: 0)
+        ]
+      end)
+
+    case Transport.send_message("/live/clip/add/notes", [track, slot | flat]) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        {:error,
+         "The matched notes were removed but the edited replacements could not be sent " <>
+           "(#{Transport.describe_error(reason)}), so slot #{slot} on track #{track} is now " <>
+           "missing them. Call undo immediately to put them back."}
+    end
+  end
+
+  defp confirm_window_empty(track, slot, window, subject) do
+    case read_note_window(track, slot, window) do
+      {:ok, []} ->
+        {:ok, "Deleted #{subject}. The window reads back empty."}
+
+      {:ok, left} ->
+        {:error,
+         "Deleted #{subject}, but the window still reads back #{note_count(length(left))} — " <>
+           "the delete did not fully land. Check with get_clip_notes."}
+
+      {:error, _message} ->
+        {:error,
+         "The delete was sent for #{subject}, but reading the window back failed, so what " <>
+           "Live now holds is unconfirmed. Check with get_clip_notes."}
+    end
+  end
+
+  # The read-back window is the *bounding rectangle* of the old window and the
+  # edited notes, because a transpose or a shift can move a note out of the
+  # window it was matched in. That rectangle can legitimately contain notes this
+  # call never touched, so the check is "every expected note is present", never
+  # "the count matches" — comparing counts here would invent a mismatch out of an
+  # innocent neighbour.
+  #
+  # Two checks, because the remove and the add are both silent and either can
+  # fail alone. Every edited note must be present (the add landed), and no
+  # matched note may survive beyond the copies the edit itself expects (the
+  # remove landed) — without the second, a remove Live ignored followed by an add
+  # it accepted reads back as the originals *plus* the replacements, and a
+  # transpose that duplicated the phrase would be confirmed as an edit.
+  defp confirm_edited_notes(track, slot, window, phrase, changes, matched, edited, clamped) do
+    summary =
+      "Edited #{note_count(length(edited))} in #{phrase} in slot #{slot} on track #{track} — " <>
+        "#{describe_note_changes(changes)}." <> clamped_note(clamped)
+
+    case read_note_window(track, slot, readback_window(window, edited)) do
+      {:ok, found} ->
+        case {missing_note_keys(edited, found), leftover_note_keys(matched, edited, found)} do
+          {[], []} ->
+            {:ok, "#{summary} Read back and confirmed."}
+
+          {[], leftover} ->
+            {:error,
+             "#{summary} But #{note_count(length(leftover))} still read back unchanged " <>
+               "alongside the edited copies, so the removal did not land and the phrase is " <>
+               "now duplicated. Undo, then check with get_clip_notes."}
+
+          {missing, _leftover} ->
+            {:error,
+             "#{summary} But #{note_count(length(missing))} did not read back as expected, " <>
+               "so what Live holds is not what was asked for. Check with get_clip_notes, and " <>
+               "undo if the clip is wrong."}
+        end
+
+      {:error, _message} ->
+        {:error,
+         "#{summary} Reading the notes back failed, so what Live now holds is unconfirmed. " <>
+           "Check with get_clip_notes."}
+    end
+  end
+
+  # Padded by a beat either side so a start sitting exactly on an edge is inside
+  # the rectangle whichever way Live rounds the comparison, and widened to every
+  # pitch the edit produced.
+  defp readback_window([start_pitch, pitch_span, start_time, time_span], edited) do
+    pitches = Enum.map(edited, & &1.pitch)
+    starts = Enum.map(edited, &(&1.start_time / 1.0))
+
+    low_pitch = Enum.min([start_pitch | pitches]) |> max(0)
+    high_pitch = Enum.max([start_pitch + pitch_span - 1 | pitches]) |> min(127)
+
+    low_time = Enum.min([start_time / 1.0 | starts]) - 1.0
+    high_time = Enum.max([start_time / 1.0 + time_span / 1.0 | starts]) + 1.0
+
+    [low_pitch, max(high_pitch - low_pitch + 1, 1), low_time, high_time - low_time]
+  end
+
+  # Rounded to 4 decimals for the same reason `confirm_send/5` rounds: OSC's `f`
+  # is 32-bit and Elixir's floats are not, so a computed start goes out as
+  # `1.6667` and comes back as `1.666700005531311`.
+  defp note_key(note) do
+    {trunc(note.pitch), Float.round(note.start_time / 1.0, 4),
+     Float.round(note.duration / 1.0, 4), round(note.velocity), note.mute == true}
+  end
+
+  defp missing_note_keys(expected, found) do
+    found_counts = found |> Enum.map(&note_key/1) |> Enum.frequencies()
+
+    expected
+    |> Enum.map(&note_key/1)
+    |> Enum.reduce({[], found_counts}, fn key, {missing, counts} ->
+      case Map.get(counts, key, 0) do
+        0 -> {[key | missing], counts}
+        n -> {missing, Map.put(counts, key, n - 1)}
+      end
+    end)
+    |> elem(0)
+  end
+
+  # A matched note's key may legitimately appear in the read-back as many times
+  # as the edit itself produces it (a velocity-only change keeps pitch and start,
+  # an identity edit keeps everything). Any copy beyond that is an original the
+  # remove should have taken.
+  defp leftover_note_keys(matched, edited, found) do
+    found_counts = found |> Enum.map(&note_key/1) |> Enum.frequencies()
+    expected_counts = edited |> Enum.map(&note_key/1) |> Enum.frequencies()
+
+    matched
+    |> Enum.map(&note_key/1)
+    |> Enum.uniq()
+    |> Enum.filter(fn key -> Map.get(found_counts, key, 0) > Map.get(expected_counts, key, 0) end)
+  end
+
+  defp note_count(1), do: "1 note"
+  defp note_count(count), do: "#{count} notes"
+
+  defp clamped_note(0), do: ""
+
+  defp clamped_note(count),
+    do: " #{note_count(count)} hit the 1-127 velocity limit and stopped there."
+
+  # Names the window the caller asked for, from the *keys* they supplied —
+  # never from the normalised values, because `[0, 128, 0.0, 9999.0]` is both
+  # "pitch-only" and "start_time: 0 with no span", and only the params tell
+  # those apart. Each half renders only when given, so the 9999.0 sentinel never
+  # prints; the phrase owns its noun ("… of the clip" / "the whole clip") so
+  # callers write "in #{phrase} in slot N" and never double it.
+  defp window_phrase(params) do
+    pitch =
+      if Map.has_key?(params, "start_pitch") or Map.has_key?(params, "pitch_span") do
+        low = Map.get(params, "start_pitch", 0)
+        "pitches #{low}-#{min(low + Map.get(params, "pitch_span", 128) - 1, 127)}"
+      end
+
+    time =
+      cond do
+        Map.has_key?(params, "time_span") ->
+          start = Map.get(params, "start_time", 0.0) / 1.0
+          "beats #{format_number(start)}-#{format_number(start + params["time_span"])}"
+
+        Map.has_key?(params, "start_time") ->
+          "beats #{format_number(params["start_time"] / 1.0)} onward"
+
+        true ->
+          nil
+      end
+
+    case Enum.reject([pitch, time], &is_nil/1) do
+      [] -> "the whole clip"
+      halves -> Enum.join(halves, ", ") <> " of the clip"
+    end
+  end
+
+  defp describe_note_changes(changes) do
+    ~w(transpose velocity velocity_delta duration shift)
+    |> Enum.filter(&Map.has_key?(changes, &1))
+    |> Enum.map_join(", ", &describe_note_change(&1, Map.fetch!(changes, &1)))
+  end
+
+  defp describe_note_change("transpose", value),
+    do: "transposed #{signed_number(value)} semitone(s)"
+
+  defp describe_note_change("velocity", value), do: "velocity set to #{format_number(value)}"
+
+  defp describe_note_change("velocity_delta", value),
+    do: "velocity #{signed_number(value)}"
+
+  defp describe_note_change("duration", value),
+    do: "duration set to #{format_number(value / 1.0)} beat(s)"
+
+  defp describe_note_change("shift", value),
+    do: "shifted #{signed_number(value)} beat(s)"
+
+  defp signed_number(value) when is_number(value) and value >= 0,
+    do: "+#{format_number(value)}"
+
+  defp signed_number(value), do: "#{format_number(value)}"
 
   # --- Quantize guards and reads ---
 

@@ -97,7 +97,8 @@ ugly, the fix is a description sentence advising to stop the clip first).
 *Why manual: requires visual and audible confirmation in Live*
 *Last run: —*
 
-`create_return_track "Room Reverb"`, then `load_device target: "return", track:
+`create_track track_type: "return", name: "Room Reverb"`, then
+`load_device target: "return", track:
 <that index>` with a Reverb uri. The reply names *both* the return and the
 device; the view lands on the return's device chain; raising the track's send is
 now audible. Live renames the return as the first device lands (`A-Return` →
@@ -145,14 +146,17 @@ regression to chase.
 *Why manual: requires visual and audible mixer confirmation in Live*
 *Last run: —*
 
-Each of `set_return_track_volume`, `set_return_track_pan`, `set_return_track_mute`,
-`set_return_track_solo`, `set_master_volume`, `set_master_pan` and
-`set_cue_volume` moves the right control in Live's mixer, and its reply names the
-old value as well as the new one.
+`set_mixer target: "return"` with each of `volume`, `pan`, `mute` and `solo`,
+then `set_mixer target: "master"` with `volume` and `pan`, then
+`set_mixer target: "cue", volume:` — each moves the right control in Live's
+mixer, and its reply names the old value as well as the new one.
 
-`set_return_track_mute` silences the shared effect for every track feeding it, and
-the sends themselves are untouched (check `get_track_sends`).
-`set_return_track_solo` hears the return alone. `get_session_state`'s return lines
+`set_mixer target: "return", mute: true` silences the shared effect for every
+track feeding it, and the sends themselves are untouched (check
+`get_track_sends`). `target: "return", solo: true` hears the return alone. One
+call carrying several of those properties must move all of them on the *same*
+strip — a wrong branch here lands on a regular track of the same index and
+looks like nothing happened. `get_session_state`'s return lines
 carry pan and mute/solo; the master line carries pan and cue volume and names
 itself "shown as Main in Live 12".
 

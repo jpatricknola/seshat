@@ -15,7 +15,9 @@ least one pair of same-pitch notes close together.
 
 ## Write ordering and invalid states
 
-*Last run: 2026-08-03 — passed, and the open question is now answered. On an
+*Last run: 2026-08-28 — passed, no drift. On the 8-beat clip braced 0.0–2.0 one call for 4.0–8.0 landed and echoed `loop_end` before `loop_start`; the single-sided `loop_start: 9.0` errored "loop_start 9.0 is not before the current loop_end 8.0 — pass loop_end too to move the whole range. Nothing was set." and the re-read showed 4.0–8.0. Raw past-the-guard send not repeated this run.*
+
+*Prior run: 2026-08-03 — passed, and the open question is now answered. On an
 8-beat clip braced 0.0–2.0, one call asking for 4.0–8.0 landed, and the reply
 showed the reorder directly — `loop_end` echoed **before** `loop_start`. The
 single-sided invalid write (`loop_start` 9.0 against the current `loop_end` 8.0)
@@ -41,7 +43,9 @@ untouched.
 
 ## The loop pair with looping off
 
-*Last run: 2026-08-04 — passed, no drift, re-run after `get_clip_properties`'
+*Last run: 2026-08-28 — passed, no drift. `looping: false` alone read `Loop: off, from beat 0.0 to 8.0` with markers 0.0–8.0 (loop pair spanning the clip, not tracking a 4.0–8.0 brace set moments earlier); `looping: true, loop_start: 2, loop_end: 6` in one call produced exactly 2.0–6.0. The stale single-sided validation was not provoked this run.*
+
+*Prior run: 2026-08-04 — passed, no drift, re-run after `get_clip_properties`'
 pair-context and write-back reads moved onto the batched helper. `looping: false`
 alone, then a read: `Loop: off, from beat 0.0 to 4.0 (4.0 beats)` with play
 markers 0.0–4.0 — the loop pair spanning the whole clip rather than tracking the
@@ -84,22 +88,7 @@ success. Record what you saw rather than treating it as new.
 
 ## Clip properties read in one breath, and read true
 
-*Last run: 2026-08-04 — passed, and the pipelining is real. A MIDI clip on track
-0 slot 0 ("BatchProbe", two notes) was set to `looping: true`, `loop_start: 1.0`,
-`loop_end: 3.0`, `launch_quantization: 5`, `velocity_amount: 0.5`, each confirmed
-in `set_clip_properties`' own echo. One `get_clip_properties` then returned every
-one of them correctly — `MIDI, 2.0 beats / Loop: on, from beat 1.0 to 3.0 (2.0
-beats) / Play markers: start 0.0, end 4.0 / Launch: Trigger, quantization 1 bar,
-legato off, velocity amount 0.5` — in **0.377s wall clock including Python
-start-up and the HTTP handshake**, against the ~1.5s the serialized design
-measured. So the twelve-getter batch pipelines on a real wire and the
-echo-prefix matching in `Seshat.OSC.Transport` pairs every reply with the
-property that asked for it. Empty slot 3 on the same track came back in
-**0.157s** with one clean error ("Slot 3 on track 0 is empty. Clip slots are
-0-based, …") — no stall, no cascade of per-property errors. **Not covered:** the
-audio arm's second batch, which needs a hand-dragged audio clip — see
-[../manual/engineered-state.md](../manual/engineered-state.md) § An audio clip's
-audio-only properties still read.*
+*Last run: 2026-08-28 — passed. "BatchProbe" (looping 2.0–6.0, launch quantization 1 bar, velocity amount 0.5) read back every value correctly in **0.30s** wall clock via mcp_call.py; empty slot 3 errored cleanly ("Slot 3 on track 1 is empty…") in **0.19s**. Audio arm still uncovered (manual).*
 
 `get_clip_properties` reads a MIDI clip as an `ensure_clip` guard plus **one
 batched tick** of 12 getters (`is_midi_clip` + the 11 common properties)
@@ -128,11 +117,7 @@ clip's audio-only properties still read.
 
 ## Quantize lands on 1/16ths, not 1/32nds
 
-*Last run: 2026-08-03 — passed. A 7-note sloppy clip quantized `"1/16"` at 1.0
-landed on 0.0, 0.5, 1.0, 1.25, 2.0, 2.5 — every position a 0.25-beat multiple,
-no 0.125 spacing. The decisive one is 1.37 → **1.25**; a 1/32 grid would have
-given 1.375. The table in
-[../../../priv/AbletonOSC/API.md](../../../priv/AbletonOSC/API.md) still holds.*
+*Last run: 2026-08-28 — passed. 7-note sloppy clip at "1/16"/1.0 landed on 0.0, 0.5, 1.0, 1.25, 2.0, 2.5 — 1.37 → **1.25**, all 0.25-beat multiples.*
 
 `"1/16"` at amount 1.0. Notes land on the grid in the note editor and the reply's
 counts match what visibly moved. **Confirm the landing positions are 0.25-beat
@@ -146,11 +131,7 @@ schema. The corrected table, measured 2026-07-31, is in
 
 ## Partial strength moves notes toward the grid
 
-*Last run: 2026-08-03 — passed, exactly on the predicted number. Same clip at
-`"1/16"` amount 0.5: **1.37 → 1.31** against a 1.25 target. Every other note
-moved half way too — 0.03→0.015, 0.48→0.49, 1.06→1.03, 1.97→1.985, 2.52→2.51,
-2.58→2.54 — and the count stayed at 7, so they moved toward the grid rather than
-onto it. The reply still counted them ("7 of 7 note(s) … at 50% strength").*
+*Last run: 2026-08-28 — passed. "1/16" at 0.5: 1.37 → **1.31**; others 0.03→0.015, 0.48→0.49, 1.06→1.03, 1.97→1.985, 2.52→2.51, 2.58→2.54; count stayed 7, reply "7 of 7 note(s) … at 50% strength".*
 
 `undo`, then the same grid at amount 0.5. Notes move *toward* the grid, not onto
 it, and the reply still counts them. Live interpolates linearly: a note at 1.37
@@ -158,13 +139,7 @@ with a 1.25 target lands at 1.31.
 
 ## An already-tight clip reports no change without reading as an error
 
-*Last run: 2026-08-03 — passed. The second call replied "Quantize sent, but no
-note changed — … may already sit on the 1/16 grid at 100% strength. If the timing
-audibly didn't change, the installed AbletonOSC may predate /live/clip/quantize…"
-The benign reading leads and the stale-install hint is conditional on an audible
-symptom, so it does not read as a failure. **Noted separately: the no-op quantize
-still creates an Ableton undo step** — getting back to the sloppy take took two
-`undo` calls, not one.*
+*Last run: 2026-08-28 — passed. Second 1.0 quantize replied "Quantize sent, but no note changed — … may already sit on the 1/16 grid at 100% strength. If the timing audibly didn't change, the installed AbletonOSC may predate…" — benign reading leads.*
 
 Quantize the same clip twice at 1.0. The second call reports "no note changed" —
 read that reply and confirm its stale-install hint doesn't read as a failure,
@@ -175,25 +150,14 @@ past it needs one call per quantize sent, not per quantize that moved a note.
 
 ## Triplet grids reach values the old docs wrote off
 
-*Last run: 2026-08-03 — passed. A straight 4-note clip (0.2, 0.45, 1.4, 2.1) at
-`"1/8T"` amount 1.0 landed on 0.3333, 0.3333, 1.3333, 2.0 — thirds of a beat.
-Undone and re-quantized at `"1/16T"` it landed on 0.1667, 0.5, 1.3333, 2.1667 —
-sixths. Both grids reach real values; the old docs were wrong to write them off.*
+*Last run: 2026-08-28 — passed. Straight clip (0.2, 0.45, 1.4, 2.1) at "1/8T" → 0.3333, 0.3333, 1.3333, 2.0; undone, "1/16T" → 0.1667, 0.5, 1.3333, 2.1667.*
 
 `"1/8T"` and `"1/16T"` on a straight part: notes land on thirds and sixths of a
 beat. The old docs claimed triplet grids did not exist.
 
 ## Collisions are reported as what they were
 
-*Last run: 2026-08-03 — passed, **both arms provoked in one sitting.** *Merge:* a
-full `"1/16"` quantize put C4 at 2.52 and C4 at 2.58 both on 2.5; the clip went
-from 7 notes to 6, the survivor kept the **later** velocity (110, not 70), and
-the reply said so — "1 same-pitch note(s) landed on a spot already taken and
-merged into the note there, keeping the later velocity." *Trim:* the same pair at
-amount 0.5 landed on 2.51 and 2.54 instead — no merge, count still 7, and the
-earlier note's duration was cut to 0.03 so it ends exactly where the later one
-starts, with the reply reporting "Live trimmed the earlier one to end where the
-later one starts." The reply named which happened in both cases.*
+*Last run: 2026-08-28 — passed, both arms. Merge at 1.0: C4 2.52 (vel 70) and 2.58 (vel 110) both on 2.5, 7→6 notes, survivor vel 110, reply named the merge. Trim at 0.5: 2.51/2.54, count 7, earlier note dur 0.03, reply named the trim. Also observed: `write_midi_notes` itself trimmed the 2.52 note to 0.06 on the original write because of the same-pitch overlap.*
 
 A full quantize that stacks two same-pitch notes. Expect the count-change wording:
 same-point collisions **merge** into one note keeping the *later* velocity, while
@@ -202,17 +166,14 @@ are Live's behaviour, measured — the reply should say which happened.
 
 ## Quantize in an odd meter
 
-*Last run: 2026-08-03 — passed. `set_time_signature 6/8`, then the same sloppy
-clip at `"1/16"` amount 1.0 produced landing positions identical to the 4/4 run
-note for note — 0.0, 0.5, 1.0, 1.25, 2.0, 2.5, with the same 7→6 merge keeping
-velocity 110. Nothing meter-dependent has crept in. 4/4 restored afterwards.*
+*Last run: 2026-08-28 — passed. 6/8, same sloppy clip at "1/16"/1.0: 0.0, 0.5, 1.0, 1.25, 2.0, 2.5 with the 7→6 merge keeping vel 110 — identical to 4/4. 4/4 restored.*
 
 The mapping measured identical in 4/4 and 6/8, so a quantize in an odd meter is a
 cheap confirmation nothing meter-dependent crept in.
 
 ## Scene names ride one bulk reply
 
-*Last run: —*
+*Last run: 2026-08-28 — passed. 8-scene set, scene 1 renamed "Chorus"; `get_clip_slots` listed all 8 in order, `1 "Chorus"`, the other seven as `""`, no error and no hole.*
 
 `get_clip_slots` reads every scene name in a single no-arg
 `/live/song/get/scenes/name` query, length-checked against `num_scenes` —
@@ -234,7 +195,7 @@ against the wrong count.
 
 ## `edit_notes` rewrites only the window
 
-*Last run: —*
+*Last run: 2026-08-28 — passed. Reply "Edited 2 notes in pitches 60-60, beats 0.0-9999.0 … velocity +10. Read back and confirmed."; pitch-60 notes read vel 110.0 and 47.0 with start/dur unchanged to every digit (0.0/0.3333, 1.6667/1.75), pitch 64 and 67 identical; one `undo` restored the first read exactly. Note: the reply leaked the 9999.0 time_span sentinel — fixed on the branch the same day (`window_phrase/1` now prints only the halves given); a re-run should read "in pitches 60-60 of the clip".*
 
 `edit_notes` is read → `/live/clip/remove/notes` → `/live/clip/add/notes` →
 read, in one undo step. The measured shape (2026-08-27) and the two
@@ -260,11 +221,12 @@ window was wider than the read window.
 
 ## A window edit that would leave the range is refused
 
-*Last run: —*
+*Last run: 2026-08-28 — passed once the test was corrected: `transpose: 60` on G4 landed on 127 (G9, legal) and was **not** refused — the test's own arithmetic was wrong, fixed to 61 above. `transpose: 61` refused "would push 1 note above G9 (MIDI 127) … nothing was changed"; `shift: -1.0` refused "would start 2 notes before the clip's beat 0 … nothing was changed"; clip identical after both; `transpose: -12` read back as G3 (55).*
 
-Same clip. `edit_notes start_pitch: 67, pitch_span: 1, transpose: 60` (G4 →
-G9, past 127) and `edit_notes shift: -1.0` on the whole clip (the 0.0 note
-would go negative).
+Same clip. `edit_notes start_pitch: 67, pitch_span: 1, transpose: 61` (G4 →
+one past G9; 127 *is* G9, so +60 lands exactly on the ceiling and is legal —
+this test originally said 60 and passed the wrong way) and `edit_notes shift:
+-1.0` on the whole clip (the 0.0 note would go negative).
 
 Both refuse before sending, each naming what would have left the range and
 how many notes; `get_clip_notes` is identical to before. A `transpose: -12`
@@ -275,7 +237,7 @@ refusal is happening after the rewrite.
 
 ## `delete: true` empties the window and nothing else
 
-*Last run: —*
+*Last run: 2026-08-28 — passed on semantics, wording defect found. Three notes remained including the 1.6667 note; one `undo` brought the fourth back. But the reply read "Deleted 1 note in the whole clip of the clip in slot 1" — `window_phrase/1` in handlers.ex says "the whole clip" whenever the pitch window is default, ignoring the beats 2.0–3.0 window that was given. Fixed on the branch the same day; a re-run should read "in beats 2.0-3.0 of the clip".*
 
 Same clip. `edit_notes start_time: 2.0, time_span: 1.0, delete: true`. The
 window is beats 2–3; the pitch-60 note starting at 1.6667 sounds into it but
@@ -291,7 +253,7 @@ promise is wrong.
 
 ## Renaming rides `set_clip_properties`
 
-*Last run: —*
+*Last run: 2026-08-28 — passed. One call `name: "Verse A", looping: true` echoed both (`looping: on`, `name: 'Verse A'`); `get_clip_slots` showed "Verse A" on slot 1; `get_clip_properties` showed loop on.*
 
 `set_clip_properties name: "Verse A", looping: true` on an existing clip, one
 call. The reply echoes both read back; `get_clip_slots` shows the new name on
