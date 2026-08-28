@@ -1,12 +1,25 @@
 # Implementation Plan: Automated conversation-routing evaluations
 
+> **Archived 2026-08-28 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ (see the PR for the
+> implementer's per-item report, the review verdict and nits, and the nit
+> triage, all applied). The harness lives at `lib/seshat/eval/` and
+> `lib/mix/tasks/routing.*`, documented in [CLAUDE.md](../../CLAUDE.md)'s
+> module map and Current focus. The decision run's finding — both the base
+> and head tool surfaces routed correctly on both seed cases, on both
+> models, in every trial — is recorded durably in CLAUDE.md's Current focus,
+> since the run directory (`priv/routing_eval/runs/`) is gitignored. The
+> second-slice follow-up (general corpus, client-realism lane) is now
+> [ROADMAP.md](../ROADMAP.md) item "Routing evals — general corpus and
+> client-realism lane."
+
 Roadmap item: **Automate conversation-routing evaluations** (top of the queue,
 ranked first by decision on 2026-08-28). Options doc:
-[evaluating/automated-conversation-routing-evals.md](evaluating/automated-conversation-routing-evals.md).
+[evaluating/automated-conversation-routing-evals.md](../evaluating/automated-conversation-routing-evals.md).
 
 This plan is the **first slice — the decision experiment** — not the general
 eval platform. It builds exactly enough harness to run the two seed cases from
-[smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md) §
+[smoke_tests/manual/conversation.md](../smoke_tests/manual/conversation.md) §
 *Mixer and note edits route to one call each* against the pre- and
 post-consolidation tool surfaces, five fresh trials each, and score the traces
 without a person reading a transcript. Everything is shaped so a second slice
@@ -74,7 +87,7 @@ Two constraints the research fixed:
 - **The note case must name its target.** The manual test says "with a MIDI
   clip open"; no tool reads the selected clip, so the automated prompt states
   the track and the fixture states the clip. That is a correction to the seed,
-  already recorded in [smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md)
+  already recorded in [smoke_tests/manual/conversation.md](../smoke_tests/manual/conversation.md)
   (narrowed at plan time, see Part 10).
 
 ## Contract

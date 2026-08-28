@@ -203,9 +203,10 @@ The 2026-08-27 consolidation bet that one `set_mixer` and one `edit_notes`
 route better than the thirteen and three names they replaced. **Which tool the
 model reaches for is no longer judged here**: `mix routing.eval` runs the same
 two prompts through a fresh headless client against a record-only server and
-scores the calls deterministically ([PLAN_routing_evals.md](../../PLAN_routing_evals.md)
-while it is in flight; `CLAUDE.md` § Verification once shipped). Run that for
-the routing verdict.
+scores the calls deterministically — see
+[CLAUDE.md](../../../CLAUDE.md) § Verification for how to run it, and the
+archived [PLAN_routing_evals.md](../../archive/PLAN_routing_evals.md) for the
+decision run's detail. Run that for the routing verdict.
 
 What remains for a person is the residue no trace can score. In a fresh
 conversation with a set of a few named tracks and a return: "bring the master

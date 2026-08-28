@@ -261,6 +261,41 @@ That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
 
+**Routing evals shipped 2026-08-28**, closing the first slice of what had
+been the queue's top item ("Automate conversation-routing evaluations").
+`mix routing.eval` sends a committed prompt corpus through a fresh headless
+Claude Code client against a record-only MCP server serving fixed base/head
+tool-surface snapshots, and scores the resulting traces with deterministic
+predicates — no person reads a transcript, no Ableton runs, no OSC is sent.
+The harness (`lib/seshat/eval/`, `mix routing.eval` / `routing.snapshot` /
+`routing.recorder`) passed its own kill test first: calls reach the client's
+stream, a subscription-authenticated headless run isolates cleanly with
+`--setting-sources ""`, and MCP server `instructions` reach the model — all
+three measured against real Claude Code 2.1.220 traffic and recorded in the
+archived [PLAN_routing_evals.md](docs/archive/PLAN_routing_evals.md).
+
+**The decision run corrects the claim the paragraph below makes.** 40 trials
+(2 cases × 2 surfaces × 2 models × 5 interleaved trials), zero void, scored
+2026-08-28: both the pre-consolidation 67-tool surface (`c3096d6`) and the
+post-consolidation 52-tool surface (`fdd49a6`) routed *correctly* on every
+trial, on both Sonnet 5 and Opus 5 — 100% semantic success, 100% correct
+target on the first mutation, zero refusals, zero schema-invalid calls, on
+base as well as head. PR #77's central bet — that intention-shaped tool
+names route better than same-verb-different-target names — is **not
+supported by this evidence**: the 67 confusable names did not confuse
+either model on these two seed prompts. What consolidation demonstrably
+bought instead is fewer operations per intention: the note case takes head
+one mutation and base two (base has no way to edit a note in place, so
+every trial read, deleted and rewrote it), and the mixer case ties at two
+mutations but head spends one tool name where base spends two. Two caveats
+apply: five trials per cell cannot separate 100% from 95%, and both seed
+cases are exactly the ones consolidation was designed for — the general
+corpus (paraphrases, cue/return/master coverage) that would actually
+stress-test routing is deferred as the second slice, now on the roadmap as
+"Routing evals — general corpus and client-realism lane." Until that runs,
+treat "more intention-shaped naming routes better" as an open question, not
+the settled premise the next paragraph was written under.
+
 **The tool surface is consolidated from 67 tools to 52, no capability lost,
 shipped 2026-08-28**, closing the queue's former top item and absorbing
 "Modify a note in place" into it. All Elixir-layer, no fork or OSC change.

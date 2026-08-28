@@ -37,61 +37,7 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Automate conversation-routing evaluations
-
-**Impact 8 · Lift 5 · 1.60 impact-per-effort**
-
-**Ranked first by decision on 2026-08-28** — this is the measurement gate for
-the bounded tool-surface architecture before more functionality lands. The
-first slice is the two-case decision experiment below, not a generalized eval
-platform built on faith. Plan: [PLAN_routing_evals.md](PLAN_routing_evals.md)
-— the three kill questions were measured 2026-08-28 (calls reach the stream,
-the run can be isolated, server instructions arrive) and the approach survived.
-
-**Goal:** replace hand-typed fresh-conversation routing checks with one
-agent-runnable command that sends a committed prompt corpus through a fresh
-headless model client, records its structured MCP calls against a non-mutating
-fixture server, and scores the trace without a person reading the transcript.
-For a tool-surface change, run the same cases against base and head so the PR
-has evidence of whether routing improved.
-
-**Why:** PR #77's central product bet — that 52 intention-shaped tools route
-better than 67 confusable names — is currently guarded only by an unrun manual
-conversation check. Unit tests prove what happens after a tool is selected;
-they cannot prove that the model selects it, picks the right target, or avoids
-an unnecessary read/delete/rewrite chain. Seshat cannot safely scale its tool
-surface on intuition alone. The evaluated route uses the logged-in Claude Code
-subscription, a record-only MCP server and deterministic predicates, never
-Ableton or OSC. Full reasoning and alternatives:
-[automated-conversation-routing-evals.md](evaluating/automated-conversation-routing-evals.md).
-
-**First slice — the decision experiment:**
-
-- Serve fixed base/head surface snapshots through a recorder exposing only the
-  real schemas and fixture-backed tool results. It must send no OSC and retain
-  tool traces, not hidden model reasoning.
-- Automate the two existing cases from
-  [smoke_tests/manual/conversation.md](smoke_tests/manual/conversation.md) §
-  *Mixer and note edits route to one call each*: master decrease + return mute;
-  then read the notes + one targeted `edit_notes`. Make the note case's track
-  and slot explicit — "a MIDI clip is open" is not resolvable by today's tools.
-- Run five fresh, interleaved trials per case per surface with a pinned model,
-  isolated temporary working directory and only the recorder's MCP tools.
-- Judge semantic intent, first-call validity, target/index, mutation count,
-  refusals and unsafe extras with predicates that allow harmless numeric/order
-  variation. Emit a compact Markdown/JSON report naming every observed call.
-- Kill the approach before generalizing it if current Claude Code stream events
-  omit tool calls, subscription-authenticated headless runs cannot be isolated,
-  or either case still needs subjective transcript judgment.
-
-**Acceptance:** one command produces a repeatable base/head comparison without
-Live running or a user typing prompts; the harness itself has deterministic
-tests using captured/fake client output; no external-model run joins
-`mix precommit`; and the manual routing check is either retired or narrowed to
-the genuinely subjective "replies speak music" residue rather than silently
-marked passed.
-
-## #2 · AX-backed audio output — verify the remainder
+## #1 · AX-backed audio output — verify the remainder
 
 **Impact 5 · Lift 8 · 0.62 impact-per-effort**
 
@@ -148,7 +94,7 @@ archiving now would strand that record.
   of that last check — this machine currently has only one, so nothing has
   moved audibly yet.
 
-## #3 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #2 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Impact 8 · Lift 4 · 2.00 impact-per-effort**
 
@@ -185,7 +131,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #4 · Search eval harness — numbers before opinions
+## #3 · Search eval harness — numbers before opinions
 
 **Impact 2 · Lift 3 · 0.67 impact-per-effort**
 
@@ -214,7 +160,7 @@ benchmark informally (see
 formalize that rather than inventing a new one. Runs offline against the
 catalog — no Ableton needed.
 
-## #5 · Widen the search slate at tied score bands
+## #4 · Widen the search slate at tied score bands
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -235,7 +181,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #6 · A rejected index says which index, and what to call next
+## #5 · A rejected index says which index, and what to call next
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -296,7 +242,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #7 · Browser preview audition
+## #6 · Browser preview audition
 
 **Impact 7 · Lift 3 · 2.33 impact-per-effort**
 
@@ -324,7 +270,7 @@ what decides.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #8 · `start_new_project` — the setup wizard, and prompt budget back
+## #7 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -382,7 +328,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   want, so prefer building it before that item even though ratio separates
   them.
 
-## #9 · `write_midi_notes` must chunk large note batches
+## #8 · `write_midi_notes` must chunk large note batches
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -419,7 +365,7 @@ this item moves ahead of it.
 - Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
   surface needs valid dense clips to work, not become validation errors.
 
-## #10 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #9 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Impact 4 · Lift 2 · 2.00 impact-per-effort**
 
@@ -447,6 +393,49 @@ values, and the resulting brace is not the one asked for.
   `smoke_tests/auto/clips.md § The loop pair with looping off`, where a failure is
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
+
+## #10 · Routing evals — general corpus and client-realism lane
+
+**Impact 5 · Lift 3 · 1.67 impact-per-effort**
+
+**Goal:** widen the routing-eval corpus past the two decision-experiment
+cases to the ~20-case general corpus (paraphrases, cue/return/master
+coverage) the first slice deferred, and decide whether to add a
+client-realism lane (Claude Code's default system prompt) plus a direct-API
+model adapter. The harness itself — `mix routing.eval`, `Seshat.Eval.*`,
+committed base/head surface snapshots — already exists; this item is corpus
+and lane work on top of it, not new plumbing.
+
+**Why:** the first slice's decision run (`mix routing.eval`, 2026-08-28, 40
+trials, zero void) found both the pre- and post-consolidation tool surfaces
+routed *correctly* in every trial on both seed cases — full detail in
+CLAUDE.md's Current focus and the archived
+[PLAN_routing_evals.md](archive/PLAN_routing_evals.md). That result is honest
+but narrow: both seed cases are exactly the ones consolidation was designed
+for, and five trials per cell cannot separate 100% from 95%. The general
+corpus — paraphrased requests, cue/return/master targets the seed cases
+never touch — is where the same-verb-different-target base surface would be
+expected to struggle if it struggles anywhere; only running it turns "we
+didn't observe a difference" into "there isn't one, on this evidence."
+
+**Planner notes:**
+- The archived plan's `Out of scope` section is the authoritative list of
+  what this covers: the general corpus, the client-realism lane, and a
+  direct-API model adapter (options doc B in
+  [automated-conversation-routing-evals.md](evaluating/automated-conversation-routing-evals.md)).
+  A prose/LLM judge for "replies speak music" was declined outright, not
+  deferred — the manual conversation-check residue stays as the check for
+  that; don't rebuild it here.
+- Reuse `Seshat.Eval.Case`'s JSON shape and `Seshat.Eval.Judge`'s predicate
+  vocabulary; new cases are data, not code, per the harness's own design goal.
+- Two open nits from the first slice's review bear on any new cases: "Routing
+  eval report should self-identify which case expectations it scored
+  against" and "Routing eval: an exploratory read on a fixture with no data
+  for it should not fail `no_tool_errors`" — the second is likely to
+  actually bite once cue/return/master reads widen the discovery surface,
+  unlike in the two-case corpus where it never fired.
+- `mix routing.eval` is on-demand only, never in `mix precommit` — keep it
+  that way; it is externally metered and stochastic.
 
 ## #11 · Read-only audio input display — warn before a silent take
 
@@ -747,7 +736,7 @@ block (per surface, since head and base can be held to different bars) to
 the header or per-case section, so `report.md` is self-contained.
 
 **Why:** flagged in the review of "Automate conversation-routing evaluations"
-(`docs/PLAN_routing_evals.md`). The decision run deliberately scores
+(`docs/archive/PLAN_routing_evals.md`). The decision run deliberately scores
 `note_third_quieter` against different bars per surface — head gets
 `max_mutations: 1` plus `must_not_call: ["write_midi_notes"]`, base gets
 `max_mutations: 2` with nothing forbidden — and a reader of `report.md` alone
@@ -783,7 +772,7 @@ Give the judge a way to tell "the model invented state" apart from
 reads from `no_tool_errors` specifically.
 
 **Why:** flagged in the review of "Automate conversation-routing evaluations"
-(`docs/PLAN_routing_evals.md`). It did not bite in the decision run — zero
+(`docs/archive/PLAN_routing_evals.md`). It did not bite in the decision run — zero
 tool errors across all 40 trials on both seed cases — but the plan's own
 Out-of-scope section defers "the general corpus (paraphrases, cue/return/master
 coverage, ~20 cases)" to a second slice, and that is exactly the corpus that
@@ -796,7 +785,7 @@ against real second-slice cases than speculatively.
 
 **Planner notes:**
 - Revisit this before or alongside building the second-slice corpus
-  (`docs/PLAN_routing_evals.md`'s "Out of scope" section), not before.
+  (`docs/archive/PLAN_routing_evals.md`'s "Out of scope" section), not before.
 - The plan's own justification for the `isError: true` reply itself still
   holds ("the model must not proceed on invented state") — this item is only
   about whether that reply should count against `no_tool_errors`.
@@ -813,7 +802,7 @@ comments and `@moduledoc` bodies, not just executable code. Narrow it to
 skip comment lines and doc attributes.
 
 **Why:** flagged in the review of "Automate conversation-routing evaluations"
-(`docs/PLAN_routing_evals.md`). `Seshat.Eval.Client`'s moduledoc has to avoid
+(`docs/archive/PLAN_routing_evals.md`). `Seshat.Eval.Client`'s moduledoc has to avoid
 writing the literal string `Port.open` even in prose, so the grep does not
 false-positive on a docstring — the invariant itself is intact, but a test
 tripwire is now shaping documentation in an unrelated module. Left as a
