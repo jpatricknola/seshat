@@ -4279,9 +4279,8 @@ defmodule Seshat.Tools.Handlers do
 
   defp ensure_mixer_changes(changes) when map_size(changes) == 0 do
     {:error,
-     "Nothing to set — pass at least one of #{Enum.join(@mixer_properties, ", ")}. Keys the " <>
-       "schema does not name are dropped before this point, so if you did send a value, " <>
-       "check its spelling against that list. Nothing was sent."}
+     "Nothing to set — pass at least one of #{Enum.join(@mixer_properties, ", ")}. Nothing " <>
+       "was sent."}
   end
 
   defp ensure_mixer_changes(_changes), do: :ok

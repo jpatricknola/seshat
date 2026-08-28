@@ -91,7 +91,28 @@ defmodule Seshat.MCP.ToolsTest do
         assert Map.has_key?(spec, "type"), "#{path} publishes no type"
       end
     end
+
+    test "every published object rejects additional properties, nested ones included" do
+      for component <- Seshat.MCP.Server.__components__(:tool),
+          {path, spec} <- published_objects(component.input_schema, component.name) do
+        assert spec["additionalProperties"] == false,
+               "#{path} does not publish additionalProperties: false"
+      end
+    end
   end
+
+  defp published_objects(%{"type" => "object"} = spec, path) do
+    [{path, spec} | published_objects(Map.get(spec, "properties", %{}), path)]
+  end
+
+  defp published_objects(%{"items" => items}, path),
+    do: published_objects(items, path <> "[]")
+
+  defp published_objects(map, path) when is_map(map) do
+    Enum.flat_map(map, fn {name, spec} -> published_objects(spec, "#{path}.#{name}") end)
+  end
+
+  defp published_objects(_spec, _path), do: []
 
   defp published_properties(%{"properties" => properties}, path) do
     Enum.flat_map(properties, fn {name, spec} ->

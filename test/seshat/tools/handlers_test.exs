@@ -244,16 +244,19 @@ defmodule Seshat.Tools.HandlersTest do
       assert msg =~ ~s{Track 1 ("Keys")}
     end
 
-    test "an unknown property name is refused, naming the six that exist" do
-      # `Validation` drops keys the schema does not name, so `gain` never
-      # reaches the handler — only its absence does, which is why the refusal
-      # has to spell out the vocabulary rather than quote what was sent.
-      assert {:error, message} = Handlers.call("set_mixer", %{"track" => 0, "gain" => 0.5})
+    test "a valid property plus an unknown one is refused before any OSC is sent" do
+      assert {:error, message} =
+               Handlers.call("set_mixer", %{
+                 "track" => 0,
+                 "volume" => 0.6,
+                 "panning" => -0.5
+               })
 
-      assert message =~ "Nothing to set"
-      assert message =~ "volume, pan, mute, solo, arm, name"
-      assert message =~ "Nothing was sent"
-      assert osc_trace() |> Enum.reject(&(elem(&1, 0) =~ "undo_step")) == []
+      assert message =~ "Invalid parameters for set_mixer"
+      assert message =~ "- panning: unknown parameter"
+      assert message =~ ~s("pan")
+      assert message =~ "nothing was sent to Ableton"
+      refute_receive {:osc_out, _, _}
     end
 
     test "target 'track' without a track index is refused by name" do

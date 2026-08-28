@@ -363,6 +363,24 @@ defmodule Seshat.Tools.ValidationTest do
 
       assert message =~ "- notes[0].velocity: required but missing"
     end
+
+    test "rejects an unknown field inside an array element with its full path" do
+      notes = [
+        %{
+          "pitch" => 60,
+          "start_beat" => 0.0,
+          "duration" => 1.0,
+          "velocity" => 100,
+          "velocty" => 90
+        }
+      ]
+
+      assert {:error, message} =
+               Validation.validate("write_midi_notes", %{"track" => 0, "notes" => notes})
+
+      assert message =~ "- notes[0].velocty: unknown parameter"
+      assert message =~ ~s("velocity")
+    end
   end
 
   describe "required params" do
@@ -399,8 +417,19 @@ defmodule Seshat.Tools.ValidationTest do
       assert :ok = Validation.validate("no_such_tool", %{"track" => -1})
     end
 
-    test "params the schema doesn't mention are ignored" do
-      assert :ok = Validation.validate("delete_track", %{"track" => 0, "extra" => -99})
+    test "rejects params the schema does not mention and lists the accepted keys" do
+      assert {:error, message} =
+               Validation.validate("delete_track", %{"track" => 0, "extra" => -99})
+
+      assert message =~ "- extra: unknown parameter"
+      assert message =~ ~s(expected one of "target", "track")
+    end
+
+    test "rejects arguments on a tool whose parameter object is empty" do
+      assert {:error, message} = Validation.validate("start_playing", %{"now" => true})
+
+      assert message =~ "- now: unknown parameter"
+      assert message =~ "expected no parameters"
     end
 
     test "a param with no declared bounds is left alone" do

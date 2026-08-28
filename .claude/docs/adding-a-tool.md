@@ -73,7 +73,9 @@ the most common cause of wrong tool calls.
 Supported JSON Schema in `parameters`: `type` (`string`/`integer`/`number`/
 `boolean`/`array`/`object`), `description`, `enum`, `minimum`/`maximum`,
 `items`, nested `properties` + `required`. Anything else is ignored by the MCP
-schema converter.
+converter. Every object is closed automatically: the published schema carries
+`additionalProperties: false`, and handler validation rejects unknown keys
+before dispatch, including inside nested objects.
 
 Every index parameter must declare `minimum: 0` — a negative index reaching
 AbletonOSC's Python selects from the *end* of Live's collection, so `track: -1`

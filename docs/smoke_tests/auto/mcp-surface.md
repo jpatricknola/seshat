@@ -11,7 +11,7 @@ handshake against `http://localhost:4000/mcp`.
 
 ## The tool list survives a real handshake
 
-*Last run: 2026-08-28 — 52 tools, matching `Definitions.all()`*
+*Last run: — (the 2026-08-28 run saw 52 tools; rerun after closed-object schemas added `additionalProperties: false`)*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py list`. The count must
 match `Definitions.all()`.
@@ -23,7 +23,7 @@ is stale".
 
 ## The surface budget is measured, not guessed
 
-*Last run: 2026-08-28 — **52 tools / 58,709 bytes / largest `set_clip_properties` at 3,585 bytes**, from `mcp_call.py stats` against the server started 02:07 that day on this branch. The 67-tool / 62,784-byte planning figure was never produced by `stats`, so the two are not comparable and this output is the new baseline; the like-for-like Elixir-side pair (62,784 → 57,450) is the only "bytes fell" evidence. `set_clip_properties` is one noun (a clip's own playback properties) — cohesive.*
+*Last run: — (the 2026-08-28 baseline was **52 tools / 58,709 bytes / largest `set_clip_properties` at 3,585 bytes**; rerun because closing every published object changes the byte totals)*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py stats` against a freshly
 restarted server. Record all four values here: advertised tool count, compact
@@ -89,9 +89,9 @@ After the rejection above, read the target back. A refusal that silently *did*
 send is the thing worth catching, and no reply string can show it to you.
 
 
-## A mutating tool with nothing required survives the client
+## A mutating tool with nothing required survives the client and rejects unknown keys
 
-*Last run: 2026-08-28 — list survived (52 tools); `set_mixer` `required: []` on the wire, `target` enum `[track, return, master, cue]`, `volume` min 0.0 / max 1.0; `pan: -1.0` reached Live (fresh read -1.0 = 50L); `{"track": 0}` and `{"track": 0, "gain": 0.5}` both returned a tool result "Nothing to set — pass at least one of volume, pan, mute, solo, arm, name. Keys the schema does not name are dropped…" — the Elixir validator path answered both, never a `-32602`.*
+*Last run: — (the 2026-08-28 run covered the optional schema before unknown keys were rejected; rerun against the closed schema)*
 
 `set_mixer` is the first *mutating* tool whose schema has `required: []` and
 an optional `target` enum — everything on it is optional because the handler
@@ -100,15 +100,16 @@ file.
 
 `mcp_call.py schema set_mixer target` shows the enum
 `["track", "return", "master", "cue"]` and `set_mixer` absent from `required`;
+the full `set_mixer` input schema carries `additionalProperties: false`, and
 `schema set_mixer volume` carries `minimum` 0 and `maximum` 1. Then
 `call set_mixer '{"track": 0, "pan": -1.0}'` reaches Ableton (pan reads back
 `50L`), `call set_mixer '{"track": 0}'` returns a *tool result* saying no
-property was given, and `call set_mixer '{"track": 0, "gain": 0.5}'` returns a
-tool result that names the six properties `set_mixer` does take (the
-Elixir-side validator ignores keys the schema doesn't name, so this lands as
-"no property given") — never a JSON-RPC `-32602` for either. If Peri rejects
-the unknown key on the wire instead, `Seshat.MCP.Server`'s `-32602` rewrite
-still turns it into a tool result; record which path answered.
+property was given. Finally,
+`call set_mixer '{"track": 0, "volume": 0.6, "panning": -0.5}'` returns a
+readable tool error naming `panning` as unknown and the accepted keys, with no
+volume write reaching Live. Whether Peri or `Seshat.Tools.Validation` rejects
+first, the client must receive a tool result rather than a JSON-RPC `-32602`;
+record which path answered.
 
 A `-32602` here is Peri rejecting before `Validation`'s wording can be
 delivered; the tool list itself disappearing is the schema being refused
