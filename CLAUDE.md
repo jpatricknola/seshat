@@ -274,27 +274,30 @@ stream, a subscription-authenticated headless run isolates cleanly with
 three measured against real Claude Code 2.1.220 traffic and recorded in the
 archived [PLAN_routing_evals.md](docs/archive/PLAN_routing_evals.md).
 
-**The decision run corrects the claim the paragraph below makes.** 40 trials
+**What the decision run established, and what it did not.** 40 trials
 (2 cases × 2 surfaces × 2 models × 5 interleaved trials), zero void, scored
 2026-08-28: both the pre-consolidation 67-tool surface (`c3096d6`) and the
 post-consolidation 52-tool surface (`fdd49a6`) routed *correctly* on every
 trial, on both Sonnet 5 and Opus 5 — 100% semantic success, 100% correct
 target on the first mutation, zero refusals, zero schema-invalid calls, on
-base as well as head. PR #77's central bet — that intention-shaped tool
-names route better than same-verb-different-target names — is **not
-supported by this evidence**: the 67 confusable names did not confuse
-either model on these two seed prompts. What consolidation demonstrably
-bought instead is fewer operations per intention: the note case takes head
-one mutation and base two (base has no way to edit a note in place, so
-every trial read, deleted and rewrote it), and the mixer case ties at two
-mutations but head spends one tool name where base spends two. Two caveats
-apply: five trials per cell cannot separate 100% from 95%, and both seed
-cases are exactly the ones consolidation was designed for — the general
-corpus (paraphrases, cue/return/master coverage) that would actually
-stress-test routing is deferred as the second slice, now on the roadmap as
-"Routing evals — general corpus and client-realism lane." Until that runs,
-treat "more intention-shaped naming routes better" as an open question, not
-the settled premise the next paragraph was written under.
+base as well as head. Read that as the right result, not a disappointing
+one: consolidation was never done to buy accuracy at 52 tools. Its purpose
+was architectural — a bounded, intention-shaped surface that can absorb the
+functionality still to come without growing one tool per capability and
+eventually confusing the model
+([docs/evaluating/tool-surface-scaling.md](docs/evaluating/tool-surface-scaling.md)).
+The run confirms the consolidation cost nothing on the cases it was shaped
+for, and that head does the same work in fewer operations per intention:
+the note case takes head one mutation and base two (base has no way to edit
+a note in place, so every trial read, deleted and rewrote it), and the mixer
+case ties at two mutations but head spends one tool name where base spends
+two. The harness is the gate for the growth that motivated consolidation —
+run it when the surface changes, and the general corpus (paraphrases,
+cue/return/master coverage) that would actually stress-test routing as
+tools accrete is the second slice, on the roadmap as "Routing evals —
+general corpus and client-realism lane." Two caveats: five trials per cell
+cannot separate 100% from 95%, and two seed cases are a baseline, not a
+benchmark.
 
 **The tool surface is consolidated from 67 tools to 52, no capability lost,
 shipped 2026-08-28**, closing the queue's former top item and absorbing
