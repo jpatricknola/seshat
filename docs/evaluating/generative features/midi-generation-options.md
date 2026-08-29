@@ -57,6 +57,17 @@ constraints, not which final MIDI sounds best.
 > symbolically". §C and the C-bearing arms in the Recommendation stand as
 > evidence for that specific case, not as candidates for the first ship.
 
+> **Symbolic strategy audit 2026-08-30.** Two consultant reports added a
+> pattern-DSL/procedural route and a cleaner neural infill candidate to the
+> post-Route-C field. The resulting shortlist and branch experiment are in
+> [symbolic-midi-strategy-options.md](symbolic-midi-strategy-options.md).
+> This document remains the measurement and rejection record; its older
+> GMD-only “narrower experiment” wording is superseded by that audit. GMD
+> retrieval remains a primary drum arm alongside a minimal DSL/procedural
+> compiler. Composer's Assistant 2 is the specialist neural branch: blank
+> generation is tested, while contextual bass/infill and surgical revision are
+> its evidence-backed strengths.
+
 
 **No route has earned a product recommendation yet.** Note counts, pitch
 ranges, onset offsets, and latency prove that plumbing is plausible; they do

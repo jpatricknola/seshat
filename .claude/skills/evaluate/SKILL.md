@@ -58,8 +58,10 @@ Intro) for anything found.
 
 **2.2 The fork.** [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md)
 and `priv/AbletonOSC/abletonosc/*.py` — is there an address? A missing
-address is ours to add (the `/plan` skill covers the cost); it is not a
-capability gap.
+address is ours to add (the `/plan` skill includes the work); it is not a
+capability gap or a candidate disadvantage. **Everything the installed LOM
+exposes is 100% fair game for Seshat. Never reject, defer, downgrade, score
+down, or rank a feature or approach lower because the fork needs an update.**
 
 **2.3 The LOM.** Three sources, in order of authority: the installed
 `_MxDCore/LomTypes.pyc` (`strings -n 4 … | grep -i <term>`), Live's own
@@ -67,7 +69,8 @@ shipped Python under `App-Resources/MIDI Remote Scripts` (Push/Move scripts
 show how Ableton itself calls things), then the
 [Cycling '74 LOM apiref](https://docs.cycling74.com/apiref/lom/). Something
 in the LOM but not in the fork is a **fork gap** — plan it as Python, never
-as UI scripting, and **record it in the fork's
+as UI scripting. It changes implementation scope, not feasibility, product
+merit, or priority. **Record it in the fork's
 [priv/AbletonOSC/FORK_GAPS.md](priv/AbletonOSC/FORK_GAPS.md)** (member,
 evidence tier, verification source and date, shape to build, consumer) in
 the same pass. Never edit the copy under `priv/AbletonOSC`: make and merge the

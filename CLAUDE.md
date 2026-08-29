@@ -186,6 +186,15 @@ regular, and a wrong address fails silently (it's UDP, with no reply).
 holds only Seshat's side of the datagram (ports, value conventions, ordering
 hazards, how `Transport` correlates replies) and never restates a wire fact.
 
+**The installed Live Object Model is Seshat's capability boundary, not the
+fork's current address list. Everything Live exposes through the LOM is 100%
+fair game.** When the LOM has the operation and the fork does not, adding the
+address is ordinary feature implementation—not a dependency risk, bridge
+limitation, deterrent, or negative in evaluation or prioritisation. Never
+reject, defer, downgrade, or rank a feature lower because it needs a fork
+update. Account for the Python change, pin bump, install/restart, and live
+verification in the plan, then build it.
+
 The fork's other docs, each the sole record of its subject:
 
 - [priv/AbletonOSC/SESHAT.md](priv/AbletonOSC/SESHAT.md) — every divergence

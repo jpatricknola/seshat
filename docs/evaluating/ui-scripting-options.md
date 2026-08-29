@@ -84,6 +84,12 @@ input—not against every possible use of a keystroke.
 Use the highest applicable rung. Rung 1 is Seshat's established control path;
 rung 2 is now validated for the specific audio-output target, not generically.
 
+The rungs are mechanism choices, not feasibility scores. **Everything the
+installed LOM exposes is fully in scope for Seshat.** A missing AbletonOSC
+address is ordinary fork work and carries no negative weight when choosing,
+ranking, or scoping a feature; add the address. Only absence from the LOM
+allows a target to fall to AX or another mechanism.
+
 1. **LOM via the AbletonOSC fork.** The default for everything the installed
    LOM exposes.
 2. **Named AX element with read-back.** For a current LOM gap where the target

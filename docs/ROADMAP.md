@@ -59,11 +59,17 @@ fact.
 
 Plan: [PLAN_midi_generation_decision_experiment.md](PLAN_midi_generation_decision_experiment.md)
 was written for the four-arm bake-off and carries a banner saying so. Its
-prerequisite sections for the GMD retrieval engine and the GrooVAE go/no-go,
-its fixed prompts, its bounded derived-bass rule, its in-Live rendering
-harness and its blind-judging protocol all still hold; the IDM spike, the
-separator question, the joint-C arm and the MRT2 arm do not. Re-plan from
-it rather than from scratch. Planning already measured the full Live-side
+fixed prompts, its bounded derived-bass rule, its in-Live rendering harness
+and its blind-judging protocol still hold; the IDM spike, the separator
+question, the joint-C arm and the MRT2 arm do not. A subsequent audit of the
+two consultant submissions is recorded in
+[symbolic-midi-strategy-options.md](evaluating/generative%20features/symbolic-midi-strategy-options.md):
+the symbolic experiment is now two primary drum branches (minimal
+DSL/procedural and GMD retrieval/mutation), a Composer's Assistant 2
+specialist branch testing blank generation plus contextual infill/revision,
+and a narrower bass comparison between rules, CA2, and Anticipatory Music
+Transformer. Re-plan
+from those two documents rather than from scratch. Planning already measured the full Live-side
 cost of one four-part request (6.45 s in-process) and the
 `/live/clip/add/notes` ceiling (367 notes), which per-lane writes stay
 under — so the chunking item is not a gate.
@@ -81,34 +87,36 @@ before a feature plan is written against the winner, but the field is
 narrower and the listening slate smaller.
 
 **Why:** the research is done and honest: Claude composing notes directly
-failed on feel (2026-08-25); local symbolic models (Route A) are dead today
-— uniform velocity, no released weights, or non-commercial licences; no
-service (Route B) exists; and Route C is now off the table as the primary
-path. What remains is real human performance data and rules: **Route D**
-retrieval from the Groove MIDI Dataset (3 MB, CC-BY-4.0, nine lanes of
-played drums, on the grid by construction with human micro-timing intact),
-GrooVAE behind it if its checkpoint licence clears, and a bounded
-rule-derived bass that responds to the retrieved kick and snare positions.
-That is a smaller bet than the bake-off was, and an honest one: it can be
-judged by ear in one session. Read
+failed on feel (2026-08-25); the symbolic models already run locally were
+uniform, slow, unavailable, or non-commercial; no service (Route B) exists;
+and Route C is now off the table as the primary path. The consultant audit
+identified three approaches that survive those failures for different
+reasons: a compact pattern language gives Claude the right abstraction and
+keeps constraints deterministic; GMD retrieval starts from real human
+performance (3 MB, CC-BY-4.0, nine played drum lanes); and Composer's
+Assistant 2 offers track/measure infill with MIT code, an explicit
+commercial-output statement, and documented permissive training sources. Its
+published quality is co-creative and context-heavy, so blank modern drums are
+a test rather than an expectation. They
+must share one score/validator/rendering harness and be judged by ear. Read
 [music-generation-user-stories.md](evaluating/generative%20features/music-generation-user-stories.md)
 for the acceptance bar; it settles that one request is one undo step,
 separate parts per track, MIDI the default.
 
 **Context for the plan author:**
-- **Drums first.** Route D retrieval is the only candidate with measured
-  human dynamics, a clean licence and zero inference; the options doc calls
-  it "a strong drum finalist" (§D.1, §D.3). The go/no-go is whether a
-  finite genre/feel vocabulary can serve free-text requests like "dusty
-  lo-fi" — the attribute layer between Claude's language and the retrieval
-  query is the design work, and the MuseCoco precedent in §D.3 (text →
-  attributes → material, the attribute layer as the stable seam) is the
-  shape to keep so a later backend can sit behind the same contract.
+- **Drums first.** Compare two primary candidates behind one stable
+  `BeatPlan` / `SymbolicScore` seam: minimal DSL/procedural composition and GMD
+  retrieval plus structural mutation. GMD is the aesthetic floor; the DSL is
+  the controllability bet. Test Composer's Assistant 2 from blank, but treat
+  contextual infill and editing as its expected strengths; it earns a
+  full-beat role only by winning that arm. Do not spend a product arm on
+  MIDI-GPT (non-commercial weights), GrooVAE (checkpoint terms absent), or a
+  custom model yet.
 - **Bass is the weak lane and should be said to be.** The bounded
-  rule-derived bass (§E.1) is a baseline: rhythm from the drum skeleton,
-  pitch from Claude's harmonic choices, velocity and articulation by rule.
-  Judge it by ear; if it fails, the plan says so and bass waits, rather
-  than reaching back for transcription.
+  rule-derived bass (§E.1) is the baseline. A separate Anticipatory Music
+  Transformer branch may compare accompaniment/infill against the same fixed
+  drum scores, subject to hosted-weight terms; it is not a drum arm. If both
+  fail, bass waits rather than reaching back for transcription.
 - **Melody and harmony have no symbolic candidate today.** That is the
   "specific case" in which audio→MIDI may eventually earn a place; it is
   not this item's scope. Watch Agogic and MIDILM for runnable artifacts.

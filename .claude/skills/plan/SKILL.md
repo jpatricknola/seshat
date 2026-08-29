@@ -33,8 +33,11 @@ be able to say yes/no to each one.
      in `priv/AbletonOSC`, not against the installed copy in Remote Scripts,
      which is an output of `mix abletonosc.install` and may lag the fork.
 
-     A Python half is not free, and the plan must say so: it lands as a
-     commit in the submodule plus a pin bump here, it puts a
+     A Python half is normal feature scope, not a deterrent. **Never reject,
+     defer, downgrade, narrow, or rank a feature lower because it needs a
+     fork update; everything the installed LOM exposes is fair game.** The
+     plan must still describe the work accurately: it lands as a commit in
+     the submodule plus a pin bump here, it puts a
      `mix abletonosc.install` + Live restart on the user, and **no test in
      this repo executes it** — so its verification lives entirely in the
      plan's Live verification section (step 3). Say which parts only Ableton
