@@ -482,24 +482,30 @@ defmodule Seshat.Generation.AudioClip do
   # silently extending it is a change nobody asked for.
   defp first_empty_slot(track) do
     with {:ok, scenes} <- num_scenes() do
-      0..(scenes - 1)//1
-      |> Enum.chunk_every(@batch_limit)
-      |> Enum.reduce_while({:error, no_empty_slot_message(track, scenes)}, fn chunk, acc ->
-        entries = for slot <- chunk, do: {"/live/clip_slot/get/has_clip", [track, slot]}
+      if scenes == 0 do
+        {:error,
+         "This set has no scenes yet, so track #{track} has no clip slot to generate into. " <>
+           "Create a scene, then try again. Nothing was generated."}
+      else
+        0..(scenes - 1)//1
+        |> Enum.chunk_every(@batch_limit)
+        |> Enum.reduce_while({:error, no_empty_slot_message(track, scenes)}, fn chunk, acc ->
+          entries = for slot <- chunk, do: {"/live/clip_slot/get/has_clip", [track, slot]}
 
-        case batch(entries, @guard_timeout, "the clip slots on track #{track}") do
-          {:ok, values} ->
-            case chunk
-                 |> Enum.zip(values)
-                 |> Enum.find(fn {_slot, value} -> not truthy?(value) end) do
-              {slot, _value} -> {:halt, {:ok, slot}}
-              nil -> {:cont, acc}
-            end
+          case batch(entries, @guard_timeout, "the clip slots on track #{track}") do
+            {:ok, values} ->
+              case chunk
+                   |> Enum.zip(values)
+                   |> Enum.find(fn {_slot, value} -> not truthy?(value) end) do
+                {slot, _value} -> {:halt, {:ok, slot}}
+                nil -> {:cont, acc}
+              end
 
-          {:error, message} ->
-            {:halt, {:error, message}}
-        end
-      end)
+            {:error, message} ->
+              {:halt, {:error, message}}
+          end
+        end)
+      end
     end
   end
 
@@ -823,7 +829,7 @@ defmodule Seshat.Generation.AudioClip do
           " Audio track #{target.track} (\"#{target.name}\") was created and is still there, empty.",
         else: ""
 
-    " The generated take was kept at #{reservation.path}#{created}"
+    " The generated take was kept at #{reservation.path}.#{created}"
   end
 
   # Success is what Live says on a *separate* read, never the import's own
@@ -997,9 +1003,6 @@ defmodule Seshat.Generation.AudioClip do
       {:ok, value} ->
         {:ok, value}
 
-      {:error, message} ->
-        {:error, "Ableton rejected the request about #{subject}: #{message}."}
-
       :unexpected_shape ->
         {:error,
          "Ableton's reply about #{subject} was #{inspect(payload)}, which Seshat cannot read."}
@@ -1021,9 +1024,11 @@ defmodule Seshat.Generation.AudioClip do
     end
   end
 
+  # Every address `unwrap_entry/2` sees replies with a bare single-element
+  # list — the `["ok"|"error", _]` discriminator belongs to
+  # `/live/clip_slot/create_audio_clip` alone, and that address is matched
+  # directly in `import_clip/2`, never routed through here.
   defp unwrap([value]), do: {:ok, value}
-  defp unwrap(["ok", value]), do: {:ok, value}
-  defp unwrap(["error", message]) when is_binary(message), do: {:error, message}
   defp unwrap(_other), do: :unexpected_shape
 
   defp truthy?(value), do: value in [1, true]

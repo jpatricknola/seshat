@@ -583,14 +583,42 @@ defmodule Seshat.Generation.AudioClipTest do
     test "two takes with the same description, second and seed cannot collide", context do
       params = %{"description" => "drums", "track" => 0, "seed" => 7}
 
-      {first, _} = run(context, params)
-      {second, _} = run(context, params)
+      {first, second} = same_second_pair(context, params)
 
       assert {:ok, one} = first
       assert {:ok, two} = second
 
       refute one.file == two.file
       assert Enum.sort(File.ls!(context.root)) == Enum.sort([one.file, two.file])
+    end
+  end
+
+  # The exclusive-create collision this test exercises only happens when both
+  # calls land inside the same whole UTC second, since that is the stem's
+  # timestamp resolution — otherwise the two takes get different timestamps,
+  # the `-1` suffix branch never runs, and `refute one.file == two.file` would
+  # still pass without having tested anything. Retry until both calls are
+  # observed inside one second rather than asserting on luck.
+  defp same_second_pair(context, params, attempts \\ 20)
+
+  defp same_second_pair(_context, _params, 0) do
+    flunk("could not land two takes in the same UTC second after 20 attempts")
+  end
+
+  defp same_second_pair(context, params, attempts) do
+    before = System.os_time(:second)
+    {first, _} = run(context, params)
+    {second, _} = run(context, params)
+
+    if System.os_time(:second) == before do
+      {first, second}
+    else
+      # Straddled a second boundary — both takes landed with different
+      # timestamps and neither collided, so the pair proves nothing. Clear
+      # them before retrying so a later success isn't sharing the directory
+      # with this attempt's leftovers.
+      File.rm_rf(context.root)
+      same_second_pair(context, params, attempts - 1)
     end
   end
 end

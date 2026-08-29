@@ -1130,7 +1130,80 @@ against real second-slice cases than speculatively.
   holds ("the model must not proceed on invented state") — this item is only
   about whether that reply should count against `no_tool_errors`.
 
-## #26 · Tighten the process-start grep so it does not shape prose in unrelated modules
+## #26 · `variation_of` refuses a managed take when `~/.seshat` is a symlink
+
+**Impact 3 · Lift 3 · 1.00 impact-per-effort**
+
+**Goal:** `Seshat.Generation.AudioClip.under_root?/1` compares
+`Path.expand/1` output on both the reported clip path and `generated_root()`
+— neither of which resolves symlinks. The fork realpaths the path it hands
+to Live before replying on `/live/clip/get/file_path`, so on any
+installation where `~/.seshat` is itself a symlink (an external volume, a
+dotfile manager), every take Seshat generated reads back under the
+link-target path and `variation_of` refuses it as "outside Seshat's
+generated-audio folder" — permanently, and incorrectly, for a file Seshat
+just wrote.
+
+**Why:** flagged as non-blocking in the PR review of "Generate audio onto a
+track" (`docs/PLAN_generate_audio_clip.md`) because it needs a real symlinked
+`~/.seshat` to reproduce and is unreachable on this reviewer's plain
+installation, not because the bug is in doubt. The module already solved the
+identical shape twenty lines below `under_root?/1`: `same_file?/2` compares
+inode and device rather than path strings specifically because "a symlinked
+`~/.seshat` would make Live report a different string for the very file just
+written" (its own comment). `under_root?/1` needs the same treatment — a
+containment check that survives a resolved root, not a second string
+comparison that repeats the mistake `same_file?/2` was written to avoid.
+
+**Planner notes:**
+- `same_file?/2` works because it compares one file against another known
+  file. `under_root?/1` is a containment check (is this path *inside* a
+  directory), which inode/device comparison alone doesn't answer — the fix
+  needs either a realpath equivalent for the root and the reported path (no
+  built-in in `File`; would mean resolving each path segment's symlinks
+  manually) or an ancestor walk from the reported path's directory upward,
+  comparing `{inode, device}` against the root's at each step until it
+  matches or the walk exhausts.
+- Test against an actual symlinked temp directory, not just a string
+  comparison — the whole bug is that string comparison looks correct until
+  the filesystem enters the picture.
+
+## #27 · Bounded generation diagnostics can drop the newest chunk entirely on overflow
+
+**Impact 2 · Lift 2 · 1.00 impact-per-effort**
+
+**Goal:** `Seshat.Generation.StableAudio`'s `retain/3` holds the Stable Audio
+runtime's stdout newest-first and trims from the oldest end once
+`max_output_bytes()` is exceeded, so a failing run's diagnostics show its
+last output rather than its startup banner. `trim/3`'s base case doesn't
+handle a single chunk that is itself larger than the cap: it pops that chunk
+as "oldest" (there being nothing else left) and returns `{[], 0}`, discarding
+the newest — and only — output instead of keeping the tail of it. A failure
+under a configured cap smaller than the runtime's per-message chunk size
+(measured at up to 16,384 bytes for a `:binary` spawn port with no `:packet`
+option) reports "The runtime printed nothing" on a run that printed
+plenty.
+
+**Why:** flagged as non-blocking in the PR review of "Generate audio onto a
+track" because the shipped default `max_output_bytes` (32 KB) is safe — the
+bug only reaches production behavior if `:generation_max_output_bytes` is
+configured below the port's per-message chunk size, which nothing in the
+codebase does today. It is currently masked by its own test
+(`stable_audio_test.exs`, the cap-at-1,000-bytes case), which asserts only
+`byte_size(message) < 4_000` — true whether the tail is retained or dropped
+entirely — so the bug shipped through review with a test that exercises the
+exact path without noticing.
+
+**Planner notes:**
+- Fix belongs in `trim/3`'s base case: when the list is down to one
+  oversized chunk, truncate the binary to its last `cap` bytes instead of
+  discarding it.
+- While there, strengthen the masking test to assert the retained diagnostic
+  actually contains recognizable content (e.g. `assert message =~ "x"`
+  against known input), not just a byte-size ceiling — that assertion is
+  what let this ship unnoticed the first time.
+
+## #28 · Tighten the process-start grep so it does not shape prose in unrelated modules
 
 **Impact 1 · Lift 1 · 1.00 impact-per-effort**
 
@@ -1150,7 +1223,7 @@ non-blocking nit rather than fixed inline because it touches a shared
 invariant test outside the routing-evals change's own files, not something
 that plan's implementation owns.
 
-## #27 · LLM enrichment at reindex
+## #29 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -1177,7 +1250,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #28 · Monitored refresh worker for `Session.State`
+## #30 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -1221,7 +1294,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #29 · Device list per track in session state
+## #31 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1242,7 +1315,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #30 · Adopt MCP `2026-07-28` when Anubis supports it
+## #32 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1293,7 +1366,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #31 · Clip grid in session state — only if usage demands it
+## #33 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 

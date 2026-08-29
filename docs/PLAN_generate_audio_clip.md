@@ -396,6 +396,11 @@ collide, and timeout cleanup leaves no timed-out runtime process running.
 - [`docs/smoke_tests/auto/generation.md` § “A generated clip lands, reads back, and its file is duration-exact”](smoke_tests/auto/generation.md#a-generated-clip-lands-reads-back-and-its-file-is-duration-exact)
 - [`docs/smoke_tests/auto/generation.md` § “An occupied slot is refused before anything is generated”](smoke_tests/auto/generation.md#an-occupied-slot-is-refused-before-anything-is-generated)
 - [`docs/smoke_tests/manual/conversation.md` § “A generation request routes to one call and names the form”](smoke_tests/manual/conversation.md#a-generation-request-routes-to-one-call-and-names-the-form)
+- [`docs/smoke_tests/auto/mcp-surface.md` § “The tool list survives a real handshake”](smoke_tests/auto/mcp-surface.md#the-tool-list-survives-a-real-handshake)
+  — `variation_of` is the first root-level object-typed property on the
+  published surface (every earlier one sat inside an array's items), and a
+  client that rejects that shape refuses the whole tool list, so this check
+  needs to run before trusting the rest of this list.
 
 These checks cover MVP generation, safe import, read-back, take preservation,
 boundary duration and conversational routing. By-ear grid phase, downbeat

@@ -12,6 +12,7 @@ defmodule Seshat.Tools.Handlers do
 
   alias Seshat.Commands.{Command, Registry}
   alias Seshat.Generation.AudioClip
+  alias Seshat.Generation.Result
   alias Seshat.Library.Catalog
   alias Seshat.Music.Pitch
   alias Seshat.OSC.Transport
@@ -3372,7 +3373,7 @@ defmodule Seshat.Tools.Handlers do
   # `nil` there is reported as unknown rather than filled in with the requested
   # value — a reply that quietly substituted the request for the observation
   # would defeat the whole point of reading it back.
-  defp format_generated_clip(%Seshat.Generation.Result{} = result) do
+  defp format_generated_clip(%Result{} = result) do
     Enum.join(
       [
         generated_headline(result),
