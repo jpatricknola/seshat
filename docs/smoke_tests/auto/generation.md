@@ -29,6 +29,22 @@ file that exists without the independently read clip is an import failure,
 never a partial pass. Do not require a particular Live beat length, looping or
 warping value in this MVP; require the reply to match the independent read-back.
 
+**The file must also contain audio.** Duration, sample rate and channel count
+are all satisfied by a duration-exact file of digital silence, which is what a
+half-working runtime produces — and nothing else in either suite would notice.
+Measure the peak level without listening, e.g.
+
+```
+ffmpeg -i <the wav> -af volumedetect -f null - 2>&1 | grep max_volume
+```
+
+`max_volume` must be meaningfully below 0 dB and well above the noise floor;
+`-91 dB` (or `-inf`) is silence and a failure, and `0.0 dB` is a clipped or
+constant-valued file and also a failure. Judge *level only* — whether the
+material sounds like the description is by ear and belongs to the follow-up
+polish item, not here. If `ffmpeg` is not installed, say so and mark this half
+skipped by environment rather than passing the check on duration alone.
+
 Repeat at the schema boundary, 16 bars at 60 BPM, on another new track. It must
 land, the WAV must contain exactly 64 beats' requested duration at 60 BPM, and
 the reported Live properties must match independent read-back. A timeout or

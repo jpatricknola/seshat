@@ -441,6 +441,26 @@ defmodule Seshat.Generation.AudioClipTest do
       refute "/live/song/create_audio_track" in addresses(trace)
       assert File.ls!(context.root) == []
     end
+
+    # Slot 0 is only a slot if a scene exists. The explicit-clip_slot branch has
+    # always checked; without the same check here the tool's most ordinary call
+    # would render, create a track, and only then have Live refuse the import.
+    test "a set with no scenes refuses before generating and before creating", context do
+      live = Map.put(LiveDouble.session(), :scenes, 0)
+
+      {result, trace} = run(context, %{"description" => "drums", "track_name" => "Gen"}, live)
+
+      assert {:error, message} = result
+      assert message =~ "This set has no scenes"
+      assert message =~ "Nothing was generated and no track was created."
+
+      refute_received {:generate, _spec}
+      refute "/live/song/create_audio_track" in addresses(trace)
+
+      # The refusal lands before `reserve_take/2`, so the managed root has not
+      # even been created — which is stricter than "empty", not weaker.
+      assert File.ls(context.root) in [{:ok, []}, {:error, :enoent}]
+    end
   end
 
   describe "variation" do
@@ -576,6 +596,55 @@ defmodule Seshat.Generation.AudioClipTest do
 
       assert {:error, message} = result
       assert message =~ "was created and is still there, empty"
+    end
+
+    # The other side of the line: once the import has replied "ok", Live has
+    # returned a Clip and the created track is almost certainly holding it. A
+    # message that still called the track empty would contradict the sentence
+    # in front of it, which says the import succeeded.
+    test "a read-back disagreement never calls the created track empty", context do
+      live =
+        LiveDouble.session()
+        |> Map.put(:import_path, "/Users/someone/Music/other.wav")
+
+      {result, _trace} =
+        run(context, %{"description" => "drums", "track_name" => "Gen Drums"}, live)
+
+      assert {:error, message} = result
+      assert message =~ "reads back as"
+      assert message =~ "was created and is still there."
+      refute message =~ "still there, empty"
+      assert message =~ "could not be confirmed"
+      assert message =~ "get_clip_slots"
+    end
+  end
+
+  # `Seshat.Generation.Backend`'s result type documents `path` as the reserved
+  # path restated rather than assumed. This is the assertion that makes it a
+  # contract instead of a comment.
+  describe "a backend that wrote somewhere else" do
+    test "is refused, and nothing is imported", context do
+      elsewhere = Path.join(System.tmp_dir!(), "stray-#{System.unique_integer([:positive])}.wav")
+      on_exit(fn -> File.rm(elsewhere) end)
+
+      FakeGenerationBackend.install(fn spec ->
+        File.write!(elsewhere, "RIFF stray")
+
+        {:ok, %{path: elsewhere, seed: spec.seed, wall_ms: 10}}
+      end)
+
+      {result, trace} = run(context, %{"description" => "drums", "track" => 0})
+
+      assert {:error, message} = result
+      assert message =~ "reported writing"
+      assert message =~ "but this take was reserved at"
+      assert message =~ "Nothing was imported."
+
+      refute "/live/clip_slot/create_audio_clip" in addresses(trace)
+
+      # The empty reservation goes with it — importing it would have handed
+      # Live a zero-byte file under a name that looks like a real take.
+      assert File.ls!(context.root) == []
     end
   end
 

@@ -3403,14 +3403,28 @@ defmodule Seshat.Tools.Handlers do
 
     "Generated a #{result.bars}-bar audio clip (#{format_seconds(result.seconds)} s requested " <>
       "at #{format_bpm(result.tempo)} BPM in #{result.time_sig_numerator}/" <>
-      "#{result.time_sig_denominator}) and imported it to #{where}.#{variation}"
+      "#{result.time_sig_denominator}) and imported it to #{where} as " <>
+      "\"#{result.clip_name}\".#{variation}"
   end
 
-  defp generated_observation(%{observed: observed}) do
+  defp generated_observation(%{observed: observed} = result) do
     "Live reads back #{describe_observed_length(observed[:length])}, " <>
       "looping #{describe_observed_flag(observed[:looping])}, " <>
-      "warping #{describe_observed_flag(observed[:warping])}."
+      "warping #{describe_observed_flag(observed[:warping])}." <> describe_observed_name(result)
   end
+
+  # The clip is renamed with a fire-and-forget `/live/clip/set/name`, and its
+  # name comes back in the same read-back batch that proves the import landed.
+  # Comparing the two is what turns that read into evidence: a dropped datagram
+  # would otherwise leave the headline announcing a name Live never applied,
+  # which is the one claim in this reply nothing else would contradict.
+  defp describe_observed_name(%{clip_name: requested, observed: %{name: observed}})
+       when is_binary(observed) and observed != requested do
+    " Live reports the clip is named \"#{observed}\", not \"#{requested}\" — the rename did " <>
+      "not land, though the audio did."
+  end
+
+  defp describe_observed_name(_result), do: ""
 
   defp describe_observed_length(length) when is_number(length), do: "#{length} beats"
   defp describe_observed_length(_length), do: "a length it could not report"

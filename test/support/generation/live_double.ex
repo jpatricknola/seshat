@@ -183,8 +183,18 @@ defmodule Seshat.Test.LiveDouble do
     {:silent, live}
   end
 
-  defp respond("/live/clip/set/name", [track, slot, name], live),
-    do: {:silent, put_in(live.clips[{track, slot}][:name], name)}
+  # `:ignore_renames` drops the setter on the floor, which is the only way a
+  # lost fire-and-forget datagram is reachable in a test: nothing on the wire
+  # distinguishes a rename that landed from one that did not, which is exactly
+  # why the read-back compares the name it asked for against the name Live
+  # reports.
+  defp respond("/live/clip/set/name", [track, slot, name], live) do
+    if Map.get(live, :ignore_renames, false) do
+      {:silent, live}
+    else
+      {:silent, put_in(live.clips[{track, slot}][:name], name)}
+    end
+  end
 
   # Everything else — the undo-step pair, track renames, the follow cam's view
   # calls — is fire-and-forget and answers nothing, exactly as AbletonOSC does.

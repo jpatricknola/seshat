@@ -332,9 +332,29 @@ generation diagnostics can drop the newest chunk entirely on overflow"
 of tailing it, reachable only below the shipped 32KB default). Two more
 were left for the PR reader to judge rather than acted on: `mix
 routing.eval` was not run despite the `Definitions` change (52 → 53 tools),
-and `observed.name` is read back on every generation but never surfaced or
-compared — the reviewer's own words, "not wrong… just collected for
-nothing."
+and `observed.name` was read back on every generation but never surfaced or
+compared.
+
+A second review pass found four further non-blocking items, all applied:
+`partial_effects/2` told the caller a created track was "still there,
+empty" on the three read-back failure paths *after* the import had already
+replied `["ok", _]` — Live had returned a `Clip` by then, so the sentence
+contradicted the one in front of it; those three paths now use
+`unverified_effects/2`, which says the track exists and that whether the
+clip is in the slot is exactly what could not be confirmed. `new_track_plan/1`
+checked the scene count only when `clip_slot` was explicit, so on a
+scene-less set the tool's most ordinary call (no `track`, no `clip_slot`)
+would render, create a track, and only then have Live refuse the import —
+it now asks `num_scenes/0` on both branches. `Seshat.Generation.Backend`'s
+result type documented `path` as the reserved path *checked by the caller*,
+and no caller read it; `render_and_import/6` now matches it against the
+reservation and refuses without importing. And `observed.name` is used at
+last: the reply names the clip in its headline and, when Live reports a
+different name, says the fire-and-forget `/live/clip/set/name` did not land
+though the audio did. The live check gained the one assertion neither suite
+made — a duration-exact file of digital silence satisfied every existing
+criterion, so `auto/generation.md` now measures peak level. `mix
+routing.eval` remains unrun and remains the reader's call.
 
 **Live verification has not run.** Both `auto/generation.md` checks ("A
 generated clip lands, reads back, and its file is duration-exact", "An

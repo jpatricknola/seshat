@@ -381,7 +381,21 @@ defmodule Seshat.Generation.AudioClip do
   defp new_track_plan(request) do
     case request.clip_slot do
       nil ->
-        {:ok, %{track: nil, slot: 0, track_name: request.track_name}}
+        # Slot 0 is only a slot if the set has a scene, so this branch asks the
+        # same question the explicit one below does. Without it, the tool's most
+        # ordinary call — no track, no clip_slot — would spend the whole render
+        # and create a track before Live refused the import on a scene-less set,
+        # which is the exact shape every other guard here is ordered to avoid.
+        with {:ok, scenes} <- num_scenes() do
+          if scenes > 0 do
+            {:ok, %{track: nil, slot: 0, track_name: request.track_name}}
+          else
+            {:error,
+             "This set has no scenes, so a new track would have no clip slot to generate " <>
+               "into. Create a scene, then try again. Nothing was generated and no track " <>
+               "was created."}
+          end
+        end
 
       slot ->
         # There is no occupancy to check — the track does not exist yet — but
@@ -699,6 +713,8 @@ defmodule Seshat.Generation.AudioClip do
   # --- Render, then Live ---
 
   defp render_and_import(request, music, duration, plan, source, reservation) do
+    reserved = reservation.path
+
     spec = %Spec{
       prompt: prompt(request.description, music),
       negative_prompt: request.negative_prompt,
@@ -710,8 +726,21 @@ defmodule Seshat.Generation.AudioClip do
     }
 
     case Backend.impl().generate(spec) do
-      {:ok, generated} ->
+      {:ok, %{path: ^reserved} = generated} ->
         land(request, music, duration, plan, source, reservation, generated)
+
+      # `Seshat.Generation.Backend`'s result type documents `path` as the
+      # reserved path restated rather than assumed, and this is what makes that
+      # a check rather than a comment. The wire carries a *basename* resolved
+      # under the fork's own root, so a backend that wrote somewhere else would
+      # otherwise have this module import whatever happened to be sitting at the
+      # reserved name — nothing, usually, but the empty reservation itself.
+      {:ok, %{path: path}} ->
+        discard(reservation.path)
+
+        {:error,
+         "The audio backend reported writing #{path}, but this take was reserved at " <>
+           "#{reservation.path}. Nothing was imported."}
 
       {:error, message} ->
         discard(reservation.path)
@@ -822,6 +851,15 @@ defmodule Seshat.Generation.AudioClip do
     request.description |> String.slice(0, 40) |> String.trim()
   end
 
+  # Two shapes, deliberately not one function with a flag: what this code has
+  # actually observed differs on either side of the import's reply.
+  #
+  # Before it, nothing landed, and "the track is empty" is a fact. After a
+  # `["ok", _]` reply Live has already returned a `Clip`, so a created track
+  # almost certainly *does* hold one and only the read-back disagreed or never
+  # arrived. Calling it empty there would contradict the sentence it is appended
+  # to — which is the whole failure mode this module's requested/observed split
+  # exists to prevent.
   defp partial_effects(target, reservation) do
     created =
       if target.created?,
@@ -830,6 +868,18 @@ defmodule Seshat.Generation.AudioClip do
         else: ""
 
     " The generated take was kept at #{reservation.path}.#{created}"
+  end
+
+  defp unverified_effects(target, reservation) do
+    created =
+      if target.created?,
+        do: " Audio track #{target.track} (\"#{target.name}\") was created and is still there.",
+        else: ""
+
+    " The generated take was kept at #{reservation.path}.#{created} Whether the clip is in " <>
+      "slot #{target.slot} is exactly what could not be confirmed — read that track with " <>
+      "get_clip_slots before generating again, so a second take does not land beside one " <>
+      "that is already there."
   end
 
   # Success is what Live says on a *separate* read, never the import's own
@@ -852,13 +902,13 @@ defmodule Seshat.Generation.AudioClip do
           not truthy?(is_audio) ->
             {:error,
              "The import reported success, but slot #{target.slot} on track #{target.track} " <>
-               "does not read back as an audio clip." <> partial_effects(target, reservation)}
+               "does not read back as an audio clip." <> unverified_effects(target, reservation)}
 
           not same_file?(file_path, reservation.path) ->
             {:error,
              "The import reported success, but slot #{target.slot} on track #{target.track} " <>
                "reads back as #{inspect(file_path)} rather than the generated take." <>
-               partial_effects(target, reservation)}
+               unverified_effects(target, reservation)}
 
           true ->
             FollowCam.steer("generate_audio", %{track: target.track, slot: target.slot})
@@ -886,7 +936,7 @@ defmodule Seshat.Generation.AudioClip do
       {:error, message} ->
         {:error,
          "The import reported success, but reading the clip back failed: #{message}" <>
-           partial_effects(target, reservation)}
+           unverified_effects(target, reservation)}
     end
   end
 

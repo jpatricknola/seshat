@@ -5333,11 +5333,29 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert message =~ "Generated a 4-bar audio clip"
       assert message =~ "7.742 s requested at 124 BPM in 4/4"
-      assert message =~ "imported it to track 0, slot 1"
+      assert message =~ ~s|imported it to track 0, slot 1 as "dusty breakbeat"|
       assert message =~ "Live reads back 16.0 beats, looping on, warping on"
       assert message =~ "Imported without rhythmic-grid or loop-seam correction."
       assert message =~ "seed "
       assert message =~ "Key requested: F Minor (not pitch-verified)."
+
+      # The rename landed, so the observation says nothing about it.
+      refute message =~ "the rename did not land"
+    end
+
+    # `/live/clip/set/name` is fire-and-forget, and the name comes back in the
+    # same batch that proves the import. Comparing them is what stops the reply
+    # announcing a name Live never applied.
+    test "a rename that did not land is reported against the read-back", context do
+      live = Map.put(Seshat.Test.LiveDouble.session(), :ignore_renames, true)
+
+      {result, _trace} =
+        generate(context, %{"description" => "dusty breakbeat", "track" => 0}, live)
+
+      assert {:ok, message} = result
+      assert message =~ ~s|imported it to track 0, slot 1 as "dusty breakbeat"|
+      assert message =~ ~s|Live reports the clip is named "", not "dusty breakbeat"|
+      assert message =~ "the rename did not land, though the audio did"
     end
 
     test "a new track is named in the reply", context do
