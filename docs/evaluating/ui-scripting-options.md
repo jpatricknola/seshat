@@ -18,7 +18,7 @@ for this target, subject to the constraints recorded below. That is not an
 end-to-end conversational measurement: the implementation plan separately
 requires the user-visible request to complete within 10 seconds.
 
-Implementation plan: [AX-backed audio-output selection](../PLAN_audio_output.md).
+Implementation plan: [AX-backed audio-output selection](../archive/PLAN_audio_output.md).
 
 This validates a particular UI-scripting operation, not a general second
 control surface. No synthetic keystroke has yet been observed reaching Live
@@ -345,7 +345,7 @@ Answer these questions:
 one that happened.** The complete audio-device round trip succeeded on
 2026-08-03, the roadmap entry was written scoped exactly as that outcome
 requires, and the implementation is
-[PLAN_audio_output.md](../PLAN_audio_output.md): two tools, a bounded native
+[PLAN_audio_output.md](../archive/PLAN_audio_output.md): two tools, a bounded native
 helper, read-back verification, and the LOM-first rule left in force. Nothing
 here validates a second control surface — questions 1, 4, 5 and 6 remain open
 research, and each future AX operation still needs its own LOM-gap, safety,

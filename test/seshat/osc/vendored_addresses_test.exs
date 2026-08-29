@@ -98,8 +98,15 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   @return_track_file "priv/AbletonOSC/abletonosc/return_track.py"
   @song_structure_file "priv/AbletonOSC/abletonosc/song_structure.py"
   @view_file "priv/AbletonOSC/abletonosc/view.py"
+  @groove_file "priv/AbletonOSC/abletonosc/groove.py"
 
-  @handler_files [@browser_file, @return_track_file, @song_structure_file, @view_file]
+  @handler_files [
+    @browser_file,
+    @return_track_file,
+    @song_structure_file,
+    @view_file,
+    @groove_file
+  ]
 
   # Upstream's handler files, for the doc-coverage check only. view.py is
   # already in @handler_files (its registrations are all literal), and
@@ -145,6 +152,13 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     "device" => [
       "/live/device/start_listen/<property>",
       "/live/device/stop_listen/<property>"
+    ],
+    # Ours, not upstream's. groove.py is the first vendored handler to document
+    # its listeners the family-generic way rather than one row per property, so
+    # the vendored docs check below reads through documented?/2 too.
+    "groove" => [
+      "/live/groove/start_listen/<property>",
+      "/live/groove/stop_listen/<property>"
     ]
   }
 
@@ -203,7 +217,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       docs = File.read!(@docs)
 
       for address <- registered_addresses() do
-        assert String.contains?(docs, address),
+        assert documented?(docs, address),
                """
                #{address} is registered in #{@source} but missing from #{@docs}.
 
@@ -261,10 +275,13 @@ defmodule Seshat.OSC.VendoredAddressesTest do
       # restructures registration this floor fails loudly instead of the check
       # quietly covering nothing. 462 at the 2026-08-03 pin (an earlier
       # version of this comment said ~490 — that run had swept in the
-      # vendored files' literals). The count grows as the fork gains
-      # addresses; the floor, not the census, is what's load-bearing.
-      assert length(addresses) >= 400,
-             "expected 400+ upstream addresses, got #{length(addresses)} — " <>
+      # vendored files' literals), 579 after the 2026-08-29 fork bump, which
+      # both added addresses and taught the extraction three more list shapes
+      # (properties_listen, properties_r_no_listen, the `= list + [...]`
+      # append). The count grows as the fork gains addresses; the floor, not
+      # the census, is what's load-bearing.
+      assert length(addresses) >= 500,
+             "expected 500+ upstream addresses, got #{length(addresses)} — " <>
                "the list extraction in upstream_registered_addresses/1 no longer " <>
                "matches the fork's registration style."
 
@@ -312,7 +329,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
              ]
     end
 
-    test "the return/master handler registers exactly the fifty-one documented addresses" do
+    test "the return/master handler registers exactly the hundred-and-nine documented addresses" do
       assert Enum.sort(registered_addresses(@return_track_file)) == [
                "/live/master/delete_device",
                "/live/master/device/get/name",
@@ -320,19 +337,47 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                "/live/master/device/get/parameter/value_string",
                "/live/master/device/get/parameters",
                "/live/master/device/set/parameter/value",
+               "/live/master/get/available_output_routing_channels",
+               "/live/master/get/available_output_routing_types",
+               "/live/master/get/color",
+               "/live/master/get/color_index",
                "/live/master/get/cue_volume",
                "/live/master/get/devices",
+               "/live/master/get/has_audio_input",
+               "/live/master/get/has_audio_output",
+               "/live/master/get/has_midi_input",
+               "/live/master/get/has_midi_output",
+               "/live/master/get/output_meter_left",
+               "/live/master/get/output_meter_level",
+               "/live/master/get/output_meter_right",
+               "/live/master/get/output_routing_channel",
+               "/live/master/get/output_routing_type",
                "/live/master/get/panning",
                "/live/master/get/volume",
+               "/live/master/insert_device",
                "/live/master/select",
                "/live/master/select_device",
+               "/live/master/set/color",
+               "/live/master/set/color_index",
                "/live/master/set/cue_volume",
+               "/live/master/set/output_routing_channel",
+               "/live/master/set/output_routing_type",
                "/live/master/set/panning",
                "/live/master/set/volume",
+               "/live/master/start_listen/color",
+               "/live/master/start_listen/color_index",
                "/live/master/start_listen/cue_volume",
+               "/live/master/start_listen/output_meter_left",
+               "/live/master/start_listen/output_meter_level",
+               "/live/master/start_listen/output_meter_right",
                "/live/master/start_listen/panning",
                "/live/master/start_listen/volume",
+               "/live/master/stop_listen/color",
+               "/live/master/stop_listen/color_index",
                "/live/master/stop_listen/cue_volume",
+               "/live/master/stop_listen/output_meter_left",
+               "/live/master/stop_listen/output_meter_level",
+               "/live/master/stop_listen/output_meter_right",
                "/live/master/stop_listen/panning",
                "/live/master/stop_listen/volume",
                "/live/return_track/delete_device",
@@ -341,27 +386,57 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                "/live/return_track/device/get/parameter/value_string",
                "/live/return_track/device/get/parameters",
                "/live/return_track/device/set/parameter/value",
+               "/live/return_track/get/available_output_routing_channels",
+               "/live/return_track/get/available_output_routing_types",
+               "/live/return_track/get/color",
+               "/live/return_track/get/color_index",
                "/live/return_track/get/count",
                "/live/return_track/get/devices",
+               "/live/return_track/get/has_audio_input",
+               "/live/return_track/get/has_audio_output",
+               "/live/return_track/get/has_midi_input",
+               "/live/return_track/get/has_midi_output",
                "/live/return_track/get/mute",
                "/live/return_track/get/name",
+               "/live/return_track/get/output_meter_left",
+               "/live/return_track/get/output_meter_level",
+               "/live/return_track/get/output_meter_right",
+               "/live/return_track/get/output_routing_channel",
+               "/live/return_track/get/output_routing_type",
                "/live/return_track/get/panning",
+               "/live/return_track/get/send",
                "/live/return_track/get/solo",
                "/live/return_track/get/volume",
+               "/live/return_track/insert_device",
                "/live/return_track/select",
                "/live/return_track/select_device",
+               "/live/return_track/set/color",
+               "/live/return_track/set/color_index",
                "/live/return_track/set/mute",
                "/live/return_track/set/name",
+               "/live/return_track/set/output_routing_channel",
+               "/live/return_track/set/output_routing_type",
                "/live/return_track/set/panning",
+               "/live/return_track/set/send",
                "/live/return_track/set/solo",
                "/live/return_track/set/volume",
+               "/live/return_track/start_listen/color",
+               "/live/return_track/start_listen/color_index",
                "/live/return_track/start_listen/mute",
                "/live/return_track/start_listen/name",
+               "/live/return_track/start_listen/output_meter_left",
+               "/live/return_track/start_listen/output_meter_level",
+               "/live/return_track/start_listen/output_meter_right",
                "/live/return_track/start_listen/panning",
                "/live/return_track/start_listen/solo",
                "/live/return_track/start_listen/volume",
+               "/live/return_track/stop_listen/color",
+               "/live/return_track/stop_listen/color_index",
                "/live/return_track/stop_listen/mute",
                "/live/return_track/stop_listen/name",
+               "/live/return_track/stop_listen/output_meter_left",
+               "/live/return_track/stop_listen/output_meter_level",
+               "/live/return_track/stop_listen/output_meter_right",
                "/live/return_track/stop_listen/panning",
                "/live/return_track/stop_listen/solo",
                "/live/return_track/stop_listen/volume"
@@ -395,6 +470,38 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                just stops following one of them.
                """
       end
+    end
+
+    # groove.py registers nothing literally — every address is a format string
+    # over GROOVE_FIELDS — so without loop_registered_addresses/1 this whole
+    # handler is invisible to every check in this file. Pinning the expansion
+    # is what proves the expander still reads the fork's table: if the loop is
+    # restructured, this fails loudly rather than the surface quietly emptying.
+    test "the groove handler registers exactly the twenty-two documented addresses" do
+      assert Enum.sort(registered_addresses(@groove_file)) == [
+               "/live/groove/get/base",
+               "/live/groove/get/name",
+               "/live/groove/get/quantization_amount",
+               "/live/groove/get/random_amount",
+               "/live/groove/get/timing_amount",
+               "/live/groove/get/velocity_amount",
+               "/live/groove/set/base",
+               "/live/groove/set/name",
+               "/live/groove/set/quantization_amount",
+               "/live/groove/set/random_amount",
+               "/live/groove/set/timing_amount",
+               "/live/groove/set/velocity_amount",
+               "/live/groove/start_listen/name",
+               "/live/groove/start_listen/quantization_amount",
+               "/live/groove/start_listen/random_amount",
+               "/live/groove/start_listen/timing_amount",
+               "/live/groove/start_listen/velocity_amount",
+               "/live/groove/stop_listen/name",
+               "/live/groove/stop_listen/quantization_amount",
+               "/live/groove/stop_listen/random_amount",
+               "/live/groove/stop_listen/timing_amount",
+               "/live/groove/stop_listen/velocity_amount"
+             ]
     end
 
     test "the song structure handler registers exactly the four documented addresses" do
@@ -566,11 +673,11 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                """
       end
 
-      assert length(String.split(source, "_echo_index(params,")) == 4,
+      assert length(String.split(source, "_echo_index(params,")) == 5,
              """
              #{@return_track_file} calls _echo_index(params, ...) a different
-             number of times than expected (3 call sites: _return_device,
-             _return_device_parameter, _master_device_parameter).
+             number of times than expected (4 call sites: _return_device,
+             _return_device_parameter, _master_device_parameter, _return_send).
 
              If this changed on purpose, update the count here; if not, a call
              site regressed back to a literal -1.
@@ -1038,9 +1145,91 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   # and a regex that missed those would under-report what the file registers —
   # a tripwire that quietly stops tripping.
   defp registered_addresses(file) do
+    literal_addresses(file) ++ loop_registered_addresses(file)
+  end
+
+  # The literal `add_handler("/live/...")` calls, minus the format-string
+  # templates a loop registration leaves behind ("/live/return_track/get/%s").
+  # A template is not an address; the loop that consumes it is expanded by
+  # loop_registered_addresses/1 below.
+  defp literal_addresses(file) do
     ~r/add_handler\(\s*['"](\/live\/[^'"]+)['"]/
     |> Regex.scan(File.read!(file))
     |> Enum.map(fn [_match, address] -> address end)
+    |> Enum.reject(&String.contains?(&1, "%s"))
+  end
+
+  # Addresses no literal grep can see, because the fork builds them in a loop
+  # over a table (`for prop, parse, listen, boolean in SCALAR_PROPERTIES`) or a
+  # list. Each expander reads that table straight out of the Python and applies
+  # the loop's own rules, so the addresses stay *derived* from the fork rather
+  # than copied into this file — a row added to SCALAR_PROPERTIES shows up here
+  # and has to be documented, exactly as a literal would.
+  #
+  # This is the same blind spot the quantize / swing_amount / undo-step describes
+  # at the bottom of this file exist for, closed generically for the two vendored
+  # handlers that grew loop registrations in the 2026-08-29 fork bump
+  # (return_track.py's track-parity tables, groove.py's whole surface).
+  defp loop_registered_addresses(@return_track_file) do
+    source = File.read!(@return_track_file)
+
+    scalar =
+      ~r/\(\s*"([a-z_]+)"\s*,\s*(\w+)\s*,\s*(True|False)\s*,\s*(True|False)\s*\)/
+      |> Regex.scan(python_table(source, "SCALAR_PROPERTIES"))
+      |> Enum.flat_map(fn [_, prop, parse, listen, _boolean] ->
+        both("get/#{prop}") ++
+          if(parse == "None", do: [], else: both("set/#{prop}")) ++
+          if(listen == "False",
+            do: [],
+            else: both("start_listen/#{prop}") ++ both("stop_listen/#{prop}")
+          )
+      end)
+
+    routing =
+      ~r/\(\s*"([a-z_]+)"\s*,\s*"([a-z_]+)"\s*\)/
+      |> Regex.scan(python_table(source, "ROUTING_PROPERTIES"))
+      |> Enum.flat_map(fn [_, prop, available] ->
+        both("get/#{available}") ++ both("get/#{prop}") ++ both("set/#{prop}")
+      end)
+
+    scalar ++ routing
+  end
+
+  # groove.py registers nothing literally: every address is
+  # "/live/groove/<verb>/%s" over GROOVE_FIELDS, plus `base`, which is rw but
+  # not observable and so gets no listen pair.
+  defp loop_registered_addresses(@groove_file) do
+    source = File.read!(@groove_file)
+
+    listenable = python_strings(python_table(source, "GROOVE_FIELDS"))
+    no_listen = python_strings(python_list(source, "properties_rw_no_listen"))
+
+    for prop <- listenable ++ no_listen, verb <- ["get", "set"] do
+      "/live/groove/#{verb}/#{prop}"
+    end ++
+      for prop <- listenable, verb <- ["start_listen", "stop_listen"] do
+        "/live/groove/#{verb}/#{prop}"
+      end
+  end
+
+  defp loop_registered_addresses(_file), do: []
+
+  # Both halves of a return_track.py table row: the loops walk every one of
+  # them once index-keyed for returns and once index-less for the master.
+  defp both(suffix), do: ["/live/return_track/#{suffix}", "/live/master/#{suffix}"]
+
+  defp python_table(source, name) do
+    [_, body] = Regex.run(~r/^#{name}\s*=\s*\((.*?)\)\s*$/ms, source)
+    body
+  end
+
+  defp python_list(source, name) do
+    [_, body] = Regex.run(~r/^\s*#{name}\s*=\s*\[(.*?)\]/ms, source)
+    body
+  end
+
+  defp python_strings(body) do
+    ~r/"([^"]+)"/ |> Regex.scan(body) |> Enum.map(fn [_, entry] -> entry end)
   end
 
   defp registered_addresses, do: Enum.flat_map(@handler_files, &registered_addresses/1)
@@ -1057,8 +1246,21 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     source = File.read!(file)
     family = Path.basename(file, ".py")
 
+    # `properties_rw = properties_rw + [...]` is how the fork appends its own
+    # entries to a list upstream owns, so a merge that takes upstream's version
+    # of the list cannot silently swallow them (song.py's C-1 block). The
+    # optional `\w+ +` before the bracket is what keeps those appended entries
+    # visible here.
+    #
+    # A file that splits its listen pairs into their own list registers *no*
+    # listeners from properties_r / properties_rw — application.py's C-3 split.
+    # Reading that off the source rather than naming the file keeps this
+    # derived: song.py inverts the same idea with properties_r_no_listen, and
+    # both are handled by the same two rules.
+    listen_split? = source =~ ~r/^\s*properties_listen\s*=/m
+
     expanded =
-      ~r/^\s*(methods|properties_r|properties_rw|mixer_properties_rw)\s*=\s*\[(.*?)\]/ms
+      ~r/^\s*(methods|properties_rw_no_listen|properties_r_no_listen|properties_listen|properties_rw|properties_r|mixer_properties_rw)\s*=\s*(?:\w+\s*\+\s*)?\[(.*?)\]/ms
       |> Regex.scan(source)
       |> Enum.flat_map(fn [_match, list_name, body] ->
         entries =
@@ -1069,29 +1271,43 @@ defmodule Seshat.OSC.VendoredAddressesTest do
             Regex.scan(~r/"([^"]+)"/, line) |> Enum.map(fn [_, entry] -> entry end)
           end)
 
-        Enum.flat_map(entries, &expand_registration(family, list_name, &1))
+        Enum.flat_map(entries, &expand_registration(family, list_name, listen_split?, &1))
       end)
 
-    # The literal scan also matches the loops' format strings
-    # ("/live/song/%s" % method) — those are the templates the expansion
-    # above already covers, not addresses.
-    literals = Enum.reject(registered_addresses(file), &String.contains?(&1, "%s"))
-
-    literals ++ expanded
+    # The literal scan drops the loops' format strings ("/live/song/%s" %
+    # method) itself — those are the templates the expansion above already
+    # covers, not addresses.
+    literal_addresses(file) ++ expanded
   end
 
-  defp expand_registration(family, "methods", entry), do: ["/live/#{family}/#{entry}"]
+  defp expand_registration(family, "methods", _split?, entry),
+    do: ["/live/#{family}/#{entry}"]
 
-  defp expand_registration(family, "properties_r", entry) do
+  defp expand_registration(family, "properties_listen", _split?, entry) do
     [
-      "/live/#{family}/get/#{entry}",
       "/live/#{family}/start_listen/#{entry}",
       "/live/#{family}/stop_listen/#{entry}"
     ]
   end
 
-  defp expand_registration(family, _rw, entry) do
-    ["/live/#{family}/set/#{entry}" | expand_registration(family, "properties_r", entry)]
+  defp expand_registration(family, "properties_r_no_listen", _split?, entry),
+    do: ["/live/#{family}/get/#{entry}"]
+
+  defp expand_registration(family, "properties_rw_no_listen", _split?, entry),
+    do: ["/live/#{family}/get/#{entry}", "/live/#{family}/set/#{entry}"]
+
+  defp expand_registration(family, "properties_r", split?, entry) do
+    ["/live/#{family}/get/#{entry}" | listen_pair(family, split?, entry)]
+  end
+
+  defp expand_registration(family, _rw, split?, entry) do
+    ["/live/#{family}/set/#{entry}" | expand_registration(family, "properties_r", split?, entry)]
+  end
+
+  defp listen_pair(_family, true, _entry), do: []
+
+  defp listen_pair(family, false, entry) do
+    ["/live/#{family}/start_listen/#{entry}", "/live/#{family}/stop_listen/#{entry}"]
   end
 
   # An address is documented when it appears literally, or — for a

@@ -1,3 +1,9 @@
+> **Archived 2026-08-29 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The feature now lives in
+> `Seshat.AX.Client`, `native/seshat_ax/main.m`, and the audio-output tool
+> definitions and handlers; incomplete live acceptance remains recorded below
+> and in the cited smoke tests.
+
 # Plan — AX-backed audio-output selection
 
 Roadmap item **“AX-backed audio output — the first narrow UI workflow.”** Two
@@ -19,12 +25,12 @@ is a failure even if the native AX calls themselves were fast.
 Live’s application-wide audio input/output preferences are absent from the
 installed Live 12.4.3 Live Object Model and from AbletonOSC. The absence was
 rechecked against the installed LOM allowlist, the fork, and
-[../priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md); this is a genuine LOM gap, not
+[../../priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md); this is a genuine LOM gap, not
 a missing fork address. The LOM-first rule therefore permits a narrow AX
 implementation while still rejecting AX for anything the fork can expose.
 
 The 2026-08-03 spike in
-[evaluating/ui-scripting-options.md](evaluating/ui-scripting-options.md)
+[../evaluating/ui-scripting-options.md](../evaluating/ui-scripting-options.md)
 established the complete mechanism on macOS 15.7.4 and Live 12.4.3:
 
 - Accessibility permission attached to the direct helper executable; no Apple
