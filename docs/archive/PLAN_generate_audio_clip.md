@@ -8,10 +8,10 @@
 > `audio_clip.ex`, `result.ex`), the `generate_audio` tool in
 > `Seshat.Tools.Definitions`/`Handlers`, and the roadmap's "Generate audio
 > onto a track — Stable Audio 3, imported as a clip" entry is removed. Two
-> defects the review found were left non-blocking and are now their own
-> roadmap items: "`variation_of` refuses a managed take when `~/.seshat` is a
-> symlink" and "Bounded generation diagnostics can drop the newest chunk
-> entirely on overflow." **None of this plan's four `## Live verification`
+> defects initially left as roadmap follow-ups were fixed on the PR after a
+> later review: managed-root containment now survives a symlinked `~/.seshat`,
+> and bounded runtime diagnostics retain the newest tail even when one port
+> chunk exceeds the configured cap. **None of this plan's four `## Live verification`
 > citations demonstrate the shipped feature yet**: both `auto/generation.md`
 > checks still read `*Last run: —*`; the manual `conversation.md` check is
 > unrun and needs a person; and `auto/mcp-surface.md`'s only recorded run

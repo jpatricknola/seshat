@@ -138,6 +138,7 @@ defmodule Seshat.Generation.AudioClip do
          :ok <- check_optional_prompt(negative, "negative_prompt"),
          :ok <- check_bars(bars),
          :ok <- check_strength(strength, variation),
+         :ok <- check_destination_track(track, variation),
          :ok <- check_track_name(track_name, track, variation) do
       {:ok,
        %{
@@ -202,6 +203,18 @@ defmodule Seshat.Generation.AudioClip do
      "strength only means something with variation_of — it sets how far a variation departs " <>
        "from the clip it is based on. Pass variation_of, or drop strength. Nothing was " <>
        "generated."}
+  end
+
+  defp check_destination_track(nil, _variation), do: :ok
+  defp check_destination_track(_track, nil), do: :ok
+
+  defp check_destination_track(track, %{track: track}), do: :ok
+
+  defp check_destination_track(track, %{track: source_track}) do
+    {:error,
+     "track #{track} conflicts with variation_of's source track #{source_track}. A variation " <>
+       "lands on the source clip's own track; omit track, or pass track #{source_track}. " <>
+       "Nothing was generated."}
   end
 
   defp check_track_name(nil, _track, _variation), do: :ok
@@ -363,8 +376,9 @@ defmodule Seshat.Generation.AudioClip do
     end
   end
 
-  # An explicit `track` wins; otherwise a variation lands on the track its
-  # source is on, which is what "another take, darker" means.
+  # Cross-field validation has already required an explicit destination to
+  # agree with a variation's source, so either spelling resolves to the same
+  # track. Keeping the explicit clause first also handles ordinary renders.
   defp destination_track(%{track: track}) when is_integer(track), do: track
   defp destination_track(%{variation: %{track: track}}), do: track
   defp destination_track(_request), do: nil
@@ -601,8 +615,37 @@ defmodule Seshat.Generation.AudioClip do
   end
 
   defp under_root?(path) do
-    root = generated_root()
-    String.starts_with?(path, root <> "/")
+    with {:ok, root_identity} <- file_identity(generated_root()) do
+      ancestor_has_identity?(Path.dirname(path), root_identity)
+    else
+      _ -> false
+    end
+  end
+
+  # Live reports the path after the fork has realpath-resolved it, while
+  # `generated_root/0` deliberately retains the configured spelling. Comparing
+  # directory identities instead of strings makes containment survive a
+  # symlinked ~/.seshat without accepting a similarly prefixed sibling or a
+  # symlink that escapes the root.
+  defp ancestor_has_identity?(directory, root_identity) do
+    case file_identity(directory) do
+      {:ok, ^root_identity} ->
+        true
+
+      _ ->
+        parent = Path.dirname(directory)
+
+        if parent == directory,
+          do: false,
+          else: ancestor_has_identity?(parent, root_identity)
+    end
+  end
+
+  defp file_identity(path) do
+    case File.stat(path) do
+      {:ok, %File.Stat{inode: inode, major_device: device}} -> {:ok, {inode, device}}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # `lstat`, not `stat`: a symlink is refused rather than followed, matching the

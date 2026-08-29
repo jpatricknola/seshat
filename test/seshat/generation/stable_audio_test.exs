@@ -299,6 +299,8 @@ defmodule Seshat.Generation.StableAudioTest do
 
       assert {:error, message} = StableAudio.generate(spec(root))
       assert byte_size(message) < 4_000
+      assert message =~ "The runtime's last output was:"
+      assert message =~ String.duplicate("x", 100)
     end
   end
 

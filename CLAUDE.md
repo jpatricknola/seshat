@@ -321,16 +321,21 @@ the reservation-collision test only passed by timing luck and now retries
 until both takes actually land in the same UTC second; and a missing
 sentence-terminating period, a nonsense message on a zero-scene set, two
 dead code paths in `unwrap/1`, and a fully-qualified struct reference were
-all cleaned up. Two real defects were declined as local fixes and added to
-the roadmap instead, both needing a genuine behavior change and a
+all cleaned up. Two real defects were initially declined as local fixes and
+added to the roadmap, both needing a genuine behavior change and a
 filesystem- or size-dependent test rather than a one-line correction:
 "`variation_of` refuses a managed take when `~/.seshat` is a symlink"
 (`under_root?/1` compares expanded-but-unresolved paths, the same trap
 `same_file?/2` twenty lines below it was written to avoid) and "Bounded
 generation diagnostics can drop the newest chunk entirely on overflow"
 (`trim/3`'s single-oversized-chunk case discards the newest output instead
-of tailing it, reachable only below the shipped 32KB default). Two more
-were left for the PR reader to judge rather than acted on: `mix
+of tailing it, reachable only below the shipped 32KB default). Both were
+subsequently fixed on the PR: containment walks the reported file's ancestor
+directories by inode/device until it finds the configured root, with a real
+symlinked-directory regression test, and the diagnostics base case retains
+the final configured number of bytes from an oversized chunk with content
+asserted in the test. Two more were left for the PR reader to judge rather
+than acted on: `mix
 routing.eval` was not run despite the `Definitions` change (52 → 53 tools),
 and `observed.name` was read back on every generation but never surfaced or
 compared.
@@ -355,6 +360,13 @@ though the audio did. The live check gained the one assertion neither suite
 made — a duration-exact file of digital silence satisfied every existing
 criterion, so `auto/generation.md` now measures peak level. `mix
 routing.eval` remains unrun and remains the reader's call.
+
+A final review pass fixed one contract violation: an explicit destination
+`track` could disagree with `variation_of.track`, and the workflow silently
+gave the explicit destination priority even though the published schema says
+a variation lands on its source clip's track. Cross-field validation now
+rejects the disagreement before any OSC or backend call, while accepting a
+redundant explicit track when it matches the source.
 
 **Live verification has not run.** Both `auto/generation.md` checks ("A
 generated clip lands, reads back, and its file is duration-exact", "An

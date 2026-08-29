@@ -367,10 +367,16 @@ defmodule Seshat.Generation.StableAudio do
       {oldest, rest} ->
         size = size - byte_size(oldest)
 
-        if size > cap and rest != [] do
-          trim(rest, size, cap)
-        else
-          {rest, size}
+        cond do
+          size > cap and rest != [] ->
+            trim(rest, size, cap)
+
+          rest == [] and byte_size(oldest) > cap ->
+            kept = binary_part(oldest, byte_size(oldest) - cap, cap)
+            {[kept], cap}
+
+          true ->
+            {rest, size}
         end
     end
   end

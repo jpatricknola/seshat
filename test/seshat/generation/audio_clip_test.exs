@@ -187,6 +187,29 @@ defmodule Seshat.Generation.AudioClipTest do
       assert request.strength == 0.55
     end
 
+    test "a variation cannot name a different destination track" do
+      assert {:error, message} =
+               AudioClip.validate(%{
+                 "description" => "same but darker",
+                 "track" => 1,
+                 "variation_of" => %{"track" => 0, "clip_slot" => 0}
+               })
+
+      assert message =~ "track 1 conflicts with variation_of's source track 0"
+      assert message =~ "Nothing was generated"
+    end
+
+    test "a redundant destination matching the variation source is accepted" do
+      assert {:ok, request} =
+               AudioClip.validate(%{
+                 "description" => "same but darker",
+                 "track" => 0,
+                 "variation_of" => %{"track" => 0, "clip_slot" => 0}
+               })
+
+      assert request.track == request.variation.track
+    end
+
     test "track_name alongside an existing track is refused" do
       assert {:error, message} =
                AudioClip.validate(%{
@@ -514,6 +537,32 @@ defmodule Seshat.Generation.AudioClipTest do
       assert message =~ "outside Seshat's generated-audio folder"
 
       refute_received {:generate, _spec}
+    end
+
+    test "a managed source survives a symlinked generated root", context do
+      real_root = context.root <> "-real"
+      File.mkdir_p!(real_root)
+      File.ln_s!(real_root, context.root)
+      on_exit(fn -> File.rm_rf(real_root) end)
+
+      source = Path.join(real_root, "earlier-take.wav")
+      File.write!(source, "RIFF")
+
+      # The fork realpaths the import name before handing it to Live, so its
+      # file_path getter reports the target spelling, not the configured link.
+      live = put_in(LiveDouble.session().clips[{0, 0}][:path], source)
+
+      {result, _trace} =
+        run(
+          context,
+          %{"description" => "darker", "variation_of" => %{"track" => 0, "clip_slot" => 0}},
+          live
+        )
+
+      assert {:ok, generated} = result
+      assert generated.variation.track == 0
+      assert_received {:generate, spec}
+      assert spec.init_audio == source
     end
 
     test "a MIDI clip is refused as a variation source", context do
