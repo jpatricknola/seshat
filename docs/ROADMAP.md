@@ -37,152 +37,97 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Live-native generation spike — can AX drive the Create menu?
+## #1 · MIDI generation — the first solution, composed symbolically
 
-**Impact 4 · Lift 3 · 1.33 impact-per-effort**
+**Impact 9 · Lift 6 · 1.50 impact-per-effort**
 
-**Ranked above its quotient on 2026-08-28** as the gate for "MIDI
-generation — decision experiment": until it runs, five of Live's own
-features are candidates, not routes, and the experiment's arms cannot be
-fixed.
-
-Plan: [PLAN_live_native_generation_spike.md](PLAN_live_native_generation_spike.md)
-— a committed read-mostly probe (`native/seshat_ax/probe/menu_probe.m`,
-allowlisted press only), the dialog members read through the temporary
-probe-handler rig, one press per command bracketed by track counts and an
-undo step, and the result written as §4 "Measured" of
-`live-native-options.md`. Planning already measured (2026-08-28, Live 12.4.5
-Suite) that every target command sits in the menu bar with `AXPress`, that
-`AXEnabled` reads while Live is inactive, and that a clip selected over OSC
-flips that state — so the mechanism is select-over-OSC, press-over-AX,
-observe-over-OSC, and the context menu is out unless a menu-bar press fails.
-
-**Goal:** one measured answer to whether Seshat can invoke Live's Create-menu
-and clip-context-menu commands through the named-AX rung, recorded in
-[live-native-options.md](evaluating/generative%20features/live-native-options.md)
-§4 "Unmeasured". Not a tool. A spike with a written result.
-
-**Why:** the 2026-08-27 native pass found Live already ships the pieces the
-generation research had been surveying dependencies for — **Stem
-Separation** (12.3, Suite), **Convert Drums / Melody / Harmony to New MIDI
-Track**, **Slice to New MIDI Track**, **Extract Groove**, and **Bounce**.
-Every one is UI-only (absent from `_MxDCore/LomTypes.pyc` at any spelling)
-and reachable, if at all, only through the Accessibility helper. That rung
-has been validated exactly once (the Settings window, 2026-08-03) and never
-against a menu command. Live's separator would make joint Route C the
-arm with *zero* dependency and licence surface — the doc's verdict is
-"joint C uses Live Stem Separation or does not run" — and Convert Drums is
-the zero-licence floor for drum transcription. Whether any of that is real
-is a one-afternoon question that has not been asked.
-
-**Context for the plan author:**
-- Read [ui-scripting-options.md](evaluating/ui-scripting-options.md) for
-  the mechanism ladder and safety model, and its 2026-08-27 production-
-  helper measurement. `native/seshat_ax/main.m` is deliberately a closed
-  four-command protocol with no generic press command; the spike may use a
-  scratch build or `ax-probe`, but the result should say what a *bounded*
-  new command would look like, not add a generic one.
-- Procedure the doc already names: enumerate Live's Create menu and a
-  clip's context menu; import one SA3 render from `~/.seshat/audio-spike/`
-  by hand; run Stem Separation and Convert Drums once each; record menu
-  reachability, any mode dialog (`press_current_dialog_button` exists in the
-  LOM), duration, and what `Session.State` sees — the track-count push is
-  the natural completion signal.
-- Also worth one check each while there: Convert Drums' lane count and
-  whether its velocities vary on SA3 material; whether a `.agr` groove loads
-  into the pool through `Browser.load_item`; Stem Separation's behaviour on
-  a short loop.
-- Output is a result section in `live-native-options.md` plus, for each
-  command, a verdict of route / not-a-route / needs-its-own-item. If the
-  menu is unreachable, say so and the MIDI experiment drops those arms;
-  that is a valid outcome.
-- Suite gate: Stem Separation is Suite-only. Acceptable for an optional
-  arm; the result must record which edition it ran on.
-
-## #2 · MIDI generation — the decision experiment
-
-**Impact 9 · Lift 8 · 1.12 impact-per-effort**
+**Re-scoped 2026-08-30.** This item was "MIDI generation — the decision
+experiment": a four-arm blinded bake-off in which three arms generated audio
+with Stable Audio 3 and transcribed it to MIDI (Route C). **Audio generation
+transcribed to MIDI is rejected as the primary strategy for composing
+MIDI.** It may serve specific cases later, but it is not the first solution
+Seshat builds for MIDI generation. The reason is a property of the
+generator, observed the day `generate_audio` shipped: Stable Audio's text
+conditioning is semantic, not symbolic. It has no notion of "exactly two
+beats" or "a half note"; the *file* is duration-exact but the rhythm inside
+it is free-running — tempo drift, off-grid downbeats, note lengths the
+prompt never controlled. Transcribing that stacks transcription error on
+top of loose material, and the loose material cannot be fixed with prompt
+wording. A MIDI part has to be on the grid by construction, with the feel
+carried in velocity and micro-timing, not recovered from audio after the
+fact.
 
 Plan: [PLAN_midi_generation_decision_experiment.md](PLAN_midi_generation_decision_experiment.md)
-— clears the three prerequisites (IDM spike, GMD retrieval, GrooVAE
-go/no-go), fixes ten prompts and a bounded derived-bass rule, renders every
-arm through the existing tool surface onto fixed instruments, and scores
-blind; the AX-gated arms run as a second session once the spike reports.
-Planning measured the full Live-side cost of one four-part request (6.45 s
-in-process) and the `/live/clip/add/notes` ceiling (367 notes), which the
-per-lane writes stay under — so the chunking item is no longer a gate.
+was written for the four-arm bake-off and carries a banner saying so. Its
+prerequisite sections for the GMD retrieval engine and the GrooVAE go/no-go,
+its fixed prompts, its bounded derived-bass rule, its in-Live rendering
+harness and its blind-judging protocol all still hold; the IDM spike, the
+separator question, the joint-C arm and the MRT2 arm do not. Re-plan from
+it rather than from scratch. Planning already measured the full Live-side
+cost of one four-part request (6.45 s in-process) and the
+`/live/clip/add/notes` ceiling (367 notes), which per-lane writes stay
+under — so the chunking item is not a gate.
 
-**Gated on "Live-native generation spike"** (which arms exist) and, for
-dense rendered clips, on "`write_midi_notes` must chunk large note batches".
+**No longer gated on "Live-native generation spike."** That spike only
+decided which transcription arms existed; with transcription demoted it
+gates nothing here. This item is ready.
 
-**Goal:** choose the backend and the wiring for MIDI generation by a blinded
-listening bake-off of complete pipelines, so that a feature plan can be
-written against a winner instead of a shortlist. The deliverable is a
-verdict recorded in
-[midi-generation-options.md](evaluating/generative%20features/midi-generation-options.md),
-not a tool. The feature itself — "make me a dusty lo-fi beat with a
-bassline" landing as per-part MIDI tracks — gets its own item once this
-one has a result.
+**Goal:** choose and ship the first MIDI generation path — "make me a dusty
+lo-fi beat with a bassline" landing as per-part MIDI tracks — from
+candidates that produce *notes*, not audio. The deliverable is still a
+by-ear verdict recorded in
+[midi-generation-options.md](evaluating/generative%20features/midi-generation-options.md)
+before a feature plan is written against the winner, but the field is
+narrower and the listening slate smaller.
 
-**Why:** the research is done and honest: "no route has earned a product
-recommendation yet." Route A (local symbolic models) is dead today — three
-ran here and reproduced the uniform-velocity failure at 1–48 s, the best
-new papers have no weights, and MIDI-GPT's weights are CC-BY-NC. Route B
-(a service) does not exist. Two finalists remain and the evidence cannot
-separate them without ears: **Route C** (Stable Audio 3 → transcription;
-Basic Pitch measured at 0.06 s and clean on bass, drums needing a
-transcriber that is still unspiked) and **Route D** (Groove MIDI Dataset
-retrieval, 3 MB, CC-BY-4.0, nine lanes of real human performance; GrooVAE
-behind it with an unresolved checkpoint licence). Orthogonal to backend is
-*wiring* — independent, conditioned (drums first, bass responds to the
-actual kick), or joint-then-separated — and the doc's own finding is that
-"a beat with a bassline" is the main case, so wiring is not optional.
-Proxy metrics (note counts, onset offsets) have been measured to
-exhaustion; the only remaining instrument is a person listening to final
-MIDI rendered through the same Live instruments. Read
+**Why:** the research is done and honest: Claude composing notes directly
+failed on feel (2026-08-25); local symbolic models (Route A) are dead today
+— uniform velocity, no released weights, or non-commercial licences; no
+service (Route B) exists; and Route C is now off the table as the primary
+path. What remains is real human performance data and rules: **Route D**
+retrieval from the Groove MIDI Dataset (3 MB, CC-BY-4.0, nine lanes of
+played drums, on the grid by construction with human micro-timing intact),
+GrooVAE behind it if its checkpoint licence clears, and a bounded
+rule-derived bass that responds to the retrieved kick and snare positions.
+That is a smaller bet than the bake-off was, and an honest one: it can be
+judged by ear in one session. Read
 [music-generation-user-stories.md](evaluating/generative%20features/music-generation-user-stories.md)
-for the acceptance bar the winner must clear; it settles that one request
-is one undo step, separate parts per track, MIDI the default.
+for the acceptance bar; it settles that one request is one undo step,
+separate parts per track, MIDI the default.
 
 **Context for the plan author:**
-- The doc's "Recommendation: run the decision experiment" is the protocol:
-  fix 8–12 prompts first (drum-only, bass-only, combined, and bass against
-  existing Session-view MIDI); clear prerequisites; run controlled
-  one-factor subtests; then the product bake-off between **independent C**,
-  **conditioned/D** (GMD drums + bounded rule-derived bass),
-  **conditioned/C** (SA3→IDM drums + the same bass engine) and **joint C**
-  (one render → Live Stem Separation → two transcriptions); judge blind on
-  final MIDI only; choose by quality, break ties toward the simpler,
-  licence-clean pipeline.
-- **Prerequisites are their own work and should be listed as such:** spike
-  Inverse Drum Machine (Apache-2.0, the only permissive drum-transcription
-  candidate — ADTOF and its port are excluded on licence, and must not be
-  substituted silently) on the existing SA3 drum WAVs for latency, install
-  weight, class vocabulary and GM mapping; settle GrooVAE's hosted-checkpoint
-  terms and its nine npm advisories, or drop it; verify the downbeat and
-  loop boundary on the existing WAV slate.
-- The context-aware prompts get a fifth arm, **MRT2 offline render →
-  transcription**, because Magenta RealTime 2's pianoroll channel is the
-  only local symbolic conditioning that exists. It is gated on Spike A1's
-  offline real-time factor in
-  [live-improv-exploration.md §12](evaluating/generative%20features/live-improv-exploration.md),
-  and a Route C / D result must not wait on it.
-- Two Live-side prerequisites the experiment can dodge but the eventual
-  feature cannot, worth measuring here since the harness will exist:
-  `Clip.groove` assignment by pool index (a fork gap — the cheapest real
-  "follow this section's timing" mechanism) and reading the selected scene
-  (`/live/view/get/selected_scene` has no tool or mirror, so "this section"
-  cannot be resolved today).
-- Full Live-side latency has never been measured: track creation, catalog
-  lookup, `load_device`, clip write, verification. The compute budget is
-  ~10 s; the product budget is unset. Time one complete multi-part request.
+- **Drums first.** Route D retrieval is the only candidate with measured
+  human dynamics, a clean licence and zero inference; the options doc calls
+  it "a strong drum finalist" (§D.1, §D.3). The go/no-go is whether a
+  finite genre/feel vocabulary can serve free-text requests like "dusty
+  lo-fi" — the attribute layer between Claude's language and the retrieval
+  query is the design work, and the MuseCoco precedent in §D.3 (text →
+  attributes → material, the attribute layer as the stable seam) is the
+  shape to keep so a later backend can sit behind the same contract.
+- **Bass is the weak lane and should be said to be.** The bounded
+  rule-derived bass (§E.1) is a baseline: rhythm from the drum skeleton,
+  pitch from Claude's harmonic choices, velocity and articulation by rule.
+  Judge it by ear; if it fails, the plan says so and bass waits, rather
+  than reaching back for transcription.
+- **Melody and harmony have no symbolic candidate today.** That is the
+  "specific case" in which audio→MIDI may eventually earn a place; it is
+  not this item's scope. Watch Agogic and MIDILM for runnable artifacts.
+- **Wiring still matters.** Independent placement is the baseline;
+  conditioned (drums first, bass responds to the actual kick) is the
+  hypothesis. Both are cheap with symbolic drums; test them, one factor at
+  a time.
+- Two Live-side prerequisites the experiment can dodge but the feature
+  cannot, worth measuring while the harness exists: `Clip.groove`
+  assignment by pool index (a fork gap — the cheapest "follow this section's
+  timing" mechanism) and reading the selected scene
+  (`/live/view/get/selected_scene` has no tool or mirror).
 - The listening slate needs fixed comparison instruments; sound selection
-  per lane ("dusty" affecting which kick loads) is judged separately from
-  note quality and is not this experiment's question.
-- Rendered results may be written to Live through `write_midi_notes`;
-  eight-bar dense drums can exceed one datagram, hence the chunking gate.
+  per lane is judged separately from note quality.
+- Rendered results are written through `write_midi_notes`; eight-bar dense
+  drums can approach one datagram, so keep "`write_midi_notes` must chunk
+  large note batches" in view.
 
-## #3 · Generated-audio alignment, warping and quality polish
+## #2 · Generated-audio alignment, warping and quality polish
 
 **Impact 7 · Lift 5 · 1.40 impact-per-effort**
 
@@ -191,7 +136,7 @@ is one undo step, separate parts per track, MIDI the default.
 the real imported fixtures this item measures — though its own live checks
 have not run yet (see the archived plan's banner), so confirm those before
 treating the fixtures as settled. **Deliberately sequenced after "MIDI
-generation — the decision experiment" by decision on 2026-08-29** — the audio
+generation — the first solution, composed symbolically" by decision on 2026-08-29** — the audio
 story was split into two PRs, and the MIDI half is worth more than polishing
 audio that already lands in the right slot.
 
@@ -205,7 +150,18 @@ holding the first generation/import PR hostage to DSP and listening details.
 
 **Why:** the spike already shows that exact file duration is not the same as a
 musical loop: several drum renders begin between grid lines and many fade near
-the file end. Live may also choose looping and warping defaults that vary with
+the file end. The cause was named on 2026-08-30, the day the tool shipped:
+Stable Audio's text conditioning is semantic, not symbolic — it has no notion
+of "exactly two beats" or "a half note", so the appended "120 BPM, 4/4 time"
+steers loosely and nothing in the prompt can lock the content inside a
+duration-exact file to the grid. That is the same finding that demoted
+audio→MIDI transcription as the primary MIDI strategy (see "MIDI generation —
+the first solution, composed symbolically"), and it points at the lever this
+item should reach for first: **audio conditioning**, already wired as
+`variation_of` (`--init-audio` / `--init-noise-level`) — a click or rhythmic
+skeleton at the session tempo as the init signal is a far stronger grid
+constraint than any wording. Reading back the warp tempo Live detects on
+import against the session tempo is the cheap measurement. Live may also choose looping and warping defaults that vary with
 content or preferences. The MVP produces real imported fixtures and reports
 those observations; this follow-up then solves the measured failures instead of
 guessing at them in the initial tool contract.
@@ -234,19 +190,25 @@ guessing at them in the initial tool contract.
 Keep any model/runtime or OSC additions in this PR proportionate to the
 specific failing measurements.
 
-## #4 · Generated material lands one instrument per track
+## #3 · Generated material lands one instrument per track
 
 **Impact 9 · Lift 8 · 1.12 impact-per-effort**
 
 **The render and import half this splits has shipped** as `generate_audio`
 (archived at [PLAN_generate_audio_clip.md](archive/PLAN_generate_audio_clip.md)).
-**Gated on "Live-native generation spike"** (whether Live's own *Separate
-Stems* and *Convert Drums* are pressable, which decides two of the routes
-below) and on "MIDI generation — the decision experiment" (which
-transcriber, if any, supplies the lanes). **Ranked directly under those two
-by decision on 2026-08-29**: a generated file with more than one instrument
-in it is not finished until each instrument has its own track, so this is
-the second half of the generation feature, not an enhancement to it.
+**Gated on "MIDI generation — the first solution, composed symbolically"**,
+which decides what a multi-part *MIDI* request produces per lane. **Ranked
+directly under the generation items by decision on 2026-08-29**: a generated
+result with more than one instrument in it is not finished until each
+instrument has its own track, so this is the second half of the generation
+feature, not an enhancement to it. **Re-scoped 2026-08-30:** the
+transcription lanes below (Convert Drums, Inverse Drum Machine, Basic Pitch)
+are no longer the expected source of per-lane MIDI — audio→MIDI is rejected
+as the primary MIDI strategy — so for MIDI parts the split comes from the
+symbolic backend, which already produces one lane per instrument. What this
+item still has to solve on its own is the *audio* case: a joint audio render
+split into per-instrument audio tracks, which is where the separators and
+the "Live-native generation spike" (Stem Separation) still apply.
 
 **Goal:** when a generated result contains more than one instrument — a
 drum kit is the main case: kick, snare, hats, toms, percussion — each
@@ -312,8 +274,8 @@ promise meets an audio render.
   one Drum Rack on one track, so Seshat still has to split lanes across
   tracks afterwards (extra mutations, and the Drum Rack pad map is a fork
   gap — `DrumChain.in_note`, `RackDevice.insert_chain`); a transcriber over
-  the render — Inverse Drum Machine (Apache-2.0, class count unverified) or
-  whatever the decision experiment picks; GMD retrieval — nine lanes, but it
+  the render — Inverse Drum Machine (Apache-2.0, class count unverified), a
+  specific-case lane only since the 2026-08-30 ruling; GMD retrieval — nine lanes, but it
   replaces the render rather than splitting it. Per-lane MIDI then lands
   through `write_midi_notes` onto per-track instruments chosen from the
   catalog — sound selection per lane is its own question and should be
@@ -335,6 +297,76 @@ promise meets an audio render.
 - Bass and melodic parts through Basic Pitch (measured 0.06 s, clean on
   bass) are the same shape with a different transcriber; the plan should
   say whether v1 is drums-only.
+
+## #4 · Live-native generation spike — can AX drive the Create menu?
+
+**Impact 4 · Lift 3 · 1.33 impact-per-effort**
+
+**Un-pinned 2026-08-30.** It was ranked above its quotient on 2026-08-28 as
+the gate for the MIDI decision experiment, because it decided which of
+Live's transcription commands could be an arm. Audio→MIDI transcription has
+since been rejected as the primary MIDI strategy (see "MIDI generation — the
+first solution, composed symbolically"), so nothing in that item waits on
+this. It stays in the generation block at its own quotient for what it still
+serves: *Stem Separation* and *Extract Groove* for the audio side ("Generated-
+audio alignment, warping and quality polish" and the audio-split half of
+"Generated material lands one instrument per track"), and *Convert Drums /
+Melody / Harmony* as the zero-dependency transcription lane for whatever
+specific case audio→MIDI may later earn — reachable or not is still worth one
+afternoon's measurement, just not first.
+
+Plan: [PLAN_live_native_generation_spike.md](PLAN_live_native_generation_spike.md)
+— a committed read-mostly probe (`native/seshat_ax/probe/menu_probe.m`,
+allowlisted press only), the dialog members read through the temporary
+probe-handler rig, one press per command bracketed by track counts and an
+undo step, and the result written as §4 "Measured" of
+`live-native-options.md`. Planning already measured (2026-08-28, Live 12.4.5
+Suite) that every target command sits in the menu bar with `AXPress`, that
+`AXEnabled` reads while Live is inactive, and that a clip selected over OSC
+flips that state — so the mechanism is select-over-OSC, press-over-AX,
+observe-over-OSC, and the context menu is out unless a menu-bar press fails.
+
+**Goal:** one measured answer to whether Seshat can invoke Live's Create-menu
+and clip-context-menu commands through the named-AX rung, recorded in
+[live-native-options.md](evaluating/generative%20features/live-native-options.md)
+§4 "Unmeasured". Not a tool. A spike with a written result.
+
+**Why:** the 2026-08-27 native pass found Live already ships the pieces the
+generation research had been surveying dependencies for — **Stem
+Separation** (12.3, Suite), **Convert Drums / Melody / Harmony to New MIDI
+Track**, **Slice to New MIDI Track**, **Extract Groove**, and **Bounce**.
+Every one is UI-only (absent from `_MxDCore/LomTypes.pyc` at any spelling)
+and reachable, if at all, only through the Accessibility helper. That rung
+has been validated exactly once (the Settings window, 2026-08-03) and never
+against a menu command. Live's separator is the zero-dependency,
+zero-licence path to per-instrument audio, and Convert Drums is the
+zero-licence floor for drum transcription should a specific case for
+audio→MIDI arise. Whether any of that is real is a one-afternoon question
+that has not been asked.
+
+**Context for the plan author:**
+- Read [ui-scripting-options.md](evaluating/ui-scripting-options.md) for
+  the mechanism ladder and safety model, and its 2026-08-27 production-
+  helper measurement. `native/seshat_ax/main.m` is deliberately a closed
+  four-command protocol with no generic press command; the spike may use a
+  scratch build or `ax-probe`, but the result should say what a *bounded*
+  new command would look like, not add a generic one.
+- Procedure the doc already names: enumerate Live's Create menu and a
+  clip's context menu; import one SA3 render from `~/.seshat/audio-spike/`
+  by hand; run Stem Separation and Convert Drums once each; record menu
+  reachability, any mode dialog (`press_current_dialog_button` exists in the
+  LOM), duration, and what `Session.State` sees — the track-count push is
+  the natural completion signal.
+- Also worth one check each while there: Convert Drums' lane count and
+  whether its velocities vary on SA3 material; whether a `.agr` groove loads
+  into the pool through `Browser.load_item`; Stem Separation's behaviour on
+  a short loop.
+- Output is a result section in `live-native-options.md` plus, for each
+  command, a verdict of route / not-a-route / needs-its-own-item. If the
+  menu is unreachable, say so; that is a valid outcome, and nothing on the
+  MIDI side changes either way.
+- Suite gate: Stem Separation is Suite-only. Acceptable for an optional
+  arm; the result must record which edition it ran on.
 
 ## #5 · Catalog vocabulary — read tag axes, teach the menu proactively
 
@@ -586,9 +618,10 @@ not work that should remain buried inside the prospective music-generation
 plan; generated 8–16 bar drums merely make it easier to hit. The generation
 work in [docs/evaluating/generative features/midi-generation-options.md](evaluating/generative%20features/midi-generation-options.md)
 depends on this fix for dense or long clips. "MIDI generation — the
-decision experiment" now sits above this item by decision (2026-08-28) and
-names this as one of its gates; when that experiment is picked up, land this
-first.
+first solution, composed symbolically" sits above this item and, since its
+2026-08-30 re-scope, measured that per-lane writes stay under the ceiling —
+so this is no longer a gate for it, only a defect a dense request can still
+hit. Land it when the first dense clip does.
 
 **User stories:**
 - As a producer writing a dense or long MIDI clip, all requested notes land in
@@ -1256,5 +1289,20 @@ device-chain mirror's — these are ordinary fork commits on the fixed base clas
   merge). Both are covered by prose in `/implement` and `/pr-review`; neither
   is worth automating while upstream is dormant and there is one committer.
   Reopen if a merge actually goes wrong because of one.
+- **Audio generation transcribed to MIDI as the primary MIDI strategy**
+  (Stable Audio 3 → Stem Separation / Convert Drums / Inverse Drum Machine /
+  Basic Pitch → notes). Rejected 2026-08-30, the day `generate_audio`
+  shipped: the generator's text conditioning is semantic, not symbolic — no
+  notion of "two beats" or "a half note", so a duration-exact file carries
+  free-running rhythm inside it, and transcription stacks its own error on
+  top of that. It may still earn a place for a specific case (melody and
+  harmony have no symbolic candidate today; Convert Drums is a zero-licence
+  lane), but it is not the first solution built. The research behind it —
+  [midi-generation-options.md](evaluating/generative%20features/midi-generation-options.md)
+  §C — stands as evidence, and the two plan docs written for the four-arm
+  bake-off carry banners. **Reopen** only for a named case the symbolic path
+  cannot serve, or if a generator arrives whose rhythm is grid-locked by
+  construction (audio conditioning on a click is the nearest lever; measure
+  it under "Generated-audio alignment, warping and quality polish" first).
 - Anything related to Windows. It would be nice for this to work on a windows machine,
   but currently we are not focused on this.

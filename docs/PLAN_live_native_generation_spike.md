@@ -1,5 +1,14 @@
 # Plan — Live-native generation spike: can AX drive the Create menu?
 
+> **Status 2026-08-30: still valid, no longer a gate.** This spike was pinned
+> above its quotient as the gate for the MIDI decision experiment, deciding
+> which of Live's transcription commands could be an arm. Audio→MIDI
+> transcription has since been rejected as the primary MIDI strategy, so the
+> MIDI item no longer waits on it. The procedure and acceptance below are
+> unchanged; what changed is what the result feeds — Stem Separation and
+> Extract Groove for the audio side, Convert Drums / Melody / Harmony for a
+> specific case that has not been opened. Run it at its own quotient.
+
 Roadmap item **"Live-native generation spike — can AX drive the Create
 menu?"** A spike with a written result, not a tool. It answers, by
 measurement against the running Live, whether Seshat can invoke Live's own

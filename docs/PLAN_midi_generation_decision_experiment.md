@@ -1,5 +1,17 @@
 # Plan — MIDI generation: the decision experiment
 
+> **Status 2026-08-30: superseded pending re-scope, do not run as written.**
+> Audio generation transcribed to MIDI (Route C) was rejected as the primary
+> MIDI strategy on 2026-08-30 — Stable Audio's text conditioning has no
+> rhythmic precision, so a duration-exact render carries free-running rhythm
+> and transcription stacks error on it. Three of this plan's four arms and
+> the MRT2 arm are Route C and are withdrawn. The GMD retrieval engine, the
+> GrooVAE go/no-go, the fixed prompts, the bounded derived-bass rule, the
+> in-Live rendering harness and the blind-judging protocol all still hold and
+> should seed the re-plan for the roadmap item "MIDI generation — the first
+> solution, composed symbolically". The IDM spike and the separator question
+> are out of scope until a specific case for audio→MIDI is opened.
+
 Roadmap item **"MIDI generation — the decision experiment."** Not a tool and
 not a fork change: a blinded listening bake-off between complete MIDI
 pipelines, rendered into the open Live set through Seshat's *existing* tool

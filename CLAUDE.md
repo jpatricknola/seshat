@@ -280,6 +280,28 @@ That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
 
+**Audio→MIDI transcription is rejected as the primary MIDI strategy,
+decided 2026-08-30** the same day `generate_audio` shipped, on a property of
+the generator rather than a listening result: Stable Audio's text
+conditioning is semantic, not symbolic — no notion of "exactly two beats" or
+"a half note" — so a duration-exact render carries free-running rhythm, and
+transcribing it stacks error on loose material that no prompt wording can
+tighten. It may serve a specific case later (melody and harmony have no
+symbolic candidate; Live's Convert Drums is a zero-licence lane) but it is
+not the first solution built. The roadmap's four-arm "MIDI generation — the
+decision experiment" was re-scoped into "MIDI generation — the first
+solution, composed symbolically" (Route D retrieval from the Groove MIDI
+Dataset for drums, a bounded rule-derived bass, wiring tested one factor at
+a time) and moved to the top of the queue as ready work; "Live-native
+generation spike" was un-pinned to its own quotient, since nothing on the
+MIDI side waits on it any more; both plan docs carry status banners rather
+than rewrites, and
+[midi-generation-options.md](docs/evaluating/generative%20features/midi-generation-options.md)
+records the ruling under "Verdict up front" with §C kept as evidence. The
+same finding gives "Generated-audio alignment, warping and quality polish"
+its first lever: audio conditioning on a click at the session tempo, which
+`variation_of` already wires.
+
 **Generate audio onto a track shipped 2026-08-30** on branch `create-audio`,
 closing the queue's former top item, "Generate audio onto a track — Stable
 Audio 3, imported as a clip," the first of the two PRs the audio story was
