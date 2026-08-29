@@ -2,7 +2,7 @@
 
 Roadmap item **“Generated-audio alignment, warping and quality polish.”** The
 second half of the audio-generation story, split out from
-[PLAN_generate_audio_clip.md](PLAN_generate_audio_clip.md) on 2026-08-29 and
+[PLAN_generate_audio_clip.md](archive/PLAN_generate_audio_clip.md) on 2026-08-29 and
 deliberately sequenced **after** the roadmap's MIDI generation item.
 
 The first PR gets a duration-exact render into the right slot on the right

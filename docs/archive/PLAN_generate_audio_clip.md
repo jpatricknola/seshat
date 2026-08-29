@@ -1,5 +1,26 @@
 # Plan — Generate audio onto a track (MVP)
 
+> **Archived 2026-08-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ (see the PR for the
+> implementer's per-item report, the review's verdict and nits, and the
+> assumptions carried through the run). The feature lives in
+> `lib/seshat/generation/` (`spec.ex`, `backend.ex`, `stable_audio.ex`,
+> `audio_clip.ex`, `result.ex`), the `generate_audio` tool in
+> `Seshat.Tools.Definitions`/`Handlers`, and the roadmap's "Generate audio
+> onto a track — Stable Audio 3, imported as a clip" entry is removed. Two
+> defects the review found were left non-blocking and are now their own
+> roadmap items: "`variation_of` refuses a managed take when `~/.seshat` is a
+> symlink" and "Bounded generation diagnostics can drop the newest chunk
+> entirely on overflow." **None of this plan's four `## Live verification`
+> citations demonstrate the shipped feature yet**: both `auto/generation.md`
+> checks still read `*Last run: —*`; the manual `conversation.md` check is
+> unrun and needs a person; and `auto/mcp-surface.md`'s only recorded run
+> (2026-08-28, 52 tools) predates this tool's addition to the surface (now
+> 53), so it does not actually cover the `variation_of` object-typed schema
+> the citation was added for. Run `/smoke-test generation` and
+> `/smoke-test mcp-surface`, plus the manual conversation check, before
+> trusting this feature's live behaviour.
+
 Roadmap item **“Generate audio onto a track — Stable Audio 3, imported as a
 clip.”** Add one MCP tool, `generate_audio`, that renders short audio locally
 with the installed Stable Audio 3 MLX runtime, keeps every take in Seshat's
@@ -11,7 +32,7 @@ This is deliberately the first of **two** PRs. It proves the generation/import
 workflow and preserves honest observability. It does **not** analyze rhythmic
 phase, repair loop seams, alter warp or loop markers, or offer a second quality
 lane. Those audio-polish concerns are planned separately in
-[PLAN_generate_audio_polish.md](PLAN_generate_audio_polish.md), which is
+[PLAN_generate_audio_polish.md](../PLAN_generate_audio_polish.md), which is
 sequenced **after** the roadmap's MIDI generation item and finalised against the
 fixtures this PR produces.
 
@@ -109,7 +130,7 @@ the kept take.
 ## OSC contract
 
 Existing addresses were checked against
-[priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md) at fork pin `fe6730e` on
+[priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md) at fork pin `fe6730e` on
 2026-08-29, the commit Part 0 installs. Implementation must re-check the pin it
 actually installs.
 
@@ -373,7 +394,7 @@ Live, model weights, network access or the user's runtime.
   process-door description from one permitted module to the two named doors.
 - The deferred audio-alignment/warping/quality work is already a separate
   roadmap item with its own plan
-  ([PLAN_generate_audio_polish.md](PLAN_generate_audio_polish.md)); keep the
+  ([PLAN_generate_audio_polish.md](../PLAN_generate_audio_polish.md)); keep the
   MVP's measured raw and imported fixtures rather than discarding them, because
   that plan is finalised against them.
 
@@ -393,10 +414,10 @@ collide, and timeout cleanup leaves no timed-out runtime process running.
 
 ## Live verification
 
-- [`docs/smoke_tests/auto/generation.md` § “A generated clip lands, reads back, and its file is duration-exact”](smoke_tests/auto/generation.md#a-generated-clip-lands-reads-back-and-its-file-is-duration-exact)
-- [`docs/smoke_tests/auto/generation.md` § “An occupied slot is refused before anything is generated”](smoke_tests/auto/generation.md#an-occupied-slot-is-refused-before-anything-is-generated)
-- [`docs/smoke_tests/manual/conversation.md` § “A generation request routes to one call and names the form”](smoke_tests/manual/conversation.md#a-generation-request-routes-to-one-call-and-names-the-form)
-- [`docs/smoke_tests/auto/mcp-surface.md` § “The tool list survives a real handshake”](smoke_tests/auto/mcp-surface.md#the-tool-list-survives-a-real-handshake)
+- [`docs/smoke_tests/auto/generation.md` § “A generated clip lands, reads back, and its file is duration-exact”](../smoke_tests/auto/generation.md#a-generated-clip-lands-reads-back-and-its-file-is-duration-exact)
+- [`docs/smoke_tests/auto/generation.md` § “An occupied slot is refused before anything is generated”](../smoke_tests/auto/generation.md#an-occupied-slot-is-refused-before-anything-is-generated)
+- [`docs/smoke_tests/manual/conversation.md` § “A generation request routes to one call and names the form”](../smoke_tests/manual/conversation.md#a-generation-request-routes-to-one-call-and-names-the-form)
+- [`docs/smoke_tests/auto/mcp-surface.md` § “The tool list survives a real handshake”](../smoke_tests/auto/mcp-surface.md#the-tool-list-survives-a-real-handshake)
   — `variation_of` is the first root-level object-typed property on the
   published surface (every earlier one sat inside an array's items), and a
   client that rejects that shape refuses the whole tool list, so this check

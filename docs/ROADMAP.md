@@ -37,107 +37,7 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Generate audio onto a track — Stable Audio 3, imported as a clip
-
-**Impact 9 · Lift 7 · 1.29 impact-per-effort**
-
-**Ranked at the top by decision on 2026-08-28** — the first of three
-generation items placed together after the
-[generative features](evaluating/generative%20features/) research closed
-its evaluation phase. This one has a settled direction; the two below it
-are the spike and the decision experiment that the MIDI half still needs.
-
-Plan: [PLAN_generate_audio_clip.md](PLAN_generate_audio_clip.md) — one
-`generate_audio` tool over a `Seshat.Generation` behaviour, consuming the fork
-address `/live/clip_slot/create_audio_clip` and its import-root guard, **both
-of which are already merged on the fork's `origin/master`** (`fe6730e`): this PR
-bumps the gitlink and runs `mix abletonosc.install`, and writes no Python.
-
-**The audio story is two PRs** (decision, 2026-08-29). This one generates the
-material and puts it in the right place: safe duration-exact generation, import
-into the named slot, and honest Live read-back. Everything about how it *sits*
-on the grid — alignment, warping, loop seams, a second quality lane — is
-"Generated-audio alignment, warping and quality polish", which is deliberately
-sequenced **after** "MIDI generation — the decision experiment".
-
-**Goal:** a producer describes material for one track — "a dusty four-bar
-drum part", "a slow pad bed in this key" — and a duration-exact generated WAV
-lands as an audio clip in the named Session slot on a new or existing audio
-track, with every take kept in a folder Seshat manages. The reply reports
-Live's observed length, looping and warping rather than claiming the raw render
-is grid-aligned or seamlessly loopable. Explicitly *not* full songs; 1–16 bars
-of one part.
-
-**Why:** direction is settled by two docs and one measured spike. Read
-[audio-generation-options.md](evaluating/generative%20features/audio-generation-options.md)
-and [one-model-or-two.md](evaluating/generative%20features/one-model-or-two.md)
-before planning. Stable Audio 3 small via the MLX runtime is already
-installed at `~/.seshat/stable-audio-3` and measured 2026-08-25 at 1.0–1.1 s
-per four-bar clip after cache warm-up (`medium` 2.6–3.8 s), with durations
-bar-exact to one sample frame, so no client-side trim exists. The local
-runtime carries `--negative-prompt`, `--init-audio`/`--init-noise-level`
-(variation of an existing clip) and inpainting, so "again, but darker" needs
-no cloud. Cloud providers are contingencies, not dependencies. Magenta
-RealTime 2 is deliberately *not* used for clips — its bar-exactness and
-offline speed are unmeasured and it would trade a measured 1 s path for a
-trim-and-guess one (one-model-or-two §5).
-
-**User stories:**
-- As a producer with a blank set, I say "give me a four-bar dusty lo-fi drum
-  part on a new track" and a named audio track appears with a duration-exact
-  clip, selected and shown, ready to audition.
-- As a producer who liked the loop, I say "another take, darker" and a
-  variation lands in the next empty slot on the same track without
-  overwriting the one I kept.
-- As a producer who is unsure what was created, the reply names the form
-  (audio), the file, the slot, and any constraint it could not verify —
-  never "done" for a clip that did not import.
-
-**Context for the plan author:**
-- **The import path exists now — the fork work is done.**
-  `/live/clip_slot/create_audio_clip` (wrapping the Live Object Model method
-  Stable Audio 3's own experimental Ableton integration uses) is merged on the
-  fork's `origin/master` at `fe6730e`, with its always-reply `"ok"`/`"error"`
-  contract and the shared `path_safety.resolve_import_path` rule documented in
-  `API.md`. The wire carries a *name relative to* the fixed import root
-  `~/.seshat/generated`, never a path, so Seshat's side is: create that root,
-  write takes into it, send basenames. All that is left here is bumping the
-  submodule pin, `mix abletonosc.install`, and a Live restart. Generated WAVs
-  stay in that managed folder outside the User Library, so no browser indexing
-  or URI lookup is involved. The address is model-agnostic plumbing that "MIDI
-  generation — the decision experiment" and any future improv capture also
-  need; it is part of why this item leads.
-- Tool contract stays small and names the producer action, not the stack:
-  `description`, `bars`, target track/scene, optional material or model
-  hint. The handler injects mirrored tempo, time signature and key/scale
-  from `Session.State` and computes the requested duration. Key is a soft
-  prior in every provider — report best-effort, do not contract it.
-- Invoke the CLI per generation; a persistent sidecar has no measured
-  justification. This will be the second process-starting door out of
-  `lib/seshat/` after `Seshat.AX.Client`, so the grep test in
-  `test/seshat/ax/client_test.exs` must be widened deliberately, not
-  worked around.
-- **Audio polish is intentionally the second PR** ("Generated-audio alignment,
-  warping and quality polish"): BPM adherence on Live's grid, downbeat/phase
-  choice, loop-seam cleanliness, explicit warp/loop state, behaviour after tempo
-  changes, and whether `medium` audibly earns its escalation surface. The MVP
-  must report these limitations rather than hide them or expand to solve them,
-  and must keep the fixtures the follow-up measures.
-- Occupied-slot policy, managed-folder lifecycle while a set still
-  references a file, and behaviour on a generation that exits non-zero all
-  need explicit decisions — house rule: report what was observed.
-- Distribution: code is MIT, weights are under the Stability AI Community
-  License (commercial below a $1M revenue threshold, Enterprise above) plus
-  Gemma terms for the T5Gemma text encoder. The plan must say what Seshat
-  ships, what the user installs, and what happens above the threshold —
-  a selection-time criterion per CLAUDE.md, not a pre-release checklist.
-- Optional, do not let it grow the scope: *Slice to New MIDI Track* would
-  make an audio result editable per hit (a Drum Rack of Simplers plus a
-  MIDI clip). The command is UI-only but Simpler's slicing API is in the
-  LOM ([live-native-options.md §2.4](evaluating/generative%20features/live-native-options.md)).
-  Its own item if the AX spike below finds the command reachable.
-
-## #2 · Live-native generation spike — can AX drive the Create menu?
+## #1 · Live-native generation spike — can AX drive the Create menu?
 
 **Impact 4 · Lift 3 · 1.33 impact-per-effort**
 
@@ -199,7 +99,7 @@ is a one-afternoon question that has not been asked.
 - Suite gate: Stem Separation is Suite-only. Acceptable for an optional
   arm; the result must record which edition it ran on.
 
-## #3 · MIDI generation — the decision experiment
+## #2 · MIDI generation — the decision experiment
 
 **Impact 9 · Lift 8 · 1.12 impact-per-effort**
 
@@ -282,15 +182,18 @@ is one undo step, separate parts per track, MIDI the default.
 - Rendered results may be written to Live through `write_midi_notes`;
   eight-bar dense drums can exceed one datagram, hence the chunking gate.
 
-## #4 · Generated-audio alignment, warping and quality polish
+## #3 · Generated-audio alignment, warping and quality polish
 
 **Impact 7 · Lift 5 · 1.40 impact-per-effort**
 
-**Gated on "Generate audio onto a track — Stable Audio 3, imported as a clip"**,
-which produces the real imported fixtures this item measures. **Deliberately
-sequenced after "MIDI generation — the decision experiment" by decision on
-2026-08-29** — the audio story was split into two PRs, and the MIDI half is
-worth more than polishing audio that already lands in the right slot.
+**`generate_audio` has shipped** (archived at
+[PLAN_generate_audio_clip.md](archive/PLAN_generate_audio_clip.md)), producing
+the real imported fixtures this item measures — though its own live checks
+have not run yet (see the archived plan's banner), so confirm those before
+treating the fixtures as settled. **Deliberately sequenced after "MIDI
+generation — the decision experiment" by decision on 2026-08-29** — the audio
+story was split into two PRs, and the MIDI half is worth more than polishing
+audio that already lands in the right slot.
 
 Plan: [PLAN_generate_audio_polish.md](PLAN_generate_audio_polish.md) — written
 as the deferred half of the generation plan, and finalised against the MVP's
@@ -331,15 +234,16 @@ guessing at them in the initial tool contract.
 Keep any model/runtime or OSC additions in this PR proportionate to the
 specific failing measurements.
 
-## #5 · Generated material lands one instrument per track
+## #4 · Generated material lands one instrument per track
 
 **Impact 9 · Lift 8 · 1.12 impact-per-effort**
 
-**Gated on "Generate audio onto a track"** (the render and the import it
-splits), on "Live-native generation spike" (whether Live's own *Separate
+**The render and import half this splits has shipped** as `generate_audio`
+(archived at [PLAN_generate_audio_clip.md](archive/PLAN_generate_audio_clip.md)).
+**Gated on "Live-native generation spike"** (whether Live's own *Separate
 Stems* and *Convert Drums* are pressable, which decides two of the routes
-below), and on "MIDI generation — the decision experiment" (which
-transcriber, if any, supplies the lanes). **Ranked directly under those three
+below) and on "MIDI generation — the decision experiment" (which
+transcriber, if any, supplies the lanes). **Ranked directly under those two
 by decision on 2026-08-29**: a generated file with more than one instrument
 in it is not finished until each instrument has its own track, so this is
 the second half of the generation feature, not an enhancement to it.
@@ -432,7 +336,7 @@ promise meets an audio render.
   bass) are the same shape with a different transcriber; the plan should
   say whether v1 is drums-only.
 
-## #6 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #5 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Impact 8 · Lift 4 · 2.00 impact-per-effort**
 
@@ -469,7 +373,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #7 · Search eval harness — numbers before opinions
+## #6 · Search eval harness — numbers before opinions
 
 **Impact 2 · Lift 3 · 0.67 impact-per-effort**
 
@@ -498,7 +402,7 @@ benchmark informally (see
 formalize that rather than inventing a new one. Runs offline against the
 catalog — no Ableton needed.
 
-## #8 · Widen the search slate at tied score bands
+## #7 · Widen the search slate at tied score bands
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -519,7 +423,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #9 · A rejected index says which index, and what to call next
+## #8 · A rejected index says which index, and what to call next
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -580,7 +484,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #10 · Browser preview audition
+## #9 · Browser preview audition
 
 **Impact 7 · Lift 3 · 2.33 impact-per-effort**
 
@@ -608,7 +512,7 @@ what decides.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #11 · `start_new_project` — the setup wizard, and prompt budget back
+## #10 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -666,7 +570,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   want, so prefer building it before that item even though ratio separates
   them.
 
-## #12 · `write_midi_notes` must chunk large note batches
+## #11 · `write_midi_notes` must chunk large note batches
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -705,7 +609,7 @@ first.
 - Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
   surface needs valid dense clips to work, not become validation errors.
 
-## #13 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #12 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Impact 4 · Lift 2 · 2.00 impact-per-effort**
 
@@ -734,7 +638,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #14 · Routing evals — general corpus and client-realism lane
+## #13 · Routing evals — general corpus and client-realism lane
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -777,7 +681,7 @@ didn't observe a difference" into "there isn't one, on this evidence."
 - `mix routing.eval` is on-demand only, never in `mix precommit` — keep it
   that way; it is externally metered and stochastic.
 
-## #15 · Read-only audio input display — warn before a silent take
+## #14 · Read-only audio input display — warn before a silent take
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -808,7 +712,7 @@ documented in `record_clip`'s description.
 - Routing values are strings from Live's own menus; report them verbatim,
   don't interpret.
 
-## #16 · `screenshot_live` — let Seshat see the screen
+## #15 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -834,7 +738,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #17 · Opt-in `samples` index
+## #16 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -858,7 +762,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #18 · Accepted-search memory
+## #17 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
@@ -882,7 +786,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #19 · Producer personas — switchable musical taste
+## #18 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -917,7 +821,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #20 · Verify destructive mutations before reporting success
+## #19 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -989,7 +893,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #21 · User XMP tags
+## #20 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1008,7 +912,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #22 · Small OSC breadth — grab bag
+## #21 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1031,7 +935,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #23 · Pin the wording of `edit_notes`' partial-failure message
+## #22 · Pin the wording of `edit_notes`' partial-failure message
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1065,7 +969,7 @@ convention across the module.
 - Low lift once the mocking question is settled — the message itself is
   already correct and doesn't need to change, only get pinned.
 
-## #24 · Routing eval report should self-identify which case expectations it scored against
+## #23 · Routing eval report should self-identify which case expectations it scored against
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1097,7 +1001,7 @@ loader through the run map `mix routing.eval` assembles, through
   only a hash, since a hash alone still sends a PR reader back to the case
   JSON to see what changed.
 
-## #25 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
+## #24 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1130,7 +1034,7 @@ against real second-slice cases than speculatively.
   holds ("the model must not proceed on invented state") — this item is only
   about whether that reply should count against `no_tool_errors`.
 
-## #26 · `variation_of` refuses a managed take when `~/.seshat` is a symlink
+## #25 · `variation_of` refuses a managed take when `~/.seshat` is a symlink
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1145,7 +1049,7 @@ generated-audio folder" — permanently, and incorrectly, for a file Seshat
 just wrote.
 
 **Why:** flagged as non-blocking in the PR review of "Generate audio onto a
-track" (`docs/PLAN_generate_audio_clip.md`) because it needs a real symlinked
+track" (`docs/archive/PLAN_generate_audio_clip.md`) because it needs a real symlinked
 `~/.seshat` to reproduce and is unreachable on this reviewer's plain
 installation, not because the bug is in doubt. The module already solved the
 identical shape twenty lines below `under_root?/1`: `same_file?/2` compares
@@ -1168,7 +1072,7 @@ comparison that repeats the mistake `same_file?/2` was written to avoid.
   comparison — the whole bug is that string comparison looks correct until
   the filesystem enters the picture.
 
-## #27 · Bounded generation diagnostics can drop the newest chunk entirely on overflow
+## #26 · Bounded generation diagnostics can drop the newest chunk entirely on overflow
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1203,7 +1107,7 @@ exact path without noticing.
   against known input), not just a byte-size ceiling — that assertion is
   what let this ship unnoticed the first time.
 
-## #28 · Tighten the process-start grep so it does not shape prose in unrelated modules
+## #27 · Tighten the process-start grep so it does not shape prose in unrelated modules
 
 **Impact 1 · Lift 1 · 1.00 impact-per-effort**
 
@@ -1223,7 +1127,7 @@ non-blocking nit rather than fixed inline because it touches a shared
 invariant test outside the routing-evals change's own files, not something
 that plan's implementation owns.
 
-## #29 · LLM enrichment at reindex
+## #28 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -1250,7 +1154,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #30 · Monitored refresh worker for `Session.State`
+## #29 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -1294,7 +1198,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #31 · Device list per track in session state
+## #30 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1315,7 +1219,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #32 · Adopt MCP `2026-07-28` when Anubis supports it
+## #31 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1366,7 +1270,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #33 · Clip grid in session state — only if usage demands it
+## #32 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 

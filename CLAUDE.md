@@ -280,6 +280,74 @@ That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
 
+**Generate audio onto a track shipped 2026-08-30** on branch `create-audio`,
+closing the queue's former top item, "Generate audio onto a track — Stable
+Audio 3, imported as a clip," the first of the two PRs the audio story was
+split into. One new tool, `generate_audio`, renders 1–16 bars locally
+through the installed Stable Audio 3 MLX runtime
+(`Seshat.Generation.StableAudio` — the second process-starting door out of
+`lib/seshat/` after `Seshat.AX.Client`, both now named explicitly by the
+widened grep test in `test/seshat/ax/client_test.exs`), keeps every take in
+Seshat's managed `~/.seshat/generated` folder (the fork's own
+`path_safety.IMPORT_ROOT`), and imports the file into a Session slot through
+the fork address `/live/clip_slot/create_audio_clip` — merged on the fork's
+`origin/master` at `fe6730e` before this PR started, so it wrote no Python,
+only bumped the gitlink and ran `mix abletonosc.install`. The workflow
+orders guards before render before track creation: an occupied explicit
+slot or a non-audio target is refused before anything is generated, a new
+track is created only once the file exists, and the reply reports Live's
+own observed length, looping and warping rather than asserting the raw
+render is grid-aligned or seamlessly loopable — that measurement and any
+DSP fix is deliberately deferred to "Generated-audio alignment, warping and
+quality polish," sequenced after MIDI generation by the same 2026-08-29
+decision that split the audio story in two. `variation_of` re-renders from
+an existing take (`--init-audio`/`--init-noise-level`) for "another take,
+darker" without touching the kept one. Measured warm: a 1.94s clip rendered
+in 1.54s and produced exactly `AudioClip.target_frames/1`'s frame count.
+
+PR review found the implementation correct on independent re-derivation (all
+15 addresses checked against `priv/AbletonOSC/API.md` at the installed pin,
+the fork Python behind the pin bump read in full, ordering pinned by a
+fake-backend arrival-order trace) and raised seven items, one of them a
+bundle of five style notes. Three plus four of the five style notes were
+applied before merge: `generation.md` was missing from
+`docs/smoke_tests/auto/README.md`'s file table (would have silently
+skipped this PR's only live coverage on every full `/smoke-test` sweep);
+the plan's `## Live verification` section was missing a citation to
+`mcp-surface.md`'s handshake check, load-bearing because `variation_of` is
+the first root-level object-typed tool property on the published surface
+and a client that rejects the shape loses every tool, not just this one;
+the reservation-collision test only passed by timing luck and now retries
+until both takes actually land in the same UTC second; and a missing
+sentence-terminating period, a nonsense message on a zero-scene set, two
+dead code paths in `unwrap/1`, and a fully-qualified struct reference were
+all cleaned up. Two real defects were declined as local fixes and added to
+the roadmap instead, both needing a genuine behavior change and a
+filesystem- or size-dependent test rather than a one-line correction:
+"`variation_of` refuses a managed take when `~/.seshat` is a symlink"
+(`under_root?/1` compares expanded-but-unresolved paths, the same trap
+`same_file?/2` twenty lines below it was written to avoid) and "Bounded
+generation diagnostics can drop the newest chunk entirely on overflow"
+(`trim/3`'s single-oversized-chunk case discards the newest output instead
+of tailing it, reachable only below the shipped 32KB default). Two more
+were left for the PR reader to judge rather than acted on: `mix
+routing.eval` was not run despite the `Definitions` change (52 → 53 tools),
+and `observed.name` is read back on every generation but never surfaced or
+compared — the reviewer's own words, "not wrong… just collected for
+nothing."
+
+**Live verification has not run.** Both `auto/generation.md` checks ("A
+generated clip lands, reads back, and its file is duration-exact", "An
+occupied slot is refused before anything is generated") still read `*Last
+run: —*`; the manual `manual/conversation.md` § "A generation request
+routes to one call and names the form" needs a person; and
+`auto/mcp-surface.md`'s only recorded run (2026-08-28, 52 tools) predates
+this tool's addition to the surface, so it does not actually cover the new
+object-typed schema it was cited for. Run `/smoke-test generation` and
+`/smoke-test mcp-surface`, plus the manual conversation check, before
+trusting this feature's live behaviour. Plan archived at
+[docs/archive/PLAN_generate_audio_clip.md](docs/archive/PLAN_generate_audio_clip.md).
+
 **Routing evals shipped 2026-08-28**, closing the first slice of what had
 been the queue's top item ("Automate conversation-routing evaluations").
 `mix routing.eval` sends a committed prompt corpus through a fresh headless
