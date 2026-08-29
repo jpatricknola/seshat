@@ -51,7 +51,7 @@ the reported Live properties must match independent read-back. A timeout or
 truncated file means the advertised boundary exceeds the runtime/import path
 and must be reduced rather than left as a schema promise.
 
-*Last run: —*
+*Last run: 2026-08-30 — PASS. 4 bars @ 124 BPM on a new `Gen Drums` audio track: `get_clip_slots` shows track 1 audio, slot 0 holding the named clip; `get_clip_properties` reads back audio, warp off, looping off, end marker 7.7419 s — matching the reply's own report (16.0 beats, looping off, warping off) and its "no rhythmic-grid or loop-seam correction" sentence. The file is a regular non-symlink WAV under `~/.seshat/generated`; `afinfo` gives 2 ch / 44100 Hz / Int16 and 341419 frames — exactly 16 beats at 124 BPM to the sample frame. Peak level measured with `python3 -m wave` (ffmpeg is not installed on this machine; the stdlib read is the same measurement, not a skip): peak −16.00 dBFS, RMS −28.02 dBFS — real material, not silence and not clipped. The 16-bar / 60 BPM boundary also passed on a second new track: 2822400 frames = 64.000000 s exactly, per-quarter peaks −6.93/−6.07/−7.56/−7.93 dBFS so nothing is truncated or padded with silence, render 2.396 s, nowhere near the 60 s deadline. Live chose warp *on* for that clip and *off* for the 4-bar one; not asserted, per this check. Generation was 1.578 s and 2.396 s warm.*
 
 ## An occupied slot is refused before anything is generated
 
@@ -68,4 +68,4 @@ the call refuses it as non-audio before rendering and the folder remains
 unchanged. A generated file in either refusal case means the guard ran after
 the expensive side effect and the workflow ordering is wrong.
 
-*Last run: —*
+*Last run: 2026-08-30 — PASS. With `Gen Drums` slot 0 occupied, an explicit `clip_slot: 0` was refused with "Slot 0 on track 1 already holds a clip, and generated audio never overwrites one. Slot 1 on that track is empty. Nothing was generated." — the folder listing was byte-identical before and after, and slot 0's independently read name and markers were unchanged. Omitting `clip_slot` on the same track then produced exactly one new file and landed "another breakbeat" in slot 1, slot 0 untouched. A new MIDI track targeted explicitly was refused with "Track 3 is a MIDI track, so an audio clip cannot be imported onto it… Nothing was generated.", folder again identical before and after. Both guards ran before the render.*
