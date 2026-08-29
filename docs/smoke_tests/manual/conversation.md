@@ -275,3 +275,28 @@ I looking at?" should call `get_view_state` and answer in the user's vocabulary
 `set_groove_amount` with **no** grooves assigned anywhere in the set — nothing
 changes audibly, and the model's reply (fed by the tool description) says so
 rather than promising swing.
+
+## A generation request routes to one call and names the form
+
+*Why manual: requires a fresh unprompted client conversation and judging the model's tool choice and language*
+*Last run: —*
+
+In a fresh local Claude Desktop conversation with Seshat connected, ask:
+
+> Give me a four-bar dusty lo-fi drum loop on a new track.
+
+Expect exactly one `generate_audio` call, not a separate `create_track` call or
+an improvised file-import workflow. The reply speaks in musical terms, says the
+result is audio, names the track and Session slot, and does not read the file
+path aloud unless asked. It reports Live's observed looping/warping state and
+does not claim that the raw MVP render is grid-aligned or seamlessly loopable.
+
+Then say:
+
+> Another take, darker.
+
+Expect one `generate_audio` call using the prior audio as `variation_of` (or a
+fresh description only if the model explicitly explains why variation is not
+available), targeting the same track without an explicit occupied slot. The
+new take lands in the next empty slot and the reply never claims that the first
+take was replaced.
