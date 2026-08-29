@@ -71,7 +71,11 @@ the kept take.
   key is appended as a soft prompt hint and reported as requested, not verified.
 - Runtime code is MIT. Weights are governed by the Stability AI Community
   License and the text encoder by Gemma terms. Seshat ships neither runtime nor
-  weights; users install them under the applicable terms.
+  weights; users install them under the applicable terms. Above the Community
+  License's $1M annual revenue threshold, using the weights requires a
+  Stability AI Enterprise licence — that obligation attaches to the user's own
+  installation, and Seshat's distribution position is unchanged because it
+  distributes neither runtime nor weights.
 
 ### Architectural decisions
 
@@ -273,6 +277,29 @@ phase, loop seams, warping or later tempo following and that the reply reports
 Live's observed state. Suggest MIDI note writing/editing when exact note-grid
 control is the actual request; do not name a MIDI-generation tool that has not
 shipped yet.
+
+Draft description (prompt text for a model that cannot see the code; adjust
+only where implementation proves it inaccurate):
+
+> Generate a short **audio** clip from a text description and import it into a
+> Session slot. Renders locally with the separately installed Stable Audio 3
+> runtime; if the runtime or its weights are missing the call refuses and says
+> so — nothing is downloaded. Tempo, time signature and key are taken from the
+> session automatically; put only the musical material in `description` (e.g.
+> "dusty lo-fi drum break", "warm pad bed"). Generation takes a few seconds
+> and holds the normal serialized Ableton tool lock while it runs. The raw
+> duration-exact render is imported unchanged: no rhythmic-phase, loop-seam,
+> warp or tempo-following correction is applied, and the reply reports what
+> Live observed (clip length, looping, warping) rather than promising grid
+> alignment or a seamless loop. Every take is kept on disk and never
+> overwritten. Track indices are 0-based. Omit `track` to create a new audio
+> track (optionally named with `track_name`); with an existing `track`, omit
+> `clip_slot` to use its first empty slot — an occupied explicit slot is
+> refused before anything is generated. For "again, but darker" pass
+> `variation_of` pointing at a previously generated clip; `strength`
+> (0.01–1.0, default 0.55) sets how far the variation departs and is only
+> valid with `variation_of`. For exact control of individual notes, write or
+> edit MIDI notes instead of generating audio.
 
 ## Part 4 — Wire the handler and honest replies
 
