@@ -36,7 +36,10 @@ defmodule Seshat.Tools.FollowCam do
   brace in the note editor *is* the confirmation. The recording pair widens the
   rule the same way: `record_clip` is where a take *begins* (the slot reddening
   in the grid is the whole feedback a recording gives), and `stop_recording` is
-  the moment the recorded thing exists and can be looked at.
+  the moment the recorded thing exists and can be looked at. `generate_audio`
+  is an ordinary clip write for this purpose — it steers only after the
+  imported clip has been read back and confirmed, so the view never jumps to a
+  slot whose import failed.
   """
 
   alias Seshat.OSC.Transport
@@ -77,7 +80,8 @@ defmodule Seshat.Tools.FollowCam do
              "capture_midi",
              "set_clip_properties",
              "stop_recording",
-             "quantize_clip"
+             "quantize_clip",
+             "generate_audio"
            ] do
     [
       {"/live/view/set/selected_clip", [track, slot]},

@@ -28,3 +28,10 @@ config :seshat, :start_catalog, false
 # test/seshat/osc/transport_test.exs.
 config :seshat, :osc_send_port, 0
 config :seshat, :osc_reply_port, 0
+
+# Audio generation never starts a subprocess in the suite: the backend module is
+# a compile-time choice (see Seshat.Generation.Backend), so this points the whole
+# `Seshat.Generation.AudioClip` workflow at a scripted fake. The one place the
+# real adapter is exercised is its own test file, which drives a throwaway
+# executable it writes itself.
+config :seshat, :generation_backend, Seshat.Test.FakeGenerationBackend

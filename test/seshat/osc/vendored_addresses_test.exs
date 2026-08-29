@@ -95,6 +95,10 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   ]
 
   @browser_file "priv/AbletonOSC/abletonosc/browser.py"
+
+  # Not a handler file — it registers no addresses. It holds the rule the three
+  # file-naming addresses share, and one constant Seshat re-derives in Elixir.
+  @path_safety_file "priv/AbletonOSC/abletonosc/path_safety.py"
   @return_track_file "priv/AbletonOSC/abletonosc/return_track.py"
   @song_structure_file "priv/AbletonOSC/abletonosc/song_structure.py"
   @view_file "priv/AbletonOSC/abletonosc/view.py"
@@ -1026,6 +1030,58 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
              Without it the sweep follows symlinks and can delete something outside
              the export root that merely happens to be named like an export.
+             """
+    end
+  end
+
+  # The read side's own rule, in its own file. Separate from the browser export
+  # above because the two roots are deliberately spelled *differently* — export
+  # is abspath + expanduser and must not realpath, import realpaths both sides —
+  # and a reader who unifies them breaks one of them. path_safety.py's own
+  # comment says so at length; these assertions are what make the claim fail
+  # loudly rather than quietly.
+  describe "the audio-import path rule" do
+    test "the audio-import root keeps the spelling Seshat re-derives" do
+      source = File.read!(@path_safety_file)
+
+      assert source =~
+               ~s|IMPORT_ROOT = os.path.abspath(os.path.expanduser("~/.seshat/generated"))|,
+             """
+             #{@path_safety_file}'s IMPORT_ROOT changed.
+
+             Seshat.Generation.AudioClip writes every generated take into
+             Path.expand("~/.seshat/generated") and sends the *basename* to
+             /live/clip_slot/create_audio_clip, which resolves it underneath this
+             constant. If the two disagree, every import fails with "no such file in
+             the import root" and nothing else says why.
+
+             This is the read-side twin of the EXPORT_ROOT assertion above, and it is
+             pinned for the same reason: the value is a fork/consumer contract, not a
+             fork implementation detail.
+             """
+    end
+
+    test "the audio-import rule still resolves both sides and refuses what is not a file" do
+      source = File.read!(@path_safety_file)
+
+      assert source =~ "os.path.realpath(root)" and source =~ "os.path.realpath(os.path.join(",
+             """
+             #{@path_safety_file} no longer realpaths both the root and the candidate.
+
+             Resolving both sides is what defeats a `..` component and a symlink inside
+             the root that points outside it. Comparing an unresolved join against an
+             unresolved root accepts both.
+             """
+
+      assert source =~ "os.path.isabs(name)",
+             "#{@path_safety_file} no longer refuses an absolute name — the wire would carry paths again."
+
+      assert source =~ "os.path.isfile(candidate)",
+             """
+             #{@path_safety_file} no longer requires the resolved candidate to be a regular file.
+
+             That one check is what refuses a directory, a dangling symlink and a device
+             node alike, on a path that is handed to Live and opened with Live's privileges.
              """
     end
   end

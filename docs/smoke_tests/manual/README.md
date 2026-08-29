@@ -34,6 +34,7 @@ change touches one, its human-judged checks are here:
 | transport — swing and groove | [by-ear.md](by-ear.md) (swing), [on-screen.md](on-screen.md) (the groove dial), [conversation.md](conversation.md) (wording with no groove assigned) |
 | bridge / network boundary | [engineered-state.md](engineered-state.md) (stale install, reply route, decoder), [on-screen.md](on-screen.md) (listener rebind, listener pushes) |
 | MCP surface | [conversation.md](conversation.md) (Claude Desktop lists the tools) |
+| generated audio | [conversation.md](conversation.md) (routing to one call, and what the reply claims) |
 | audio output | [on-screen.md](on-screen.md) (Settings agreement), [by-ear.md](by-ear.md) (the switch) |
 | undo | [engineered-state.md](engineered-state.md) (`can_undo=False`) |
 

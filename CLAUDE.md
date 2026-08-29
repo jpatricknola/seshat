@@ -49,6 +49,11 @@ Seshat.MCP.Server
                        │                                  ▼  ← macOS Accessibility API
                        ▼                              Ableton Live's Settings window
             AbletonOSC → Ableton Live
+
+            generate_audio takes a third shape: Seshat.Generation.AudioClip
+            renders through Seshat.Generation.StableAudio (the second native
+            process door — no OSC), writes the take into ~/.seshat/generated,
+            then comes back through Transport to import it by basename.
 ```
 
 Two tools take a second path below `Handlers` that never touches `Transport`
@@ -56,12 +61,23 @@ or AbletonOSC at all: Live's application-wide audio *device* preference isn't
 in the Live Object Model at any version of the bridge, so `get_audio_outputs`
 and `set_audio_output` reach it through `Seshat.AX.Client`, which spawns the
 native helper at [native/seshat_ax/main.m](native/seshat_ax/main.m) once per
-call to drive Live's Settings window via the macOS Accessibility API — the one
-door out of `lib/seshat/` allowed to start a process
-(`test/seshat/ax/client_test.exs` greps the rest of `lib/` to keep it that
-way). Both tools opt out of the undo-step wrapping every other tool gets
-(`undo_step: false`) and out of the OSC undo-step lock, because the mechanism
-they use cannot reach Live's undo history or its OSC socket either.
+call to drive Live's Settings window via the macOS Accessibility API. Both tools
+opt out of the undo-step wrapping every other tool gets (`undo_step: false`) and
+out of the OSC undo-step lock, because the mechanism they use cannot reach
+Live's undo history or its OSC socket either.
+
+**There are exactly two doors out of `lib/seshat/` allowed to start a native
+process**, and `test/seshat/ax/client_test.exs` greps the rest of `lib/` to keep
+it that way — naming both files exactly, and asserting in the other direction
+that each named file really does spawn something, so a rename cannot leave a
+standing exemption behind. The second is
+[lib/seshat/generation/stable_audio.ex](lib/seshat/generation/stable_audio.ex),
+which runs the locally installed Stable Audio 3 MLX runtime once per
+`generate_audio` call: rendering audio is not something the BEAM can do and not
+something any OSC address or LOM member exposes. Unlike the AX path it *is*
+undo-stepped, because what it ultimately does — import a clip into a slot — is
+an ordinary Live Set change. A third door is a design decision, not a
+convenience: it has to be argued in the commit that adds it to that list.
 
 `Seshat.Instructions` carries the session-level conventions no single tool
 description can and is sent as MCP server `instructions` at connect time. One
@@ -137,8 +153,11 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/music/pitch.ex](lib/seshat/music/pitch.ex) | MIDI pitch → note name, shared by the notes reader and session state |
 | [lib/seshat/library/catalog.ex](lib/seshat/library/catalog.ex) | Tag-aware sound catalog — ETS + `~/.seshat/catalog.json`, merge and search |
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
-| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools — the only module under `lib/seshat/` allowed to start a process, pinned by a grep test |
+| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools — one of the two modules under `lib/seshat/` allowed to start a process, pinned by a grep test |
 | [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a four-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for |
+| [lib/seshat/generation/audio_clip.ex](lib/seshat/generation/audio_clip.ex) | The `generate_audio` workflow: session read, duration arithmetic, target guards, the reserved take filename, the import through `/live/clip_slot/create_audio_clip`, and the read-back that decides whether any of it worked. Guards run before the render, so a failed generation leaves Live untouched |
+| [lib/seshat/generation/backend.ex](lib/seshat/generation/backend.ex) | The boundary between that workflow and whatever renders audio. `Spec` in, `{:ok, %{path:, seed:, wall_ms:}}` out; the implementation is a compile-time choice so the suite's fake cannot leak into the real adapter |
+| [lib/seshat/generation/stable_audio.ex](lib/seshat/generation/stable_audio.ex) | **The second native-process door.** Drives the local Stable Audio 3 MLX runtime one process per request — argv only, never a shell; every weight preflighted so a missing one refuses instead of starting a download; a 60s deadline that terminates the runtime's exact OS pid |
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/seshat/eval/](lib/seshat/eval/) | **Routing evals — no OSC, no Ableton, no `Definitions` change.** `Surface` freezes the model-facing contract (instructions + published tools) as JSON; `Recorder` replays one as a record-only MCP server over a `Fixture` synthetic set; `Stream`/`Trial` parse the client's `stream-json` and refuse a trial whose isolation broke; `Judge` scores a trace against a `Case`'s per-surface expectation; `Report` writes the gate table. A grep test keeps the whole tree off the wire |
 | [lib/mix/tasks/routing.eval.ex](lib/mix/tasks/routing.eval.ex) | `mix routing.eval` — the on-demand run. `routing.eval.runner.ex` is the one process-starting half (under `lib/mix/tasks/` on purpose); `routing.recorder.ex` is what Claude Code spawns per trial; `routing.snapshot.ex` prints the current surface with nothing running |
