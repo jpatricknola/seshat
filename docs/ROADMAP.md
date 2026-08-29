@@ -308,8 +308,9 @@ those observations; this follow-up then solves the measured failures instead of
 guessing at them in the initial tool contract.
 
 **User stories:**
-- As a producer who asked for a four-bar loop, the first hit lands on the
-  downbeat and the clip loops without a click at the seam.
+- As a producer who asked for a four-bar loop, the pattern's intended phase
+  lands on the grid — including a requested pickup or rest — and the clip loops
+  without a click or gap at the seam.
 - As a producer who changes the set tempo after generating, the clip follows
   it — or Seshat says plainly that it will not.
 - As a producer chasing a better take, a higher-quality lane exists only

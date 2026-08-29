@@ -59,16 +59,19 @@ are exactly this PR's subject:
 No production code. Produce a written measurement note (in
 `docs/evaluating/generative features/`) covering:
 
-1. **Grid phase.** For each retained fixture, the offset of the first
-   transient from the file boundary, and where the imported clip's first hit
-   lands against Live's metronome at the set tempo.
+1. **Grid phase.** For each retained fixture, estimate phase from the repeated
+   onset pattern rather than assuming the first transient is beat one. Record
+   the first-transient offset separately, including whether the prompt asked
+   for a pickup or a rest, and observe where the pattern lands against Live's
+   metronome at the set tempo.
 2. **Live's import defaults.** `looping`, `warping`, warp mode, start/end and
    loop markers as read back immediately after import, across fixture types and
    across at least two Live preference states.
 3. **Tempo following.** What the imported clip does when the set tempo changes,
    under each observed warp state.
-4. **Seams.** Whether looping the clip clicks, and whether the click is the
-   file's fade, the phase offset, or the warp state.
+4. **Seams.** Whether looping produces a click, gap, doubled hit or faded final
+   beat, and whether the discontinuity comes from the file boundary, phase
+   offset or warp state.
 5. **Quality lanes.** A blind by-ear comparison of `sm-music` against `medium`
    on the same prompts and seeds.
 
@@ -108,8 +111,9 @@ pass unchanged.
 
 ## Out of scope
 
-- Anything the MVP already owns: generation, the managed folder, import, the
-  tool schema's shape, take preservation.
+- Anything the MVP already owns: generation, the managed folder, import,
+  destination/variation parameters and take preservation. The only permitted
+  schema growth is an evidence-backed quality lane selected by Part 0.
 - Stems, inpainting, full songs, cloud providers, persistent model servers.
 - Any fork or Python change, unless Part 0 measures a failure that has no
   Elixir-side fix — in which case it is a fork commit in the standalone clone

@@ -84,7 +84,7 @@ the kept take.
 - **Use a behaviour and one CLI process per request.**
   `Seshat.Generation.Backend.generate/1` has the real
   `Seshat.Generation.StableAudio` implementation and a test fake. A 60-second
-  timeout bounds a wedged runtime and terminates its exact process tree.
+  timeout bounds a wedged runtime and terminates its exact OS process.
 - **Keep every take.** Files under `~/.seshat/generated/` are append-only
   because Live may continue referencing them. The directory is not a Seshat
   choice any more — it is `path_safety.IMPORT_ROOT`, and changing it means
@@ -105,9 +105,8 @@ the kept take.
 ## OSC contract
 
 Existing addresses were checked against
-[priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md) at fork pin `41860743` on
-2026-08-29; the import address below was checked against the same file at
-`fe6730e`, the commit Part 0 pins. Implementation must re-check the pin it
+[priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md) at fork pin `fe6730e` on
+2026-08-29, the commit Part 0 installs. Implementation must re-check the pin it
 actually installs.
 
 ### The import address — merged in the fork, consumed here
@@ -125,13 +124,13 @@ commit and is **not** used by this PR; Session slots only.
 |---|---|
 | `/live/clip_slot/get/has_clip` | Refuse an occupied explicit slot and find the first empty slot. |
 | `/live/song/get/num_scenes` | Bound slot discovery. |
-| `/live/track/get/is_foldable`, `/live/track/get/is_grouped`, `/live/track/get/has_audio_input`, `/live/track/get/has_midi_input` | Refuse group, child/grouped and non-audio target tracks before generation. These guards run for both an explicit track and the track inferred by `variation_of`. |
-| `/live/song/create_audio_track` | Create an omitted destination track after generation succeeds. Track creation is observed through the existing Registry listener path. |
+| `/live/track/get/is_foldable`, `/live/track/get/has_audio_input`, `/live/track/get/has_midi_input` | Refuse group and non-audio target tracks before generation. A regular audio track remains valid when it is nested inside a group. These guards run for both an explicit track and the track inferred by `variation_of`. |
+| `/live/song/create_audio_track` | Create an omitted destination track after generation succeeds. The existing Registry verifies the regular-track count rose by exactly one, names the appended track, and refreshes session state. |
 | `/live/track/set/name` | Name a newly created track. |
 | `/live/clip/set/name` | Name the imported clip. |
 | `/live/clip/get/name`, `/live/clip/get/length`, `/live/clip/get/looping`, `/live/clip/get/warping`, `/live/clip/get/file_path` | Verify and report what Live imported. No playback property is changed by this PR. |
 | `/live/clip/get/is_audio_clip`, `/live/clip/get/file_path` | Validate a variation source and locate its regular file. |
-| `/live/view/set/selected_track`, `/live/view/set/selected_scene`, `/live/view/show_view` | FollowCam selection and `Clip` view after verified success only. |
+| `/live/view/set/selected_clip`, `/live/view/set/detail_clip`, `/live/view/show_view` | FollowCam selects the imported slot, puts that exact clip in Detail, and shows `Session` then `Detail/Clip` after verified success only. |
 
 ## Numbered implementation parts
 
@@ -166,8 +165,10 @@ optional `init_audio`, `init_noise_level`, and the reserved absolute
 
 `StableAudio` must:
 
-1. Resolve the configured executable and model directory; reject missing or
-   non-executable runtime files before spawning.
+1. Resolve the configured `sa3` executable and model directory; preflight the
+   wrapper, `scripts/sa3_mlx.py`, and `.venv/bin/python`, rejecting a missing or
+   non-executable runtime before the wrapper can enter its interactive install
+   path.
 2. Preflight the T5Gemma, `sm-music` and `same-s` weight files, plus the
    `same-s` encoder only for variation. Never download during a tool call.
 3. Build a pure argv list that always supplies `--prompt`, `--dit sm-music`,
@@ -202,18 +203,24 @@ The workflow is:
 2. Build a musical prompt from the user's description plus observed BPM and
    time signature. Append key/scale only when present.
 3. Resolve the destination. For an explicit or variation-inferred track, run
-   every audio/group guard before generation. For an explicit slot, refuse if
-   occupied. When slot is omitted, find the first empty existing scene or fail
-   with an actionable message; do not create scenes in this PR.
+   every audio/group guard before generation. For an explicit slot on an
+   existing track, refuse if occupied. When slot is omitted on an existing
+   track, find the first empty existing scene or fail with an actionable
+   message. For a new track, validate a supplied `clip_slot` against the current
+   scene count or default it to slot 0; there can be no occupancy check until
+   the track exists. Do not create scenes in this PR.
 4. For `variation_of`, require an audio clip with a non-empty, regular,
    non-symlink source path. Restrict it to Seshat's managed generated root in
    the MVP. Map public `strength` in `0.01..1.0` directly to init noise level.
-5. Atomically reserve a unique safe basename inside the managed root using an
-   exclusive create. Never derive a path from arbitrary model text.
+5. Create the managed root when absent and explicitly chmod it to `0700` (do
+   not rely on the process umask). Atomically reserve a unique safe basename
+   inside it using an exclusive create. Never derive a path from arbitrary
+   model text.
 6. Call the configured backend. On failure, delete only this request's reserved
    or partial output and return without changing Live.
-7. If no target track was supplied, create and name an audio track now, await
-   its Registry appearance, run the same audio/group guards, and use slot 0.
+7. If no target track was supplied, create and name an audio track now through
+   the Registry's count-verified append path, run the same audio/group guards,
+   and use the supplied validated slot or its slot-0 default.
 8. Import by basename through `/live/clip_slot/create_audio_clip`. Treat only the echoed
    `"ok"` reply as success; surface its `"error"` reply or structured OSC error.
 9. Set the clip name, read back name, length, looping, warping and file path,
@@ -229,7 +236,7 @@ effect. Never overwrite or delete a pre-existing clip or generated take.
 
 ## Part 3 — Define the `generate_audio` MCP tool
 
-Add one component to `lib/seshat/mcp/definitions.ex`:
+Add one component to `lib/seshat/tools/definitions.ex`:
 
 ```text
 generate_audio(
@@ -245,23 +252,37 @@ generate_audio(
 )
 ```
 
-Reject `track_name` with an explicit existing `track`, `strength` without
-`variation_of`, conflicting destination/source shorthand, invalid indices and
-unknown keys at schema validation time. Keep `description` bounded and reject
-blank strings.
+Let the existing schema validator reject types, numeric bounds, invalid indices
+and unknown keys. Put cross-field rules in a pure `AudioClip.validate/1` step
+that runs before any OSC or backend call: reject `track_name` with an explicit
+existing `track`, `strength` without `variation_of`, and conflicting
+destination/source shorthand. The same step rejects blank prompt strings and
+bounds `description` and `negative_prompt` to 1,000 characters each; the current
+schema/validator has no `minLength`/`maxLength` support, so do not imply those
+checks come from JSON Schema or widen the generic validator for this tool.
+
+Update `test/seshat/tools/definitions_test.exs`: raise the exact tool count
+from 52 to 53 and add `generate_audio` to the expected-name list. The generated
+MCP component needs no hand-written module.
 
 The tool description must state that it creates **audio**, needs the separately
 installed local runtime, can take several seconds while holding the normal
 serialized Ableton tool lock, preserves takes, and imports the raw
 duration-exact render unchanged. It must say this MVP does not correct rhythmic
 phase, loop seams, warping or later tempo following and that the reply reports
-Live's observed state. Suggest MIDI generation/editing when exact note-grid
-control is the actual request.
+Live's observed state. Suggest MIDI note writing/editing when exact note-grid
+control is the actual request; do not name a MIDI-generation tool that has not
+shipped yet.
 
 ## Part 4 — Wire the handler and honest replies
 
-Add the dispatch branch in `lib/seshat/mcp/handler.ex` and delegate to
+Add the dispatch branch in `lib/seshat/tools/handlers.ex` and delegate to
 `AudioClip.generate/1`. The handler only formats the domain result.
+
+Add `generate_audio` to the clip-writing clause in
+`Seshat.Tools.FollowCam.calls/2`, using `%{track: track, slot: slot}` so the
+existing selected-clip/detail-clip/Session/Detail sequence is reused rather
+than reimplemented in the generation module.
 
 A success reply should resemble:
 
@@ -293,7 +314,7 @@ Add or update tests for:
 - duration/frame math across tempo, signature and 1/16-bar boundaries;
 - deterministic safe prompt/argv construction, negative prompt and variation;
 - weight/runtime preflight, non-interactive invocation, success, non-zero exit,
-  timeout/process-tree termination, missing/partial/symlink output and bounded
+  timeout/runtime-process termination, missing/partial/symlink output and bounded
   diagnostics using a throwaway executable runtime;
 - atomic filename reservation, `0700` creation of the import root, and cleanup
   of only the failed request's file;
@@ -305,7 +326,8 @@ Add or update tests for:
 - exact import request/reply matching, clip-name/read-back verification,
   preservation on import failure and FollowCam only after verified success;
 - success and partial-failure reply wording; and
-- the two-file native-process architectural allow-list.
+- the two-file native-process architectural allow-list, including termination
+  of the exact fake runtime pid on timeout.
 
 Use an OSC sink and fake backend for domain tests. Unit tests must not require
 Live, model weights, network access or the user's runtime.
@@ -320,6 +342,8 @@ Live, model weights, network access or the user's runtime.
   `docs/smoke_tests/auto/generation.md` and the conversational routing check in
   `docs/smoke_tests/manual/conversation.md`.
 - Update `docs/smoke_tests/manual/README.md` counts.
+- Add the generation modules to `CLAUDE.md`'s module map and update its
+  process-door description from one permitted module to the two named doors.
 - The deferred audio-alignment/warping/quality work is already a separate
   roadmap item with its own plan
   ([PLAN_generate_audio_polish.md](PLAN_generate_audio_polish.md)); keep the
@@ -338,7 +362,7 @@ During implementation run focused files first, then:
 Tests must prove that no generation begins for an occupied/non-audio target,
 no Live mutation precedes a successful file, no success is reported before
 import read-back, user text never reaches a shell, concurrent names cannot
-collide, and timeout cleanup leaves no child process running.
+collide, and timeout cleanup leaves no timed-out runtime process running.
 
 ## Live verification
 
