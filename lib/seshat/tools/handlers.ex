@@ -11,6 +11,8 @@ defmodule Seshat.Tools.Handlers do
   require Logger
 
   alias Seshat.Commands.{Command, Registry}
+  alias Seshat.Generation.AudioClip
+  alias Seshat.Generation.Result
   alias Seshat.Library.Catalog
   alias Seshat.Music.Pitch
   alias Seshat.OSC.Transport
@@ -3268,6 +3270,26 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # --- Generated audio ---
+  #
+  # The whole workflow lives in `Seshat.Generation.AudioClip`: session read,
+  # duration arithmetic, target guards, the reserved filename, the local render,
+  # the import through the fork's `/live/clip_slot/create_audio_clip`, and the
+  # read-back that decides whether any of it worked. This clause formats the
+  # result and nothing else — the one rule that keeps a multi-stage workflow out
+  # of a 6,000-line dispatcher.
+  #
+  # It gets the ordinary undo-step wrap, which means Live's undo step stays open
+  # for as long as the render takes (up to the adapter's 60-second bound). That
+  # is the same property every slow tool has, and closing it early would put the
+  # import in a different step from the track creation that preceded it.
+  defp do_call("generate_audio", params) do
+    case AudioClip.generate(params) do
+      {:ok, result} -> {:ok, format_generated_clip(result)}
+      {:error, message} -> {:error, message}
+    end
+  end
+
   # --- Audio output (macOS Accessibility, not OSC) ---
   #
   # The only two clauses in this file that never touch `Transport`. Live's
@@ -3344,6 +3366,91 @@ defmodule Seshat.Tools.Handlers do
       {:error, failure} ->
         {:error, audio_error(failure)}
     end
+  end
+
+  # Two halves, never merged: what was asked for, then what Live said afterwards.
+  # The observed half is a read-back of the clip that actually exists, so a
+  # `nil` there is reported as unknown rather than filled in with the requested
+  # value — a reply that quietly substituted the request for the observation
+  # would defeat the whole point of reading it back.
+  defp format_generated_clip(%Result{} = result) do
+    Enum.join(
+      [
+        generated_headline(result),
+        generated_observation(result),
+        "Imported without rhythmic-grid or loop-seam correction.",
+        generated_provenance(result)
+      ] ++ generated_key(result),
+      " "
+    )
+  end
+
+  defp generated_headline(result) do
+    where =
+      if result.created_track?,
+        do:
+          "a new audio track \"#{result.track_name}\" (track #{result.track}), slot #{result.clip_slot}",
+        else: "track #{result.track}, slot #{result.clip_slot}"
+
+    variation =
+      case result.variation do
+        nil ->
+          ""
+
+        %{track: track, clip_slot: slot, strength: strength} ->
+          " It is a variation of the clip in slot #{slot} on track #{track} (strength #{strength})."
+      end
+
+    "Generated a #{result.bars}-bar audio clip (#{format_seconds(result.seconds)} s requested " <>
+      "at #{format_bpm(result.tempo)} BPM in #{result.time_sig_numerator}/" <>
+      "#{result.time_sig_denominator}) and imported it to #{where} as " <>
+      "\"#{result.clip_name}\".#{variation}"
+  end
+
+  defp generated_observation(%{observed: observed} = result) do
+    "Live reads back #{describe_observed_length(observed[:length])}, " <>
+      "looping #{describe_observed_flag(observed[:looping])}, " <>
+      "warping #{describe_observed_flag(observed[:warping])}." <> describe_observed_name(result)
+  end
+
+  # The clip is renamed with a fire-and-forget `/live/clip/set/name`, and its
+  # name comes back in the same read-back batch that proves the import landed.
+  # Comparing the two is what turns that read into evidence: a dropped datagram
+  # would otherwise leave the headline announcing a name Live never applied,
+  # which is the one claim in this reply nothing else would contradict.
+  defp describe_observed_name(%{clip_name: requested, observed: %{name: observed}})
+       when is_binary(observed) and observed != requested do
+    " Live reports the clip is named \"#{observed}\", not \"#{requested}\" — the rename did " <>
+      "not land, though the audio did."
+  end
+
+  defp describe_observed_name(_result), do: ""
+
+  defp describe_observed_length(length) when is_number(length), do: "#{length} beats"
+  defp describe_observed_length(_length), do: "a length it could not report"
+
+  defp describe_observed_flag(true), do: "on"
+  defp describe_observed_flag(false), do: "off"
+  defp describe_observed_flag(_other), do: "unknown"
+
+  defp generated_provenance(result) do
+    "File: `#{result.file}`; seed #{result.seed}; generation " <>
+      "#{format_seconds(result.wall_ms / 1000)} s."
+  end
+
+  defp generated_key(%{key: nil}), do: []
+
+  defp generated_key(%{key: key}),
+    do: ["Key requested: #{key} (not pitch-verified)."]
+
+  defp format_seconds(seconds) when is_number(seconds) do
+    seconds |> :erlang.float() |> Float.round(3) |> :erlang.float_to_binary([:short])
+  end
+
+  defp format_bpm(tempo) when is_number(tempo) do
+    if tempo == Float.round(tempo * 1.0),
+      do: Integer.to_string(trunc(tempo)),
+      else: to_string(tempo)
   end
 
   defp format_audio_outputs(current, []) do

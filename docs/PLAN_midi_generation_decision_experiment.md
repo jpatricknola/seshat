@@ -1,5 +1,17 @@
 # Plan — MIDI generation: the decision experiment
 
+> **Status 2026-08-30: superseded pending re-scope, do not run as written.**
+> Audio generation transcribed to MIDI (Route C) was rejected as the primary
+> MIDI strategy on 2026-08-30 — Stable Audio's text conditioning has no
+> rhythmic precision, so a duration-exact render carries free-running rhythm
+> and transcription stacks error on it. Three of this plan's four arms and
+> the MRT2 arm are Route C and are withdrawn. The GMD retrieval engine, the
+> GrooVAE go/no-go, the fixed prompts, the bounded derived-bass rule, the
+> in-Live rendering harness and the blind-judging protocol all still hold and
+> should seed the re-plan for the roadmap item "MIDI generation — the first
+> solution, composed symbolically". The IDM spike and the separator question
+> are out of scope until a specific case for audio→MIDI is opened.
+
 Roadmap item **"MIDI generation — the decision experiment."** Not a tool and
 not a fork change: a blinded listening bake-off between complete MIDI
 pipelines, rendered into the open Live set through Seshat's *existing* tool
@@ -409,7 +421,7 @@ Link `experiments/midi_bakeoff/README.md`, the committed `prompts.json`,
   verdict, where the harness and scores live.
 - `experiments/midi_bakeoff/README.md` licence table: SA3 (Community License
   + Gemma terms, user-installed, per
-  [PLAN_generate_audio_clip.md](PLAN_generate_audio_clip.md)), IDM
+  [PLAN_generate_audio_clip.md](archive/PLAN_generate_audio_clip.md)), IDM
   (Apache-2.0, verified text), GMD (CC-BY-4.0, attribution string), Basic
   Pitch (Apache-2.0), GrooVAE (excluded/admitted with the evidence), ADTOF
   (excluded, reference only).
@@ -458,7 +470,7 @@ a placement defect is not mistaken for a musical one.
   values` — `load_device`'s read-back of the fixed instruments; the pinned
   URIs in `instruments.json` are only as stable as this.
 - `smoke_tests/manual/by-ear.md § A generated loop sits on the grid and seams
-  cleanly` — **written by PLAN_generate_audio_clip.md, not yet in the file;
+  cleanly` — **written by archive/PLAN_generate_audio_clip.md, not yet in the file;
   it is this experiment's prerequisite too** (the roadmap's "verify the
   downbeat and loop boundary on the existing WAV slate"). Run it on the
   spike slate before Part 6: a late first hit in the WAV would put every
@@ -492,7 +504,7 @@ ear (the seeds are kept, not scored).
   [PLAN_live_native_generation_spike.md](PLAN_live_native_generation_spike.md);
   this plan consumes its verdict lines.
 - **Audio import over OSC** (`/live/clip_slot/create_audio_clip`) — owned by
-  [PLAN_generate_audio_clip.md](PLAN_generate_audio_clip.md) Part 1. The joint
+  [PLAN_generate_audio_clip.md](archive/PLAN_generate_audio_clip.md) Part 1. The joint
   C arm imports its render by drag-and-drop if that has not landed, as the
   spike plan does.
 - **Reading the selected scene, `Clip.groove` assignment, a Drum Rack pad-map

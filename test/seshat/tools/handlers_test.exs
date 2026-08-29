@@ -5296,4 +5296,136 @@ defmodule Seshat.Tools.HandlersTest do
              ] = osc_trace()
     end
   end
+
+  # `generate_audio`'s workflow lives in `Seshat.Generation.AudioClip` and has
+  # its own file; what is pinned here is the half this module owns — that the
+  # dispatch reaches it, that the reply separates what was requested from what
+  # Live observed, and that the tool is wrapped in an undo step like any other.
+  describe "generate_audio" do
+    setup do
+      sink = start_supervised!({Seshat.Test.OSCSink, forward_to: self()})
+      start_supervised!({Seshat.OSC.Transport, send_port: OSCSink.port(sink), reply_port: 0})
+      start_supervised!(Seshat.Test.FakeSessionState)
+
+      root = Path.join(System.tmp_dir!(), "seshat-gen-#{System.unique_integer([:positive])}")
+      Application.put_env(:seshat, :generated_root, root)
+
+      on_exit(fn ->
+        Application.delete_env(:seshat, :generated_root)
+        File.rm_rf(root)
+      end)
+
+      Seshat.Test.FakeGenerationBackend.install()
+
+      %{sink: sink, root: root}
+    end
+
+    defp generate(context, params, live \\ nil) do
+      Seshat.Test.LiveDouble.run(context.sink, live || Seshat.Test.LiveDouble.session(), fn ->
+        Handlers.call("generate_audio", params)
+      end)
+    end
+
+    test "the reply names the request and Live's own read-back, separately", context do
+      {result, _trace} = generate(context, %{"description" => "dusty breakbeat", "track" => 0})
+
+      assert {:ok, message} = result
+
+      assert message =~ "Generated a 4-bar audio clip"
+      assert message =~ "7.742 s requested at 124 BPM in 4/4"
+      assert message =~ ~s|imported it to track 0, slot 1 as "dusty breakbeat"|
+      assert message =~ "Live reads back 16.0 beats, looping on, warping on"
+      assert message =~ "Imported without rhythmic-grid or loop-seam correction."
+      assert message =~ "seed "
+      assert message =~ "Key requested: F Minor (not pitch-verified)."
+
+      # The rename landed, so the observation says nothing about it.
+      refute message =~ "the rename did not land"
+    end
+
+    # `/live/clip/set/name` is fire-and-forget, and the name comes back in the
+    # same batch that proves the import. Comparing them is what stops the reply
+    # announcing a name Live never applied.
+    test "a rename that did not land is reported against the read-back", context do
+      live = Map.put(Seshat.Test.LiveDouble.session(), :ignore_renames, true)
+
+      {result, _trace} =
+        generate(context, %{"description" => "dusty breakbeat", "track" => 0}, live)
+
+      assert {:ok, message} = result
+      assert message =~ ~s|imported it to track 0, slot 1 as "dusty breakbeat"|
+      assert message =~ ~s|Live reports the clip is named "", not "dusty breakbeat"|
+      assert message =~ "the rename did not land, though the audio did"
+    end
+
+    test "a new track is named in the reply", context do
+      {result, _trace} =
+        generate(context, %{"description" => "dusty breakbeat", "track_name" => "Gen Drums"})
+
+      assert {:ok, message} = result
+      assert message =~ ~s|a new audio track "Gen Drums" (track 3), slot 0|
+    end
+
+    test "a variation says what it varied", context do
+      source = Path.join(context.root, "earlier.wav")
+      File.mkdir_p!(context.root)
+      File.write!(source, "RIFF")
+
+      live = put_in(Seshat.Test.LiveDouble.session().clips[{0, 0}][:path], source)
+
+      {result, _trace} =
+        generate(
+          context,
+          %{
+            "description" => "same but darker",
+            "variation_of" => %{"track" => 0, "clip_slot" => 0},
+            "strength" => 0.4
+          },
+          live
+        )
+
+      assert {:ok, message} = result
+      assert message =~ "It is a variation of the clip in slot 0 on track 0 (strength 0.4)."
+    end
+
+    # The schema is what stops a bad shape before the workflow ever runs, and
+    # `Validation` is what makes the refusal readable.
+    test "the declared schema rejects an out-of-range bar count", context do
+      {result, _trace} = generate(context, %{"description" => "drums", "bars" => 32})
+
+      assert {:error, message} = result
+      assert message =~ "Invalid parameters for generate_audio"
+      assert message =~ "bars: must be at most 16"
+
+      refute_received {:generate, _spec}
+    end
+
+    test "a refusal from the workflow reaches the model unchanged", context do
+      {result, _trace} = generate(context, %{"description" => "drums", "track" => 1})
+
+      assert {:error, message} = result
+      assert message =~ "is a MIDI track"
+    end
+
+    # Like every other tool that changes Live: the step opens before anything is
+    # sent and closes after everything is, so one `undo` reverses the whole
+    # create-import-name sequence rather than part of it.
+    test "the whole workflow sits inside one undo step", context do
+      {result, trace} = generate(context, %{"description" => "drums", "track_name" => "Gen"})
+
+      assert {:ok, _message} = result
+
+      addresses = Seshat.Test.LiveDouble.addresses(trace)
+
+      assert List.first(addresses) == "/live/song/end_undo_step"
+      assert Enum.at(addresses, 1) == "/live/song/begin_undo_step"
+      assert List.last(addresses) == "/live/song/end_undo_step"
+
+      import_at = Enum.find_index(addresses, &(&1 == "/live/clip_slot/create_audio_clip"))
+      create_at = Enum.find_index(addresses, &(&1 == "/live/song/create_audio_track"))
+
+      assert create_at > 1
+      assert import_at > create_at
+    end
+  end
 end

@@ -1,5 +1,14 @@
 # Plan — Live-native generation spike: can AX drive the Create menu?
 
+> **Status 2026-08-30: still valid, no longer a gate.** This spike was pinned
+> above its quotient as the gate for the MIDI decision experiment, deciding
+> which of Live's transcription commands could be an arm. Audio→MIDI
+> transcription has since been rejected as the primary MIDI strategy, so the
+> MIDI item no longer waits on it. The procedure and acceptance below are
+> unchanged; what changed is what the result feeds — Stem Separation and
+> Extract Groove for the audio side, Convert Drums / Melody / Harmony for a
+> specific case that has not been opened. Run it at its own quotient.
+
 Roadmap item **"Live-native generation spike — can AX drive the Create
 menu?"** A spike with a written result, not a tool. It answers, by
 measurement against the running Live, whether Seshat can invoke Live's own
@@ -106,7 +115,7 @@ in Live is a scratch set (one MIDI track), so the spike can run in it.
   so the measurement is reproducible — the 2026-08-03 `ax-probe`'s source
   was never kept, and only its binary survives.
 - **Import by hand, not through the audio plan.**
-  [PLAN_generate_audio_clip.md](PLAN_generate_audio_clip.md) Part 1 adds
+  [PLAN_generate_audio_clip.md](archive/PLAN_generate_audio_clip.md) Part 1 adds
   `/live/clip_slot/create_audio_clip`, which would import the render over
   OSC. The spike does not depend on it: dragging a WAV from Finder into a
   slot is a ten-second action, and gating a one-afternoon spike on a fork
@@ -253,7 +262,7 @@ time) so only the run's lines are read.
 Set-up: Seshat stopped; scratch set open; transport stopped;
 `~/.seshat/audio-spike/drums_124bpm_sm-music.wav` dragged into slot (1, 0)
 of a new audio track by hand (or imported via
-`/live/clip_slot/create_audio_clip` if PLAN_generate_audio_clip Part 1 has
+`/live/clip_slot/create_audio_clip` if archive/PLAN_generate_audio_clip.md Part 1 has
 landed), and `interlock/B_joint_seed42.wav` into slot (1, 1). Set tempo to
 124 so the clips read as 4 bars. Subscribe with `start_listen/tracks` and
 keep the receiving socket printing timestamps for the whole run.

@@ -25,6 +25,11 @@ transport; there is no browser application.
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
 - Use the already included `:req` (`Req`) library for HTTP requests; **avoid**
   `:httpoison`, `:tesla`, and `:httpc`. Req is Seshat's preferred HTTP client.
+- **Everything the installed Ableton Live Object Model exposes is fair game
+  for Seshat.** If AbletonOSC lacks an address for a LOM capability, add it to
+  Seshat's fork. A missing fork address is routine implementation scope, never
+  a capability limitation, architectural objection, or reason to reject,
+  defer, downgrade, or rank a feature lower.
 
 ## Elixir guidelines
 

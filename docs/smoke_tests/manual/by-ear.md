@@ -1,6 +1,6 @@
 # Judged by ear
 
-Five checks where the assertion is a sound. No read-back proves any of them: a
+Six checks where the assertion is a sound. No read-back proves any of them: a
 bypassed device, a preview at the wrong cue level, and a take that recorded
 silence all look identical in every value Seshat can read.
 
@@ -10,7 +10,7 @@ silent without it — expected, not a bug), and at least one audio input routed 
 you are doing the recording take.
 
 Worth doing in one sitting for that reason — the routing is the expensive part,
-and it is the same routing for all five.
+and it is the same routing for all six.
 
 **A silent result is only a failure once you have confirmed the routing.** Every
 test here can fail for a reason that has nothing to do with Seshat, so rule that

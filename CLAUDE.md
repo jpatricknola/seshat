@@ -49,6 +49,11 @@ Seshat.MCP.Server
                        │                                  ▼  ← macOS Accessibility API
                        ▼                              Ableton Live's Settings window
             AbletonOSC → Ableton Live
+
+            generate_audio takes a third shape: Seshat.Generation.AudioClip
+            renders through Seshat.Generation.StableAudio (the second native
+            process door — no OSC), writes the take into ~/.seshat/generated,
+            then comes back through Transport to import it by basename.
 ```
 
 Two tools take a second path below `Handlers` that never touches `Transport`
@@ -56,12 +61,23 @@ or AbletonOSC at all: Live's application-wide audio *device* preference isn't
 in the Live Object Model at any version of the bridge, so `get_audio_outputs`
 and `set_audio_output` reach it through `Seshat.AX.Client`, which spawns the
 native helper at [native/seshat_ax/main.m](native/seshat_ax/main.m) once per
-call to drive Live's Settings window via the macOS Accessibility API — the one
-door out of `lib/seshat/` allowed to start a process
-(`test/seshat/ax/client_test.exs` greps the rest of `lib/` to keep it that
-way). Both tools opt out of the undo-step wrapping every other tool gets
-(`undo_step: false`) and out of the OSC undo-step lock, because the mechanism
-they use cannot reach Live's undo history or its OSC socket either.
+call to drive Live's Settings window via the macOS Accessibility API. Both tools
+opt out of the undo-step wrapping every other tool gets (`undo_step: false`) and
+out of the OSC undo-step lock, because the mechanism they use cannot reach
+Live's undo history or its OSC socket either.
+
+**There are exactly two doors out of `lib/seshat/` allowed to start a native
+process**, and `test/seshat/ax/client_test.exs` greps the rest of `lib/` to keep
+it that way — naming both files exactly, and asserting in the other direction
+that each named file really does spawn something, so a rename cannot leave a
+standing exemption behind. The second is
+[lib/seshat/generation/stable_audio.ex](lib/seshat/generation/stable_audio.ex),
+which runs the locally installed Stable Audio 3 MLX runtime once per
+`generate_audio` call: rendering audio is not something the BEAM can do and not
+something any OSC address or LOM member exposes. Unlike the AX path it *is*
+undo-stepped, because what it ultimately does — import a clip into a slot — is
+an ordinary Live Set change. A third door is a design decision, not a
+convenience: it has to be argued in the commit that adds it to that list.
 
 `Seshat.Instructions` carries the session-level conventions no single tool
 description can and is sent as MCP server `instructions` at connect time. One
@@ -137,8 +153,11 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/music/pitch.ex](lib/seshat/music/pitch.ex) | MIDI pitch → note name, shared by the notes reader and session state |
 | [lib/seshat/library/catalog.ex](lib/seshat/library/catalog.ex) | Tag-aware sound catalog — ETS + `~/.seshat/catalog.json`, merge and search |
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
-| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools — the only module under `lib/seshat/` allowed to start a process, pinned by a grep test |
+| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools — one of the two modules under `lib/seshat/` allowed to start a process, pinned by a grep test |
 | [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a four-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for |
+| [lib/seshat/generation/audio_clip.ex](lib/seshat/generation/audio_clip.ex) | The `generate_audio` workflow: session read, duration arithmetic, target guards, the reserved take filename, the import through `/live/clip_slot/create_audio_clip`, and the read-back that decides whether any of it worked. Guards run before the render, so a failed generation leaves Live untouched |
+| [lib/seshat/generation/backend.ex](lib/seshat/generation/backend.ex) | The boundary between that workflow and whatever renders audio. `Spec` in, `{:ok, %{path:, seed:, wall_ms:}}` out; the implementation is a compile-time choice so the suite's fake cannot leak into the real adapter |
+| [lib/seshat/generation/stable_audio.ex](lib/seshat/generation/stable_audio.ex) | **The second native-process door.** Drives the local Stable Audio 3 MLX runtime one process per request — argv only, never a shell; every weight preflighted so a missing one refuses instead of starting a download; a 60s deadline that terminates the runtime's exact OS pid |
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/seshat/eval/](lib/seshat/eval/) | **Routing evals — no OSC, no Ableton, no `Definitions` change.** `Surface` freezes the model-facing contract (instructions + published tools) as JSON; `Recorder` replays one as a record-only MCP server over a `Fixture` synthetic set; `Stream`/`Trial` parse the client's `stream-json` and refuse a trial whose isolation broke; `Judge` scores a trace against a `Case`'s per-surface expectation; `Report` writes the gate table. A grep test keeps the whole tree off the wire |
 | [lib/mix/tasks/routing.eval.ex](lib/mix/tasks/routing.eval.ex) | `mix routing.eval` — the on-demand run. `routing.eval.runner.ex` is the one process-starting half (under `lib/mix/tasks/` on purpose); `routing.recorder.ex` is what Claude Code spawns per trial; `routing.snapshot.ex` prints the current surface with nothing running |
@@ -166,6 +185,15 @@ regular, and a wrong address fails silently (it's UDP, with no reply).
 [.claude/docs/ableton-osc-reference.md](.claude/docs/ableton-osc-reference.md)
 holds only Seshat's side of the datagram (ports, value conventions, ordering
 hazards, how `Transport` correlates replies) and never restates a wire fact.
+
+**The installed Live Object Model is Seshat's capability boundary, not the
+fork's current address list. Everything Live exposes through the LOM is 100%
+fair game.** When the LOM has the operation and the fork does not, adding the
+address is ordinary feature implementation—not a dependency risk, bridge
+limitation, deterrent, or negative in evaluation or prioritisation. Never
+reject, defer, downgrade, or rank a feature lower because it needs a fork
+update. Account for the Python change, pin bump, install/restart, and live
+verification in the plan, then build it.
 
 The fork's other docs, each the sole record of its subject:
 
@@ -260,6 +288,128 @@ services, writing the result into [docs/evaluating/](docs/evaluating/).
 That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
+
+**Audio→MIDI transcription is rejected as the primary MIDI strategy,
+decided 2026-08-30** the same day `generate_audio` shipped, on a property of
+the generator rather than a listening result: Stable Audio's text
+conditioning is semantic, not symbolic — no notion of "exactly two beats" or
+"a half note" — so a duration-exact render carries free-running rhythm, and
+transcribing it stacks error on loose material that no prompt wording can
+tighten. It may serve a specific case later (melody and harmony have no
+symbolic candidate; Live's Convert Drums is a zero-licence lane) but it is
+not the first solution built. The roadmap's four-arm "MIDI generation — the
+decision experiment" was re-scoped into "MIDI generation — the first
+solution, composed symbolically" (Route D retrieval from the Groove MIDI
+Dataset for drums, a bounded rule-derived bass, wiring tested one factor at
+a time) and moved to the top of the queue as ready work; "Live-native
+generation spike" was un-pinned to its own quotient, since nothing on the
+MIDI side waits on it any more; both plan docs carry status banners rather
+than rewrites, and
+[midi-generation-options.md](docs/evaluating/generative%20features/midi-generation-options.md)
+records the ruling under "Verdict up front" with §C kept as evidence. The
+same finding gives "Generated-audio alignment, warping and quality polish"
+its first lever: audio conditioning on a click at the session tempo, which
+`variation_of` already wires.
+
+**Generate audio onto a track shipped 2026-08-30** on branch `create-audio`,
+closing the queue's former top item, "Generate audio onto a track — Stable
+Audio 3, imported as a clip," the first of the two PRs the audio story was
+split into. One new tool, `generate_audio`, renders 1–16 bars locally
+through the installed Stable Audio 3 MLX runtime
+(`Seshat.Generation.StableAudio` — the second process-starting door out of
+`lib/seshat/` after `Seshat.AX.Client`, both now named explicitly by the
+widened grep test in `test/seshat/ax/client_test.exs`), keeps every take in
+Seshat's managed `~/.seshat/generated` folder (the fork's own
+`path_safety.IMPORT_ROOT`), and imports the file into a Session slot through
+the fork address `/live/clip_slot/create_audio_clip` — merged on the fork's
+`origin/master` at `fe6730e` before this PR started, so it wrote no Python,
+only bumped the gitlink and ran `mix abletonosc.install`. The workflow
+orders guards before render before track creation: an occupied explicit
+slot or a non-audio target is refused before anything is generated, a new
+track is created only once the file exists, and the reply reports Live's
+own observed length, looping and warping rather than asserting the raw
+render is grid-aligned or seamlessly loopable — that measurement and any
+DSP fix is deliberately deferred to "Generated-audio alignment, warping and
+quality polish," sequenced after MIDI generation by the same 2026-08-29
+decision that split the audio story in two. `variation_of` re-renders from
+an existing take (`--init-audio`/`--init-noise-level`) for "another take,
+darker" without touching the kept one. Measured warm: a 1.94s clip rendered
+in 1.54s and produced exactly `AudioClip.target_frames/1`'s frame count.
+
+PR review found the implementation correct on independent re-derivation (all
+15 addresses checked against `priv/AbletonOSC/API.md` at the installed pin,
+the fork Python behind the pin bump read in full, ordering pinned by a
+fake-backend arrival-order trace) and raised seven items, one of them a
+bundle of five style notes. Three plus four of the five style notes were
+applied before merge: `generation.md` was missing from
+`docs/smoke_tests/auto/README.md`'s file table (would have silently
+skipped this PR's only live coverage on every full `/smoke-test` sweep);
+the plan's `## Live verification` section was missing a citation to
+`mcp-surface.md`'s handshake check, load-bearing because `variation_of` is
+the first root-level object-typed tool property on the published surface
+and a client that rejects the shape loses every tool, not just this one;
+the reservation-collision test only passed by timing luck and now retries
+until both takes actually land in the same UTC second; and a missing
+sentence-terminating period, a nonsense message on a zero-scene set, two
+dead code paths in `unwrap/1`, and a fully-qualified struct reference were
+all cleaned up. Two real defects were initially declined as local fixes and
+added to the roadmap, both needing a genuine behavior change and a
+filesystem- or size-dependent test rather than a one-line correction:
+"`variation_of` refuses a managed take when `~/.seshat` is a symlink"
+(`under_root?/1` compares expanded-but-unresolved paths, the same trap
+`same_file?/2` twenty lines below it was written to avoid) and "Bounded
+generation diagnostics can drop the newest chunk entirely on overflow"
+(`trim/3`'s single-oversized-chunk case discards the newest output instead
+of tailing it, reachable only below the shipped 32KB default). Both were
+subsequently fixed on the PR: containment walks the reported file's ancestor
+directories by inode/device until it finds the configured root, with a real
+symlinked-directory regression test, and the diagnostics base case retains
+the final configured number of bytes from an oversized chunk with content
+asserted in the test. Two more were left for the PR reader to judge rather
+than acted on: `mix
+routing.eval` was not run despite the `Definitions` change (52 → 53 tools),
+and `observed.name` was read back on every generation but never surfaced or
+compared.
+
+A second review pass found four further non-blocking items, all applied:
+`partial_effects/2` told the caller a created track was "still there,
+empty" on the three read-back failure paths *after* the import had already
+replied `["ok", _]` — Live had returned a `Clip` by then, so the sentence
+contradicted the one in front of it; those three paths now use
+`unverified_effects/2`, which says the track exists and that whether the
+clip is in the slot is exactly what could not be confirmed. `new_track_plan/1`
+checked the scene count only when `clip_slot` was explicit, so on a
+scene-less set the tool's most ordinary call (no `track`, no `clip_slot`)
+would render, create a track, and only then have Live refuse the import —
+it now asks `num_scenes/0` on both branches. `Seshat.Generation.Backend`'s
+result type documented `path` as the reserved path *checked by the caller*,
+and no caller read it; `render_and_import/6` now matches it against the
+reservation and refuses without importing. And `observed.name` is used at
+last: the reply names the clip in its headline and, when Live reports a
+different name, says the fire-and-forget `/live/clip/set/name` did not land
+though the audio did. The live check gained the one assertion neither suite
+made — a duration-exact file of digital silence satisfied every existing
+criterion, so `auto/generation.md` now measures peak level. `mix
+routing.eval` remains unrun and remains the reader's call.
+
+A final review pass fixed one contract violation: an explicit destination
+`track` could disagree with `variation_of.track`, and the workflow silently
+gave the explicit destination priority even though the published schema says
+a variation lands on its source clip's track. Cross-field validation now
+rejects the disagreement before any OSC or backend call, while accepting a
+redundant explicit track when it matches the source.
+
+**Live verification has not run.** Both `auto/generation.md` checks ("A
+generated clip lands, reads back, and its file is duration-exact", "An
+occupied slot is refused before anything is generated") still read `*Last
+run: —*`; the manual `manual/conversation.md` § "A generation request
+routes to one call and names the form" needs a person; and
+`auto/mcp-surface.md`'s only recorded run (2026-08-28, 52 tools) predates
+this tool's addition to the surface, so it does not actually cover the new
+object-typed schema it was cited for. Run `/smoke-test generation` and
+`/smoke-test mcp-surface`, plus the manual conversation check, before
+trusting this feature's live behaviour. Plan archived at
+[docs/archive/PLAN_generate_audio_clip.md](docs/archive/PLAN_generate_audio_clip.md).
 
 **Routing evals shipped 2026-08-28**, closing the first slice of what had
 been the queue's top item ("Automate conversation-routing evaluations").

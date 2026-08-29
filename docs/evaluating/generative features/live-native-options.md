@@ -8,7 +8,8 @@ touches now points here from the passage it corrects._
 **Why this doc exists.** The five sibling docs took their information from
 papers, model cards and local spikes, and that information is assumed
 accurate here. What none of them did was ask what the installed Live
-(12.4.3; latest 12.4.5, 2026-08-26) already does for each capability. The
+(originally measured on 12.4.3; installed and latest 12.4.5, rechecked
+2026-08-30) already does for each capability. The
 answer is: quite a lot. Live ships a source separator, three audio-to-MIDI
 converters, a slicer, a groove extractor and a library of ~3,000 grooves, a
 set of MIDI generators and humanising transformations, a bounce-to-audio
@@ -37,7 +38,7 @@ marked measured**; nothing below was run against Live today.
 | **Convert Harmony to New MIDI Track** (polyphonic → piano Instrument Rack) | 9 | Standard, Suite | UI-only | Route C pads/chords ([midi §C.2](midi-generation-options.md#L448)) |
 | **Slice to New MIDI Track** (transients / beat divisions / warp markers → Drum Rack of Simplers + a MIDI clip, ≤128 slices) | 8 | Standard, Suite | UI-only for the command; **LOM** for Simpler's slice list (`slices`, `insert_slice`, `remove_slice`, `clear_slices`, `reset_slices`, `slicing_playback_mode`) plus `SimplerDevice.replace_sample` (12.2) | Drum loops as editable MIDI without transcription ([midi §C.5](midi-generation-options.md#L505)) |
 | **Extract Groove(s)** (timing + velocity from any audio *or* MIDI clip → Groove Pool) | 8 | all | UI-only | Feel transfer, existing-context conditioning ([midi §E.2](midi-generation-options.md#L782), [§D](midi-generation-options.md#L582)) |
-| **Groove Pool + Core Library grooves** (`Song.groove_pool.grooves`; `Groove.base / timing_amount / random_amount / velocity_amount / quantization_amount`; `Clip.groove` get/set/observe since Live 11; ~3,000 shipped `.agr` files) | 8 / 11 | all | **LOM** — currently a **fork gap**: `clip.py` comments `groove` out because the object can't be serialised over OSC, but a handler can assign by pool index | Humanising generated MIDI ([midi §D](midi-generation-options.md#L582)); corrects [CLAUDE.md](../../CLAUDE.md)'s "cannot assign" |
+| **Groove Pool + Core Library grooves** (`Song.groove_pool.grooves`; `Groove.base / timing_amount / random_amount / velocity_amount / quantization_amount`; `Clip.groove` get/set/observe since Live 11; ~3,000 shipped `.agr` files) | 8 / 11 | all | **Fork** — the fork now exposes groove-pool reads/settings and `/live/clip/get\|set/groove` by pool index (measured on Live 12.4.5, 2026-08-29); Seshat still has no clip-groove tool | Humanising generated MIDI ([midi §D](midi-generation-options.md#L582)); now a tool-layer gap, not a fork gap |
 | **MIDI Tools — Generators** (Rhythm, Seed, Shape, Stacks; Euclidean via M4L) and **Transformations** (Arpeggiate, Chop, Connect, Glissando, LFO, Ornament, Quantize, Recombine, Span, Strum, Time Warp; Velocity Shaper via M4L); custom `.amxd` tools allowed | 12.0 | Standard, Suite | UI-only (clip-view panel, parameters, Apply) | Route A/D drum and pattern generation; feel post-processing ([midi §D](midi-generation-options.md#L582)) |
 | **Bounce Track in Place / Bounce to New Track / Paste Bounced Audio / Bounce Group** | 12.2–12.3 | all | UI-only | Rendering existing MIDI to audio for joint-C or audio-to-audio conditioning; improv capture ([improv §9](live-improv-exploration.md#L492)) |
 | **Arrangement locators** (`Song.cue_points`, `set_or_delete_cue`, `jump_to_next_cue`, `is_cue_point_selected`) | ≤9 | all | **LOM** — fork gap | Section markers for the improv slow loop ([improv §9](live-improv-exploration.md#L511) says "not in the fork"; true, but it is in the LOM) |

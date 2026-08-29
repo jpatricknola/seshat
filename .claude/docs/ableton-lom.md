@@ -1,6 +1,14 @@
 # Ableton Live Object Model (LOM)
 
 The LOM is the hierarchy of objects that Ableton Live exposes for programmatic control.
+
+## Seshat policy
+
+Everything exposed by the installed LOM is 100% fair game for Seshat. The
+current AbletonOSC address list is an implementation snapshot, not a product
+boundary: when an address is missing, add it to Seshat's fork. That work must
+be planned and verified, but it is never a capability limitation, deterrent,
+or reason to reject, defer, downgrade, narrow, or rank a feature lower.
 Any bridge to Ableton (AbletonOSC, Max for Live, the Live API directly) ultimately
 operates on this same object model.
 

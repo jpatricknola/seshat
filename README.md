@@ -215,6 +215,66 @@ There is nothing to register: the fork's `__init__.py` and `manager.py` already
 list every handler. Restart Ableton Live.
 </details>
 
+### Install the audio-generation runtime (optional)
+
+`generate_audio` renders short audio locally with **Stable Audio 3 small**
+through its MLX runtime. Seshat does not ship, bundle or download it: if the
+runtime or its weights are absent, the tool refuses and says so, and nothing
+else in Seshat is affected. Install it if you want the tool; skip it otherwise.
+
+Seshat looks for the runtime at
+`~/.seshat/stable-audio-3/optimized/mlx`, and needs four things inside it:
+
+| Path | What it is |
+|---|---|
+| `sa3` | the wrapper Seshat executes |
+| `scripts/sa3_mlx.py`, `.venv/bin/python` | the runtime and its interpreter |
+| `models/mlx/dit_sm-music_f16.npz`, `models/mlx/same_s_decoder_f32.npz` | the one quality lane Seshat uses |
+| `models/mlx/t5gemma_f16.npz` | the text encoder |
+
+A fifth weight, `models/mlx/same_s_encoder_f32.npz`, is needed only for
+"another take, darker" — the `variation_of` parameter, which re-reads an
+existing take.
+
+All five are checked **before** each render. That is deliberate: the runtime's
+own preflight would otherwise start a multi-gigabyte Hugging Face download in
+the middle of a tool call, inside a budget measured in seconds. Seshat never
+downloads anything.
+
+Every path above is configurable — `:generation_executable`,
+`:generation_model_root`, `:generation_timeout` and
+`:generation_max_output_bytes`, all listed in
+[config/config.exs](config/config.exs). One value is **not** an ordinary
+preference: `:generated_root` must equal the import root the AbletonOSC fork
+resolves file names under (`~/.seshat/generated`), so moving it means changing
+the fork too.
+
+**What generation does to your set.** Every take is written into
+`~/.seshat/generated/` (created mode `0700`) and kept there forever — nothing is
+ever overwritten, including by a variation of a take you liked. That folder is
+outside Live's User Library, so it is not browsed or indexed, and an imported
+clip references the file on disk rather than copying it into your project. If
+you want a set that survives moving the folder, use Live's **File → Collect All
+and Save**.
+
+**The first render after a reboot is much slower than the rest.** Several
+gigabytes of weights load from disk; a warm four-bar render was measured at
+1.0–1.1 seconds on 2026-08-25. A render is abandoned at 60 seconds and the
+runtime process is terminated.
+
+**What this version does not do.** The raw, duration-exact render is imported
+unchanged. Seshat does not analyse rhythmic phase or pick a downbeat, does not
+repair loop seams, and does not set looping, warping, markers or gain. It
+*reads those back* after import and reports what Live said. Expect a loop that
+needs nudging; do not expect a clip that is already on the grid.
+
+**Licensing.** The runtime's code is MIT. The model weights are governed by the
+[Stability AI Community License](https://stability.ai/license) and the T5Gemma
+text encoder additionally by Google's Gemma terms — commercial use is permitted
+below a $1M annual revenue threshold, and above it the weights require a
+Stability AI Enterprise licence. Seshat distributes neither the runtime nor the
+weights, so that obligation attaches to your own installation, not to Seshat.
+
 ## Starting a session
 
 Every session, start the three pieces in this order:

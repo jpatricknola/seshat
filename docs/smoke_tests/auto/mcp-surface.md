@@ -11,7 +11,7 @@ handshake against `http://localhost:4000/mcp`.
 
 ## The tool list survives a real handshake
 
-*Last run: 2026-08-28 — 52 tools listed over a real handshake with every published object (root and nested) carrying `additionalProperties: false`; matches `Definitions.all()`.*
+*Last run: 2026-08-30 — 53 tools listed over a real handshake, matching `Definitions.all()` (`definitions_test.exs` asserts 53). `generate_audio` is present; its root-level object property `variation_of` — the first of its kind on this surface — survives the handshake intact: `type: object`, `additionalProperties: false`, `required: [track, clip_slot]`, and `minimum: 0` preserved on both nested integers. The 2026-08-28 run above predates this tool, so this is the first run that actually covers the object-typed schema.*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py list`. The count must
 match `Definitions.all()`.
@@ -23,7 +23,7 @@ is stale".
 
 ## The surface budget is measured, not guessed
 
-*Last run: 2026-08-28 (closed schemas) — **52 tools / 60,246 bytes / largest `set_clip_properties` at 3,614 bytes**. Up 1,537 bytes from the same day's 58,709 / 3,585 open-schema baseline: 55 `"additionalProperties":false` members (one per published object, nested ones included), ~28 bytes each, no text change. Total is still below the 62,784-byte 67-tool baseline.*
+*Last run: 2026-08-30 — **53 tools / 64,122 bytes / largest `generate_audio` at 3,875 bytes**. Up 3,876 bytes and one tool from the 2026-08-28 closed-schema baseline of 52 / 60,246 / `set_clip_properties` 3,614 — essentially all of it is the one new tool, which is now also the largest on the surface. `generate_audio` earns that: every field is one workflow's targeting (`track`/`clip_slot`/`track_name`), material (`description`/`negative_prompt`), or reproducibility (`seed`/`variation_of`/`strength`), not a bag of unrelated verbs. Still below the 62,784-byte 67-tool baseline? No — it is now 1,338 bytes above it, on 14 fewer tools; the consolidation headroom bought by PR #77 is where this tool was spent.*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py stats` against a freshly
 restarted server. Record all four values here: advertised tool count, compact

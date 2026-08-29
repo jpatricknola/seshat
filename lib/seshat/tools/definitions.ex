@@ -1545,6 +1545,113 @@ defmodule Seshat.Tools.Definitions do
         required: ["track", "clip_slot", "grid", "amount"]
       }
     },
+    %{
+      name: "generate_audio",
+      description:
+        "Generate a short **audio** clip from a text description and import it into a Session " <>
+          "slot. Renders locally with the separately installed Stable Audio 3 runtime; if the " <>
+          "runtime or its weights are missing the call refuses and says so — nothing is " <>
+          "downloaded. Tempo, time signature and key are taken from the session " <>
+          "automatically; put only the musical material in description (e.g. \"dusty lo-fi " <>
+          "drum break\", \"warm pad bed\"). Generation takes a few seconds and holds the " <>
+          "normal serialized Ableton tool lock while it runs. The raw duration-exact render is " <>
+          "imported unchanged: no rhythmic-phase, loop-seam, warp or tempo-following " <>
+          "correction is applied, and the reply reports what Live observed (clip length, " <>
+          "looping, warping) rather than promising grid alignment or a seamless loop. Every " <>
+          "take is kept on disk and never overwritten. Track indices are 0-based. Omit track " <>
+          "to create a new audio track (optionally named with track_name); with an existing " <>
+          "track, omit clip_slot to use its first empty slot — an occupied explicit slot is " <>
+          "refused before anything is generated. For \"again, but darker\" pass variation_of " <>
+          "pointing at a previously generated clip; strength (0.01–1.0, default 0.55) sets how " <>
+          "far the variation departs and is only valid with variation_of. For exact control of " <>
+          "individual notes, write or edit MIDI notes instead of generating audio.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "description" => %{
+            type: "string",
+            description:
+              "The musical material to generate, in the user's own terms — \"dusty lo-fi drum " <>
+                "break\", \"warm analogue pad bed\". Do not put tempo, time signature or key " <>
+                "here; they are read from the session and added automatically."
+          },
+          "bars" => %{
+            type: "integer",
+            minimum: 1,
+            maximum: 16,
+            description:
+              "How many bars to generate, at the session's tempo and time signature. " <>
+                "Defaults to 4. This is one part, not a song."
+          },
+          "track" => %{
+            type: "integer",
+            minimum: 0,
+            description:
+              "0-indexed existing audio track to import onto. Omit to create a new audio " <>
+                "track. A group track or a MIDI track is refused before anything is generated."
+          },
+          "clip_slot" => %{
+            type: "integer",
+            minimum: 0,
+            description:
+              "0-indexed scene to import into. With an existing track, omit this to use its " <>
+                "first empty slot; an occupied slot is refused. With a new track it defaults " <>
+                "to 0. Scenes are never created."
+          },
+          "track_name" => %{
+            type: "string",
+            description:
+              "Name for the audio track this call creates. Only valid when track is omitted " <>
+                "and no variation_of is given, since both of those name an existing track."
+          },
+          "variation_of" => %{
+            type: "object",
+            description:
+              "A previously generated audio clip to vary — this is how \"another take, " <>
+                "darker\" works. The variation lands on that clip's own track, in its first " <>
+                "empty slot unless clip_slot says otherwise, and never overwrites the take it " <>
+                "came from. Only clips Seshat generated can be varied.",
+            properties: %{
+              "track" => %{
+                type: "integer",
+                minimum: 0,
+                description: "0-indexed track holding the source clip."
+              },
+              "clip_slot" => %{
+                type: "integer",
+                minimum: 0,
+                description: "0-indexed scene holding the source clip."
+              }
+            },
+            required: ["track", "clip_slot"]
+          },
+          "strength" => %{
+            type: "number",
+            minimum: 0.01,
+            maximum: 1.0,
+            description:
+              "How far a variation departs from its source: 0.4–0.8 is the useful range, 1.0 " <>
+                "ignores the source entirely. Defaults to 0.55. Only valid with variation_of."
+          },
+          "negative_prompt" => %{
+            type: "string",
+            description:
+              "Material to steer away from — \"vocals\", \"cymbals\". Omit unless the user " <>
+                "asked for something to be absent."
+          },
+          "seed" => %{
+            type: "integer",
+            minimum: 0,
+            maximum: 2_147_483_647,
+            description:
+              "Fixes the random seed so the same description renders the same audio. Omit " <>
+                "for a fresh take; the reply names the seed that was used, so it can be " <>
+                "passed back to reproduce it."
+          }
+        },
+        required: ["description"]
+      }
+    },
     # --- Audio output (macOS Accessibility, not OSC) ---
     #
     # The only two tools that do not go through the Live Object Model. Live's

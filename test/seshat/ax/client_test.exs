@@ -523,12 +523,22 @@ defmodule Seshat.AX.ClientTest do
     # `lib/seshat_web/**` is scanned too) rather than stopping at
     # `lib/seshat/**`, which exempted the web tree from a boundary nothing
     # about it is meant to be exempt from.
-    test "only Seshat.AX.Client may start a native process" do
+    #
+    # There are **two** doors now, not one. `Seshat.Generation.StableAudio`
+    # joined the list when audio generation shipped: rendering audio needs a
+    # local model runtime, the BEAM cannot host one, and no OSC address or LOM
+    # member can produce a WAV. It was added here deliberately rather than
+    # worked around, which is the whole point of the list being exact — a third
+    # entry has to be argued the same way, and the assertion below fails on any
+    # file that is not one of these two.
+    @process_doors ["lib/seshat/ax/client.ex", "lib/seshat/generation/stable_audio.ex"]
+
+    test "only Seshat.AX.Client and Seshat.Generation.StableAudio may start a native process" do
       offenders =
         Path.wildcard("lib/**/*.ex")
         |> Enum.reject(&String.starts_with?(&1, "lib/mix/tasks/"))
         |> Enum.filter(fn path ->
-          path != "lib/seshat/ax/client.ex" and
+          path not in @process_doors and
             File.read!(path) =~
               ~r/Port\.open|:spawn_executable|System\.cmd|System\.shell|:os\.cmd|:erlang\.open_port/
         end)
@@ -539,12 +549,27 @@ defmodule Seshat.AX.ClientTest do
 
              #{Enum.join(offenders, "\n")}
 
-             Seshat.AX.Client is the only module allowed to, so that the macOS
-             Accessibility path stays one auditable door. If a new capability
-             genuinely needs a native helper, it belongs behind that module's
-             protocol — with its own LOM-gap, safety, semantic-target and
-             read-back case argued first.
+             Only #{Enum.join(@process_doors, " and ")} are allowed to, so that
+             the paths out of the BEAM stay auditable doors rather than a habit.
+             If a new capability genuinely needs a native process, it belongs
+             behind one of those modules' protocols — or, if it is genuinely a
+             third kind of thing, it joins @process_doors in a commit that
+             argues the case.
              """
+    end
+
+    # The converse: both named files must still *be* doors. A rename or a
+    # rewrite that stopped spawning would leave a permanent exemption sitting in
+    # the list, quietly licensing a future subprocess in a file nobody expects
+    # to have one.
+    test "every allowed door actually starts a process" do
+      for path <- @process_doors do
+        assert File.regular?(path), "#{path} is on the allow-list but does not exist"
+
+        assert File.read!(path) =~
+                 ~r/Port\.open|:spawn_executable|System\.cmd|System\.shell|:os\.cmd|:erlang\.open_port/,
+               "#{path} is on the native-process allow-list but starts no process — remove it."
+      end
     end
   end
 end

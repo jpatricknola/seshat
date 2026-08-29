@@ -28,7 +28,11 @@ exist because a typo'd address looks exactly like success.
   development in the standalone clone (on this machine,
   `/Users/patrick/ableton-osc`) or another standalone clone of that repository.
 
-  An address upstream lacks is ours to add rather than ours to work around.
+  **Everything the installed LOM exposes is fair game for Seshat.** An
+  address upstream lacks is ours to add rather than ours to work around. The
+  missing address is routine implementation scope and must never be treated
+  as a capability gap, architectural deterrent, dependency disadvantage, or
+  reason to reject, defer, downgrade, or rank a feature lower.
   The sequence, in order:
 
   1. In the standalone fork clone, start a topic branch from the current

@@ -41,6 +41,34 @@ constraints, not which final MIDI sounds best.
 
 ## Verdict up front
 
+> **Ruling 2026-08-30 — Route C is not the primary strategy.** The day
+> `generate_audio` shipped, its generator's limit was named: Stable Audio's
+> text conditioning is semantic, not symbolic. It has no notion of "exactly
+> two beats" or "a half note"; the render is duration-exact but the rhythm
+> inside it is free-running, and no prompt wording changes that. Transcribing
+> such audio stacks transcription error on loose material. **Audio generation
+> transcribed to MIDI is therefore rejected as the primary strategy for
+> composing MIDI.** It may serve a specific case (melody and harmony still
+> have no symbolic candidate; Convert Drums is a zero-licence lane), but it
+> is not the first solution Seshat builds. The four-arm decision experiment
+> below is superseded by a narrower one — Route D retrieval for drums, a
+> bounded rule-derived bass, wiring tested one factor at a time — recorded
+> on the roadmap as "MIDI generation — the first solution, composed
+> symbolically". §C and the C-bearing arms in the Recommendation stand as
+> evidence for that specific case, not as candidates for the first ship.
+
+> **Symbolic strategy audit 2026-08-30.** Two consultant reports added a
+> pattern-DSL/procedural route and a cleaner neural infill candidate to the
+> post-Route-C field. The resulting shortlist and branch experiment are in
+> [symbolic-midi-strategy-options.md](symbolic-midi-strategy-options.md).
+> This document remains the measurement and rejection record; its older
+> GMD-only “narrower experiment” wording is superseded by that audit. GMD
+> retrieval remains a primary drum arm alongside a minimal DSL/procedural
+> compiler. Composer's Assistant 2 is the specialist neural branch: blank
+> generation is tested, while contextual bass/infill and surgical revision are
+> its evidence-backed strengths.
+
+
 **No route has earned a product recommendation yet.** Note counts, pitch
 ranges, onset offsets, and latency prove that plumbing is plausible; they do
 not prove that the resulting MIDI sounds good. The product output is MIDI in
@@ -89,9 +117,12 @@ The decision work has two layers: controlled comparisons that change one
 factor where possible, and a product bake-off between complete pipelines.
 Those complete pipelines necessarily change more than wiring, so their
 results decide what to ship but cannot by themselves explain why it won.
-Route C must not be ranked below Route D before the test — its joint lane may
-produce the most musical interaction, or may lose it in extraction. Both
-remain unmeasured.
+~~Route C must not be ranked below Route D before the test — its joint lane may
+produce the most musical interaction, or may lose it in extraction.~~ Overtaken
+by the 2026-08-30 ruling above: Route C is ranked below Route D as a matter of
+strategy, on the generator's lack of rhythmic control rather than on a
+listening result. Its joint-lane interaction ceiling is still unmeasured and
+is the reason it keeps a specific-case door open.
 
 **Route A (local symbolic models) is not ready for this job today.** Three
 candidates were installed and run here. All three produced material that
@@ -867,6 +898,14 @@ assumptions, transcription quality, and latency are measured explicitly.
 ---
 
 ## Recommendation: run the decision experiment
+
+> **Superseded in part, 2026-08-30.** Arms containing Route C (independent
+> C, conditioned/C, joint C, and the MRT2 transcription arm) are withdrawn
+> from the first experiment by the ruling under "Verdict up front". Steps
+> 1, 3, 5, 6 and the GMD / GrooVAE halves of 2 and 7 still describe the
+> narrower experiment; the IDM spike, the separator choice and the ADTOF
+> exclusion matter only if a specific case for audio→MIDI is later opened.
+
 
 The research supports a shortlist, not a backend choice. Prepare the missing
 components, run controlled subtests to understand the mechanisms, and then

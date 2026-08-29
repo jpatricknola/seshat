@@ -12,7 +12,7 @@ requirement.
 
 | File | Needs | Tests |
 |---|---|---|
-| [conversation.md](conversation.md) | a fresh conversation; judges what the model says and picks | 20 |
+| [conversation.md](conversation.md) | a fresh conversation; judges what the model says and picks | 21 |
 | [on-screen.md](on-screen.md) | eyes on Live, or hands on Live's own controls | 16 |
 | [engineered-state.md](engineered-state.md) | the app or session put into a state no tool can create | 11 |
 | [by-ear.md](by-ear.md) | audio routed somewhere you can hear it | 6 |
@@ -34,6 +34,7 @@ change touches one, its human-judged checks are here:
 | transport — swing and groove | [by-ear.md](by-ear.md) (swing), [on-screen.md](on-screen.md) (the groove dial), [conversation.md](conversation.md) (wording with no groove assigned) |
 | bridge / network boundary | [engineered-state.md](engineered-state.md) (stale install, reply route, decoder), [on-screen.md](on-screen.md) (listener rebind, listener pushes) |
 | MCP surface | [conversation.md](conversation.md) (Claude Desktop lists the tools) |
+| generated audio | [conversation.md](conversation.md) (routing to one call, and what the reply claims) |
 | audio output | [on-screen.md](on-screen.md) (Settings agreement), [by-ear.md](by-ear.md) (the switch) |
 | undo | [engineered-state.md](engineered-state.md) (`can_undo=False`) |
 
