@@ -3427,8 +3427,8 @@ defmodule Seshat.Tools.Handlers do
          :ok <- focus_session_grid(),
          :ok <- select_clip_for_convert(track, slot),
          {:ok, before_count} <- convert_track_count(:before),
-         :ok <- press_convert(command, track, slot),
-         {:ok, new_track} <- await_converted_track(track, before_count) do
+         {:ok, window} <- press_convert(command, track, slot),
+         {:ok, new_track} <- await_converted_track(track, before_count, window) do
       {:ok, convert_reply(track, slot, mode, new_track)}
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
@@ -3601,11 +3601,21 @@ defmodule Seshat.Tools.Handlers do
   # clip and reports it as this one. Two independent reads, and they disagree
   # exactly when the ring moved but the highlighted slot did not.
   #
-  # `set/highlighted_clip_slot` is available as a second *write* path if the ring
-  # ever proves insufficient. It is not needed on the measured path, so it is not
-  # sent speculatively.
+  # ⚠️ Both writes are needed, measured against Live 12.4.5 on 2026-08-30.
+  # `set/selected_clip` only assigns `selected_track` and `selected_scene`
+  # (fork `view.py`); it does **not** move the clip-slot highlight, and Live's
+  # Convert commands validate against the highlighted slot. Observed on screen:
+  # the track selected, the clip never showing as selected, and every Convert
+  # item disabled — until the slot was highlighted, after which Live converted.
+  #
+  # The reads below cannot catch that on their own: the LOM derives
+  # `highlighted_clip_slot` from the selected track and scene, so it reports the
+  # slot this write implies whether or not the highlight moved. They are a guard
+  # against the wrong clip, not against an unmoved highlight — which is why the
+  # second write is sent rather than inferred.
   defp select_clip_for_convert(track, slot) do
     with :ok <- Transport.send_message("/live/view/set/selected_clip", [track, slot]),
+         :ok <- Transport.send_message("/live/view/set/highlighted_clip_slot", [track, slot]),
          {:ok, selected} <- read_clip_coordinate("/live/view/get/selected_clip", "selected clip"),
          {:ok, highlighted} <-
            read_clip_coordinate("/live/view/get/highlighted_clip_slot", "highlighted clip slot") do
@@ -3676,16 +3686,25 @@ defmodule Seshat.Tools.Handlers do
       "may well exist. Check get_session_state before converting again."
   end
 
+  # ⚠️ A window appearing is *not* on its own a refusal, measured 2026-08-30:
+  # Live puts a progress window up while it analyses, so a perfectly successful
+  # convert reports `windows_after > windows_before` every time. Treating that
+  # as a dialog denied a conversion that had already happened — the exact
+  # dishonesty the rest of this path is built to avoid, and worse than a
+  # timeout, because the set was mutated while the reply said it was not.
+  #
+  # So the window count is carried, not judged. The track count is the only
+  # observable truth about whether Live made a track, and `await_converted_track/2`
+  # already polls it; a window is only reported as a dialog when that poll also
+  # comes up empty, which is when "Live is asking you something" is the honest
+  # reading rather than a guess.
   defp press_convert(command, track, slot) do
     case ax_client().convert(command) do
       {:ok, %{windows_before: before, windows_after: after_}} when after_ > before ->
-        {:error,
-         "Ableton Live opened a window after \"#{command}\" instead of converting — Seshat " <>
-           "does not drive dialogs, so this is reported rather than answered. Look at Live, " <>
-           "deal with what it is asking, and try again."}
+        {:ok, :window_opened}
 
       {:ok, _observed} ->
-        :ok
+        {:ok, :no_window}
 
       {:error, %{code: :command_unavailable}} ->
         {:error,
@@ -3703,7 +3722,7 @@ defmodule Seshat.Tools.Handlers do
   # count is polled rather than waited on. Bounded, and honest when it does not
   # move: no index is named unless the count rose by exactly one, exactly as
   # `Registry.ensure_return_created/2` insists.
-  defp await_converted_track(source_track, before_count, attempt \\ 0) do
+  defp await_converted_track(source_track, before_count, window, attempt \\ 0) do
     case convert_track_count(:after) do
       {:ok, count} when count == before_count + 1 ->
         {:ok, source_track + 1}
@@ -3716,7 +3735,13 @@ defmodule Seshat.Tools.Handlers do
 
       {:ok, _count} when attempt < @convert_settle_attempts ->
         Process.sleep(@convert_settle_delay)
-        await_converted_track(source_track, before_count, attempt + 1)
+        await_converted_track(source_track, before_count, window, attempt + 1)
+
+      {:ok, _count} when window == :window_opened ->
+        {:error,
+         "Ableton Live opened a window after the Convert command and no track appeared, so " <>
+           "it is asking something rather than converting — Seshat does not drive dialogs. " <>
+           "Look at Live, deal with what it is asking, and try again."}
 
       {:ok, count} ->
         {:error,

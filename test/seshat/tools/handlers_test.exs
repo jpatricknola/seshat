@@ -5615,6 +5615,7 @@ defmodule Seshat.Tools.HandlersTest do
                "/live/view/focus_view",
                "/live/view/get/focused_document_view",
                "/live/view/set/selected_clip",
+               "/live/view/set/highlighted_clip_slot",
                "/live/view/get/selected_clip",
                "/live/view/get/highlighted_clip_slot",
                "/live/song/get/num_tracks" | _rest
@@ -5790,8 +5791,10 @@ defmodule Seshat.Tools.HandlersTest do
       refute message =~ "track 1"
     end
 
-    # A dialog Seshat cannot drive is a refusal, not a result.
-    test "a window appearing instead of a conversion is reported, not claimed", %{sink: sink} do
+    # Measured 2026-08-30: Live puts a progress window up while it analyses, so a
+    # successful convert reports a window every time. The window alone must not
+    # deny a conversion that happened — the track count decides.
+    test "a window during a conversion that lands is not treated as a dialog", %{sink: sink} do
       convert_ax({:ok, %{windows_before: 1, windows_after: 2}})
 
       call =
@@ -5805,11 +5808,44 @@ defmodule Seshat.Tools.HandlersTest do
 
       scripted_trace(sink, convert_reads(0, 0, 1))
 
-      assert {:error, message} = Task.await(call)
+      assert {:ok, message} = Task.await(call)
+
+      assert_receive {:ax_call, :convert, ["Convert Drums to New MIDI Track"]}
+      assert message =~ "new MIDI track 1"
+      refute message =~ "opened a window"
+    end
+
+    # A dialog Seshat cannot drive is still a refusal — when nothing was made.
+    test "a window with no track appearing is reported as a dialog", %{sink: sink} do
+      convert_ax({:ok, %{windows_before: 1, windows_after: 2}})
+
+      call =
+        Task.async(fn ->
+          Handlers.call("convert_audio_to_midi", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "mode" => "drums"
+          })
+        end)
+
+      scripted_trace(
+        sink,
+        [
+          {"/live/clip_slot/get/has_clip", [0, 0, 1]},
+          {"/live/clip/get/is_midi_clip", [0, 0, 0]},
+          {"/live/view/get/focused_document_view", ["ok", "Session"]},
+          {"/live/view/get/selected_clip", [0, 0]},
+          {"/live/view/get/highlighted_clip_slot", [0, 0]}
+        ] ++ List.duplicate({"/live/song/get/num_tracks", [2]}, 12),
+        3_000
+      )
+
+      assert {:error, message} = Task.await(call, 10_000)
 
       assert_receive {:ax_call, :convert, ["Convert Drums to New MIDI Track"]}
       assert message =~ "opened a window"
       assert message =~ "does not drive dialogs"
+      refute message =~ "track 1"
     end
 
     test "each mode maps to one exact compiled-in menu title", %{sink: sink} do
