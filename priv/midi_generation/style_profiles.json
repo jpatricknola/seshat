@@ -7,7 +7,7 @@
     "sha256": "651cbc524ffb891be1a3e46d89dc82a1cecb09a57c748c7b45b844c4841dcc1e",
     "url": "https://storage.googleapis.com/magentadata/datasets/groove/groove-v1.0.0-midionly.zip"
   },
-  "generated_at": "2026-08-30T18:37:34Z",
+  "generated_at": "2026-08-30T19:33:04Z",
   "generated_by": "experiments/gmd_profiles/harvest.py",
   "min_files_per_lane": 8,
   "styles": {
@@ -27,7 +27,7 @@
           "ghost_fraction": 0.419,
           "ghost_probability": 0.782,
           "hits": 6792,
-          "timing_mean": -0.0835,
+          "timing_mean": -0.0243,
           "timing_sd": 0.1088,
           "velocity": {
             "accent": {
@@ -55,7 +55,7 @@
           "ghost_fraction": 0.412,
           "ghost_probability": 0.785,
           "hits": 216,
-          "timing_mean": 0.0036,
+          "timing_mean": 0.0629,
           "timing_sd": 0.1251,
           "velocity": {
             "accent": {
@@ -83,7 +83,7 @@
           "ghost_fraction": 0.337,
           "ghost_probability": 0.815,
           "hits": 3923,
-          "timing_mean": -0.0595,
+          "timing_mean": -0.0002,
           "timing_sd": 0.1207,
           "velocity": {
             "accent": {
@@ -111,7 +111,7 @@
           "ghost_fraction": 0.154,
           "ghost_probability": 0.889,
           "hits": 1210,
-          "timing_mean": -0.0473,
+          "timing_mean": 0.012,
           "timing_sd": 0.0753,
           "velocity": {
             "accent": {
@@ -139,7 +139,7 @@
           "ghost_fraction": 0.14,
           "ghost_probability": 0.894,
           "hits": 492,
-          "timing_mean": -0.054,
+          "timing_mean": 0.0052,
           "timing_sd": 0.0897,
           "velocity": {
             "accent": {
@@ -167,7 +167,7 @@
           "ghost_fraction": 0.319,
           "ghost_probability": 0.822,
           "hits": 3680,
-          "timing_mean": -0.0228,
+          "timing_mean": 0.0365,
           "timing_sd": 0.1499,
           "velocity": {
             "accent": {
@@ -195,7 +195,7 @@
           "ghost_fraction": 0.033,
           "ghost_probability": 0.937,
           "hits": 337,
-          "timing_mean": -0.0566,
+          "timing_mean": 0.0027,
           "timing_sd": 0.1646,
           "velocity": {
             "accent": {
@@ -240,7 +240,7 @@
           "ghost_fraction": 0.323,
           "ghost_probability": 0.821,
           "hits": 113480,
-          "timing_mean": -0.0769,
+          "timing_mean": -0.0232,
           "timing_sd": 0.1973,
           "velocity": {
             "accent": {
@@ -268,7 +268,7 @@
           "ghost_fraction": 0.205,
           "ghost_probability": 0.868,
           "hits": 5585,
-          "timing_mean": -0.0188,
+          "timing_mean": 0.0349,
           "timing_sd": 0.2289,
           "velocity": {
             "accent": {
@@ -296,7 +296,7 @@
           "ghost_fraction": 0.453,
           "ghost_probability": 0.769,
           "hits": 83799,
-          "timing_mean": -0.0465,
+          "timing_mean": 0.0071,
           "timing_sd": 0.2132,
           "velocity": {
             "accent": {
@@ -324,7 +324,7 @@
           "ghost_fraction": 0.244,
           "ghost_probability": 0.852,
           "hits": 13731,
-          "timing_mean": -0.0563,
+          "timing_mean": -0.0026,
           "timing_sd": 0.1896,
           "velocity": {
             "accent": {
@@ -352,7 +352,7 @@
           "ghost_fraction": 0.225,
           "ghost_probability": 0.86,
           "hits": 48815,
-          "timing_mean": -0.0372,
+          "timing_mean": 0.0164,
           "timing_sd": 0.2034,
           "velocity": {
             "accent": {
@@ -380,7 +380,7 @@
           "ghost_fraction": 0.391,
           "ghost_probability": 0.794,
           "hits": 124729,
-          "timing_mean": -0.0444,
+          "timing_mean": 0.0093,
           "timing_sd": 0.2244,
           "velocity": {
             "accent": {
@@ -408,7 +408,7 @@
           "ghost_fraction": 0.189,
           "ghost_probability": 0.874,
           "hits": 28124,
-          "timing_mean": -0.0564,
+          "timing_mean": -0.0027,
           "timing_sd": 0.2204,
           "velocity": {
             "accent": {
@@ -445,7 +445,7 @@
           "ghost_fraction": 0.342,
           "ghost_probability": 0.813,
           "hits": 19602,
-          "timing_mean": -0.0714,
+          "timing_mean": -0.0188,
           "timing_sd": 0.1558,
           "velocity": {
             "accent": {
@@ -473,7 +473,7 @@
           "ghost_fraction": 0.316,
           "ghost_probability": 0.824,
           "hits": 421,
-          "timing_mean": -0.0641,
+          "timing_mean": -0.0115,
           "timing_sd": 0.2025,
           "velocity": {
             "accent": {
@@ -501,7 +501,7 @@
           "ghost_fraction": 0.323,
           "ghost_probability": 0.821,
           "hits": 10150,
-          "timing_mean": -0.0438,
+          "timing_mean": 0.0088,
           "timing_sd": 0.1979,
           "velocity": {
             "accent": {
@@ -529,7 +529,7 @@
           "ghost_fraction": 0.062,
           "ghost_probability": 0.925,
           "hits": 2339,
-          "timing_mean": -0.0859,
+          "timing_mean": -0.0332,
           "timing_sd": 0.1443,
           "velocity": {
             "accent": {
@@ -557,7 +557,7 @@
           "ghost_fraction": 0.215,
           "ghost_probability": 0.864,
           "hits": 3493,
-          "timing_mean": -0.0664,
+          "timing_mean": -0.0138,
           "timing_sd": 0.1595,
           "velocity": {
             "accent": {
@@ -585,7 +585,7 @@
           "ghost_fraction": 0.432,
           "ghost_probability": 0.777,
           "hits": 16947,
-          "timing_mean": -0.0274,
+          "timing_mean": 0.0253,
           "timing_sd": 0.2203,
           "velocity": {
             "accent": {
@@ -613,7 +613,7 @@
           "ghost_fraction": 0.041,
           "ghost_probability": 0.934,
           "hits": 901,
-          "timing_mean": -0.0726,
+          "timing_mean": -0.02,
           "timing_sd": 0.2337,
           "velocity": {
             "accent": {
@@ -650,7 +650,7 @@
           "ghost_fraction": 0.419,
           "ghost_probability": 0.782,
           "hits": 6792,
-          "timing_mean": -0.0835,
+          "timing_mean": -0.0243,
           "timing_sd": 0.1554,
           "velocity": {
             "accent": {
@@ -678,7 +678,7 @@
           "ghost_fraction": 0.412,
           "ghost_probability": 0.785,
           "hits": 216,
-          "timing_mean": 0.0036,
+          "timing_mean": 0.0629,
           "timing_sd": 0.1787,
           "velocity": {
             "accent": {
@@ -706,7 +706,7 @@
           "ghost_fraction": 0.337,
           "ghost_probability": 0.815,
           "hits": 3923,
-          "timing_mean": -0.0595,
+          "timing_mean": -0.0002,
           "timing_sd": 0.1725,
           "velocity": {
             "accent": {
@@ -734,7 +734,7 @@
           "ghost_fraction": 0.154,
           "ghost_probability": 0.889,
           "hits": 1210,
-          "timing_mean": -0.0473,
+          "timing_mean": 0.012,
           "timing_sd": 0.1076,
           "velocity": {
             "accent": {
@@ -762,7 +762,7 @@
           "ghost_fraction": 0.14,
           "ghost_probability": 0.894,
           "hits": 492,
-          "timing_mean": -0.054,
+          "timing_mean": 0.0052,
           "timing_sd": 0.1282,
           "velocity": {
             "accent": {
@@ -790,7 +790,7 @@
           "ghost_fraction": 0.319,
           "ghost_probability": 0.822,
           "hits": 3680,
-          "timing_mean": -0.0228,
+          "timing_mean": 0.0365,
           "timing_sd": 0.2142,
           "velocity": {
             "accent": {
@@ -818,7 +818,7 @@
           "ghost_fraction": 0.033,
           "ghost_probability": 0.937,
           "hits": 337,
-          "timing_mean": -0.0566,
+          "timing_mean": 0.0027,
           "timing_sd": 0.2351,
           "velocity": {
             "accent": {
@@ -864,7 +864,7 @@
           "ghost_fraction": 0.323,
           "ghost_probability": 0.739,
           "hits": 113480,
-          "timing_mean": -0.0769,
+          "timing_mean": -0.0232,
           "timing_sd": 0.0987,
           "velocity": {
             "accent": {
@@ -892,7 +892,7 @@
           "ghost_fraction": 0.205,
           "ghost_probability": 0.781,
           "hits": 5585,
-          "timing_mean": -0.0188,
+          "timing_mean": 0.0349,
           "timing_sd": 0.1144,
           "velocity": {
             "accent": {
@@ -920,7 +920,7 @@
           "ghost_fraction": 0.453,
           "ghost_probability": 0.692,
           "hits": 83799,
-          "timing_mean": -0.0465,
+          "timing_mean": 0.0071,
           "timing_sd": 0.1066,
           "velocity": {
             "accent": {
@@ -948,7 +948,7 @@
           "ghost_fraction": 0.244,
           "ghost_probability": 0.767,
           "hits": 13731,
-          "timing_mean": -0.0563,
+          "timing_mean": -0.0026,
           "timing_sd": 0.0948,
           "velocity": {
             "accent": {
@@ -976,7 +976,7 @@
           "ghost_fraction": 0.225,
           "ghost_probability": 0.774,
           "hits": 48815,
-          "timing_mean": -0.0372,
+          "timing_mean": 0.0164,
           "timing_sd": 0.1017,
           "velocity": {
             "accent": {
@@ -1004,7 +1004,7 @@
           "ghost_fraction": 0.391,
           "ghost_probability": 0.715,
           "hits": 124729,
-          "timing_mean": -0.0444,
+          "timing_mean": 0.0093,
           "timing_sd": 0.1122,
           "velocity": {
             "accent": {
@@ -1032,7 +1032,7 @@
           "ghost_fraction": 0.189,
           "ghost_probability": 0.787,
           "hits": 28124,
-          "timing_mean": -0.0564,
+          "timing_mean": -0.0027,
           "timing_sd": 0.1102,
           "velocity": {
             "accent": {
@@ -1069,7 +1069,7 @@
           "ghost_fraction": 0.368,
           "ghost_probability": 0.803,
           "hits": 6009,
-          "timing_mean": -0.091,
+          "timing_mean": -0.0219,
           "timing_sd": 0.2677,
           "velocity": {
             "accent": {
@@ -1097,7 +1097,7 @@
           "ghost_fraction": 0.054,
           "ghost_probability": 0.928,
           "hits": 368,
-          "timing_mean": -0.084,
+          "timing_mean": -0.0149,
           "timing_sd": 0.269,
           "velocity": {
             "accent": {
@@ -1125,7 +1125,7 @@
           "ghost_fraction": 0.325,
           "ghost_probability": 0.82,
           "hits": 5218,
-          "timing_mean": -0.0664,
+          "timing_mean": 0.0027,
           "timing_sd": 0.2557,
           "velocity": {
             "accent": {
@@ -1153,7 +1153,7 @@
           "ghost_fraction": 0.223,
           "ghost_probability": 0.861,
           "hits": 655,
-          "timing_mean": -0.0224,
+          "timing_mean": 0.0467,
           "timing_sd": 0.247,
           "velocity": {
             "accent": {
@@ -1181,7 +1181,7 @@
           "ghost_fraction": 0.207,
           "ghost_probability": 0.867,
           "hits": 7348,
-          "timing_mean": -0.0848,
+          "timing_mean": -0.0157,
           "timing_sd": 0.2345,
           "velocity": {
             "accent": {
@@ -1209,7 +1209,7 @@
           "ghost_fraction": 0.476,
           "ghost_probability": 0.759,
           "hits": 10436,
-          "timing_mean": -0.0641,
+          "timing_mean": 0.005,
           "timing_sd": 0.2522,
           "velocity": {
             "accent": {
@@ -1237,7 +1237,7 @@
           "ghost_fraction": 0.265,
           "ghost_probability": 0.844,
           "hits": 3500,
-          "timing_mean": -0.0249,
+          "timing_mean": 0.0442,
           "timing_sd": 0.2609,
           "velocity": {
             "accent": {
@@ -1274,7 +1274,7 @@
           "ghost_fraction": 0.238,
           "ghost_probability": 0.855,
           "hits": 19153,
-          "timing_mean": -0.1089,
+          "timing_mean": -0.0294,
           "timing_sd": 0.2001,
           "velocity": {
             "accent": {
@@ -1302,7 +1302,7 @@
           "ghost_fraction": 0.117,
           "ghost_probability": 0.903,
           "hits": 410,
-          "timing_mean": -0.132,
+          "timing_mean": -0.0525,
           "timing_sd": 0.1639,
           "velocity": {
             "accent": {
@@ -1330,7 +1330,7 @@
           "ghost_fraction": 0.626,
           "ghost_probability": 0.699,
           "hits": 19456,
-          "timing_mean": -0.0429,
+          "timing_mean": 0.0366,
           "timing_sd": 0.2252,
           "velocity": {
             "accent": {
@@ -1358,7 +1358,7 @@
           "ghost_fraction": 0.119,
           "ghost_probability": 0.902,
           "hits": 729,
-          "timing_mean": -0.0981,
+          "timing_mean": -0.0186,
           "timing_sd": 0.1422,
           "velocity": {
             "accent": {
@@ -1386,7 +1386,7 @@
           "ghost_fraction": 0.137,
           "ghost_probability": 0.895,
           "hits": 11147,
-          "timing_mean": -0.0676,
+          "timing_mean": 0.0119,
           "timing_sd": 0.1613,
           "velocity": {
             "accent": {
@@ -1414,7 +1414,7 @@
           "ghost_fraction": 0.385,
           "ghost_probability": 0.796,
           "hits": 32001,
-          "timing_mean": -0.0787,
+          "timing_mean": 0.0008,
           "timing_sd": 0.2208,
           "velocity": {
             "accent": {
@@ -1442,7 +1442,7 @@
           "ghost_fraction": 0.082,
           "ghost_probability": 0.917,
           "hits": 8798,
-          "timing_mean": -0.1104,
+          "timing_mean": -0.0309,
           "timing_sd": 0.1935,
           "velocity": {
             "accent": {
@@ -1480,7 +1480,7 @@
           "ghost_fraction": 0.419,
           "ghost_probability": 0.587,
           "hits": 6792,
-          "timing_mean": -0.0235,
+          "timing_mean": 0.0357,
           "timing_sd": 0.2098,
           "velocity": {
             "accent": {
@@ -1508,7 +1508,7 @@
           "ghost_fraction": 0.412,
           "ghost_probability": 0.589,
           "hits": 216,
-          "timing_mean": 0.0636,
+          "timing_mean": 0.1229,
           "timing_sd": 0.2412,
           "velocity": {
             "accent": {
@@ -1536,7 +1536,7 @@
           "ghost_fraction": 0.337,
           "ghost_probability": 0.611,
           "hits": 3923,
-          "timing_mean": 0.0005,
+          "timing_mean": 0.0598,
           "timing_sd": 0.2329,
           "velocity": {
             "accent": {
@@ -1564,7 +1564,7 @@
           "ghost_fraction": 0.154,
           "ghost_probability": 0.667,
           "hits": 1210,
-          "timing_mean": 0.0127,
+          "timing_mean": 0.072,
           "timing_sd": 0.1453,
           "velocity": {
             "accent": {
@@ -1592,7 +1592,7 @@
           "ghost_fraction": 0.14,
           "ghost_probability": 0.67,
           "hits": 492,
-          "timing_mean": 0.006,
+          "timing_mean": 0.0652,
           "timing_sd": 0.1731,
           "velocity": {
             "accent": {
@@ -1620,7 +1620,7 @@
           "ghost_fraction": 0.319,
           "ghost_probability": 0.616,
           "hits": 3680,
-          "timing_mean": 0.0372,
+          "timing_mean": 0.0965,
           "timing_sd": 0.2892,
           "velocity": {
             "accent": {
@@ -1648,7 +1648,7 @@
           "ghost_fraction": 0.033,
           "ghost_probability": 0.703,
           "hits": 337,
-          "timing_mean": 0.0034,
+          "timing_mean": 0.0627,
           "timing_sd": 0.3174,
           "velocity": {
             "accent": {
@@ -1685,7 +1685,7 @@
           "ghost_fraction": 0.32,
           "ghost_probability": 0.822,
           "hits": 29620,
-          "timing_mean": -0.0425,
+          "timing_mean": -0.0266,
           "timing_sd": 0.219,
           "velocity": {
             "accent": {
@@ -1713,7 +1713,7 @@
           "ghost_fraction": 0.209,
           "ghost_probability": 0.866,
           "hits": 3323,
-          "timing_mean": 0.0282,
+          "timing_mean": 0.0441,
           "timing_sd": 0.2343,
           "velocity": {
             "accent": {
@@ -1741,7 +1741,7 @@
           "ghost_fraction": 0.405,
           "ghost_probability": 0.788,
           "hits": 22925,
-          "timing_mean": -0.0345,
+          "timing_mean": -0.0186,
           "timing_sd": 0.219,
           "velocity": {
             "accent": {
@@ -1769,7 +1769,7 @@
           "ghost_fraction": 0.487,
           "ghost_probability": 0.755,
           "hits": 4929,
-          "timing_mean": -0.0194,
+          "timing_mean": -0.0035,
           "timing_sd": 0.233,
           "velocity": {
             "accent": {
@@ -1797,7 +1797,7 @@
           "ghost_fraction": 0.294,
           "ghost_probability": 0.832,
           "hits": 15615,
-          "timing_mean": 0.0397,
+          "timing_mean": 0.0557,
           "timing_sd": 0.2172,
           "velocity": {
             "accent": {
@@ -1825,7 +1825,7 @@
           "ghost_fraction": 0.375,
           "ghost_probability": 0.8,
           "hits": 26962,
-          "timing_mean": -0.011,
+          "timing_mean": 0.0049,
           "timing_sd": 0.2278,
           "velocity": {
             "accent": {
@@ -1853,7 +1853,7 @@
           "ghost_fraction": 0.327,
           "ghost_probability": 0.819,
           "hits": 10164,
-          "timing_mean": -0.0082,
+          "timing_mean": 0.0078,
           "timing_sd": 0.2216,
           "velocity": {
             "accent": {
@@ -1899,7 +1899,7 @@
           "ghost_fraction": 0.323,
           "ghost_probability": 0.657,
           "hits": 113480,
-          "timing_mean": -0.0769,
+          "timing_mean": -0.0232,
           "timing_sd": 0.0592,
           "velocity": {
             "accent": {
@@ -1927,7 +1927,7 @@
           "ghost_fraction": 0.205,
           "ghost_probability": 0.694,
           "hits": 5585,
-          "timing_mean": -0.0188,
+          "timing_mean": 0.0349,
           "timing_sd": 0.0687,
           "velocity": {
             "accent": {
@@ -1955,7 +1955,7 @@
           "ghost_fraction": 0.453,
           "ghost_probability": 0.615,
           "hits": 83799,
-          "timing_mean": -0.0465,
+          "timing_mean": 0.0071,
           "timing_sd": 0.064,
           "velocity": {
             "accent": {
@@ -1983,7 +1983,7 @@
           "ghost_fraction": 0.244,
           "ghost_probability": 0.682,
           "hits": 13731,
-          "timing_mean": -0.0563,
+          "timing_mean": -0.0026,
           "timing_sd": 0.0569,
           "velocity": {
             "accent": {
@@ -2011,7 +2011,7 @@
           "ghost_fraction": 0.225,
           "ghost_probability": 0.688,
           "hits": 48815,
-          "timing_mean": -0.0372,
+          "timing_mean": 0.0164,
           "timing_sd": 0.061,
           "velocity": {
             "accent": {
@@ -2039,7 +2039,7 @@
           "ghost_fraction": 0.391,
           "ghost_probability": 0.635,
           "hits": 124729,
-          "timing_mean": -0.0444,
+          "timing_mean": 0.0093,
           "timing_sd": 0.0673,
           "velocity": {
             "accent": {
@@ -2067,7 +2067,7 @@
           "ghost_fraction": 0.189,
           "ghost_probability": 0.699,
           "hits": 28124,
-          "timing_mean": -0.0564,
+          "timing_mean": -0.0027,
           "timing_sd": 0.0661,
           "velocity": {
             "accent": {
@@ -2113,7 +2113,7 @@
           "ghost_fraction": 0.323,
           "ghost_probability": 0.821,
           "hits": 113480,
-          "timing_mean": -0.0769,
+          "timing_mean": -0.0232,
           "timing_sd": 0.1184,
           "velocity": {
             "accent": {
@@ -2141,7 +2141,7 @@
           "ghost_fraction": 0.205,
           "ghost_probability": 0.868,
           "hits": 5585,
-          "timing_mean": -0.0188,
+          "timing_mean": 0.0349,
           "timing_sd": 0.1373,
           "velocity": {
             "accent": {
@@ -2169,7 +2169,7 @@
           "ghost_fraction": 0.453,
           "ghost_probability": 0.769,
           "hits": 83799,
-          "timing_mean": -0.0465,
+          "timing_mean": 0.0071,
           "timing_sd": 0.1279,
           "velocity": {
             "accent": {
@@ -2197,7 +2197,7 @@
           "ghost_fraction": 0.244,
           "ghost_probability": 0.852,
           "hits": 13731,
-          "timing_mean": -0.0563,
+          "timing_mean": -0.0026,
           "timing_sd": 0.1138,
           "velocity": {
             "accent": {
@@ -2225,7 +2225,7 @@
           "ghost_fraction": 0.225,
           "ghost_probability": 0.86,
           "hits": 48815,
-          "timing_mean": -0.0372,
+          "timing_mean": 0.0164,
           "timing_sd": 0.122,
           "velocity": {
             "accent": {
@@ -2253,7 +2253,7 @@
           "ghost_fraction": 0.391,
           "ghost_probability": 0.794,
           "hits": 124729,
-          "timing_mean": -0.0444,
+          "timing_mean": 0.0093,
           "timing_sd": 0.1346,
           "velocity": {
             "accent": {
@@ -2281,7 +2281,7 @@
           "ghost_fraction": 0.189,
           "ghost_probability": 0.874,
           "hits": 28124,
-          "timing_mean": -0.0564,
+          "timing_mean": -0.0027,
           "timing_sd": 0.1322,
           "velocity": {
             "accent": {
@@ -2308,7 +2308,7 @@
     "density": "hits per bar for this lane (p10/p50/p90 across source files)",
     "ghost_probability": "Live per-note probability applied to ghost hits",
     "swing": "median off-8th offset, same units",
-    "timing_mean": "signed mean onset offset, as a fraction of a 16th note",
+    "timing_mean": "signed mean onset offset relative to the style's own average onset (which removes GMD's capture-chain rush), as a fraction of a 16th note",
     "timing_sd": "onset offset standard deviation, same units",
     "velocity": "MIDI velocity, 1-127, per accent class"
   }

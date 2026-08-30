@@ -114,6 +114,32 @@ defmodule Seshat.Generation.Midi.Profiles do
   end
 
   @doc """
+  Whether a harvested style's own files were too thin to say anything about the
+  style itself — every lane and the swing figure both fell back to the
+  cross-style pool (`experiments/gmd_profiles/harvest.py`'s `MIN_FILES_PER_LANE`
+  rule).
+
+  `harvested?/1` alone would call this "measured from real drummers," which is
+  literally true of the pooled numbers but not of *this style*: `dance` carries
+  only 7 GMD files, under the 8-file floor, so every one of its lanes and its
+  swing figure are the corpus-wide average rather than anything dance-specific.
+  Always `false` for an authored profile — that case already says so via
+  `authored_from/1`.
+  """
+  @spec fully_pooled?(String.t()) :: boolean()
+  def fully_pooled?(style) do
+    case fetch(style) do
+      {:ok, profile} ->
+        Map.get(profile, "harvested", false) and
+          Map.get(profile, "swing_pooled", false) and
+          length(Map.get(profile, "fallback_lanes", [])) >= length(@lanes)
+
+      :error ->
+        false
+    end
+  end
+
+  @doc """
   The lane statistics one drum pitch should be performed with.
 
   `{:ok, lane_name, lane_profile}`, or `:error` when the style itself is

@@ -327,6 +327,15 @@ selection check is the rewritten
 `manual/conversation.md § A generation request routes to one call and names
 the form`.
 
+**Recorded at review round 2** (not at implementation time as planned — the
+first pass shipped without running this): 55 tools, 72,239 serialized bytes,
+largest schema `generate_midi` at 5,446 bytes (was 52 tools / 58,709 bytes /
+`set_clip_properties` at 3,585 before this feature). Computed directly from
+`Seshat.Tools.Definitions.all/0` and `Seshat.MCP.Schema.to_json_schema/1`
+rather than `mcp_call.py stats` — no Seshat MCP server was running against
+this checkout — and cross-checked against the pr-review round that measured
+the same numbers independently.
+
 Schema draft (bounds are the contract — a silent no-op is not detectable on
 this wire):
 

@@ -120,11 +120,11 @@ read back; this check is what closes it.
 Generate a one-bar beat whose hat part carries `probability` below 1.0 and a
 non-zero `velocity_deviation` (the style profile supplies both; pick a
 profile the plan documents as carrying them, or pass explicit overrides).
-The reply's read-back section must report probability and velocity-deviation
-values **matching what was sent** (float32 tolerance), not Live's defaults
-(1.0 / 0.0). Defaults coming back means Live accepted and discarded the
-fields — report it as a finding against the feature's Live-side feel claim,
-and the fork's ⚠️ stays.
+The reply's read-back section reports a verdict per field, not the raw values
+— it must say per-note chance and velocity spread **came back as sent**, not
+that Live returned its defaults (1.0 / 0.0). A "returned default values"
+verdict for either field means Live accepted and discarded it — report it as
+a finding against the feature's Live-side feel claim, and the fork's ⚠️ stays.
 
 Cross-check placement independently with `get_clip_notes`: the same notes, at
 the same starts and velocities, in the five-field view.

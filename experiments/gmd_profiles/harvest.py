@@ -335,7 +335,7 @@ def pooled(lanes, lane_name):
     return merged
 
 
-def lane_profile(accumulator):
+def lane_profile(accumulator, baseline=0.0):
     classes = {}
     for name, values in accumulator.by_class.items():
         if values:
@@ -359,7 +359,15 @@ def lane_profile(accumulator):
     return {
         "files": len(accumulator.files),
         "hits": accumulator.hits,
-        "timing_mean": round_to(mean(accumulator.offsets)),
+        # `baseline` is the same recording-chain estimate `style_profile`
+        # subtracts for `swing` below — every offset in this dataset skews
+        # early by a few percent of a 16th, uniformly across lanes, which is a
+        # property of GMD's capture chain rather than of any drummer. Left in,
+        # every generated note would carry a silent, undocumented rush; this
+        # is what makes a lane's timing_mean "how this lane sits *relative to
+        # the style's own average onset*" rather than relative to a grid that
+        # was never actually measured directly.
+        "timing_mean": round_to(mean(accumulator.offsets) - baseline),
         "timing_sd": round_to(sd(accumulator.offsets)),
         "velocity_sd": round_to(sd(accumulator.velocities), 1),
         "velocity": classes,
@@ -376,6 +384,18 @@ def lane_profile(accumulator):
 
 
 def style_profile(lanes, swing_offsets, style, style_files):
+    # The same recording-chain estimate backs both `swing` (below) and every
+    # lane's `timing_mean` (in `lane_profile`): every offset in this dataset
+    # skews slightly early, uniformly across lanes, which is a property of
+    # GMD's capture chain rather than of any drummer. A lane whose own file
+    # count fell back to the cross-style pool is corrected against the pooled
+    # baseline instead, for the same reason `pooled()` supplies it a pooled
+    # accumulator in the first place.
+    own_baseline = mean([o for a in lanes[style].values() for o in a.offsets])
+    pooled_baseline = mean(
+        [o for style_lanes in lanes.values() for a in style_lanes.values() for o in a.offsets]
+    )
+
     fallbacks = []
     lane_profiles = {}
     for lane_name in LANES:
@@ -383,16 +403,19 @@ def style_profile(lanes, swing_offsets, style, style_files):
         if len(accumulator.files) < MIN_FILES_PER_LANE:
             fallbacks.append(lane_name)
             accumulator = pooled(lanes, lane_name)
-        lane_profiles[lane_name] = lane_profile(accumulator)
+            baseline = pooled_baseline
+        else:
+            baseline = own_baseline
+        lane_profiles[lane_name] = lane_profile(accumulator, baseline)
 
     # Swing rides the same small-sample rule as the lanes: a median taken over a
     # handful of files is a property of those drummers, not of the style.
     #
     # And it is measured *relative to the style's own mean onset offset*, not
-    # against the bare grid. Every offset in this dataset skews slightly early
-    # (every style's mean is negative), which is a property of the recording
-    # chain rather than of any drummer; subtracting it leaves the part that
-    # actually means "the off-beats sit later than the on-beats".
+    # against the bare grid — the same `own_baseline`/`pooled_baseline` above,
+    # which is what leaves swing meaning "the off-beats sit later than the
+    # on-beats" rather than carrying the same capture-chain rush timing_mean
+    # now also corrects for.
     #
     # Its resolution is a real limit worth knowing: onsets are matched to the
     # nearest 16th, so a hard triplet swing pushes the off-8th past the halfway
@@ -402,12 +425,12 @@ def style_profile(lanes, swing_offsets, style, style_files):
     swing_fallback = style_files.get(style, 0) < MIN_FILES_PER_LANE
     if swing_fallback:
         offsets = [o for values in swing_offsets.values() for o in values]
-        baseline = [o for style_lanes in lanes.values() for a in style_lanes.values() for o in a.offsets]
+        baseline = pooled_baseline
     else:
         offsets = swing_offsets[style]
-        baseline = [o for a in lanes[style].values() for o in a.offsets]
+        baseline = own_baseline
 
-    swing = round_to((statistics.median(offsets) if offsets else 0.0) - mean(baseline))
+    swing = round_to((statistics.median(offsets) if offsets else 0.0) - baseline)
 
     return {
         "harvested": True,
@@ -501,7 +524,10 @@ def main():
         "generated_by": "experiments/gmd_profiles/harvest.py",
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "units": {
-            "timing_mean": "signed mean onset offset, as a fraction of a 16th note",
+            "timing_mean": (
+                "signed mean onset offset relative to the style's own average onset (which "
+                "removes GMD's capture-chain rush), as a fraction of a 16th note"
+            ),
             "timing_sd": "onset offset standard deviation, same units",
             "swing": "median off-8th offset, same units",
             "velocity": "MIDI velocity, 1-127, per accent class",

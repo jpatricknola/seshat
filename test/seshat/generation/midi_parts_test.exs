@@ -84,6 +84,22 @@ defmodule Seshat.Generation.MidiPartsTest do
       assert [[3, 0, "Kick"], [4, 0, "Bass"]] = datagrams(trace, "/live/clip/set/name")
     end
 
+    # The schema promises the brief is "echoed in the reply" — it steers
+    # nothing, but a caller who passed one should see it come back.
+    test "the description is echoed in the reply", context do
+      {result, _trace} = run(context, request(%{"description" => "lazy boom-bap loop"}))
+
+      assert {:ok, reply} = result
+      assert reply =~ "Brief: \"lazy boom-bap loop\""
+    end
+
+    test "an omitted description echoes nothing", context do
+      {result, _trace} = run(context, request())
+
+      assert {:ok, reply} = result
+      refute reply =~ "Brief:"
+    end
+
     # Guards → creates → clip → notes → name → read-back. Every claim this
     # workflow makes rests on that order, and `assert_receive` cannot prove it.
     test "orders guards, creates, writes and the read-back", context do
@@ -150,6 +166,18 @@ defmodule Seshat.Generation.MidiPartsTest do
       assert {:ok, reply} = derived
       assert reply =~ "derived from hiphop"
     end
+
+    # `dance` carries only 7 GMD files, under the harvest's 8-file floor, so
+    # every one of its lanes falls back to the cross-style pool — "measured
+    # from real drummers" would be true of the pooled numbers but not of
+    # dance specifically, so it gets its own honest wording instead.
+    test "a fully-pooled style says so rather than claiming to be measured", context do
+      {result, _trace} = run(context, request(%{"style" => "dance"}))
+
+      assert {:ok, reply} = result
+      assert reply =~ "too few dance recordings to measure on their own"
+      refute reply =~ "measured from real drummers"
+    end
   end
 
   describe "note writes" do
@@ -191,6 +219,10 @@ defmodule Seshat.Generation.MidiPartsTest do
 
       assert {:ok, reply} = result
       assert reply =~ "512 notes"
+      # The whole point of the dense case: three read-back windows, and every
+      # one of them has to confirm — a float32-truncation false alarm on any
+      # single window would report "could not confirm" here.
+      assert reply =~ "Read-back: every note confirmed in Live."
 
       chunks = datagrams(trace, "/live/clip/add/notes_extended")
       assert length(chunks) == 3
@@ -295,6 +327,22 @@ defmodule Seshat.Generation.MidiPartsTest do
 
     # Compilation is pure and runs first, so a bad pattern in the second part
     # refuses while Live is still untouched.
+    test "two parts sharing an explicit track cost no datagram at all", context do
+      params =
+        request(%{
+          "parts" => [
+            kick_part(%{"track" => 1}),
+            kick_part(%{"role" => "Snare", "track" => 1})
+          ]
+        })
+
+      {result, trace} = run(context, params)
+
+      assert {:error, message} = result
+      assert message =~ "Two parts both target track 1"
+      assert trace == []
+    end
+
     test "a pattern that cannot compile costs no datagram at all", context do
       params =
         request(%{"parts" => [kick_part(), kick_part(%{"role" => "Snare", "pattern" => "x-o-"})]})
@@ -384,6 +432,19 @@ defmodule Seshat.Generation.MidiPartsTest do
 
       assert Enum.count(addresses(trace), &(&1 == "/live/clip/get/notes_extended")) == 2
     end
+
+    # The straggler recovers this time: the first reply is about a different
+    # (empty) query, but the reissue lands on the real one and the whole
+    # request still reports confirmed — the reissue-once defence exists for
+    # exactly this case, not only for the "stale twice" one above.
+    test "a mismatched window that answers correctly on reissue still confirms", context do
+      {result, trace} =
+        run(context, request(), live(%{stale_reads_left: 1}))
+
+      assert {:ok, reply} = result
+      assert reply =~ "Read-back: every note confirmed in Live."
+      assert Enum.count(addresses(trace), &(&1 == "/live/clip/get/notes_extended")) == 2
+    end
   end
 
   describe "readback_windows/3" do
@@ -445,6 +506,23 @@ defmodule Seshat.Generation.MidiPartsTest do
                MidiParts.validate(request(%{"parts" => [kick_part(), kick_part()]}))
 
       assert message =~ "Two parts are both called \"Kick\""
+    end
+
+    # Two parts targeting the same explicit track would both write into the
+    # same clip_slot — Live rejects the second create_clip, but the notes
+    # still get appended onto the first part's clip, merging and misnaming it
+    # while the reply would have claimed two clips landed.
+    test "two parts may not share an explicit track" do
+      params =
+        request(%{
+          "parts" => [
+            kick_part(%{"track" => 1}),
+            kick_part(%{"role" => "Snare", "track" => 1})
+          ]
+        })
+
+      assert {:error, message} = MidiParts.validate(params)
+      assert message =~ "Two parts both target track 1"
     end
 
     test "a drum part needs a pitch and a pattern" do

@@ -179,8 +179,13 @@ defmodule Seshat.Generation.MidiParts do
       end
     end)
     |> case do
-      {:ok, checked} -> check_roles_unique(checked)
-      {:error, message} -> {:error, message}
+      {:ok, checked} ->
+        with {:ok, checked} <- check_roles_unique(checked) do
+          check_tracks_unique(checked)
+        end
+
+      {:error, message} ->
+        {:error, message}
     end
   end
 
@@ -319,6 +324,30 @@ defmodule Seshat.Generation.MidiParts do
         {:error,
          "Two parts are both called \"#{role}\". Each part names its own track and clip, so " <>
            "the roles have to differ. Nothing was written."}
+    end
+  end
+
+  # Two parts sharing an explicit `track` would both write into the same
+  # (track, clip_slot) — Live rejects the second `create_clip`, but the notes
+  # still get appended onto the first part's clip and the reply would have
+  # claimed two clips landed when only one, merged and misnamed, did.
+  defp check_tracks_unique(parts) do
+    duplicate =
+      parts
+      |> Enum.filter(&is_integer(&1.track))
+      |> Enum.map(& &1.track)
+      |> Enum.frequencies()
+      |> Enum.find(fn {_track, count} -> count > 1 end)
+
+    case duplicate do
+      nil ->
+        {:ok, parts}
+
+      {track, _count} ->
+        {:error,
+         "Two parts both target track #{track}. Every part writes into the same clip_slot, " <>
+           "so two parts sharing a track would collide in one clip slot. Give each its own " <>
+           "track, or drop track on one so a new track is created. Nothing was written."}
     end
   end
 
@@ -765,7 +794,8 @@ defmodule Seshat.Generation.MidiParts do
 
     "Writing part \"#{failed.role}\" into slot #{slot} on track #{failed.track} failed: " <>
       reason <>
-      ". Parts before it may already have landed — read the scene with get_clip_slots. " <>
+      ". Every part is attempted regardless, so others may have landed either before or " <>
+      "after this one — read the scene with get_clip_slots. " <>
       standing_tracks(written) <> " One undo removes everything this call created."
   end
 
@@ -907,30 +937,47 @@ defmodule Seshat.Generation.MidiParts do
     end)
   end
 
-  # Live stores note positions as 32-bit floats, so an exact comparison would
-  # fail on values that round-tripped perfectly. Three decimals is far finer
-  # than any grid a note can land on and far coarser than float32's error.
-  defp starts_match?(notes, expected) do
-    Enum.sort(Enum.map(notes, &round_start(&1.start_time))) ==
-      Enum.sort(Enum.map(expected, &round_start/1))
-  end
+  # Live stores note positions as 32-bit floats, so a start near beat 60 can
+  # round-trip up to ~7e-6 off — rounding both sides to 3 decimals and
+  # comparing for equality (the previous approach) still fails whenever that
+  # error straddles a rounding boundary, which measured out to a false
+  # "could not confirm" on tens of seeds out of every hundred on a dense
+  # lane. A tolerance well above float32's error and well below `@min_gap`
+  # (two notes can legitimately sit 0.002 beats apart) is the fix: each
+  # returned start is matched to its nearest expected start, and the match
+  # only holds if every expected start found a returned start within
+  # tolerance and vice versa.
+  @start_tolerance 1.0e-3
 
-  defp round_start(value) when is_number(value), do: Float.round(value * 1.0, 3)
-  defp round_start(_value), do: :unreadable
+  defp starts_match?(notes, expected) do
+    returned = notes |> Enum.map(& &1.start_time) |> Enum.filter(&is_number/1) |> Enum.sort()
+    wanted = Enum.sort(expected)
+
+    length(returned) == length(notes) and
+      length(returned) == length(wanted) and
+      Enum.zip(returned, wanted)
+      |> Enum.all?(fn {got, want} -> abs(got * 1.0 - want * 1.0) <= @start_tolerance end)
+  end
 
   # The measurement `priv/AbletonOSC/API.md` has a ⚠️ on. Whether the three
   # expression fields *persist* was never read back — the 2026-08-29 probe used
   # the five-field getter — so this compares what came back against what went
   # out and the reply says which it is.
+  #
+  # Tracked per field, not folded into one flag: a pattern with no ghosts sends
+  # `velocity_deviation` but never a `probability` below 1.0, and Live keeping
+  # one field while dropping the other is exactly the case a single combined
+  # "kept" boolean cannot report — it would call the drop "kept" because the
+  # other field happened to survive.
   defp compare(part, notes) do
-    expression_sent? =
-      Enum.any?(part.notes, &(&1.probability < 1.0 or &1.velocity_deviation > 0.0))
+    probability_sent? = Enum.any?(part.notes, &(&1.probability < 1.0))
+    deviation_sent? = Enum.any?(part.notes, &(&1.velocity_deviation > 0.0))
 
-    expression_kept? =
-      expression_sent? and
-        Enum.any?(notes, fn note ->
-          number_below?(note.probability, 1.0) or number_above?(note.velocity_deviation, 0.0)
-        end)
+    probability_kept? =
+      probability_sent? and Enum.any?(notes, &number_below?(&1.probability, 1.0))
+
+    deviation_kept? =
+      deviation_sent? and Enum.any?(notes, &number_above?(&1.velocity_deviation, 0.0))
 
     # No note-count comparison lives here, deliberately: every window already
     # had to return exactly the starts it was asked for before it was accepted,
@@ -939,8 +986,10 @@ defmodule Seshat.Generation.MidiParts do
     # reach.
     %{
       notes: Enum.count(notes),
-      expression_sent?: expression_sent?,
-      expression_kept?: expression_kept?
+      probability_sent?: probability_sent?,
+      deviation_sent?: deviation_sent?,
+      probability_kept?: probability_kept?,
+      deviation_kept?: deviation_kept?
     }
   end
 
@@ -964,16 +1013,23 @@ defmodule Seshat.Generation.MidiParts do
       "Composed #{length(parts)} #{pluralise(length(parts), "part")} into scene #{slot} — " <>
         "#{request.bars} #{pluralise(request.bars, "bar")} of #{request.style} at " <>
         "#{format_number(music.tempo)} BPM, #{music.numerator}/#{music.denominator}. " <>
-        "These are MIDI clips, not audio."
+        "These are MIDI clips, not audio." <> brief(request.description)
 
     lines = Enum.map(parts, &part_line(&1, slot))
 
     feel =
       "Feel: #{request.style} " <>
-        if(Profiles.harvested?(request.style),
-          do: "(measured from real drummers)",
-          else: "(derived from #{Profiles.authored_from(request.style)})"
-        ) <>
+        cond do
+          Profiles.fully_pooled?(request.style) ->
+            "(too few #{request.style} recordings to measure on their own; using the " <>
+              "combined-style average)"
+
+          Profiles.harvested?(request.style) ->
+            "(measured from real drummers)"
+
+          true ->
+            "(derived from #{Profiles.authored_from(request.style)})"
+        end <>
         ", humanize #{format_number(request.humanize)}, seed #{request.seed}" <>
         if(request.seed_given?,
           do: ". Same seed, same take.",
@@ -987,6 +1043,16 @@ defmodule Seshat.Generation.MidiParts do
 
     Enum.join([headline | lines] ++ [feel, readback, undo] ++ silent_note(parts), "\n")
   end
+
+  # The schema promises the brief is "echoed in the reply"; it steers nothing
+  # (the pattern and style are what decide the result), so it rides on the
+  # headline rather than a line of its own.
+  defp brief(description) when is_binary(description) do
+    trimmed = String.trim(description)
+    if trimmed == "", do: "", else: " Brief: \"#{trimmed}\"."
+  end
+
+  defp brief(_description), do: ""
 
   defp part_line(part, slot) do
     where =
@@ -1019,23 +1085,68 @@ defmodule Seshat.Generation.MidiParts do
     end
   end
 
-  # The honest half of the ⚠️: say which way the measurement went, in the words
-  # a user would need to act on it.
+  # The honest half of the ⚠️: say which way the measurement went, per field,
+  # in the words a user would need to act on it. "Per-note chance" and
+  # "velocity spread" are reported independently because Live can keep one
+  # and drop the other — a combined verdict would misreport that case either
+  # way.
+  @expression_fields [
+    {"per-note chance", :probability_sent?, :probability_kept?},
+    {"velocity spread", :deviation_sent?, :deviation_kept?}
+  ]
+
   defp expression_note(parts) do
-    with_expression = Enum.filter(parts, & &1.readback.expression_sent?)
+    sent =
+      Enum.filter(@expression_fields, fn {_label, sent_key, _kept_key} ->
+        Enum.any?(parts, &Map.fetch!(&1.readback, sent_key))
+      end)
 
-    cond do
-      with_expression == [] ->
-        ""
+    if sent == [] do
+      ""
+    else
+      kept =
+        Enum.filter(sent, fn {_label, sent_key, kept_key} ->
+          parts
+          |> Enum.filter(&Map.fetch!(&1.readback, sent_key))
+          |> Enum.all?(&Map.fetch!(&1.readback, kept_key))
+        end)
 
-      Enum.all?(with_expression, & &1.readback.expression_kept?) ->
-        " Per-note chance and velocity spread came back as sent, so Live re-rolls the ghost " <>
-          "notes on every pass."
+      dropped = sent -- kept
 
-      true ->
-        " Live returned default values for per-note chance and velocity spread, so those did " <>
-          "not stick — the timing and velocity shape did, which is most of the feel."
+      [kept_sentence(kept), dropped_sentence(dropped)]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.map_join(" ", & &1)
+      |> case do
+        "" -> ""
+        sentence -> " " <> sentence
+      end
     end
+  end
+
+  defp kept_sentence([]), do: ""
+
+  defp kept_sentence(fields) do
+    names = Enum.map_join(fields, " and ", &elem(&1, 0))
+
+    suffix =
+      if Enum.any?(fields, &(elem(&1, 0) == "per-note chance")) do
+        ", so Live re-rolls the ghost notes on every pass."
+      else
+        "."
+      end
+
+    String.capitalize(names) <> " came back as sent" <> suffix
+  end
+
+  defp dropped_sentence([]), do: ""
+
+  defp dropped_sentence(fields) do
+    names = Enum.map_join(fields, " and ", &elem(&1, 0))
+    those_did = if length(fields) > 1, do: "those did", else: "that did"
+
+    "Live returned default values for " <>
+      names <>
+      ", so #{those_did} not stick — the timing and velocity shape did, which is most of the feel."
   end
 
   defp silent_note(parts) do

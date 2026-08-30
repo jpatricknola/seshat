@@ -80,6 +80,26 @@ defmodule Seshat.Generation.Midi.ProfilesTest do
         assert is_binary(profile["authored_note"])
       end
     end
+
+    # `dance` carries only 7 GMD files, under the 8-file floor, so every lane
+    # (and the swing figure) fell back to the cross-style pool. `harvested?`
+    # alone would still say "measured from real drummers," which is true of
+    # the pool but not of dance specifically — `fully_pooled?` is what lets the
+    # reply be honest about that distinction.
+    test "a style whose every lane fell back to the pool is fully pooled" do
+      assert Profiles.fully_pooled?("dance")
+      refute Profiles.fully_pooled?("rock")
+    end
+
+    test "an authored style is never fully pooled — that case says so via authored_from" do
+      for style <- @authored do
+        refute Profiles.fully_pooled?(style)
+      end
+    end
+
+    test "an unknown style is not fully pooled" do
+      refute Profiles.fully_pooled?("drum-and-bass")
+    end
   end
 
   describe "the measured envelope" do

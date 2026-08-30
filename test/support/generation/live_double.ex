@@ -224,6 +224,21 @@ defmodule Seshat.Test.LiveDouble do
     {:silent, put_in(live.clips[{track, slot}][:notes], existing ++ added)}
   end
 
+  # `:stale_reads_left` is how "the first reply is a straggler, the reissue is
+  # answered correctly" is reachable at all — distinct from `:swallow_notes`,
+  # which never answers either try. One counted-down empty reply per window is
+  # exactly a stale reply about a different (empty) clip: it never matches the
+  # expected starts, so the read-back's reissue-once defence has to fire and
+  # then succeed.
+  defp respond(
+         "/live/clip/get/notes_extended",
+         [track, slot, _low_pitch, _pitch_span, _start, _span],
+         %{stale_reads_left: n} = live
+       )
+       when is_integer(n) and n > 0 do
+    {[track, slot], put_in(live.stale_reads_left, n - 1)}
+  end
+
   defp respond(
          "/live/clip/get/notes_extended",
          [track, slot, low_pitch, pitch_span, start, span],

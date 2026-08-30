@@ -124,6 +124,34 @@ defmodule Seshat.Generation.Midi.PerformanceTest do
       assert hit > ghost
     end
 
+    # `velocity_deviation` tells Live to re-roll the *played* velocity up to
+    # this much above what was written — the same border `keep_class_order/3`
+    # drew when writing the base velocity, so an uncapped deviation could let
+    # a ghost play as loud as a hit. A lane with a wide velocity_sd must not
+    # be able to cross that border.
+    test "a ghost's velocity_deviation cannot roll it into hit territory" do
+      lane = %{
+        "timing_mean" => 0.0,
+        "timing_sd" => 0.0,
+        "velocity_sd" => 100.0,
+        "ghost_probability" => 0.5,
+        "velocity" => %{
+          "accent" => %{"mean" => 110.0, "sd" => 6.0},
+          "hit" => %{"mean" => 90.0, "sd" => 6.0},
+          "ghost" => %{"mean" => 30.0, "sd" => 6.0}
+        }
+      }
+
+      {:ok, gridded} = Pattern.compile("g-g-g-g-", "1/16", 1, 2)
+      notes = Performance.perform(gridded, context(%{lane: lane, clip_beats: 2.0}))
+
+      low = (30.0 + 90.0) / 2
+
+      for note <- notes do
+        assert note.velocity + note.velocity_deviation <= low
+      end
+    end
+
     test "ghosts carry a chance below one and everything else is certain" do
       {:ok, gridded} = Pattern.compile("X-g-", "1/16", 1, 1)
       [accent, ghost] = Performance.perform(gridded, context(%{clip_beats: 1.0}))

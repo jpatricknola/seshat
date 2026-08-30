@@ -33,6 +33,12 @@ defmodule Seshat.Generation.Midi.Performance do
   quarter of a beat in Live at every time signature (a beat is a quarter note
   there, whatever the denominator says). `swing` is in the same units and is
   applied to off-8ths only — positions sitting exactly half a beat into a beat.
+  `timing_mean` is already corrected for GMD's own capture-chain rush (every
+  lane in the raw harvest skews early by the same few percent of a 16th,
+  independent of any drummer) — see `harvest.py`'s `style_profile`/
+  `lane_profile` — so the number here is one lane's push or drag *relative to
+  the style's own average onset*, not relative to a grid GMD never measured
+  directly.
   """
 
   # A 16th note in beats. Fixed, not derived from the time signature: Live
@@ -121,7 +127,7 @@ defmodule Seshat.Generation.Midi.Performance do
       velocity: Float.round(velocity, 1),
       mute: 0,
       probability: probability(onset.accent, lane, humanize),
-      velocity_deviation: velocity_deviation(lane, humanize),
+      velocity_deviation: velocity_deviation(lane, onset.accent, velocity, humanize),
       release_velocity: @default_release_velocity
     }
 
@@ -158,12 +164,34 @@ defmodule Seshat.Generation.Midi.Performance do
 
   defp probability(_accent, _lane, _humanize), do: 1.0
 
-  defp velocity_deviation(_lane, +0.0), do: 0.0
+  defp velocity_deviation(_lane, _accent, _velocity, +0.0), do: 0.0
 
-  defp velocity_deviation(lane, humanize) do
+  defp velocity_deviation(lane, accent, velocity, humanize) do
     (lane["velocity_sd"] * 1.0 * humanize)
-    |> clamp(0.0, @max_velocity_deviation)
+    |> clamp(0.0, min(@max_velocity_deviation, class_room(lane, accent, velocity)))
     |> Float.round(1)
+  end
+
+  # `velocity_deviation` tells Live to re-roll the *played* velocity at up to
+  # this much above what was written (`API.md`'s own wording), which is
+  # exactly the band `keep_class_order/3` drew when writing the base velocity
+  # in the first place — a ghost written at 50 with an unbounded 30-point
+  # deviation could play as loud as 80, inside the `hit` class it was written
+  # to sit under. This caps the roll so it cannot cross into a neighbouring
+  # class's territory, or past Live's own velocity ceiling.
+  defp class_room(lane, accent, velocity) do
+    means = lane["velocity"]
+    low = (means["ghost"]["mean"] + means["hit"]["mean"]) / 2
+    high = (means["hit"]["mean"] + means["accent"]["mean"]) / 2
+
+    ceiling =
+      case accent do
+        :ghost -> low
+        :hit -> high
+        :accent -> 127.0
+      end
+
+    max(ceiling - velocity, 0.0)
   end
 
   # The shape a drummer plays *over* the pattern rather than in it: the bar's
