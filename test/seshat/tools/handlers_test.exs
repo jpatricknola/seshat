@@ -1283,7 +1283,8 @@ defmodule Seshat.Tools.HandlersTest do
       {"/live/clip/get/launch_mode", [0, 0, 0]},
       {"/live/clip/get/launch_quantization", [0, 0, 0]},
       {"/live/clip/get/legato", [0, 0, 0]},
-      {"/live/clip/get/velocity_amount", [0, 0, 0.0]}
+      {"/live/clip/get/velocity_amount", [0, 0, 0.0]},
+      {"/live/clip/get/groove", [0, 0, -1]}
     ]
 
     test "a MIDI clip costs the guard plus one batch", %{sink: sink} do
@@ -1305,6 +1306,10 @@ defmodule Seshat.Tools.HandlersTest do
       assert count_queries(trace, "/live/clip/get/name") == 1
       assert count_queries(trace, "/live/clip/get/velocity_amount") == 1
       assert count_queries(trace, "/live/clip/get/gain") == 0
+
+      # `-1` is Live's "no groove", and it must never read as pool index -1.
+      assert count_queries(trace, "/live/clip/get/groove") == 1
+      assert message =~ "Groove: none"
     end
 
     test "an audio clip pays one more batch for its audio-only properties", %{sink: sink} do
@@ -2131,8 +2136,24 @@ defmodule Seshat.Tools.HandlersTest do
     # flagged in no reading taken), but the formatter must not invent a tab it
     # wasn't told about.
     test "reports the detail panel open without naming a tab when neither flag is set" do
-      assert Handlers.view_state_summary(visibility(%{"Detail" => true})) ==
-               "Main view: Session. Live's browser: closed. Detail panel: open."
+      assert Handlers.view_state_summary(visibility(%{"Detail" => true}), 0) ==
+               "Main view: Session. Live's browser: closed. Detail panel: open. " <>
+                 "Selected scene: 0."
+    end
+
+    # "This section" is a thing users say, and the scene it means is the one
+    # that is selected — so the summary carries it rather than leaving the model
+    # to guess at slot 0.
+    test "names the selected scene" do
+      assert Handlers.view_state_summary(visibility(%{}), 3) =~ "Selected scene: 3."
+    end
+
+    # A pane that could not be read fails the whole tool; an unanswered scene
+    # read is one missing fact, and the summary says which.
+    test "an unread scene is stated as unknown rather than dropped" do
+      summary = Handlers.view_state_summary(visibility(%{}), nil)
+      assert summary =~ "Selected scene: unknown"
+      assert summary =~ "Main view: Session."
     end
 
     # Session and Arranger measured strictly complementary, so this read should
@@ -2157,7 +2178,8 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert summary ==
                "Main view: Session. Live's browser: open. " <>
-                 "Detail panel: open, showing the clip editor."
+                 "Detail panel: open, showing the clip editor. Selected scene: unknown — " <>
+                 "Ableton did not answer that read."
     end
   end
 
@@ -3283,7 +3305,8 @@ defmodule Seshat.Tools.HandlersTest do
           root_note: 0,
           scale_name: "Major",
           groove_amount: 0.0,
-          swing_amount: 0.16
+          swing_amount: 0.16,
+          groove_pool: []
         },
         overrides
       )
@@ -3917,7 +3940,10 @@ defmodule Seshat.Tools.HandlersTest do
   describe "format_song_line/1" do
     test "a fully known song renders every field and flags nothing" do
       assert {line, false} = Handlers.format_song_line(song())
-      assert line == "120.0 BPM, 4/4, stopped, key: C Major, groove 0.0, swing 0.16"
+
+      assert line ==
+               "120.0 BPM, 4/4, stopped, key: C Major, groove 0.0, swing 0.16\n" <>
+                 "Groove Pool: empty (grooves are added by hand, dragged in from Live's browser)"
     end
 
     test "a playing song says so" do
@@ -3935,14 +3961,15 @@ defmodule Seshat.Tools.HandlersTest do
           root_note: nil,
           scale_name: nil,
           groove_amount: nil,
-          swing_amount: nil
+          swing_amount: nil,
+          groove_pool: nil
         })
 
       assert {line, true} = Handlers.format_song_line(unknown)
 
       assert line ==
                "tempo unknown, time signature unknown, playing state unknown, key unknown, " <>
-                 "groove unknown, swing unknown"
+                 "groove unknown, swing unknown\nGroove Pool unknown"
     end
 
     # Per field, not per line: one lost tempo reply must not cost the signature.
@@ -3999,6 +4026,29 @@ defmodule Seshat.Tools.HandlersTest do
       assert {line, true} = Handlers.format_song_line(song(%{groove_amount: nil}))
       assert line =~ "groove unknown"
       assert line =~ "swing 0.16"
+    end
+
+    # The pool is the vocabulary `set_clip_properties`' groove index is written
+    # in, so the reply names the grooves rather than counting them.
+    test "a stocked Groove Pool is named, groove by groove" do
+      assert {line, false} =
+               Handlers.format_song_line(song(%{groove_pool: ["Swing 16ths 66", "MPC 8 Swing"]}))
+
+      assert line =~ "Groove Pool: Swing 16ths 66, MPC 8 Swing"
+    end
+
+    # An empty pool is a real, common state and a Live ceiling — nothing in the
+    # API can stock it — so the line says how one gets there.
+    test "an empty Groove Pool says how a groove gets into it" do
+      assert {line, false} = Handlers.format_song_line(song(%{groove_pool: []}))
+      assert line =~ "Groove Pool: empty"
+      assert line =~ "dragged in from Live's browser"
+    end
+
+    test "an unread Groove Pool is unknown, not empty, and flags the line" do
+      assert {line, true} = Handlers.format_song_line(song(%{groove_pool: nil}))
+      assert line =~ "Groove Pool unknown"
+      refute line =~ "empty"
     end
 
     # 0.0 is straight/off, and it is not nil — the truthiness bug one field over.
@@ -6198,6 +6248,141 @@ defmodule Seshat.Tools.HandlersTest do
   # its own file; what is pinned here is the half this module owns — that the
   # dispatch reaches it, that the reply separates what was requested from what
   # Live observed, and that the tool is wrapped in an undo step like any other.
+  # The workflow itself is exercised in `Seshat.Generation.MidiPartsTest`, which
+  # owns the ordering, chunking and read-back claims. What belongs here is the
+  # dispatch: that the name reaches the workflow at all, and that it is wrapped
+  # in Live's undo step like every other mutating tool rather than opting out.
+  describe "generate_midi dispatch" do
+    setup :osc_sink
+
+    setup do
+      start_supervised!(Seshat.Test.FakeSessionState)
+      :ok
+    end
+
+    test "runs inside one undo step, since one request must be one undo" do
+      # A request refused by the pure cross-field rules reaches the wire only
+      # through the bracket, which is exactly what makes the bracket visible.
+      assert {:error, message} =
+               Handlers.call("generate_midi", %{
+                 "style" => "rock",
+                 "parts" => [%{"role" => "Kick", "pitch" => 36, "pattern" => "x-o-"}]
+               })
+
+      assert message =~ "not a step character"
+
+      assert [
+               {"/live/song/end_undo_step", []},
+               {"/live/song/begin_undo_step", []},
+               {"/live/song/end_undo_step", []}
+             ] = osc_trace()
+    end
+
+    test "is not on the unstepped list" do
+      refute "generate_midi" in Seshat.Tools.Definitions.unstepped_names()
+    end
+
+    test "schema violations are reported before anything is sent" do
+      assert {:error, message} =
+               Handlers.call("generate_midi", %{"style" => "polka", "parts" => []})
+
+      assert message =~ "Invalid parameters for generate_midi"
+      assert message =~ "must be one of"
+      refute_receive {:osc_out, "/live/clip/add/notes_extended", _}
+    end
+  end
+
+  # The garnish: assigning a groove Live's own Groove Pool already holds. The
+  # pool cannot be stocked from code at all, which is why the empty case is a
+  # refusal with a manual remedy rather than a bad-index error.
+  describe "set_clip_properties groove" do
+    setup :osc_sink
+
+    test "an empty pool is refused with the only remedy that exists" do
+      start_supervised!({Seshat.Test.FakeSessionState, song: [groove_pool: []]})
+
+      assert {:error, message} =
+               Handlers.call("set_clip_properties", %{
+                 "track" => 0,
+                 "clip_slot" => 0,
+                 "groove" => 0
+               })
+
+      assert message =~ "Groove Pool is empty"
+      assert message =~ "dragging one into the pool from Live's browser"
+      assert message =~ "Nothing was set."
+      refute_receive {:osc_out, "/live/clip/set/groove", _}
+    end
+
+    test "an index past the end of the pool is refused by name, before the send" do
+      start_supervised!(
+        {Seshat.Test.FakeSessionState, song: [groove_pool: ["Swing 16ths 66", "MPC 8 Swing"]]}
+      )
+
+      assert {:error, message} =
+               Handlers.call("set_clip_properties", %{
+                 "track" => 0,
+                 "clip_slot" => 0,
+                 "groove" => 5
+               })
+
+      assert message =~ "groove 5 is past the end"
+      assert message =~ "Swing 16ths 66, MPC 8 Swing"
+      refute_receive {:osc_out, "/live/clip/set/groove", _}
+    end
+
+    # The setter is fire-and-forget, so the read-back is the only evidence the
+    # assignment landed — and the pool's own name is what makes the index
+    # readable.
+    test "an assignment is confirmed by its read-back and named", %{sink: sink} do
+      start_supervised!({Seshat.Test.FakeSessionState, song: [groove_pool: ["Swing 16ths 66"]]})
+
+      task =
+        Task.async(fn ->
+          Handlers.call("set_clip_properties", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "groove" => 0
+          })
+        end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip_slot/get/has_clip", [0, 0, 1]},
+          {"/live/clip/get/is_midi_clip", [0, 0, 1]},
+          {"/live/clip/get/groove", [0, 0, 0]}
+        ])
+
+      assert {:ok, message} = Task.await(task)
+      assert message =~ "groove: 0 ('Swing 16ths 66')"
+      assert [[0, 0, 0]] = for({addr, args} <- trace, addr == "/live/clip/set/groove", do: args)
+    end
+
+    # An index Live rejected leaves the clip as it was, and the read-back is
+    # what turns a silent rejection into a sentence.
+    test "a value Live did not take is reported as a disagreement", %{sink: sink} do
+      start_supervised!({Seshat.Test.FakeSessionState, song: [groove_pool: ["Swing 16ths 66"]]})
+
+      task =
+        Task.async(fn ->
+          Handlers.call("set_clip_properties", %{
+            "track" => 0,
+            "clip_slot" => 0,
+            "groove" => 0
+          })
+        end)
+
+      scripted_trace(sink, [
+        {"/live/clip_slot/get/has_clip", [0, 0, 1]},
+        {"/live/clip/get/is_midi_clip", [0, 0, 1]},
+        {"/live/clip/get/groove", [0, 0, -1]}
+      ])
+
+      assert {:ok, message} = Task.await(task)
+      assert message =~ "Live reports none, not the 0 ('Swing 16ths 66') that was sent"
+    end
+  end
+
   describe "generate_audio" do
     setup do
       sink = start_supervised!({Seshat.Test.OSCSink, forward_to: self()})

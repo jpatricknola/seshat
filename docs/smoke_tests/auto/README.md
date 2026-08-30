@@ -24,7 +24,7 @@ in full.
 | [audio-output.md](audio-output.md) | the unavailable-output failure path |
 | [undo.md](undo.md) | undo granularity and the `can_undo` / `can_redo` guards |
 | [sends.md](sends.md) | `set_track_send`'s read-back confirmation and its guard rejection |
-| [generation.md](generation.md) | `generate_audio` end to end — the runtime, managed files, clip-slot import, read-back |
+| [generation.md](generation.md) | `generate_audio` and `generate_midi` end to end — the runtime, managed files, clip-slot import, the composed-notes path, read-back |
 | [convert.md](convert.md) | `convert_audio_to_midi` — the OSC conversion, its guards, and the read-back |
 
 Several subsystems have a human-judged half as well — the same feature's ear,

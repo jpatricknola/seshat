@@ -12,6 +12,7 @@ defmodule Seshat.Tools.Handlers do
 
   alias Seshat.Commands.{Command, Registry}
   alias Seshat.Generation.AudioClip
+  alias Seshat.Generation.MidiParts
   alias Seshat.Generation.Result
   alias Seshat.Library.Catalog
   alias Seshat.Music.Pitch
@@ -150,7 +151,12 @@ defmodule Seshat.Tools.Handlers do
   @clip_boolean_properties ["looping", "legato", "warping"]
 
   # Enums — written as integers, decoded to names in the replies.
-  @clip_integer_properties ["launch_mode", "launch_quantization", "warp_mode"]
+  # `groove` rides this list for the coercion alone — it is a pool *index*, not
+  # an enum, so `format_clip_value/2` has no name table for it and falls through
+  # to the plain number. Sending it as a float would leave Live's own
+  # normalisation to decide what 2.0 means, which is not a decision this tool
+  # should be delegating.
+  @clip_integer_properties ["launch_mode", "launch_quantization", "warp_mode", "groove"]
 
   # The two ordered pairs. Live requires start < end at all times, so each pair
   # is written in whichever order keeps that true after every single message
@@ -175,7 +181,8 @@ defmodule Seshat.Tools.Handlers do
     "gain",
     "warp_mode",
     "warping",
-    "name"
+    "name",
+    "groove"
   ]
 
   # `Clip` only carries these on an audio clip. Reading one on a MIDI clip does
@@ -202,7 +209,8 @@ defmodule Seshat.Tools.Handlers do
     "launch_mode",
     "launch_quantization",
     "legato",
-    "velocity_amount"
+    "velocity_amount",
+    "groove"
   ]
 
   @clip_audio_reads ["gain", "gain_display_string", "warp_mode", "warping"]
@@ -1648,11 +1656,23 @@ defmodule Seshat.Tools.Handlers do
 
     swing = if is_nil(song.swing_amount), do: "swing unknown", else: "swing #{song.swing_amount}"
 
+    # Names, because the index is only meaningful next to one: `set_clip_properties`
+    # takes the *position* in this list. An empty pool says how a groove gets
+    # there, since nothing in Live's API can put one there — see
+    # `ensure_groove_assignable/1`.
+    pool =
+      case Map.get(song, :groove_pool) do
+        nil -> "Groove Pool unknown"
+        [] -> "Groove Pool: empty (grooves are added by hand, dragged in from Live's browser)"
+        names -> "Groove Pool: " <> Enum.join(names, ", ")
+      end
+
     unknown? =
       is_nil(song.tempo) or signature_unknown? or is_nil(song.is_playing) or key_unknown? or
-        is_nil(song.groove_amount) or is_nil(song.swing_amount)
+        is_nil(song.groove_amount) or is_nil(song.swing_amount) or
+        is_nil(Map.get(song, :groove_pool))
 
-    {Enum.join([tempo, signature, playing, key, groove, swing], ", "), unknown?}
+    {Enum.join([tempo, signature, playing, key, groove, swing], ", ") <> "\n" <> pool, unknown?}
   end
 
   @doc """
@@ -2446,6 +2466,7 @@ defmodule Seshat.Tools.Handlers do
 
     with :ok <- ensure_clip_changes(changes),
          :ok <- validate_clip_pairs(changes),
+         :ok <- ensure_groove_assignable(changes),
          :ok <- ensure_clip(track, slot),
          :ok <- ensure_audio_clip(track, slot, changes),
          {:ok, current} <- read_clip_pair_context(track, slot, changes),
@@ -2592,7 +2613,12 @@ defmodule Seshat.Tools.Handlers do
       end
     end)
     |> case do
-      {:ok, visibility} -> {:ok, view_state_summary(visibility)}
+      # The scene read is deliberately *not* part of the reduce above: a pane
+      # that could not be read makes the whole summary untrustworthy, while an
+      # unanswered scene read is one missing fact the summary can state as
+      # unknown and carry on. `select_scene` is the setter, so the pair is
+      # self-checking.
+      {:ok, visibility} -> {:ok, view_state_summary(visibility, selected_scene())}
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
@@ -3393,6 +3419,22 @@ defmodule Seshat.Tools.Handlers do
       {:ok, result} -> {:ok, format_generated_clip(result)}
       {:error, message} -> {:error, message}
     end
+  end
+
+  # --- Composed MIDI parts ---
+  #
+  # The whole workflow — and every sentence of the reply — lives in
+  # `Seshat.Generation.MidiParts`, which is why this clause is two lines. It
+  # composes nothing here and formats nothing here: the module owns the ordering
+  # discipline (compile everything pure, guard, create, load, write, read back)
+  # and the honesty of what it reports, exactly as `Seshat.Generation.AudioClip`
+  # owns `generate_audio`'s.
+  #
+  # It takes the ordinary undo-step wrap, so a request that creates four tracks
+  # and writes four clips is one entry in Live's history. Nothing about that is
+  # new machinery — it falls out of `call/2` bracketing the dispatch.
+  defp do_call("generate_midi", params) do
+    MidiParts.generate(params)
   end
 
   # --- Audio to MIDI (OSC end to end) ---
@@ -6074,6 +6116,63 @@ defmodule Seshat.Tools.Handlers do
   defp coerce_clip_value(_property, value) when is_number(value), do: value / 1.0
   defp coerce_clip_value(_property, value), do: value
 
+  # Reads the mirror, not the wire, and runs before every OSC call in this tool:
+  # both refusals here are about the *pool*, which no amount of talking to the
+  # clip could establish.
+  #
+  # An empty pool is a Live ceiling rather than a bad index — nothing in the LOM
+  # can add a groove (measured 2026-08-30, tier 1: `GroovePool` has exactly one
+  # member, `grooves`, with no add, create or import), so the only honest reply
+  # names the manual remedy. An index past the end is refused by name for the
+  # ordinary reason: `/live/clip/set/groove` is silent on success, so a rejected
+  # index would otherwise surface only as a read-back that disagreed.
+  #
+  # A mirror that has never read the pool (`nil`) sends anyway. Refusing on an
+  # unknown would turn a dropped datagram at startup into a permanently
+  # unassignable groove, and the read-back still tells the truth afterwards.
+  defp ensure_groove_assignable(%{"groove" => index}) do
+    case mirrored_groove_pool() do
+      nil ->
+        :ok
+
+      [] ->
+        {:error,
+         "The Groove Pool is empty, so there is no groove to assign. Grooves can only be added " <>
+           "by dragging one into the pool from Live's browser — nothing in Live's API can put " <>
+           "one there. Nothing was set."}
+
+      names when index >= length(names) ->
+        {:error,
+         "groove #{index} is past the end of the Groove Pool, which holds " <>
+           "#{length(names)} (#{Enum.join(names, ", ")}) — they are numbered from 0. " <>
+           "Nothing was set."}
+
+      _names ->
+        :ok
+    end
+  end
+
+  defp ensure_groove_assignable(_changes), do: :ok
+
+  defp mirrored_groove_pool do
+    State.song().groove_pool
+  catch
+    :exit, _ -> nil
+  end
+
+  defp groove_label(index) when is_integer(index) do
+    case mirrored_groove_pool() do
+      names when is_list(names) ->
+        case Enum.at(names, index) do
+          name when is_binary(name) -> "#{index} ('#{name}')"
+          _ -> "#{index}"
+        end
+
+      _ ->
+        "#{index}"
+    end
+  end
+
   defp ensure_clip_changes(changes) when map_size(changes) == 0 do
     {:error,
      "Nothing to set — pass at least one property: " <>
@@ -6242,6 +6341,7 @@ defmodule Seshat.Tools.Handlers do
   defp clip_get_address("gain_display_string"), do: "/live/clip/get/gain_display_string"
   defp clip_get_address("warp_mode"), do: "/live/clip/get/warp_mode"
   defp clip_get_address("warping"), do: "/live/clip/get/warping"
+  defp clip_get_address("groove"), do: "/live/clip/get/groove"
 
   defp clip_set_address("looping"), do: "/live/clip/set/looping"
   defp clip_set_address("loop_start"), do: "/live/clip/set/loop_start"
@@ -6256,6 +6356,7 @@ defmodule Seshat.Tools.Handlers do
   defp clip_set_address("warp_mode"), do: "/live/clip/set/warp_mode"
   defp clip_set_address("warping"), do: "/live/clip/set/warping"
   defp clip_set_address("name"), do: "/live/clip/set/name"
+  defp clip_set_address("groove"), do: "/live/clip/set/groove"
 
   # An *unwarped* audio clip counts its length, loop points and markers in
   # seconds, not beats (Live's object model switches the unit on `warping`), so
@@ -6299,7 +6400,9 @@ defmodule Seshat.Tools.Handlers do
         ]
       end
 
-    Enum.join([header, loop, markers, launch] ++ audio, "\n")
+    groove = "Groove: #{format_clip_value("groove", properties["groove"])}"
+
+    Enum.join([header, loop, markers, launch, groove] ++ audio, "\n")
   end
 
   defp format_clip_writes(track, slot, current, writes, readback) do
@@ -6363,6 +6466,13 @@ defmodule Seshat.Tools.Handlers do
     do: enum_name(@launch_quantization_names, value)
 
   defp format_clip_value("warp_mode", value), do: enum_name(@warp_mode_names, value)
+
+  # `-1` is Live's "no groove", and never something to send back: assignment is
+  # one-way, and `/live/clip/set/groove -1` is a rejected request rather than a
+  # clear (priv/AbletonOSC/API.md, § "Assignment is one-way").
+  defp format_clip_value("groove", -1), do: "none"
+  defp format_clip_value("groove", value) when is_integer(value), do: groove_label(value)
+  defp format_clip_value("groove", _other), do: "unknown"
   defp format_clip_value("name", value), do: ~s{'#{value}'}
   defp format_clip_value(_property, value), do: format_number(value)
 
@@ -7335,16 +7445,39 @@ defmodule Seshat.Tools.Handlers do
   reading is the fabrication the house rule forbids — and this tool exists
   precisely so the model can stop guessing about the view.
   """
-  @spec view_state_summary(%{optional(String.t()) => boolean()}) :: String.t()
-  def view_state_summary(visibility) do
+  @spec view_state_summary(%{optional(String.t()) => boolean()}, integer() | nil) :: String.t()
+  def view_state_summary(visibility, scene \\ nil) do
     Enum.join(
       [
         main_view_line(visibility["Session"], visibility["Arranger"]),
         "Live's browser: #{if visibility["Browser"], do: "open", else: "closed"}.",
-        detail_panel_line(visibility)
+        detail_panel_line(visibility),
+        selected_scene_line(scene)
       ],
       " "
     )
+  end
+
+  # What "this section" resolves to. Stated as unknown rather than omitted when
+  # the read failed: a missing line reads as "no scene is selected", which is
+  # not a state Live has.
+  defp selected_scene_line(scene) when is_integer(scene), do: "Selected scene: #{scene}."
+
+  defp selected_scene_line(_scene),
+    do: "Selected scene: unknown — Ableton did not answer that read."
+
+  # Upstream's address, and it echoes nothing at all: there is no index to send
+  # and none comes back, so `query_correlated/4`'s defence is unavailable and a
+  # one-element shape check stands in for it, exactly as `query_scene_names/1`
+  # does on the bulk scene-name read. Best-effort by design — the panes are the
+  # tool's subject, and this is the fact that rides along with them.
+  defp selected_scene do
+    case Transport.query("/live/view/get/selected_scene", [], @guard_timeout) do
+      {:ok, {_address, [scene]}} when is_integer(scene) and scene >= 0 -> scene
+      _other -> nil
+    end
+  catch
+    :exit, _ -> nil
   end
 
   defp main_view_line(true, false), do: "Main view: Session."

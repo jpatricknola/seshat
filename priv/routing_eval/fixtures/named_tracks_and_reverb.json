@@ -7,7 +7,8 @@
     "root_note": 0,
     "scale_name": "Major",
     "groove_amount": 0.0,
-    "swing_amount": 0.0
+    "swing_amount": 0.0,
+    "groove_pool": []
   },
   "tracks": [
     {

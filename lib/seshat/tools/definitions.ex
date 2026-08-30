@@ -636,7 +636,12 @@ defmodule Seshat.Tools.Definitions do
           "matched the intent. launch_mode: 0=Trigger, 1=Gate, 2=Toggle, 3=Repeat. " <>
           "launch_quantization: 0=Global, 1=None, 2=8 bars, 3=4 bars, 4=2 bars, 5=1 bar, " <>
           "6=1/2, 7=1/2T, 8=1/4, 9=1/4T, 10=1/8, 11=1/8T, 12=1/16, 13=1/16T, 14=1/32. " <>
-          "velocity_amount is 0.0–1.0. name renames the clip. Audio only — gain: nonlinear 0.0–1.0, trust the dB the " <>
+          "velocity_amount is 0.0–1.0. name renames the clip. groove assigns one of the Groove " <>
+          "Pool's grooves by its 0-based position (get_session_state lists the pool) — it is " <>
+          "the only way to swing a clip that is already written, and it is **one-way**: Live's " <>
+          "API cannot un-assign a groove, so removing one means the user clicking the clip's " <>
+          "Groove chooser in Live. An empty pool is refused by name, because nothing in the " <>
+          "API can stock it — grooves are dragged in from Live's browser. Audio only — gain: nonlinear 0.0–1.0, trust the dB the " <>
           "reply echoes rather than the number; warp_mode: 0=Beats, 1=Tones, 2=Texture, " <>
           "3=Re-Pitch, 4=Complex, 6=Complex Pro; warping: on/off. Audio-only properties on a " <>
           "MIDI clip are rejected with an error. Use get_clip_properties first to see current " <>
@@ -686,6 +691,14 @@ defmodule Seshat.Tools.Definitions do
           "legato" => %{
             type: "boolean",
             description: "true = a relaunch continues from the current playback position"
+          },
+          "groove" => %{
+            type: "integer",
+            minimum: 0,
+            description:
+              "0-based position in the Groove Pool (get_session_state names what is in it). " <>
+                "Assignment is one-way — there is no value that clears a groove, so only " <>
+                "assign one when the user asked for it."
           },
           "velocity_amount" => %{
             type: "number",
@@ -896,7 +909,10 @@ defmodule Seshat.Tools.Definitions do
         "Report which of Live's panes are visible right now, read directly from " <>
           "Live: the main view (Session or Arrangement), whether Live's browser " <>
           "is open, and whether the bottom detail panel is open and which " <>
-          "editor it shows (clip editor or device chain). Use it to answer " <>
+          "editor it shows (clip editor or device chain), and which scene is " <>
+          "selected — which is what \"this section\" means when the user says " <>
+          "it, and the slot to target when they want something added to what " <>
+          "they are already on. Use it to answer " <>
           "'what am I looking at?', to decide whether a pane needs showing or " <>
           "hiding, and to confirm a view change actually happened. Reads live " <>
           "state on every call; nothing is cached.",
@@ -1578,7 +1594,11 @@ defmodule Seshat.Tools.Definitions do
       name: "generate_audio",
       description:
         "Generate a short **audio** clip from a text description and import it into a Session " <>
-          "slot. Renders locally with the separately installed Stable Audio 3 runtime; if the " <>
+          "slot. Audio is not the default form for musical material: a request for a beat, a " <>
+          "bassline or a groove goes to generate_midi, which composes notes the user can edit " <>
+          "and re-voice. Come here when the user asked for audio, for a texture or found " <>
+          "sound, or for something with no note-level shape. " <>
+          "Renders locally with the separately installed Stable Audio 3 runtime; if the " <>
           "runtime or its weights are missing the call refuses and says so — nothing is " <>
           "downloaded. Tempo, time signature and key are taken from the session " <>
           "automatically; put only the musical material in description (e.g. \"dusty lo-fi " <>
@@ -1679,6 +1699,178 @@ defmodule Seshat.Tools.Definitions do
           }
         },
         required: ["description"]
+      }
+    },
+    # --- Composed MIDI parts ---
+    #
+    # The `style` enum is read out of the committed profiles rather than typed
+    # here, so the published surface and the data behind it cannot disagree: a
+    # re-harvest that drops a style takes it off the enum in the same build.
+    %{
+      name: "generate_midi",
+      description:
+        "Compose MIDI — drums and bass — from step patterns you write, landing as separate " <>
+          "parts, one track and clip each, in one Session scene, one call, one undo step. " <>
+          "MIDI is the default form for musical material; only an explicit request for audio " <>
+          "goes to generate_audio. Patterns: one character per step — X accent, x hit, g " <>
+          "ghost, - rest (\"x-g-X-g-\"); | and spaces are ignored; resolution defaults to " <>
+          "1/16; a shorter pattern repeats whole to fill the bars, and one that does not " <>
+          "divide evenly is refused. Drum parts play one pitch (General MIDI: kick 36, snare " <>
+          "38, closed hat 42, open hat 46 — match the loaded kit). Bass parts take one root " <>
+          "per bar (MIDI 28-43) plus either a pattern of their own or a relationship derived " <>
+          "from the drum part's actual onsets: lock (with each kick), answer (the 8th after), " <>
+          "sustain (hold the bar). style and humanize add real-drummer microtiming, velocity " <>
+          "shape, ghost dynamics and per-note chance — humanize 0.0 is the raw grid. Same " <>
+          "seed = same take, so for \"another take\" change or omit the seed and target the " <>
+          "next empty scene; an occupied slot on any target track is refused before anything " <>
+          "is created. A new MIDI track is created per part unless track names an existing " <>
+          "one. Pass instrument_uri per part (a URI from search_library) so the result makes " <>
+          "sound — without it the track is silent and the reply says so. Read " <>
+          "get_session_state first for tempo, time signature and key. Track indices are " <>
+          "0-based.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          "description" => %{
+            type: "string",
+            description:
+              "The musical brief in the user's own words (\"lazy boom-bap loop\"). Echoed in " <>
+                "the reply; it steers nothing, since the pattern and the style are what decide " <>
+                "the result."
+          },
+          "bars" => %{
+            type: "integer",
+            minimum: 1,
+            maximum: 16,
+            description:
+              "How many bars every part is, at the session's tempo and time signature. " <>
+                "Defaults to 4."
+          },
+          "clip_slot" => %{
+            type: "integer",
+            minimum: 0,
+            description:
+              "0-indexed scene every part lands in — one scene, one clip per part, so they " <>
+                "launch together. Defaults to 0. Must be empty on every target track; scenes " <>
+                "are never created."
+          },
+          "style" => %{
+            type: "string",
+            enum: Seshat.Generation.Midi.Profiles.names(),
+            description:
+              "Which drummer's feel to perform the patterns with — timing, velocity shape, " <>
+                "ghost dynamics and swing. Pick from what the user asked for; the reply says " <>
+                "whether the profile was measured or derived."
+          },
+          "humanize" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description:
+              "How much of the style's feel to apply. 1.0 (the default) is a played take; 0.0 " <>
+                "is the exact grid with flat velocities, which is what to use when the user " <>
+                "wants it machine-tight or wants to hear the difference."
+          },
+          "swing" => %{
+            type: "number",
+            minimum: 0.0,
+            maximum: 1.0,
+            description:
+              "Override the style's own swing. 0.0 is straight; 1.0 puts the off-8ths on a " <>
+                "triplet. Omit unless the user asked for a swing feel by name."
+          },
+          "seed" => %{
+            type: "integer",
+            minimum: 0,
+            maximum: 2_147_483_647,
+            description:
+              "Fixes the performance so the same request produces the same take. Omit for a " <>
+                "fresh one; the reply names the seed used, so it can be passed back."
+          },
+          "parts" => %{
+            type: "array",
+            description:
+              "The parts to compose, 1-8 of them. Each becomes one track and one clip. Two " <>
+                "parts may not share a role.",
+            items: %{
+              type: "object",
+              properties: %{
+                "role" => %{
+                  type: "string",
+                  description:
+                    "What this part is, 1-32 characters — it names both the track and the clip " <>
+                      "(\"Kick\", \"Hats\", \"Bass\")."
+                },
+                "type" => %{
+                  type: "string",
+                  enum: ["drum", "bass"],
+                  description: "drum (one pitch, a step pattern) or bass. Defaults to drum."
+                },
+                "pitch" => %{
+                  type: "integer",
+                  minimum: 0,
+                  maximum: 127,
+                  description:
+                    "The pad a drum part plays. General MIDI: kick 36, snare 38, closed hat " <>
+                      "42, open hat 46, ride 51, crash 49. Drum parts only."
+                },
+                "pattern" => %{
+                  type: "string",
+                  description:
+                    "One character per step: X accent, x hit, g ghost, - rest. | and spaces " <>
+                      "are ignored, so bars can be laid out readably. Required for a drum " <>
+                      "part; on a bass part it is the alternative to relationship."
+                },
+                "resolution" => %{
+                  type: "string",
+                  enum: ["1/8", "1/8T", "1/16", "1/16T", "1/32"],
+                  description: "What one step is worth. Defaults to 1/16."
+                },
+                "roots" => %{
+                  type: "array",
+                  items: %{
+                    type: "integer",
+                    minimum: 28,
+                    maximum: 43,
+                    description: "MIDI pitch in the bass register: 28 = E1, 43 = G2."
+                  },
+                  description:
+                    "One root per bar for a bass part, in order — repeat the value where the " <>
+                      "harmony does not move. Bass parts only, and required for them."
+                },
+                "relationship" => %{
+                  type: "string",
+                  enum: ["lock", "answer", "sustain"],
+                  description:
+                    "How a bass part derives from the drums it follows: lock plays with every " <>
+                      "onset, answer plays the 8th after an isolated one, sustain holds the " <>
+                      "bar. The alternative to giving the bass its own pattern."
+                },
+                "follows" => %{
+                  type: "string",
+                  description:
+                    "The role of the drum part a relationship derives from. Defaults to the " <>
+                      "lowest-pitched drum part in this call, which is normally the kick."
+                },
+                "track" => %{
+                  type: "integer",
+                  minimum: 0,
+                  description:
+                    "Write onto this existing MIDI track instead of creating one. A group " <>
+                      "track or an audio track is refused before anything is created."
+                },
+                "instrument_uri" => %{
+                  type: "string",
+                  description:
+                    "A browser URI from search_library, loaded onto this part's track so it " <>
+                      "makes sound. Without it the track is silent."
+                }
+              },
+              required: ["role"]
+            }
+          }
+        },
+        required: ["style", "parts"]
       }
     },
     # --- Audio to MIDI (OSC, like everything else) ---

@@ -28,7 +28,8 @@ defmodule Seshat.Test.FakeSessionState do
     root_note: 5,
     scale_name: "Minor",
     groove_amount: 0.0,
-    swing_amount: 0.0
+    swing_amount: 0.0,
+    groove_pool: []
   }
 
   @doc """
@@ -49,7 +50,12 @@ defmodule Seshat.Test.FakeSessionState do
   @impl true
   def init(song), do: {:ok, song}
 
+  # `Seshat.Tools.Handlers` reads the mirrored Groove Pool through `song/0`
+  # before assigning a groove, so the fake answers that call too — otherwise the
+  # guard's refusal paths would be unreachable in the suite.
   @impl true
+  def handle_call(:song, _from, song), do: {:reply, song, song}
+
   def handle_call(:snapshot, _from, song) do
     snapshot = %{
       song: song,

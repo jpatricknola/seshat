@@ -29,3 +29,16 @@ moved in this version and the enum needs revisiting. `hide_view` reads itself
 back, so a stuck pane comes out as an honest error rather than a false success; if
 it reports one, that *is* the finding.
 
+
+## The selected scene reads back
+
+`get_view_state` reports the selected scene by index, read from
+`/live/view/get/selected_scene` — the upstream address Seshat never consumed
+before this. `select_scene` is the setter half and already exists, so the pair
+is self-checking: `select_scene 0`, then `get_view_state` — the reply names
+scene 0. `select_scene` to the set's **last** scene index (from
+`get_session_state`), read again — it names that index. The two reads
+disagreeing with what was just selected means the getter is reading a
+different notion of selection than the setter writes, which is the finding.
+
+*Last run: —*

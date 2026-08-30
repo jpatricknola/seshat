@@ -39,7 +39,10 @@ defmodule Seshat.Tools.FollowCam do
   the moment the recorded thing exists and can be looked at. `generate_audio`
   is an ordinary clip write for this purpose — it steers only after the
   imported clip has been read back and confirmed, so the view never jumps to a
-  slot whose import failed. `convert_audio_to_midi` is a create for the same
+  slot whose import failed. `generate_midi` writes several clips in one call and
+  steers to the *last* part's, deliberately: they all sit in one scene, so the
+  Session grid shows every one of them and the note editor shows the part the
+  request ended on. `convert_audio_to_midi` is a create for the same
   purpose — it selects the track Live's Convert made, and changes no pane, for
   the same reason `create_track` doesn't.
   """
@@ -83,7 +86,8 @@ defmodule Seshat.Tools.FollowCam do
              "set_clip_properties",
              "stop_recording",
              "quantize_clip",
-             "generate_audio"
+             "generate_audio",
+             "generate_midi"
            ] do
     [
       {"/live/view/set/selected_clip", [track, slot]},

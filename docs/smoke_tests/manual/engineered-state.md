@@ -300,3 +300,26 @@ window while under load and isn't reliably reproducible by hand; there is no
 check for it here beyond the mechanism reasoning above and the compile-time
 proof that `kCleanupBudget` extends `gDeadline` before any restore search
 runs.
+
+## A groove from the pool lands on a clip, and an empty pool is told plainly
+
+*Why manual: the Groove Pool can only be stocked by a person — no LOM member
+adds a groove and the browser has no grooves root (measured 2026-08-30), so
+the state this check needs cannot be created by any tool*
+*Last run: —*
+
+With the pool **empty** (a fresh set): `get_session_state` says the pool is
+empty rather than omitting the subject, and `set_clip_properties` with a
+`groove` index on any MIDI clip refuses immediately, saying plainly that the
+pool has no grooves and that one must be dragged in from Live's browser — not
+a bare index error.
+
+Then drag one groove (e.g. Core Library's `Swing 16ths 66`) into the Groove
+Pool by hand. `get_session_state` now names it. Assign it:
+`set_clip_properties` with `groove: 0` on a MIDI clip, verified through
+`get_clip_properties` reading the index back (the setter is fire-and-forget;
+the read-back is the check). An out-of-range index (`groove: 5`) errors
+immediately, naming the pool's real size, and the clip's read-back is
+unchanged. Note the one-way contract: the tool cannot un-assign a groove —
+confirm the reply says so if un-assignment is attempted, rather than
+pretending to clear it.
