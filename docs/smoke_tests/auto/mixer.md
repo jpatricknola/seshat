@@ -92,11 +92,13 @@ verbatim.
 
 This is the test that matters most on this surface: `track_set_input_routing_type`
 loops the available list and falls through to a log warning when nothing
-matches — no reply, no `/live/error`, nothing on the wire (measured 2026-08-30,
-see [API.md](../../../priv/AbletonOSC/API.md)). So a bogus name that comes back
-as success means the pre-send validation against the available list was skipped
-or the read-back was taken from the request rather than from Live, and every
-wrong input the model ever sets will be reported as applied.
+matches — no reply, no `/live/error`, nothing on the wire (measured 2026-08-30;
+not yet recorded in [API.md](../../../priv/AbletonOSC/API.md), filed as
+[fork issue #31](https://github.com/jpatricknola/AbletonOSC/issues/31)). So a
+bogus name that comes back as success means the pre-send validation against
+the available list was skipped or the read-back was taken from the request
+rather than from Live, and every wrong input the model ever sets will be
+reported as applied.
 
 A refusal that *did* change the input means the validation ran after the send.
 

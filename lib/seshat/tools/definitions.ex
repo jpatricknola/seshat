@@ -1700,8 +1700,10 @@ defmodule Seshat.Tools.Definitions do
           "warts included: expect to follow up with quantize_clip and edit_notes rather than " <>
           "expecting a clean part. The new track arrives directly after the source track, " <>
           "carrying an instrument Live chose — replace it with load_device once you know what " <>
-          "the user wants it to sound like. **This briefly brings Ableton Live to the front**, " <>
-          "so do it between takes, never during one. Live 9+, Standard and Suite.",
+          "the user wants it to sound like. **This briefly brings Ableton Live to the front and " <>
+          "switches it to the Session grid to fire the command, and does not switch it back** — " <>
+          "so do it between takes, never during one, and say so if the user was working in the " <>
+          "Arranger. Live 9+, Standard and Suite.",
       parameters: %{
         type: "object",
         properties: %{

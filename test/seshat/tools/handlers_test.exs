@@ -3405,7 +3405,7 @@ defmodule Seshat.Tools.HandlersTest do
       assert message =~ "Recording into track 2, slot 0 until stop_recording."
       assert message =~ "might not capture input"
       assert message =~ "fired anyway"
-      assert message =~ "check the track's input routing"
+      assert message =~ "check the track's input and monitoring with get_session_state"
     end
 
     test "a true reading fires with no input caveat in the reply", %{sink: sink} do

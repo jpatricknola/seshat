@@ -2169,7 +2169,7 @@ defmodule Seshat.Tools.Handlers do
   # Nothing cheaper distinguishes the two, and a dead transport has already made
   # the reply moot.
   #
-  # Once the fire itself is sent, `report_record_started/5` is responsible for
+  # Once the fire itself is sent, `report_record_started/7` is responsible for
   # never repeating that "nothing was sent" framing: `record_echo/2`'s own guard
   # errors still say it (they're shared with the pre-fire guards), so it rewraps
   # them instead of returning them verbatim.
@@ -3446,7 +3446,7 @@ defmodule Seshat.Tools.Handlers do
         {:ok, format_audio_outputs(current, devices)}
 
       {:error, failure} ->
-        {:error, audio_error(failure)}
+        {:error, ax_error(failure)}
     end
   end
 
@@ -3502,7 +3502,7 @@ defmodule Seshat.Tools.Handlers do
            "Live confirmed the new value itself." <> hint}
 
       {:error, failure} ->
-        {:error, audio_error(failure)}
+        {:error, ax_error(failure)}
     end
   end
 
@@ -3677,7 +3677,7 @@ defmodule Seshat.Tools.Handlers do
            "be too short or silent, or this Live edition may not offer Convert."}
 
       {:error, failure} ->
-        {:error, audio_error(failure)}
+        {:error, ax_error(failure)}
     end
   end
 
@@ -3777,7 +3777,13 @@ defmodule Seshat.Tools.Handlers do
            timeout: @guard_timeout
          ) do
       {:ok, fields} when is_list(fields) ->
-        "It holds #{div(length(fields), 5)} note(s)."
+        case parse_clip_notes(fields) do
+          {:ok, notes} ->
+            "It holds #{length(notes)} note(s)."
+
+          {:error, _reason} ->
+            "Its notes could not be read back — check them with get_clip_notes."
+        end
 
       _unreadable ->
         "Its notes could not be read back — check them with get_clip_notes."
@@ -3915,14 +3921,14 @@ defmodule Seshat.Tools.Handlers do
   # a helper one. A rejected device name is the case worth spending words on: the
   # names are machine-specific, so the model cannot guess a second time, and the
   # helper already collected the real ones on its way to failing.
-  defp audio_error(%{code: :device_not_found, message: message, devices: devices})
+  defp ax_error(%{code: :device_not_found, message: message, devices: devices})
        when is_list(devices) and devices != [] do
     message <>
       " Choose one of these exact names instead: " <>
       Enum.map_join(devices, ", ", &"\"#{&1}\"") <> "."
   end
 
-  defp audio_error(%{message: message}), do: message
+  defp ax_error(%{message: message}), do: message
 
   # An explicit refresh that never completes is caught here rather than left to
   # `serve_session_state/0`'s own catch, which reports a mirror that didn't
@@ -4458,11 +4464,18 @@ defmodule Seshat.Tools.Handlers do
       # correct setup over a dropped datagram, and silence would let a silent
       # take pass as a normal one.
       _unreadable ->
-        {:ok,
-         "Ableton did not answer when this track's input was read, so whether anything is " <>
-           "routed into it is unknown — if the take comes back silent, check it with " <>
-           "get_session_state."}
+        {:ok, input_unknown_note()}
     end
+  end
+
+  # Shared by a batch that failed outright and by a batch that answered but
+  # left the type entry unreadable (`input_note`'s catch-all below) — both are
+  # "known to be audio, input not known," and both deserve the same sentence
+  # rather than one saying so and the other saying nothing.
+  defp input_unknown_note do
+    "Ableton did not answer when this track's input was read, so whether anything is " <>
+      "routed into it is unknown — if the take comes back silent, check it with " <>
+      "get_session_state."
   end
 
   # One value out of a batch entry, or `nil` for anything unreadable. Deliberately
@@ -4484,7 +4497,7 @@ defmodule Seshat.Tools.Handlers do
      |> Enum.join(" ")}
   end
 
-  defp input_note(_track, _type, _channel, _monitoring, _opts), do: {:ok, nil}
+  defp input_note(_track, _type, _channel, _monitoring, _opts), do: {:ok, input_unknown_note()}
 
   defp listening_line(type, channel) when is_binary(channel) and channel != "",
     do: ~s{Listening to "#{type}" on "#{channel}".}
@@ -4537,8 +4550,8 @@ defmodule Seshat.Tools.Handlers do
       {:ok, false} ->
         {:ok,
          "Live reported this slot might not capture input. That reading is unreliable, so the " <>
-           "take was fired anyway — if it comes back silent, check the track's input routing " <>
-           "and monitoring in Live."}
+           "take was fired anyway — if it comes back silent, check the track's input and " <>
+           "monitoring with get_session_state, and fix them with set_mixer."}
 
       # A failed *read* still blocks, unchanged: it means Ableton isn't
       # answering, which the fire is about to discover more expensively.
@@ -5127,9 +5140,11 @@ defmodule Seshat.Tools.Handlers do
   # `Session.State` within a beat. The two routing properties have neither a
   # listener nor an error: `track_set_input_routing_type` loops the track's
   # available list and falls through to `logger.warning` when nothing matches —
-  # no reply, no `/live/error`, nothing on the wire at all (measured 2026-08-30,
-  # priv/AbletonOSC/API.md). So a name Live doesn't have is *silently* dropped,
-  # and a tool that merely sent would report every wrong input as applied.
+  # no reply, no `/live/error`, nothing on the wire at all (measured 2026-08-30;
+  # priv/AbletonOSC/API.md doesn't say so yet — filed as
+  # https://github.com/jpatricknola/AbletonOSC/issues/31). So a name Live
+  # doesn't have is *silently* dropped, and a tool that merely sent would
+  # report every wrong input as applied.
   #
   # Hence: validate against the list Live itself offers before sending, and
   # report the value Live holds after. The refusal is also the discovery path,
@@ -5325,7 +5340,7 @@ defmodule Seshat.Tools.Handlers do
   # than rendered: this list is quoted back to the model as the names it may
   # use, so anything that isn't one has no business in it.
   defp routing_names(index, address, label) do
-    case query_correlated(address, [index], timeout: @guard_timeout, decode: &{:ok, &1}) do
+    case query_correlated(address, [index], timeout: @guard_timeout) do
       {:ok, names} ->
         {:ok, Enum.filter(names, &is_binary/1)}
 

@@ -375,7 +375,12 @@ Handler sequence, in this order:
 
 ### 7. Bookkeeping
 
-- `test/seshat/tools/definitions_test.exs`: tool count **53 → 54**.
+- `test/seshat/tools/definitions_test.exs`: tool count **53 → 54**. Measured
+  post-implementation (`mix run --no-start`, no app started): 54 tools,
+  63,880 bytes serialized, largest schema `generate_audio` at 3,792 bytes,
+  then `set_clip_properties` (3,555), `search_library` (3,353),
+  `set_mixer` (3,285) — well under the budget `.claude/docs/adding-a-tool.md`
+  asks a plan minting a name to watch.
 - **`docs/smoke_tests/auto/README.md`'s file table gains `convert.md`.** Already
   done on this branch. Named here because the `generate_audio` PR shipped with
   exactly this line missing, which silently skipped that PR's only live coverage

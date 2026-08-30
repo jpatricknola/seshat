@@ -415,8 +415,8 @@ defmodule Seshat.AX.Client do
         {:error,
          failure(
            :timeout,
-           "Ableton Live's audio settings did not answer in time, so nothing is known to have " <>
-             "changed. Check that Live is running and not showing a dialog, then try again."
+           "Ableton Live did not answer in time, so nothing is known to have changed. Check " <>
+             "that Live is running and not showing a dialog, then try again."
          )}
     end
   end
@@ -515,18 +515,19 @@ defmodule Seshat.AX.Client do
   end
 
   defp message(:live_not_running, _native) do
-    "Ableton Live isn't running, so its audio settings can't be reached. Start Live and try again."
+    "Ableton Live isn't running, so it can't be reached through Accessibility. Start Live and " <>
+      "try again."
   end
 
   defp message(:timeout, native) do
-    (native || "Ableton Live's audio settings did not respond in time.") <>
+    (native || "Ableton Live did not respond in time.") <>
       " Nothing is known to have changed."
   end
 
   defp message(_code, native) when is_binary(native), do: native
 
   defp message(_code, _native) do
-    "Ableton Live's audio settings could not be reached through macOS Accessibility."
+    "Ableton Live could not be reached through macOS Accessibility."
   end
 
   defp malformed do
