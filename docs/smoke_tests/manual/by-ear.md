@@ -132,7 +132,7 @@ keep/delete preference, groove and prompt match cannot be judged from a trace*
 *Last run: —*
 
 The by-ear verdict the roadmap item promises, run once per
-`docs/PLAN_midi_generation_symbolic.md` and recorded as a dated Result in
+`docs/archive/PLAN_midi_generation_symbolic.md` and recorded as a dated Result in
 `docs/evaluating/generative features/midi-generation-options.md` — this entry
 exists so the run is never skipped as "covered by the auto checks", which
 prove placement and feel *mechanics*, not musical worth.

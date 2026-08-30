@@ -1,5 +1,31 @@
 # Plan — MIDI generation: the first solution, composed symbolically
 
+> **Archived 2026-08-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ (see the PR for the
+> implementer's per-item report, the review's verdict and nits, and the
+> assumptions carried through the run). The feature lives in
+> `lib/seshat/generation/midi/` (`pattern.ex`, `performance.ex`, `bass.ex`,
+> `profiles.ex`), `lib/seshat/generation/midi_parts.ex`, and the
+> `generate_midi` tool in `Seshat.Tools.Definitions`/`Handlers`; the harvested
+> style data lives in `priv/midi_generation/style_profiles.json`
+> (`experiments/gmd_profiles/harvest.py` is how it was produced). The
+> roadmap's "MIDI generation — the first solution, composed symbolically"
+> entry is removed. Two PR-review nits were applied directly (a wording fix
+> for a track wrongly called silent, and a doc note on `edit_notes`
+> `parts`/`validate/1` bounds); the velocity-class clamp's own quality finding
+> became its own roadmap entry, "Soften the velocity-class clamp in symbolic
+> MIDI generation"; the partial-failure-wording gap was folded into the
+> existing "Pin the wording of `edit_notes`' partial-failure message" item;
+> and the routing-eval corpus gap was folded into the existing "Routing evals
+> — general corpus and client-realism lane" item as a planner note. Live
+> verification is partial: five automated `docs/smoke_tests/auto/` checks ran
+> and passed against real Ableton Live 12.4.5 (see "Live verification"
+> below for the measurements); the four manual checks this plan cites —
+> `manual/by-ear.md`'s acceptance slate, `manual/on-screen.md`'s Chance-lane
+> check, `manual/conversation.md`'s routing check, and
+> `manual/engineered-state.md`'s groove-from-pool check — still read
+> `*Last run: —*` and need a person.
+
 Roadmap item **"MIDI generation — the first solution, composed symbolically"**
 (re-scoped twice on 2026-08-30; this plan is written against the second
 re-scope). One feature, no bake-off: a **pattern DSL that Claude writes,
@@ -12,13 +38,13 @@ committed); bass is the bounded rule engine. No runtime retrieval, no neural
 model, no new native-process door.
 
 The deciding evidence is in
-[symbolic-midi-first-solution.md](evaluating/generative%20features/symbolic-midi-first-solution.md)
+[symbolic-midi-first-solution.md](../evaluating/generative%20features/symbolic-midi-first-solution.md)
 (verdict and the three 2026-08-30 measurements),
-[symbolic-midi-strategy-options.md](evaluating/generative%20features/symbolic-midi-strategy-options.md)
+[symbolic-midi-strategy-options.md](../evaluating/generative%20features/symbolic-midi-strategy-options.md)
 (the shared seam and judging protocol), and
-[music-generation-user-stories.md](evaluating/generative%20features/music-generation-user-stories.md)
+[music-generation-user-stories.md](../evaluating/generative%20features/music-generation-user-stories.md)
 (the acceptance bar). The superseded four-arm plan
-([PLAN_midi_generation_decision_experiment.md](PLAN_midi_generation_decision_experiment.md))
+([PLAN_midi_generation_decision_experiment.md](../PLAN_midi_generation_decision_experiment.md))
 contributes its measured facts — the 6.45 s in-process cost of a four-part
 request, the ~35 s conversational-chain equivalent, the datagram arithmetic —
 and its fixed-slate/blind-judging protocol, which becomes this feature's
@@ -62,7 +88,7 @@ Assistant 2 and AMT stay unbuilt specialists, gated on hearing this ship.
 
 ## OSC contract
 
-Every address verified against [priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md)
+Every address verified against [priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md)
 at pin `3b6b9bc`. No fork change is needed: the extended-notes family and the
 Groove API are already registered and documented; `lib/` has simply never
 used them. **The installed Remote Scripts copy must be at or past the pin
@@ -442,7 +468,7 @@ committed in
 (8 fixed prompts, four styles, 4 and 8 bars, fill and dropout, three seeds,
 blind codes, and the raw-grid / performed / +groove A/B on one skeleton).
 The verdict is recorded as a dated **Result** section in
-[midi-generation-options.md](evaluating/generative%20features/midi-generation-options.md),
+[midi-generation-options.md](../evaluating/generative%20features/midi-generation-options.md),
 including the overturn condition: if the grammar compiles reliably but
 listeners call it mechanical *and* the performance layer does not close the
 gap, the neural specialists (CA2 infill first, AMT bass) earn their
