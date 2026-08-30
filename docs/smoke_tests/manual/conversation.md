@@ -300,3 +300,34 @@ fresh description only if the model explicitly explains why variation is not
 available), targeting the same track without an explicit occupied slot. The
 new take lands in the next empty slot and the reply never claims that the first
 take was replaced.
+
+## A sung take routes to setup, record, then convert
+
+*Why manual:* a fresh conversation in a real client, judged on which tools the
+model reaches for unprompted.
+
+*Last run: —*
+
+In a new conversation with an audio track already in the set: *"I want to sing
+the guitar solo — record me for four bars and then turn it into MIDI so I can
+put a guitar sound on it."*
+
+What should happen: the input is set up and the track armed **before** the
+recording starts, and Seshat says when to start singing rather than recording
+into silence while you wait. After the take, one `convert_audio_to_midi` call
+with `mode: "melody"` — not `harmony`, not `drums`. Then a guitar patch chosen
+from the library and loaded onto the new track, with a one-line reason for the
+pick.
+
+What should *not* happen: an offer to write the part with `write_midi_notes`
+instead; a second recording attempt when the first take was fine; the word
+"convert" presented as a menu item you have to find; any raw index or tool name
+spoken aloud.
+
+The routing question this settles is whether `mode` is chosen from what the
+user said they were doing. "Sing the solo" is monophonic and therefore
+`melody`; a `harmony` here means the enum's description is not carrying its
+weight, since the wrong mode produces a plausible-looking result that is wrong
+in a way the user has to listen for.
+
+Also confirm the reply warns that Live will come to the front, before it does.

@@ -195,6 +195,19 @@ reject, defer, downgrade, or rank a feature lower because it needs a fork
 update. Account for the Python change, pin bump, install/restart, and live
 verification in the plan, then build it.
 
+**Anything that is bridge work only is filed as a GitHub issue on the fork and
+cited from wherever Seshat needed it** — a missing address, a bridge defect, a
+wrong `API.md` row, a `FORK_GAPS.md` disposition measurement contradicts.
+[.claude/docs/filing-fork-work.md](.claude/docs/filing-fork-work.md) owns the
+format and the boundary: the issue describes what the bridge should do and
+nothing else, while our pin bump, install, restart and sequencing stay in the
+plan. One issue per feature, not per address, since related members
+share a review, a merge, a pin bump and a Live restart. A request that lives
+only inside a plan doc is a request the fork's implementer never sees, which is
+how a needed address gets relabelled optional and shipped without
+([#28](https://github.com/jpatricknola/AbletonOSC/issues/28) exists because that
+happened).
+
 The fork's other docs, each the sole record of its subject:
 
 - [priv/AbletonOSC/SESHAT.md](priv/AbletonOSC/SESHAT.md) — every divergence
@@ -206,9 +219,19 @@ The fork's other docs, each the sole record of its subject:
 - [priv/AbletonOSC/FORK_GAPS.md](priv/AbletonOSC/FORK_GAPS.md) — LOM members
   the fork does not yet expose. Check it before calling anything a Live limit;
   add to it when research finds another; remove the entry in the commit that
-  lands the address.
+  lands the address. It is the fork's own record of what is missing; a fork
+  **issue** is a consumer's request against it, and a gap already carrying a
+  disposition there should be linked from the issue rather than restated.
+  Treat its dispositions as evidence, not verdicts — `focus_view` sat closed as
+  "overlaps `show_view`" until a 2026-08-30 measurement showed the two are
+  different operations and that Live's menu validation reads only the second.
 - [priv/AbletonOSC/issues.md](priv/AbletonOSC/issues.md) — fork-side defects
-  and declined items. A bridge bug goes there, not in `docs/ROADMAP.md`.
+  and declined items, as the fork's own checked-in record. **A bridge bug never
+  goes in `docs/ROADMAP.md`** — that queue is Seshat's work, and an item there
+  only the fork can fix sits unread by the one person who can act on it. Since
+  2026-08-30 Seshat raises bridge-only work as a **GitHub issue on the fork**
+  ([filing-fork-work.md](.claude/docs/filing-fork-work.md)); whether the fork
+  then also records it here is the fork's business, not ours.
 
 Any new address goes into the fork the same way (a handler module of ours, or
 an addition to an upstream file), documented in `API.md` in the same fork

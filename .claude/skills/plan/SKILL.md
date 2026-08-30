@@ -42,6 +42,17 @@ be able to say yes/no to each one.
      this repo executes it** — so its verification lives entirely in the
      plan's Live verification section (step 3). Say which parts only Ableton
      can confirm rather than implying the suite covers them.
+
+     **File the request as a GitHub issue on the fork, in this same pass, and
+     cite it in the plan.** Follow
+     [.claude/docs/filing-fork-work.md](.claude/docs/filing-fork-work.md)
+     — it owns the format and what each request must state, and it covers
+     bridge defects and wrong fork documentation as well as missing
+     addresses. One issue per
+     feature, not per address. Do not leave the request inside the plan doc
+     only: the fork's implementer never reads it there, which is how a needed
+     address gets quietly relabelled optional and shipped without. Say what
+     the plan does if the request is declined.
    - Grep the codebase for every touchpoint: which `Handlers` clauses,
      whether it's single-message (Transport direct) or multi-step
      (`%Command{}` + Registry), whether `Session.State` needs a new field and

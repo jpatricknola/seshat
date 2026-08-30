@@ -93,3 +93,34 @@ leaves routing as it found it. A success reply without both audible movement and
 the independent second read means native post-action verification or handler
 reporting is false; a Settings window left behind means one helper invocation no
 longer owns the complete transaction.
+
+## Sing a line, hear it back as a guitar
+
+*Why manual:* it needs a microphone, a voice, and a judgement about whether the
+result is musically usable — none of which an agent has.
+
+*Last run: —*
+
+The headline arc, run as one conversation: ask Seshat to set up a track to
+record your voice, sing or hum a short single-note line over whatever is
+already in the set, let the take finish, then ask for it as MIDI on a guitar
+sound.
+
+What you should get: a routed and armed track before you sing, a take that
+contains your voice rather than silence, a new MIDI track whose clip plays your
+line back, and a guitar patch on it. Play the two together and judge whether
+the MIDI actually follows what you sang — the contour, the rhythm, roughly the
+right octave.
+
+This is the only check that can fail the *feature* rather than the code. Live's
+Convert Melody is monophonic pitch tracking, so slides, bends and breathy
+attacks come back as extra notes; a clean hummed line comes back usable. If the
+result is unusable on a clean line, that is a finding about the route, not a
+bug — record it and raise it in [../../ROADMAP.md](../../ROADMAP.md). If the
+result is usable but messy, confirm that asking for it to be tidied reaches
+`quantize_clip` and `edit_notes` rather than a re-record; the tool description
+is what has to teach that.
+
+Note also whether the whole arc happened without you being told to do anything
+in Live's UI by hand. Being sent to the Input Type chooser is the failure this
+feature exists to remove.

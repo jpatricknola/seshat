@@ -143,3 +143,43 @@ reached) it currently errors with "Slot S on track T is empty… nothing was fir
 which is safe but misleading; note whether that window is long enough in practice
 to be worth a better message.
 
+
+## An audio take names its input, or refuses before recording
+
+*Last run: —*
+
+Create an audio track. Without setting its input, call `record_clip` on an
+empty slot with `bars: 1`. Then set a real input with `set_mixer`'s
+`input_type` (any name from the list its error or `get_session_state` reports),
+and call `record_clip` again on another empty slot.
+
+The first call is **refused before any recording starts** — the reply says the
+track has no input routed, names the `set_mixer` properties that fix it, and
+`get_clip_slots` shows the slot still empty. The second call records, and its
+reply names the input verbatim, exactly as Live spells it.
+
+A silent take that had to be discovered afterwards is the whole failure this
+prevents, and it is unrecoverable in the sense that matters: the performance is
+gone. A first call that records anyway means the pre-read was skipped or its
+result ignored; a reply that paraphrases or normalises the input name means
+someone interpreted a string that belongs to the user's interface, not to us.
+
+⚠️ The display name Live uses for an unrouted audio input is **unmeasured** —
+if the first call records instead of refusing, check whether Live reported a
+non-empty name rather than assuming the guard is broken, and record what it
+was in [API.md](../../../priv/AbletonOSC/API.md).
+
+## Monitoring set to off warns but still records
+
+*Last run: —*
+
+On an audio track with a real input routed, `set_mixer monitoring: "off"`, then
+`record_clip bars: 1` on an empty slot.
+
+The take **runs** — the reply warns that monitoring is off and records anyway.
+`get_clip_slots` shows the clip.
+
+Monitoring off is legal and normal when the player hears themselves through
+their interface rather than through Live. A refusal here would block a correct
+setup; a silent record would hide a genuinely likely mistake. The reply saying
+both things is the whole behaviour.

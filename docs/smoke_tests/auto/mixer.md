@@ -73,3 +73,44 @@ in the mirror changes.
 
 A ~2s stall on the bad return index means the guard read is not going through
 the vendored getter that always replies.
+
+## An input route round-trips, and a name Live doesn't have changes nothing
+
+*Last run: —*
+
+On an **audio** track (create one with `create_track track_type: "audio"` and
+delete it at the end), read the track's input with `get_session_state` and note
+the type and channel it reports. Then, in one `set_mixer` call, set
+`input_type` to a name the reply's own list does not contain — `"Seshat Not A
+Real Route"`. Then set `input_type` to a name that *is* on the list, and read
+back.
+
+The bogus name is refused **before anything is sent**, and the error lists the
+names Live actually offers on that track. `get_session_state refresh: true`
+shows the input unchanged. The real name is accepted and reads back as itself,
+verbatim.
+
+This is the test that matters most on this surface: `track_set_input_routing_type`
+loops the available list and falls through to a log warning when nothing
+matches — no reply, no `/live/error`, nothing on the wire (measured 2026-08-30,
+see [API.md](../../../priv/AbletonOSC/API.md)). So a bogus name that comes back
+as success means the pre-send validation against the available list was skipped
+or the read-back was taken from the request rather than from Live, and every
+wrong input the model ever sets will be reported as applied.
+
+A refusal that *did* change the input means the validation ran after the send.
+
+## input_type and monitoring are refused on a return and the master
+
+*Last run: —*
+
+`set_mixer target: "return", track: 0, input_type: "Ext. In"`, then
+`set_mixer target: "master", monitoring: "in"`.
+
+Both are refused by name, in the same all-or-nothing shape as
+[§ A property the target lacks is refused with nothing sent](#a-property-the-target-lacks-is-refused-with-nothing-sent).
+Neither has an input section in Live's UI and the fork registers no input
+address for either, so a datagram sent here would reach an address that does
+not exist and vanish — indistinguishable from success.
+
+Live's Log.txt shows no `input_routing` line for either call.
