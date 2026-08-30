@@ -18,6 +18,20 @@ acceptance bar).
 
 ## Verdict up front
 
+> **Updated 2026-08-30, after PR #84.** `generate_midi` shipped the same day
+> and built the write-back half of this feature as a side effect: chunked
+> `add/notes_extended` writes with a windowed, float32-tolerant read-back, the
+> one-undo-step multi-part workflow, and the first live proof that Live
+> persists `probability`/`velocity_deviation` as sent. It built **none** of the
+> harmony engine — selection resolution, chord context, candidate scoring and
+> voice leading remain entirely unwritten, and `generate_midi`'s bass lane is
+> not a precedent (it follows kick onsets from roots Claude supplies; it never
+> chooses a pitch against a chord). The rows below are corrected in place. The
+> product brief this pairs with is
+> [seshat_generate_harmony_handoff.md](../seshat_generate_harmony_handoff.md);
+> neither doc has a `ROADMAP.md` entry yet.
+
+
 **Build it deterministically, in Elixir, with no new dependency and no model.
 Every Live-side primitive it needs already ships and was measured working
 today.**
@@ -166,10 +180,10 @@ Every address this feature needs is already registered and documented.
 | Need | Address | Status |
 |---|---|---|
 | Which clip is highlighted | `/live/view/get/highlighted_clip_slot` | **Registered — unused by `lib/`.** `convert_audio_to_midi` read it while it drove Live's menu through the Accessibility helper; moving that tool onto `/live/clip/audio_to_midi` deleted the read, and no tool exposes it |
-| Selected scene | `/live/view/get/selected_scene` (+ listen pair) | **Registered**, no tool, no mirror |
+| Selected scene | `/live/view/get/selected_scene` (+ listen pair) | **Now read by a tool** — `get_view_state` reports it since PR #84 (2026-08-30) |
 | Melody notes, five fields | `/live/clip/get/notes` | In use |
-| Melody notes, **nine fields** | `/live/clip/get/notes_extended` | **Registered and documented (Seshat extension, 2026-08-29) — and unused by `lib/`** |
-| Write with expression | `/live/clip/add/notes_extended` | Same: registered, documented, unused |
+| Melody notes, **nine fields** | `/live/clip/get/notes_extended` | **Now in use** — `Seshat.Generation.MidiParts` reads it back in windows since PR #84; no tool exposes it to the model yet |
+| Write with expression | `/live/clip/add/notes_extended` | **Now in use and live-verified** — `MidiParts` writes through it in 200-note chunks, and Live 12.4.5 was measured persisting `probability` and `velocity_deviation` as sent (2026-08-30, PR #84) |
 | Edit without disturbing expression | `/live/clip/apply_note_modifications` | Same |
 | Scale intervals | `/live/song/get/scale_intervals` → `0 2 4 5 7 9 11` for Major, observable | **Registered — unused by `lib/`** |
 | Every scale Live knows, name → intervals | `Live.Song.get_all_scales_ordered()` — *"Get an ordered tuple of tuples of all available scale names to intervals"* | **In the LOM, no address.** Surfaced 2026-08-30 by [fork #37](https://github.com/jpatricknola/AbletonOSC/pull/37); confirmed independently in the Live 12.4.5 binary |
@@ -373,12 +387,12 @@ Live-native is a column throughout, per the rule this skill enforces.
 | Capability | Live-native rung + cost | Deterministic rules (recommended) | External model |
 |---|---|---|---|
 | **C1** identify the clip | **2.2** — `/live/view/get/highlighted_clip_slot` registered, read by `lib/` already, **no tool**. Small tool-layer job | Same address; add a tool or fold into `get_session_state` | n/a |
-| **C2** read the melody | **2.1 partial** — `get_clip_notes` gives 5 of 9 fields. `notes_extended` is registered, documented, **unused** | Move to `notes_extended` so harmony can inherit probability, velocity deviation and release velocity | Same input either way |
+| **C2** read the melody | **2.1 partial** — `get_clip_notes` still gives 5 of 9 fields to the model, but `notes_extended` is **no longer unused**: `MidiParts` reads it since PR #84 | Reuse that read so harmony can inherit probability, velocity deviation and release velocity — measured surviving the round trip on 2026-08-30 | Same input either way |
 | **C3** harmonic frame | **2.2** — `scale_intervals` and `scale_mode` registered and **unused**; `root_note`/`scale_name` mirrored. **Clip-level scale is absent from the LOM (a Live limit)** | Read intervals rather than mapping a name to a table — Live has 36+ internal scales plus user scales | Same |
 | **C4** choose pitches | **None at any rung.** Chord device does it *live* only; no LOM member; no MIDI Tool; Stacks generates rather than harmonises | **Scale-degree offsets from `scale_intervals`, plus range clamp, voice-crossing guard, optional chord-tone snap and contrary motion.** Pure Elixir, deterministic, testable without Ableton | Bach-fixed (DeepBach/Coconet) or wrong-shape (CA2). None expresses "a sixth below, but stay above D3" |
 | **C5** voicing plan | **None** | Claude's job — this is exactly the "LLM does the resolving" seam already in [CLAUDE.md](../../../CLAUDE.md) | Poorly steerable: free text or nothing |
 | **C6** tracks with a sound | **2.1 — shipped and measured.** `duplicate_track` copies **instrument and clip together in one call** | Same | Same |
-| **C7** land the clips | **2.1 — shipped and measured.** `delete_clip` + `write_midi_notes` | Prefer `add/notes_extended` so the harmony carries the melody's expression | Same |
+| **C7** land the clips | **2.1 — shipped, measured, and now half-built.** PR #84's `MidiParts` already chunks `add/notes_extended` at 200 notes/datagram and reads each clip back in windows, tolerant of float32 truncation | Reuse that writer rather than `write_midi_notes`, so the harmony carries the melody's expression | Same |
 | **C8** one undo step | **None.** Each tool call is one step by design | A single `harmonize_melody` tool is one call and therefore one step. Composing it from six existing calls is six steps and fails the stories | Same either way |
 | **C9** redirect | **2.1 partial** — `edit_notes`, `delete_clip` | Re-run the rule with new parameters and rewrite only the harmony clips; the melody is never touched | Non-deterministic: "a bit lower" re-rolls the whole part |
 
