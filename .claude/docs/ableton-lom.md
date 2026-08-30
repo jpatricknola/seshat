@@ -19,9 +19,17 @@ negatives.
 | Tier | Source | Notes |
 |---|---|---|
 | **1** | `strings -n 5 "/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live"` | Ground truth — Boost.Python's own registration table, carrying **Ableton's docstrings and declared argument names**. `grep -E "^Live\.[A-Z][A-Za-z0-9]*$"` enumerates every submodule. |
-| **2** | Live's shipped Python: `App-Resources/MIDI Remote Scripts`, `Helpers/Push3.app/…/live_model/Live` | `grep -rl "<term>" ".../MIDI Remote Scripts/"` — Ableton's own Remote Scripts run in **the same interpreter AbletonOSC does**, so one of them calling an operation ends the question. |
+| **2** | Live's shipped Python: `App-Resources/MIDI Remote Scripts`, `Helpers/Push3.app/…/live_model/Live` | `grep -rl "<term>" ".../MIDI Remote Scripts/"` — Ableton's own Remote Scripts run in **the same interpreter AbletonOSC does**, so one of them calling an operation ends the question. ⚠️ **Grep for the operation name, never for `Live.<Module>`.** `from Live import Conversions` leaves no dotted path in the compiled file, so a module-path grep misses it entirely — measured across every shipped `.pyc` on 2026-08-30, which found twelve modules and none of the ones that mattered. |
 | **3** | `_MxDCore/LomTypes.pyc` | ⚠️ **Not the LOM.** The *Max for Live property registry* — what M4L is permitted to see, curated for a different host. Fine as a positive, unsafe as a negative. |
 | **4** | [Cycling '74 apiref](https://docs.cycling74.com/apiref/lom/) | Third-party, known to drift (it understated `groove_amount`'s range). |
+
+These scripts are an **existence proof for a specific operation, not a surface
+to enumerate.** `_Framework`, `ableton/v2`, `ableton/v3`, `pushbase`, `Push2`,
+`Push` and `Move` are Python *clients* of the Live API, not more of it —
+everything they do, they do by calling `Live.*`. Walking them yields Ableton's
+control-surface helpers, not Live capability (measured and recorded in the
+fork's `BLIND_SPOTS.md`, 2026-08-30). Grep them for a verb you already suspect;
+do not mine them for new members.
 
 `/live/application/dump_lom` writes the reachable surface to JSON in one OSC
 call and is usually the cheapest first move — but ⚠️ **it records only

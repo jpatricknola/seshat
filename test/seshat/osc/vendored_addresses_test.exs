@@ -110,12 +110,21 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   @view_file "priv/AbletonOSC/abletonosc/view.py"
   @groove_file "priv/AbletonOSC/abletonosc/groove.py"
 
+  # Registers under `/live/clip/` and `/live/device/`, both prefixes upstream
+  # owns, so — like song_structure.py and view.py — its addresses are never
+  # swept in by @vendored_prefixes. It joins this list for the doc-coverage
+  # direction only: nothing under lib/ sends a conversion address yet, so there
+  # is no exactly-listed "still in use" pin to add it to. Add one when a tool
+  # starts calling `/live/clip/audio_to_midi` and friends.
+  @conversions_file "priv/AbletonOSC/abletonosc/conversions.py"
+
   @handler_files [
     @browser_file,
     @return_track_file,
     @song_structure_file,
     @view_file,
-    @groove_file
+    @groove_file,
+    @conversions_file
   ]
 
   # Upstream's handler files, for the doc-coverage check only. view.py is

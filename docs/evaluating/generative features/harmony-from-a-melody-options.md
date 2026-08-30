@@ -171,12 +171,25 @@ Every address this feature needs is already registered and documented.
 | Write with expression | `/live/clip/add/notes_extended` | Same: registered, documented, unused |
 | Edit without disturbing expression | `/live/clip/apply_note_modifications` | Same |
 | Scale intervals | `/live/song/get/scale_intervals` → `0 2 4 5 7 9 11` for Major, observable | **Registered — unused by `lib/`** |
+| Every scale Live knows, name → intervals | `Live.Song.get_all_scales_ordered()` — *"Get an ordered tuple of tuples of all available scale names to intervals"* | **In the LOM, no address.** Surfaced 2026-08-30 by [fork #37](https://github.com/jpatricknola/AbletonOSC/pull/37); confirmed independently in the Live 12.4.5 binary |
 | Whether the user set a key | `/live/song/get/scale_mode`, observable | **Registered — unused by `lib/`** |
 | Root, scale name | `/live/song/get/root_note`, `/live/song/get/scale_name` | Mirrored in `Session.State` |
 
-**There is no fork work in this feature.** That is unusual and worth saying
-out loud: the gap is entirely at rung 2.1, in Seshat's own tool layer, reading
-addresses the fork already answers.
+**There is essentially no fork work in this feature.** That is unusual and
+worth saying out loud: the gap is almost entirely at rung 2.1, in Seshat's own
+tool layer, reading addresses the fork already answers.
+
+The one exception is optional and arrived after this section was written.
+`Live.Song.get_all_scales_ordered()` — one of the 33 previously invisible
+free functions surfaced by [fork
+#37](https://github.com/jpatricknola/AbletonOSC/pull/37) — returns **every
+scale Live knows, as name → intervals, in a single call**. It is not required:
+`scale_intervals` already answers for the *current* scale, which is what a
+harmoniser needs at the moment it runs. It matters for the two things
+`scale_intervals` cannot do — validating a scale the user *names* ("harmonise
+it in Dorian") without Seshat hardcoding a table of Live's 36-plus scales, and
+telling the user which scales are available at all. Worth an address if
+someone is in `song.py` anyway; not worth blocking on.
 
 One relevant fork gap already on record and *not* re-recorded here:
 [`FORK_GAPS.md` § "`Clip.notes` has no listener"](../../../priv/AbletonOSC/FORK_GAPS.md)
@@ -530,6 +543,9 @@ nobody wrote.
 **Blocking the design:**
 1. **K1** — whether `scale_mode` distinguishes a set key from Live's default,
    and what a clip-level scale override does to the song-level reading.
+1b. Whether `get_all_scales_ordered()`'s interval tuples agree with
+   `scale_intervals` for the same scale, and what it does with a user-defined
+   scale. Only matters if the "harmonise it in <named scale>" path is built.
 2. Whether the Chord device's `Use Current Scale` follows the **song** scale
    (which Seshat can set) or the **clip** scale (which it cannot see). Decides
    whether the Chord-device fallback lane works at all.
