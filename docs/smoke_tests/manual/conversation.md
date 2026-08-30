@@ -330,4 +330,8 @@ user said they were doing. "Sing the solo" is monophonic and therefore
 weight, since the wrong mode produces a plausible-looking result that is wrong
 in a way the user has to listen for.
 
-Also confirm the reply warns that Live will come to the front, before it does.
+Also confirm that Live is never brought to the front and no menu opens: the
+conversion runs over OSC now, and a reply that warns about either is describing
+a mechanism that no longer exists. The call may sit for a few seconds while
+Live analyses — that wait is the tool waiting for the new track to appear, and
+the reply must name the track it found rather than telling you to go look.

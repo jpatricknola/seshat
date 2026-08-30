@@ -8,22 +8,22 @@
 // call, and nothing else.
 //
 // It is deliberately NOT a generic UI remote. There is no "press this element",
-// no tree dump, no keystroke, no coordinate click. The whole protocol is five
+// no tree dump, no keystroke, no coordinate click. The whole protocol is four
 // commands:
 //
 //   seshat-ax version
 //   seshat-ax permission [--prompt]
 //   seshat-ax list-outputs
 //   seshat-ax set-output --device "<exact display name>"
-//   seshat-ax convert --command "<one of three compiled-in menu titles>"
 //
-// `convert` is the second capability here, added for Live's
-// `Create > Convert … to New MIDI Track` commands, which are menu-only at every
-// spelling of the Live Object Model (docs/PLAN_sing_it_back_as_midi.md). It is
-// closed the same way everything else is: the title must be one of three
-// strings compiled in below, so this stays a helper with two operations rather
-// than becoming the "press this menu item" primitive the protocol exists to not
-// offer.
+// It briefly grew a fifth, `convert`, for Live's
+// `Create > Convert … to New MIDI Track` commands — which looked menu-only at
+// every spelling of the Live Object Model until `Live.Conversions` turned out
+// to be a module of free functions the fork's LOM walker had never recorded.
+// That capability is now an ordinary OSC address
+// (`/live/clip/audio_to_midi`) and the command is gone from here, which is the
+// outcome the LOM-first rule exists to produce: a capability leaves this
+// helper the moment the Live API can carry it.
 //
 // Every command prints exactly one JSON document on stdout and nothing else —
 // no human log text is mixed into the protocol, because `Seshat.AX.Client`
@@ -36,7 +36,7 @@
 //   {"ok":false,"code":"permission_required","message":"…","protocol_version":2}
 //
 // Codes: permission_required, live_not_running, settings_unavailable,
-// device_not_found, ax_failure, timeout, command_unavailable, unknown_command.
+// device_not_found, ax_failure, timeout.
 // `device_not_found` also carries the names that *are* available, so the model
 // can recover in the same turn rather than guessing again.
 //
@@ -143,21 +143,6 @@ static const NSTimeInterval kRestoreBudget = 0.6;
 // Port timeout, not by anything summed here (round-3 PR review, 2026-08-27).
 static const NSTimeInterval kCleanupBudget = 0.1;
 
-// How long to let an opened menu settle before reading `AXEnabled` off one of
-// its items. AppKit validates menu items lazily, when the menu opens: measured
-// 2026-08-30, every selection-dependent Create item read `false` on a *closed*
-// menu regardless of the selection, the clip's type or whether Live was
-// active. A reading taken before this wait is worthless, so the wait is part of
-// the read rather than a politeness.
-static const NSTimeInterval kMenuOpenWait = 0.35;
-
-// How long to let Live act on a picked menu command before counting its
-// windows. Convert raised no dialog in the measured run (`windows=1
-// [Untitled]` before and 300ms after), and the count is reported either way so
-// the Elixir side can refuse to claim success when one appears rather than
-// this helper trying to drive it.
-static const NSTimeInterval kPickSettleWait = 0.2;
-
 // Output is bounded on purpose: this protocol carries device names, never an AX
 // tree. A machine with more audio devices than this has other problems.
 static const NSUInteger kMaxDevices = 128;
@@ -178,8 +163,6 @@ static NSString *const kCodeDeviceNotFound = @"device_not_found";
 static NSString *const kCodeAXFailure = @"ax_failure";
 static NSString *const kCodeTimeout = @"timeout";
 static NSString *const kCodeUsage = @"usage";
-static NSString *const kCodeCommandUnavailable = @"command_unavailable";
-static NSString *const kCodeUnknownCommand = @"unknown_command";
 
 static NSTimeInterval gStartedAt = 0;
 static NSTimeInterval gDeadline = 0;
@@ -213,8 +196,6 @@ static int StatusForCode(NSString *code) {
   if ([code isEqualToString:kCodeDeviceNotFound]) return 5;
   if ([code isEqualToString:kCodeTimeout]) return 7;
   if ([code isEqualToString:kCodeUsage]) return 8;
-  if ([code isEqualToString:kCodeCommandUnavailable]) return 9;
-  if ([code isEqualToString:kCodeUnknownCommand]) return 10;
   return 6;
 }
 
@@ -851,193 +832,6 @@ static NSDictionary *AudioOutputTransaction(BOOL setting, NSString *wanted) {
   return result;
 }
 
-#pragma mark - The Create-menu transaction
-
-// The only three menu commands this helper may fire, compiled in.
-//
-// There is deliberately no generic "press the item titled X": that one command
-// would make every menu in Live reachable from a tool description and take the
-// LOM-first rule with it — UI scripting is for a concrete operation the current
-// Live Object Model does not expose, argued case by case, and everything else
-// belongs in the AbletonOSC fork. Convert is that case (Live's own
-// `Song`/`Clip` APIs have no conversion member at any spelling); adding a
-// fourth title here means arguing the same thing again.
-// See docs/PLAN_sing_it_back_as_midi.md.
-static NSString *const kConvertCommands[] = {
-    @"Convert Melody to New MIDI Track",
-    @"Convert Harmony to New MIDI Track",
-    @"Convert Drums to New MIDI Track",
-};
-
-static BOOL IsAllowedConvertCommand(NSString *title) {
-  for (NSUInteger index = 0; index < sizeof(kConvertCommands) / sizeof(kConvertCommands[0]);
-       index++) {
-    if ([kConvertCommands[index] isEqualToString:title]) return YES;
-  }
-
-  return NO;
-}
-
-// Located by title and role, never by sibling order — the same rule the
-// Settings path follows. Depth 2 covers menu bar → menu bar item.
-static AXUIElementRef CreateMenuBarItem(AXUIElementRef application) {
-  CFTypeRef menuBar = CopyAttribute(application, kAXMenuBarAttribute);
-  if (menuBar == NULL) return NULL;
-
-  AXUIElementRef item =
-      FindElement((AXUIElementRef)menuBar, 2, ^BOOL(AXUIElementRef element) {
-        return [StringAttribute(element, kAXRoleAttribute)
-                   isEqualToString:(__bridge NSString *)kAXMenuBarItemRole] &&
-               [StringAttribute(element, kAXTitleAttribute) isEqualToString:@"Create"];
-      });
-
-  CFRelease(menuBar);
-
-  return item;
-}
-
-static AXUIElementRef MenuCommandItem(AXUIElementRef menuBarItem, NSString *title) {
-  return FindElement(menuBarItem, kMenuSearchDepth, ^BOOL(AXUIElementRef element) {
-    return [StringAttribute(element, kAXRoleAttribute)
-               isEqualToString:(__bridge NSString *)kAXMenuItemRole] &&
-           [StringAttribute(element, kAXTitleAttribute) isEqualToString:title];
-  });
-}
-
-// One helper invocation owns one complete menu transaction: activate, open the
-// Create menu, read the command's *validated* enabled state, pick it or refuse,
-// and leave no menu hanging open. Same shape as AudioOutputTransaction — every
-// failure sets `result` and falls through to the one cleanup block, so there is
-// exactly one path out and the restore cannot be skipped.
-//
-// `AXPick`, not `AXPress`, on the command item: that is what was measured to
-// fire it (2026-08-30, twice, producing a converted MIDI track both times).
-// `AXPress` on a command `AXMenuItem` has never been executed in Live, so it is
-// not a substitution to make casually. `AXPress` on the *menu bar* item is what
-// opens the menu.
-static NSDictionary *ConvertTransaction(NSString *title) {
-  NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt : @NO};
-  if (!AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options)) {
-    return Failure(kCodePermissionRequired,
-                   @"This helper is not trusted for Accessibility control.");
-  }
-
-  NSRunningApplication *live = RunningLive();
-  if (live == nil) return Failure(kCodeLiveNotRunning, @"Ableton Live is not running.");
-
-  NSRunningApplication *previousFrontmost = NSWorkspace.sharedWorkspace.frontmostApplication;
-  if ([previousFrontmost isEqual:live]) previousFrontmost = nil;
-
-  AXUIElementRef application = AXUIElementCreateApplication(live.processIdentifier);
-  AXUIElementSetMessagingTimeout(application, kMessagingTimeout);
-
-  // Live exposes only its menu bar while inactive and ignores a menu press from
-  // behind another application, so everything below is located *after* this.
-  ActivateAndWait(live);
-
-  NSDictionary *result = nil;
-  AXUIElementRef menuBarItem = NULL;
-  AXUIElementRef item = NULL;
-  BOOL opened = NO;
-  BOOL picked = NO;
-
-  // Counted after activation for the same reason: an inactive Live reports zero
-  // windows, which would make every run look as though a window had appeared.
-  NSUInteger windowsBefore = ElementsAttribute(application, kAXWindowsAttribute).count;
-
-  menuBarItem = CreateMenuBarItem(application);
-  if (menuBarItem == NULL) {
-    result = Failure(PastDeadline() ? kCodeTimeout : kCodeAXFailure,
-                     @"Ableton Live's Create menu could not be found in its menu bar.");
-  }
-
-  if (result == nil) {
-    if (AXUIElementPerformAction(menuBarItem, kAXPressAction) != kAXErrorSuccess) {
-      result = Failure(kCodeAXFailure, @"Ableton Live's Create menu would not open.");
-    } else {
-      opened = YES;
-
-      NSTimeInterval until = Now() + kMenuOpenWait;
-      while (Now() < until && !PastDeadline()) Pause();
-    }
-  }
-
-  if (result == nil) {
-    item = MenuCommandItem(menuBarItem, title);
-    if (item == NULL) {
-      result = Failure(
-          PastDeadline() ? kCodeTimeout : kCodeAXFailure,
-          [NSString stringWithFormat:@"Ableton Live's Create menu has no item called \"%@\".",
-                                     title]);
-    }
-  }
-
-  // The refusal path, and the common one: `AXEnabled` false is the *normal*
-  // answer for a selection Live will not convert, so this is not an error to
-  // dress up as one.
-  if (result == nil && !BooleanAttribute(item, kAXEnabledAttribute)) {
-    result = @{
-      @"ok" : @NO,
-      @"code" : kCodeCommandUnavailable,
-      @"message" :
-          [NSString stringWithFormat:
-                        @"Ableton Live has \"%@\" disabled for what is currently selected.",
-                        title],
-      @"command" : title,
-      @"elapsed_ms" : ElapsedMilliseconds()
-    };
-  }
-
-  if (result == nil) {
-    if (AXUIElementPerformAction(item, kAXPickAction) != kAXErrorSuccess) {
-      result = Failure(kCodeAXFailure,
-                       [NSString stringWithFormat:@"Ableton Live rejected \"%@\".", title]);
-    } else {
-      picked = YES;
-
-      NSTimeInterval until = Now() + kPickSettleWait;
-      while (Now() < until && !PastDeadline()) Pause();
-
-      result = @{
-        @"ok" : @YES,
-        @"command" : title,
-        @"windows_before" : @(windowsBefore),
-        @"windows_after" : @(ElementsAttribute(application, kAXWindowsAttribute).count),
-        @"elapsed_ms" : ElapsedMilliseconds()
-      };
-    }
-  }
-
-  // --- Cleanup: every path, success and failure alike ---
-  //
-  // Same extension as AudioOutputTransaction's, and for the same reason: a run
-  // that spent its action deadline still owes the user a closed menu and their
-  // frontmost application back.
-  gDeadline = MAX(gDeadline, Now() + kCleanupBudget);
-
-  // Picking closes the menu itself. Every other exit — a disabled command, a
-  // missing item, a spent deadline — leaves it hanging open over the user's
-  // session unless this cancels it.
-  if (opened && !picked && menuBarItem != NULL) {
-    AXUIElementPerformAction(menuBarItem, kAXCancelAction);
-  }
-
-  if (item != NULL) CFRelease(item);
-  if (menuBarItem != NULL) CFRelease(menuBarItem);
-  CFRelease(application);
-
-  // Waited on, not fired and forgotten: an unobserved restore lands during the
-  // next run and breaks it (see kRestoreBudget).
-  if (previousFrontmost != nil) {
-    [previousFrontmost activateWithOptions:0];
-
-    NSTimeInterval until = Now() + kRestoreBudget;
-    while (LiveIsFrontmost(live) && Now() < until) Pause();
-  }
-
-  return result;
-}
-
 #pragma mark - Entry point
 
 static NSString *ArgumentValue(NSArray<NSString *> *arguments, NSString *flag) {
@@ -1094,31 +888,8 @@ int main(int argc, const char *argv[]) {
       return Emit(AudioOutputTransaction(YES, device));
     }
 
-    if ([command isEqualToString:@"convert"]) {
-      NSString *requested = ArgumentValue(arguments, @"--command");
-      if (requested.length == 0) {
-        return Emit(Failure(kCodeUsage, @"convert requires --command <menu item title>."));
-      }
-
-      // Rejected before Accessibility is touched at all, and deliberately
-      // without echoing the requested title: argv is the one place text reaches
-      // this program unbounded, and the protocol carries names it read from
-      // Live, never names it was handed.
-      if (!IsAllowedConvertCommand(requested)) {
-        return Emit(@{
-          @"ok" : @NO,
-          @"code" : kCodeUnknownCommand,
-          @"message" : @"This helper only fires Ableton Live's three Create > Convert commands: "
-                       @"Convert Melody to New MIDI Track, Convert Harmony to New MIDI Track, "
-                       @"Convert Drums to New MIDI Track."
-        });
-      }
-
-      return Emit(ConvertTransaction(requested));
-    }
-
     return Emit(Failure(kCodeUsage,
                         @"Usage: seshat-ax version | permission [--prompt] | list-outputs | "
-                        @"set-output --device <name> | convert --command <menu item title>"));
+                        @"set-output --device <name>"));
   }
 }

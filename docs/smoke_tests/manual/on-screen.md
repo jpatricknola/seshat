@@ -284,26 +284,26 @@ setting a channel. A channel name accepted under the old type would be silently
 dropped under the new one — the fork's setter logs a warning and changes
 nothing when a name isn't on the list.
 
-## Convert brings Live forward and gives it back
+## Convert leaves Live's focus and view alone
 
-*Why manual:* window focus and the frontmost application are observations no
-tool can make, and this is the only Seshat operation that takes focus.
+*Why manual:* the frontmost application and an unmoved view are observations no
+tool can make — the point of this check is what does **not** happen on screen.
 
 *Last run: —*
 
-With Ableton Live **behind** another application, run
+With Ableton Live **behind** another application and its Arranger view showing,
+run
 [../auto/convert.md § A converted clip lands as a new track whose notes read back](../auto/convert.md).
 Watch the screen through the whole call.
 
-Live comes to the front, the Create menu opens and closes, and the application
-that was frontmost before the call is frontmost again when the reply arrives.
-Live is left with no menu open and no dialog on screen.
+Live never comes to the front, no menu opens, and the application that was
+frontmost stays frontmost throughout. Live's view does not switch to the
+Session grid — the convert runs entirely over OSC now, and the old
+select-focus-press dance is gone with the mechanism that needed it. The one
+thing that may move inside Live is the track selection: the follow cam selects
+the new track after a success, exactly as `create_track` does, without
+changing the pane.
 
-Focus that never returns is the 2026-08-27 helper defect in a new place: a
-fire-and-forget restore lands during the *next* call and breaks it instead. If
-a dialog is left open, the tool must not have claimed success — a mode chooser
-Seshat cannot drive is a refusal, not a result.
-
-Also note whether one `undo` after the convert leaves the set as it was, or
-whether the new track and its clip need more than one. Either answer is
-acceptable; the tool's reply has to match it.
+Live coming forward, a Create menu flashing open, or the view jumping to
+Session is the deleted Accessibility path still being exercised — a stale
+server running pre-change code, not a new defect in this one.

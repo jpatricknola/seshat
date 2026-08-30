@@ -1681,37 +1681,36 @@ defmodule Seshat.Tools.Definitions do
         required: ["description"]
       }
     },
-    # --- Audio to MIDI (OSC selection, macOS Accessibility press) ---
+    # --- Audio to MIDI (OSC, like everything else) ---
     #
-    # The third tool that leaves the Live Object Model, and the first that
-    # changes the Set while doing it. Live's `Create > Convert … to New MIDI
-    # Track` is a menu command with no LOM member at any spelling, so the
-    # selection and every observation are OSC and only the press is
-    # Accessibility. It stays undo-stepped for exactly that reason: what it
-    # produces is an ordinary Live Set change.
+    # `Live.Conversions` is a module of free functions rather than members on a
+    # LOM object, which is why this looked menu-only for a month and spent it on
+    # the Accessibility helper. The fork exposes it at
+    # `/live/clip/audio_to_midi`, so this tool leaves the Live Object Model
+    # nowhere and is an ordinary undo-stepped Set change.
     %{
       name: "convert_audio_to_midi",
       description:
         "Turn an audio clip into a new MIDI track playing the same part — Ableton Live's own " <>
-          "Convert. Use 'melody' for a single line (a sung or hummed solo, a bass part), " <>
-          "'harmony' for chords and pads, 'drums' for a beat, which lands on a Drum Rack. " <>
-          "Track and slot are 0-based and must hold an **audio** clip; a MIDI clip is " <>
-          "refused. Live analyses pitch, so the result follows what was actually played, " <>
-          "warts included: expect to follow up with quantize_clip and edit_notes rather than " <>
-          "expecting a clean part. The new track arrives directly after the source track, " <>
-          "carrying an instrument Live chose — replace it with load_device once you know what " <>
-          "the user wants it to sound like. **This briefly brings Ableton Live to the front and " <>
-          "switches it to the Session grid to fire the command, and does not switch it back** — " <>
-          "so do it between takes, never during one, and say so if the user was working in the " <>
-          "Arranger. Live 9+, Standard and Suite.",
+          "Convert, run through the Live API. Use 'melody' for a single line (a sung or " <>
+          "hummed solo, a bass part), 'harmony' for chords and pads, 'drums' for a beat, " <>
+          "which lands on a Drum Rack. Track and slot are 0-based and must hold an **audio** " <>
+          "clip; anything Live cannot convert — a MIDI clip, an empty slot, a clip with " <>
+          "nothing to track — is refused with the reason before anything changes. Live " <>
+          "converts asynchronously: this waits for the new track (a few seconds) and names it " <>
+          "only once it exists, carrying an instrument Live chose — replace that with " <>
+          "load_device once you know what the user wants it to sound like. Live analyses " <>
+          "pitch, so the result follows what was actually played, warts included: expect to " <>
+          "follow up with quantize_clip and edit_notes rather than expecting a clean part. " <>
+          "The source clip is untouched. Live 9+, Standard and Suite.",
       parameters: %{
         type: "object",
         properties: %{
-          # `minimum: 0` is load-bearing, not house style:
-          # `/live/view/set/selected_clip` is one of the legacy view setters that
-          # resolves a negative index from the *end* of the list instead of
-          # raising, so without the bound a negative index could pass the guards
-          # and convert a clip on the wrong track.
+          # `minimum: 0` is load-bearing, not house style: the fork's
+          # `conversions.py` resolves the clip as `song.tracks[track_index]` in
+          # Python, where a negative index reads from the *end* of the list
+          # instead of raising — so without the bound a negative index would
+          # convert a clip on the wrong track rather than being refused.
           "track" => %{
             type: "integer",
             minimum: 0,

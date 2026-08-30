@@ -90,14 +90,27 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   # Only the ones `lib/` actually sends: this list is asserted in both
   # directions, so an address registered in the fork but unused here belongs in
   # the registration list below and not in this one.
+  #
+  # `focus_view`, `get/focused_document_view` and `get/highlighted_clip_slot`
+  # were here until `convert_audio_to_midi` moved onto `/live/clip/audio_to_midi`
+  # and stopped needing Live's UI focused: that removed their only `lib/` call
+  # sites, and this list is asserted in both directions. They stay registered in
+  # view.py and documented in API.md, guarded by the whole-file registration pin
+  # below — exactly as `get/selected_track_identity` is.
   @vendored_view_addresses [
     "/live/view/show_view",
     "/live/view/hide_view",
     "/live/view/get/is_view_visible",
-    "/live/view/set/detail_clip",
-    "/live/view/focus_view",
-    "/live/view/get/focused_document_view",
-    "/live/view/get/highlighted_clip_slot"
+    "/live/view/set/detail_clip"
+  ]
+
+  # conversions.py's two addresses that `lib/` sends. The other three it
+  # registers (the Simpler and Drum Rack conversions) are deliberately unused,
+  # so they stay out of this list and are covered by the registration and
+  # doc-coverage directions alone.
+  @vendored_conversion_addresses [
+    "/live/clip/get/is_convertible_to_midi",
+    "/live/clip/audio_to_midi"
   ]
 
   @browser_file "priv/AbletonOSC/abletonosc/browser.py"
@@ -112,10 +125,9 @@ defmodule Seshat.OSC.VendoredAddressesTest do
 
   # Registers under `/live/clip/` and `/live/device/`, both prefixes upstream
   # owns, so — like song_structure.py and view.py — its addresses are never
-  # swept in by @vendored_prefixes. It joins this list for the doc-coverage
-  # direction only: nothing under lib/ sends a conversion address yet, so there
-  # is no exactly-listed "still in use" pin to add it to. Add one when a tool
-  # starts calling `/live/clip/audio_to_midi` and friends.
+  # swept in by @vendored_prefixes. The two `lib/` actually sends are listed
+  # exactly in @vendored_conversion_addresses above; the rest are covered by
+  # this file's registration and doc-coverage directions.
   @conversions_file "priv/AbletonOSC/abletonosc/conversions.py"
 
   @handler_files [
@@ -211,11 +223,14 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     # exact match, so a typo on the *Elixir* side excludes itself from that
     # check — `vendored?/1` simply stops recognising it, and `used` quietly
     # shrinks by one (the >= 10 floor above doesn't notice either).
-    # Pinning that all six are still sent is what closes that direction.
-    test "the exactly-listed song and view addresses are still the ones lib/ sends" do
+    # Pinning that all of them are still sent is what closes that direction.
+    test "the exactly-listed song, view and conversion addresses are still the ones lib/ sends" do
       sent = Enum.map(used_addresses(), fn {address, _file} -> address end)
 
-      for address <- @vendored_song_addresses ++ @vendored_view_addresses do
+      exact =
+        @vendored_song_addresses ++ @vendored_view_addresses ++ @vendored_conversion_addresses
+
+      for address <- exact do
         assert address in sent,
                """
                #{address} is listed as an exactly-matched vendored address, but nothing under
@@ -225,7 +240,8 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                used→registered test above — these are recognised by exact match
                only, so a misspelling stops counting as vendored instead of failing.
                Fix the address, or drop it from @vendored_song_addresses /
-               @vendored_view_addresses if it is genuinely no longer used.
+               @vendored_view_addresses / @vendored_conversion_addresses if it is
+               genuinely no longer used.
 
                Sent: #{Enum.join(Enum.sort(sent), ", ")}
                """
@@ -1426,6 +1442,7 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   defp vendored?(address) do
     Enum.any?(@vendored_prefixes, &String.starts_with?(address, &1)) or
       address in @vendored_song_addresses or
-      address in @vendored_view_addresses
+      address in @vendored_view_addresses or
+      address in @vendored_conversion_addresses
   end
 end

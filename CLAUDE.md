@@ -153,8 +153,8 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/music/pitch.ex](lib/seshat/music/pitch.ex) | MIDI pitch → note name, shared by the notes reader and session state |
 | [lib/seshat/library/catalog.ex](lib/seshat/library/catalog.ex) | Tag-aware sound catalog — ETS + `~/.seshat/catalog.json`, merge and search |
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
-| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools and for `convert_audio_to_midi`'s single menu press — one of the two modules under `lib/seshat/` allowed to start a process, pinned by a grep test |
-| [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a five-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for, and `convert` fires only one of three compiled-in menu titles |
+| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools, and nothing else — one of the two modules under `lib/seshat/` allowed to start a process, pinned by a grep test |
+| [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a four-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for. It briefly carried a fifth, `convert`, and gave it up the day `Live.Conversions` turned out to be in the LOM after all |
 | [lib/seshat/generation/audio_clip.ex](lib/seshat/generation/audio_clip.ex) | The `generate_audio` workflow: session read, duration arithmetic, target guards, the reserved take filename, the import through `/live/clip_slot/create_audio_clip`, and the read-back that decides whether any of it worked. Guards run before the render, so a failed generation leaves Live untouched |
 | [lib/seshat/generation/backend.ex](lib/seshat/generation/backend.ex) | The boundary between that workflow and whatever renders audio. `Spec` in, `{:ok, %{path:, seed:, wall_ms:}}` out; the implementation is a compile-time choice so the suite's fake cannot leak into the real adapter |
 | [lib/seshat/generation/stable_audio.ex](lib/seshat/generation/stable_audio.ex) | **The second native-process door.** Drives the local Stable Audio 3 MLX runtime one process per request — argv only, never a shell; every weight preflighted so a missing one refuses instead of starting a download; a 60s deadline that terminates the runtime's exact OS pid |
@@ -200,13 +200,24 @@ it has a tier order.** The Live binary's registration table is tier 1 (it
 carries Ableton's own docstrings and argument names); Live's shipped Remote
 Scripts are tier 2 (they run in the same interpreter AbletonOSC does).
 `_MxDCore/LomTypes.pyc` is **the Max for Live property registry, not the
-LOM** — safe as a positive, unsafe as a negative — and `dump_lom` /
-`FORK_GAPS.md` record only classes, so module-level functions such as
-`Live.Conversions.audio_to_midi_clip` are missing from both. **Never call a
-capability absent from the LOM on tier-3 evidence.** Doing exactly that put
+LOM** — safe as a positive, unsafe as a negative. **Never call a capability
+absent from the LOM on tier-3 evidence.** Doing exactly that put
 Convert-to-MIDI on the Accessibility helper for a month
 ([fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34)). Table and
 commands: [.claude/docs/ableton-lom.md](.claude/docs/ableton-lom.md).
+
+**`dump_lom` / `FORK_GAPS.md` used to record only classes** — module-level
+free functions such as `Live.Conversions.audio_to_midi_clip` appeared in
+neither, which is the *second* reason Convert sat on the helper: the tier-1
+inventory agreed with the tier-3 grep by being blind in the same place. Fixed
+in the fork on 2026-08-30 ([#36](https://github.com/jpatricknola/AbletonOSC/issues/36)):
+the walk now records module-level members under the module's qualname, and
+classes it walks but cannot diff are reported in their own section rather
+than silently filtered by a hand-written list. So an absence in `FORK_GAPS.md`
+is worth something now, where before it was worth very little — but it is
+still tier 1 (name, kind, docstring; nothing called), and the fork's
+[BLIND_SPOTS.md](priv/AbletonOSC/BLIND_SPOTS.md) states what that inventory
+still does not claim. Read it before concluding from a silence.
 
 **Anything that is bridge work only is filed as a GitHub issue on the fork and
 cited from wherever Seshat needed it** — a missing address, a bridge defect, a

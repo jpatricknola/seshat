@@ -1,25 +1,23 @@
-# Audio to MIDI — Live's own Convert
+# Audio to MIDI — Live's own Convert, over OSC
 
-`convert_audio_to_midi` presses one of three items in Live's **Create** menu
-through the macOS Accessibility helper — the second thing Seshat does that is
-not OSC, after the audio-output tools, and the first that changes the Set. The
-mechanism is *select over OSC, press over AX, observe over OSC*: nothing here
-reads a result off the screen, so everything below is judged through ordinary
-tools.
+`convert_audio_to_midi` runs Live's *Convert … to New MIDI Track* through the
+fork address `/live/clip/audio_to_midi`, guarded by Live's own predicate on
+`/live/clip/get/is_convertible_to_midi`. Everything here is OSC — no
+Accessibility, no menu, no focus. Two properties shape these checks: the
+conversion is **asynchronous** (the reply's `"ok"` means accepted, and the new
+track appears up to a few seconds later — `priv/AbletonOSC/API.md`
+§ "Conversions"), and the predicate answers `false` for every unconvertible
+case alike, so the tool's diagnosis reads (empty slot vs. MIDI clip) are what
+turn one bit into a useful refusal.
 
-Two properties make this worth a file of its own. The press acts on **whatever
-Live has selected**, so a selection that silently failed to land converts the
-wrong clip — the one genuinely dangerous failure on this path. And an
-`AXEnabled` of `false` is the *normal* outcome for a wrong clip type, so the
-refusal path is exercised far more often than the success path.
-
-Set-up: `mix ax.install` has run and macOS still trusts the helper (an
-untrusted helper fails every test here identically, which
-[audio-output.md](audio-output.md) is the place to diagnose); at least one
+Set-up: the installed AbletonOSC matches the repo pin (`conversions.py`
+present) **and Live has been restarted since `mix abletonosc.install` ran** —
+an installed handler is not a loaded one, and against a stale load every check
+below fails as a timeout that looks like "Ableton isn't running". At least one
 scene; a spare audio track.
 
 The human-judged half is
-[../manual/on-screen.md § Convert brings Live forward and gives it back](../manual/on-screen.md)
+[../manual/on-screen.md § Convert leaves Live's focus and view alone](../manual/on-screen.md)
 and [../manual/by-ear.md § Sing a line, hear it back as a guitar](../manual/by-ear.md).
 
 ## A converted clip lands as a new track whose notes read back
@@ -32,44 +30,63 @@ from `get_session_state`. Then `convert_audio_to_midi` on that track and slot
 with `mode: "melody"`.
 
 The track count rises by **exactly one**, the reply names the new track's
-index, and `get_clip_notes` on the new track's clip returns a non-empty note
-list. The source audio clip is still in its original slot, untouched.
+index and Live's own name for it (e.g. `"… to MIDI"`), and `get_clip_notes` on
+the named track and the source's slot returns a non-empty note list. The
+source audio clip is still in its original slot, untouched.
 
-A count that rose by more than one, or a reply naming an index without the
-count having risen, is the `create_track` failure mode this guard was copied
-from: the tool must report honestly and name no index rather than steer the
-view at a track that may not exist. Zero notes with a track created means Live
-converted silence — check the source clip actually contains audio before
+Because the conversion is asynchronous, the reply must arrive only after the
+track actually exists — a reply naming an index while `get_session_state`
+still shows the old count is the dishonesty this design exists to prevent.
+Record **where** the new track landed relative to the source (directly after
+it, or appended last): `API.md` has one measurement of each and no promise,
+and the tool resolves the index by reading rather than assuming — this run is
+what confirms the read got it right. Zero notes with a track created means
+Live converted silence — check the source clip actually contains audio before
 calling this a defect, and see
 [generation.md § A generated clip lands, reads back, and its file is duration-exact](generation.md).
 
-## A MIDI clip is refused before Live is ever touched
+## One undo accounts for the converted track
+
+*Last run: —*
+
+Immediately after the previous check's successful convert, call `undo` once,
+then `get_session_state`.
+
+Record what one undo removed: the track count back to its pre-convert value
+with the source clip untouched is the clean answer. The conversion runs
+asynchronously on Live's side while the tool call's undo-step bracket is
+still open, so whether Live folds the whole convert into that one step is a
+measurement, not a promise — if it takes two undos (or one undo removes more
+than the converted track), record that here and check the tool's reply and
+description say nothing that contradicts it. Redo (or re-convert) to leave
+the set as the run found it.
+
+## A refusal names why, before anything is converted
 
 *Last run: —*
 
 `write_midi_notes` a few notes into an empty slot, then `convert_audio_to_midi`
-on it.
+on it. Then the same on a genuinely empty slot.
 
-The refusal is **immediate**, says the clip is MIDI and not audio, and Live
-never comes to the front — the whole point of guarding before the AX call.
-`get_session_state` shows the track count unchanged.
+Both refusals are **immediate** — the predicate plus one or two diagnosis
+reads, no mutation, no multi-second wait. The MIDI-clip refusal says the clip
+is already MIDI and routes to
+`get_clip_notes` / `edit_notes`; the empty-slot refusal routes to
+`record_clip` / `generate_audio`. `get_session_state` shows the track count
+unchanged after both.
 
-Planning measured (2026-08-28) that all three Convert items read
-`AXEnabled = false` with a MIDI clip selected, so the helper *would* refuse
-this anyway. That is the backstop, not the guard: reaching it means Seshat
-activated Live, stole focus, and pulled a menu open to learn something it could
-have read over OSC in a millisecond. A refusal that takes a second and flashes
-Live to the front is the failure here, even though the answer is right.
+Live's predicate answers `false` for both cases without saying which, so the
+distinction in the wording is Seshat's diagnosis reads working — a generic
+"can't convert" for either case means the diagnosis half regressed even
+though the guard held.
 
-## An empty slot and a bad index refuse cleanly
+## A bad index refuses cleanly and fast
 
 *Last run: —*
 
-`convert_audio_to_midi` on an empty slot, then on `track: 99`.
+`convert_audio_to_midi` on `track: 99`.
 
-Both come back as immediate errors naming what was wrong — an empty slot, and
-an index past the end. Neither hangs for a timeout, and the track count is
-unchanged after both.
-
-A ~5s pause before either error means the guard read was skipped and the
-helper's own deadline supplied the answer instead.
+An immediate error naming what was wrong — not a ~5s hang. The guard address
+always answers for in-range indices, so an out-of-range one surfaces as the
+structured `/live/error` fast-fail; a timeout here means either a stale
+bridge install or the error correlation regressed. Track count unchanged.
