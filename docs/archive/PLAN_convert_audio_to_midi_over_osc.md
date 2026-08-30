@@ -381,6 +381,36 @@ by a server serving pre-change code.
 - `smoke_tests/auto/convert.md § A bad index refuses cleanly and fast` —
   the structured `/live/error` fast-fail on the new vendored addresses; the
   stale-install detector.
+
+**Run 2026-08-30 (Live 12.4.5, bridge `af17cfc`, all three install comparisons
+green).** The four `auto/` citations above all **passed**; the three `manual/`
+ones below remain `*Last run: —*` and still need a person.
+
+- *A converted clip lands…* — count 2 → 3, the reply named track 2
+  `"3-Melody to MIDI"` only once it existed, 11 unquantized notes read back
+  from the source's own slot, source clip untouched. **Open question 1 answered:**
+  the converted clip lands in the *same scene row* as the source.
+  **Open question 2 answered, and it contradicts `API.md`:** with a marker track
+  placed below the source, the new track landed **directly after the source**
+  (index 2, pushing the marker to 3), not appended last. `API.md`'s three
+  "appended last" samples all had the source on the last track, where the two
+  outcomes are indistinguishable. Resolve-by-diff read it correctly; the
+  appended-last assumption the plan rejected would have named the marker track.
+- *One undo accounts…* — **Open question 3 answered: the clean answer.** One undo
+  restored the pre-convert count with the source untouched, measured twice
+  (converted track last, and inserted mid-list). Live folds the asynchronous
+  conversion into the single undo step the tool call brackets.
+- *A refusal names why…* — MIDI clip refused in 0.46s, empty slot in 0.34s, each
+  with its own wording and its own routing. One predicate bit, two diagnoses.
+- *A bad index refuses…* — 0.22s, Live's own "Index out of range". Live's
+  `Log.txt` shows the `IndexError` raised on
+  `/live/clip/get/is_convertible_to_midi` — the guard address — proving the
+  refusal landed before any conversion was requested.
+
+**Open question 4 (a reply lagging past ~7s on long material) was not provoked**
+— every check used a 2-bar clip, as the plan's "uncovered" note says. The
+may-still-appear wording remains untested against a real slow conversion.
+
 - `smoke_tests/manual/on-screen.md § Convert leaves Live's focus and view
   alone` — the deletion's user-visible half: no focus steal, no menu, no
   view jump; eyes only.

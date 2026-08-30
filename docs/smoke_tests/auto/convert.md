@@ -22,7 +22,7 @@ and [../manual/by-ear.md § Sing a line, hear it back as a guitar](../manual/by-
 
 ## A converted clip lands as a new track whose notes read back
 
-*Last run: —*
+*Last run: 2026-08-30 — passed. 2-bar generate_audio source on track 1; count 2 → 3, reply named track 2 "3-Melody to MIDI" only after it existed, get_clip_notes returned 11 unquantized notes (G5–C6, starts 0.0348–5.2709) in the source's own slot 0, source clip untouched. Placement: with the source last, index 2 is ambiguous, so a second convert was run with a marker track below it — the new track landed at index 2, **directly after the source**, pushing the marker to 3. Not appended last; API.md's three "appended last" samples all had the source on the last track and cannot discriminate. Resolve-by-diff read it right; an appended-last assumption would have named the marker track.*
 
 Put an audio clip in a slot with `generate_audio` (any short prompt, `bars: 2`)
 — that is the cheapest audio clip an agent can make alone. Note the track count
@@ -47,7 +47,7 @@ calling this a defect, and see
 
 ## One undo accounts for the converted track
 
-*Last run: —*
+*Last run: 2026-08-30 — passed, the clean answer, twice. One undo took the track count back to its pre-convert value with the source clip untouched, both for a converted track appended after the last track and for one inserted mid-list. Live folds the asynchronous conversion into the single undo step the tool call brackets; no second undo needed and nothing extra removed.*
 
 Immediately after the previous check's successful convert, call `undo` once,
 then `get_session_state`.
@@ -63,7 +63,7 @@ the set as the run found it.
 
 ## A refusal names why, before anything is converted
 
-*Last run: —*
+*Last run: 2026-08-30 — passed. MIDI clip refused in 0.46s: "holds a MIDI clip, and Convert turns *audio* into MIDI — nothing was converted", routing to get_clip_notes/edit_notes. Empty slot refused in 0.34s: "is empty… Convert needs an audio clip to work from", routing to record_clip/generate_audio. Distinct wordings from one predicate bit, so the diagnosis reads are working. Track count unchanged after both.*
 
 `write_midi_notes` a few notes into an empty slot, then `convert_audio_to_midi`
 on it. Then the same on a genuinely empty slot.
@@ -82,7 +82,7 @@ though the guard held.
 
 ## A bad index refuses cleanly and fast
 
-*Last run: —*
+*Last run: 2026-08-30 — passed. track: 99 refused in 0.22s with Live's own "Index out of range. Nothing further was sent — check get_session_state for the indices that actually exist." No hang. Live's Log.txt shows the IndexError raised on /live/clip/get/is_convertible_to_midi — the guard address, so the refusal really did land before any conversion was requested. Track count unchanged.*
 
 `convert_audio_to_midi` on `track: 99`.
 
