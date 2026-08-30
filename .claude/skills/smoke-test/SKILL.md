@@ -2,7 +2,6 @@
 name: smoke-test
 description: Run the automated live smoke tests against a running Ableton Live instance using the seshat MCP tools — the whole of docs/smoke_tests/auto/, or one named file in it
 argument-hint: [optional - one file in docs/smoke_tests/auto/, e.g. `mirror` or `clips.md`; omit to run them all]
-disable-model-invocation: true
 ---
 
 Run Seshat's automated smoke tests against the live Ableton instance.

@@ -16,6 +16,57 @@ without a client trim, and SA3's experimental Ableton integration demonstrates
 that direct `ClipSlot.create_audio_clip(path)` import can make browser indexing
 unnecessary. **Seshat does not expose that LOM method today.**
 
+## Finding 2026-08-30 — nothing generated has been usable yet
+
+> **Reported from use, not from a slate.** Since `generate_audio` shipped,
+> **no generation has produced material the user judged good or usable.** This
+> is a subjective report across ordinary use, not a scored listening test:
+> the prompts were not logged, the count is not recorded, and no file was
+> kept for comparison. Treat it as a strong signal that something is wrong,
+> and as a reason to run the measurement below — not as a measured verdict on
+> Stable Audio 3.
+>
+> Two causes were named when the finding was raised: **the conditioning we
+> send is wrong**, or **SA3 is the wrong tool for this**. Reading the
+> generation path turned up a third, which is cheap to test and has to be
+> ruled out before either of the other two can be judged:
+>
+> **The shipped lane runs with classifier-free guidance off.** The runtime's
+> `--cfg` defaults to `1.0`, which its own flag table spells out as
+> "guidance off", and `Seshat.Generation.StableAudio.argv/1` passes `--cfg`
+> **only alongside a negative prompt** — the pairing exists because a negative
+> prompt is silently ignored at `cfg 1.0`. The consequence was not intended:
+> an ordinary `generate_audio` call, which carries no negative prompt, renders
+> **unguided**. The description, the appended tempo, the time signature and
+> the key are all in the prompt, and none of them are being steered toward.
+> That is consistent with the report — unguided output is plausible audio that
+> answers the request loosely, which is exactly "never usable" rather than
+> "usable but wrong".
+>
+> Two smaller facts belong beside it. `--steps` is never passed, so every
+> render uses the runtime default of 8, which its own table calls the sweet
+> spot — not a suspect. And `--dit sm-music` is fixed at the 433M small model;
+> `medium` was deliberately withheld pending a listening comparison
+> ([PLAN_generate_audio_clip.md](../../archive/PLAN_generate_audio_clip.md)),
+> so the shipped lane is the smallest model, unguided.
+>
+> **The discriminating measurement, in order.** Re-render the same prompts at
+> `--cfg 3.0` (with and without a negative prompt), then at `medium`, then
+> against the 2026-08-25 spike WAVs already in `~/.seshat/audio-spike/` — which
+> were themselves rendered unguided, so they are the same lane, not a control.
+> If guidance alone fixes it, this is a one-line argv change. If guided
+> `medium` renders are still unusable on the material we actually ask for,
+> then the second hypothesis stands and the provider table above needs
+> re-opening rather than the prompt builder.
+>
+> This does not disturb the 2026-08-30 ruling that audio→MIDI transcription is
+> not the primary MIDI strategy
+> ([midi-generation-options.md](midi-generation-options.md)) — that rests on
+> semantic-versus-symbolic conditioning, which guidance does not change. It
+> does put a prerequisite in front of "Generated-audio alignment, warping and
+> quality polish": polishing grid alignment on material nobody wants to keep
+> is the wrong order.
+
 ## The Suno question, settled
 
 Suno has **no official public API** (July 2026: partner-program intake form

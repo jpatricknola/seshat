@@ -327,13 +327,21 @@ defmodule Seshat.Tools.Handlers do
   # enough to be invisible next to the round trips either side of it.
   @capture_retry_delay 250
 
-  # Live reports a completed Convert as a structural change rather than as a
-  # reply, so `convert_audio_to_midi` polls the track count for it. Each poll is
-  # itself an AbletonOSC tick (~100ms), so this is roughly 2.5s of patience on
-  # top of the round trips — generous next to the measured convert, and bounded
-  # so a Convert that produced nothing is reported rather than waited on.
-  @convert_settle_attempts 10
-  @convert_settle_delay 150
+  # `/live/clip/audio_to_midi` is asynchronous: it answers `"ok", -1` before the
+  # new track exists (priv/AbletonOSC/API.md § "Conversions"), and Live reports
+  # the finished conversion as a structural change rather than as a reply. So
+  # `convert_audio_to_midi` polls the track names for it. Each poll is itself an
+  # AbletonOSC tick (~100ms), so this is roughly 7s of patience on top of the
+  # round trips — the fork measured the track appearing about three seconds
+  # after the call, which the previous 2.5s budget did not cover with any
+  # margin — and bounded, so a conversion that produced nothing is reported
+  # rather than waited on forever.
+  @convert_settle_attempts 20
+  @convert_settle_delay 250
+
+  # Roughly what the poll above is willing to wait, in whole seconds, derived so
+  # the reply's wording cannot drift away from the tuning it describes.
+  @convert_settle_budget_s div(@convert_settle_attempts * (@convert_settle_delay + 100), 1000)
 
   @convert_empty_hint " Convert needs an audio clip to work from — record one with record_clip, " <>
                         "or make one with generate_audio."
@@ -3387,58 +3395,54 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  # --- Audio to MIDI (OSC selection, Accessibility press) ---
+  # --- Audio to MIDI (OSC end to end) ---
   #
-  # The one clause here that uses *both* doors, and the only Accessibility-backed
-  # tool that changes the Live Set — which is why it stays undo-stepped where the
-  # two audio-output tools opt out.
+  # Live's own `Create > Convert … to New MIDI Track`, run through the fork's
+  # `/live/clip/audio_to_midi`. Nothing here touches macOS Accessibility any
+  # more: the menu press, the activation, the `focus_view Session` the menu's
+  # validation demanded and the two selection reads that stopped the press
+  # acting on the wrong clip all went with the address. Live is never brought to
+  # the front and the user's view never moves.
   #
-  # The mechanism is select over OSC, press over AX, observe over OSC. Nothing
-  # reads a result off the screen: the helper reports only whether Live's own
-  # menu validation enabled the command and whether a window appeared, and every
-  # fact in the reply comes back through the Live Object Model afterwards.
+  # Order is still the whole design, around two different hazards:
   #
-  # Order is the whole design. Two things can go wrong here that nothing later
-  # could distinguish:
+  #   * **The conversion is asynchronous.** The address answers `"ok", -1`
+  #     *before* the new track exists (priv/AbletonOSC/API.md § "Conversions";
+  #     `-1` is an answer, never a failure), and the fork measured the track
+  #     appearing about three seconds later. So the reply means *accepted*, not
+  #     *done*, and every failure after it is worded "may still appear" rather
+  #     than "nothing was converted" — the datagram landed, and no track yet is
+  #     absence of evidence, not evidence of absence.
+  #   * **Which track is new is read, never assumed.** The fork measured new
+  #     tracks appended last; the retired Accessibility path measured one
+  #     landing directly after the source; `API.md` is explicit that the
+  #     ordering is an observation and not a promise. So
+  #     `/live/song/get/track_names` is read before and after and the first
+  #     divergence is the new index — which also gives Live's own name for it.
   #
-  #   * The press acts on **whatever Live has selected**, so a selection that
-  #     silently failed to land converts the wrong clip. Both selection reads
-  #     are checked, and they disagree exactly when the ring moved but the slot
-  #     did not.
-  #   * UI *focus*, not selection, is what Live's menu validation reads —
-  #     measured 2026-08-30 over OSC with nobody touching Live: `focus_view
-  #     Arranger` → disabled, `Session` → enabled, `Browser` → disabled,
-  #     `Session` → enabled. So focus is established and read back before the
-  #     press, and anything but `Session` is refused here naming focus, rather
-  #     than surfacing three steps later as a `command_unavailable` that blames
-  #     the clip.
-  #
-  # And the clip-type guards come before all of it: reaching the helper's own
-  # refusal for a MIDI clip means Seshat activated Live, stole focus and pulled a
-  # menu open to learn something one OSC read already knew.
+  # The guard is Live's own predicate, which answers `false` for a MIDI clip, an
+  # empty slot and a Live with no `Live.Conversions` alike. One bit cannot carry
+  # a useful refusal, so a `false` is diagnosed with the two reads that tell
+  # those apart before it is reported.
   defp do_call("convert_audio_to_midi", %{
          "track" => track,
          "clip_slot" => slot,
          "mode" => mode
        }) do
-    with {:ok, command} <- convert_command(mode),
-         :ok <- ensure_clip(track, slot, @convert_empty_hint),
-         :ok <- ensure_convertible_clip(track, slot),
-         :ok <- focus_session_grid(),
-         :ok <- select_clip_for_convert(track, slot),
-         {:ok, before_count} <- convert_track_count(:before),
-         {:ok, window} <- press_convert(command, track, slot),
-         {:ok, new_track} <- await_converted_track(track, before_count, window) do
-      {:ok, convert_reply(track, slot, mode, new_track)}
+    with :ok <- ensure_convertible_source(track, slot),
+         {:ok, before_names} <- read_track_names() do
+      convert_and_await(track, slot, mode, before_names)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
     end
   catch
-    # Only the guards ahead of the press can land here — `convert_track_count/1`
-    # and `await_converted_track/2` catch their own exits, precisely so a
-    # timeout *after* the press never inherits this "nothing was converted"
-    # wording.
+    # Only the two reads ahead of the conversion can land here.
+    # `request_conversion/3` and `await_converted_track/2` catch their own exits
+    # precisely so a timeout *after* the conversion was requested never inherits
+    # this "nothing was converted" wording — and neither
+    # `ensure_convertible_source/2` nor `read_track_names/0` catches its own,
+    # precisely so a timeout *before* it does.
     :exit, _ ->
       {:error,
        "Timed out checking slot #{slot} on track #{track} before converting, so nothing was " <>
@@ -3526,248 +3530,249 @@ defmodule Seshat.Tools.Handlers do
 
   # --- Audio to MIDI helpers ---
 
-  # The tool's `mode` enum to the exact menu title the helper compiles in. Not
-  # interpolated: the helper matches these three strings literally and refuses
-  # anything else, so building one here out of `mode` would move a closed
-  # allowlist into string arithmetic.
-  defp convert_command("melody"), do: {:ok, "Convert Melody to New MIDI Track"}
-  defp convert_command("harmony"), do: {:ok, "Convert Harmony to New MIDI Track"}
-  defp convert_command("drums"), do: {:ok, "Convert Drums to New MIDI Track"}
+  # Live's own predicate, wrapped by the fork so it always answers instead of
+  # raising on a MIDI clip. No `catch` of its own: it runs before anything is
+  # sent, so a timeout belongs to the calling clause's "nothing was converted".
+  defp ensure_convertible_source(track, slot) do
+    subject = "whether slot #{slot} on track #{track} can be converted to MIDI"
 
-  defp convert_command(mode) do
-    {:error,
-     "mode must be 'melody', 'harmony' or 'drums' (got #{inspect(mode)}). Nothing was converted."}
+    case query_correlated("/live/clip/get/is_convertible_to_midi", [track, slot],
+           echo: [track, slot],
+           timeout: @guard_timeout,
+           decode: &unwrap_payload/1
+         ) do
+      {:ok, flag} ->
+        if truthy?(flag), do: :ok, else: diagnose_unconvertible(track, slot)
+
+      {:error, {:remote, message}} ->
+        {:error, remote_error(message)}
+
+      {:error, {:live_error, message}} ->
+        {:error, remote_error(message)}
+
+      {:error, {:stale, _values}} ->
+        {:error, stale_reply_error(subject)}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
+    end
   end
 
-  defp ensure_convertible_clip(track, slot) do
-    case clip_is_midi(track, slot) do
-      {:ok, false} ->
-        :ok
-
+  # `false` is one bit for a MIDI clip, an empty slot and a Live with no
+  # `Live.Conversions` alike, so it is turned back into the refusal the model can
+  # act on. Two extra round trips, spent only on the path that is already
+  # refusing — the accepted path never reaches here.
+  defp diagnose_unconvertible(track, slot) do
+    with :ok <- ensure_clip(track, slot, @convert_empty_hint),
+         {:ok, false} <- clip_is_midi(track, slot) do
+      {:error,
+       "Ableton Live says the clip in slot #{slot} on track #{track} cannot be converted, so " <>
+         "nothing was converted. It may be too short or too quiet for Live to find anything " <>
+         "to track, or this Live may not offer Convert at all (it needs Live 9 or newer, " <>
+         "Standard or Suite). A longer, louder take is the thing to try."}
+    else
       {:ok, true} ->
         {:error,
          "Slot #{slot} on track #{track} holds a MIDI clip, and Convert turns *audio* into " <>
-           "MIDI — nothing was converted and Ableton Live was never brought to the front. " <>
-           "The notes are already there: read them with get_clip_notes, or change them with " <>
-           "edit_notes and quantize_clip."}
+           "MIDI — nothing was converted. The notes are already there: read them with " <>
+           "get_clip_notes, or change them with edit_notes and quantize_clip."}
 
       {:error, message} ->
         {:error, message}
     end
   end
 
-  # Both sends, then the read-back. `show_view` makes the Session grid visible
-  # and `focus_view` gives it keyboard focus; only the second enables the menu
-  # command, and neither replies, so the read is the only evidence either landed.
-  #
-  # ⚠️ Partial verification, per priv/AbletonOSC/API.md: this getter answers only
-  # `Session` or `Arranger`, so it catches an Arranger focus and *not* a Browser
-  # one. A `Session` reading is necessary, not sufficient — the helper's own
-  # `command_unavailable` refusal is still the backstop.
-  defp focus_session_grid do
-    with :ok <- Transport.send_message("/live/view/show_view", ["Session"]),
-         :ok <- Transport.send_message("/live/view/focus_view", ["Session"]) do
-      confirm_session_focus()
-    end
-  end
-
-  defp confirm_session_focus do
-    case Transport.query("/live/view/get/focused_document_view", [], @guard_timeout) do
-      {:ok, {_addr, ["ok", "Session"]}} ->
-        :ok
-
-      {:ok, {_addr, ["ok", view]}} ->
-        {:error,
-         "Ableton Live's #{view} view has focus, not the Session grid, and Live's menu " <>
-           "validation reads focus rather than selection — so nothing was converted. Ask the " <>
-           "user to click once in the Session grid, then try again."}
-
-      {:ok, {_addr, ["error", message]}} ->
-        {:error, remote_error(message)}
-
-      {:ok, {_addr, _other}} ->
-        {:error, unreadable_reply_error("which of Live's views has focus")}
+  # The count *and* the identity from one address. The reply echoes nothing, so
+  # the standing defence is structural, exactly as `query_scene_names/2` argues:
+  # every element must be a string, and the list's length is the track count.
+  # No `catch` here either — see `ensure_convertible_source/2`.
+  defp read_track_names do
+    case Transport.query("/live/song/get/track_names", [], @guard_timeout) do
+      {:ok, {_addr, names}} ->
+        if names != [] and Enum.all?(names, &is_binary/1) do
+          {:ok, names}
+        else
+          {:error,
+           "Ableton's reply with the track names was #{inspect(names)}, which Seshat cannot " <>
+             "read — so nothing was converted, rather than converting without being able to " <>
+             "say which track came back. Check get_session_state and try again."}
+        end
 
       {:error, reason} ->
         {:error, Transport.describe_error(reason)}
     end
-  catch
-    :exit, _ ->
-      {:error, guard_timeout_error("which of Live's views has focus", @view_extension_hint)}
   end
 
-  # The one genuinely dangerous failure on this path: the press acts on whatever
-  # Live has selected, so a selection that did not land converts a different
-  # clip and reports it as this one. Two independent reads, and they disagree
-  # exactly when the ring moved but the highlighted slot did not.
-  #
-  # ⚠️ Both writes are needed, measured against Live 12.4.5 on 2026-08-30.
-  # `set/selected_clip` only assigns `selected_track` and `selected_scene`
-  # (fork `view.py`); it does **not** move the clip-slot highlight, and Live's
-  # Convert commands validate against the highlighted slot. Observed on screen:
-  # the track selected, the clip never showing as selected, and every Convert
-  # item disabled — until the slot was highlighted, after which Live converted.
-  #
-  # The reads below cannot catch that on their own: the LOM derives
-  # `highlighted_clip_slot` from the selected track and scene, so it reports the
-  # slot this write implies whether or not the highlight moved. They are a guard
-  # against the wrong clip, not against an unmoved highlight — which is why the
-  # second write is sent rather than inferred.
-  defp select_clip_for_convert(track, slot) do
-    with :ok <- Transport.send_message("/live/view/set/selected_clip", [track, slot]),
-         :ok <- Transport.send_message("/live/view/set/highlighted_clip_slot", [track, slot]),
-         {:ok, selected} <- read_clip_coordinate("/live/view/get/selected_clip", "selected clip"),
-         {:ok, highlighted} <-
-           read_clip_coordinate("/live/view/get/highlighted_clip_slot", "highlighted clip slot") do
-      cond do
-        selected != {track, slot} ->
-          {:error, selection_error("selected clip", selected, track, slot)}
+  defp convert_and_await(track, slot, mode, before_names) do
+    with :ok <- request_conversion(track, slot, mode) do
+      case await_converted_track(before_names) do
+        {:ok, new_track, name} ->
+          {:ok, convert_reply(track, slot, mode, new_track, name)}
 
-        highlighted != {track, slot} ->
-          {:error, selection_error("highlighted clip slot", highlighted, track, slot)}
+        {:unresolved, reason} ->
+          {:ok, convert_unresolved_reply(track, slot, mode, reason)}
 
-        true ->
-          :ok
+        {:error, message} ->
+          {:error, message}
       end
     end
   end
 
-  # Neither view getter echoes anything, so there is no prefix to correlate on —
-  # `query_correlated/4` would have nothing to check. The cross-check of the two
-  # independent reads above is the defence against a straggler here, which is
-  # why both are read rather than either alone.
-  defp read_clip_coordinate(address, subject) do
-    case Transport.query(address, [], @guard_timeout) do
-      {:ok, {_addr, [track, slot]}} when is_integer(track) and is_integer(slot) ->
-        {:ok, {track, slot}}
-
-      {:ok, {_addr, _other}} ->
-        {:error, unreadable_reply_error("Ableton Live's #{subject}")}
-
-      {:error, reason} ->
-        {:error, Transport.describe_error(reason)}
-    end
-  catch
-    :exit, _ ->
-      {:error, guard_timeout_error("Ableton Live's #{subject}", @view_extension_hint)}
-  end
-
-  defp selection_error(what, {observed_track, observed_slot}, track, slot) do
-    "Asked Ableton Live to select slot #{slot} on track #{track}, but its #{what} reads " <>
-      "track #{observed_track}, slot #{observed_slot} — so nothing was converted rather than " <>
-      "converting the wrong clip. Check the indices with get_clip_slots and try again."
-  end
-
-  # The `create_track` guard's shape, for the same reason: the count is the only
-  # observable truth about whether Live made a track, and only a rise of exactly
-  # one supports a claim about *which* index is ours.
-  defp convert_track_count(stage) do
-    case Transport.query("/live/song/get/num_tracks", [], @guard_timeout) do
-      {:ok, {_addr, [count]}} when is_integer(count) ->
-        {:ok, count}
-
-      {:ok, {_addr, args}} ->
-        {:error, "Unexpected reply from /live/song/get/num_tracks: #{inspect(args)}"}
-
-      {:error, reason} ->
-        {:error, Transport.describe_error(reason)}
-    end
-  catch
-    :exit, _ -> {:error, convert_count_timeout(stage)}
-  end
-
-  defp convert_count_timeout(:before) do
-    "Timed out reading the track count, so nothing was converted. Check that Ableton Live is " <>
-      "running with AbletonOSC enabled."
-  end
-
-  defp convert_count_timeout(:after) do
-    "Live's Convert was fired, but reading the track count back timed out — a converted track " <>
-      "may well exist. Check get_session_state before converting again."
-  end
-
-  # ⚠️ A window appearing is *not* on its own a refusal, measured 2026-08-30:
-  # Live puts a progress window up while it analyses, so a perfectly successful
-  # convert reports `windows_after > windows_before` every time. Treating that
-  # as a dialog denied a conversion that had already happened — the exact
-  # dishonesty the rest of this path is built to avoid, and worse than a
-  # timeout, because the set was mutated while the reply said it was not.
+  # A mutation carried on a query, which is why `query_correlated/4` is
+  # deliberately not used: its reissue-once defence would fire a *second*
+  # conversion at a set that may already have one running. The echo is checked
+  # here instead, with no retry, exactly as `Seshat.Generation.AudioClip` does
+  # around `/live/clip_slot/create_audio_clip`.
   #
-  # So the window count is carried, not judged. The track count is the only
-  # observable truth about whether Live made a track, and `await_converted_track/2`
-  # already polls it; a window is only reported as a dialog when that poll also
-  # comes up empty, which is when "Live is asking you something" is the honest
-  # reading rather than a guess.
-  defp press_convert(command, track, slot) do
-    case ax_client().convert(command) do
-      {:ok, %{windows_before: before, windows_after: after_}} when after_ > before ->
-        {:ok, :window_opened}
+  # `mode` reaches the wire verbatim — the fork takes the type as a *name*
+  # (`melody`/`harmony`/`drums`), never the enum integer, and the tool's enum is
+  # those three names, so there is no mapping table to keep in step.
+  defp request_conversion(track, slot, mode) do
+    case Transport.query("/live/clip/audio_to_midi", [track, slot, mode]) do
+      {:ok, {_addr, values}} ->
+        case correlate_reply(values, [track, slot]) do
+          # `new_track_id` is `-1` today and is read as "accepted" and nothing
+          # more: the index is always resolved by the names diff, so a future
+          # synchronous Live changes nothing here.
+          {:ok, ["ok", _new_track_id]} ->
+            :ok
 
-      {:ok, _observed} ->
-        {:ok, :no_window}
+          {:ok, ["error", message]} when is_binary(message) ->
+            {:error, remote_error(message)}
 
-      {:error, %{code: :command_unavailable}} ->
-        {:error,
-         "Ableton Live would not convert that clip: its Create menu had \"#{command}\" " <>
-           "disabled with slot #{slot} on track #{track} selected and the Session grid " <>
-           "focused, both of which were verified first. Live itself declined — the clip may " <>
-           "be too short or silent, or this Live edition may not offer Convert."}
+          {:ok, other} ->
+            {:error, convert_sent_but(track, slot, "its reply was #{inspect(other)}")}
 
-      {:error, failure} ->
-        {:error, ax_error(failure)}
+          :stale ->
+            {:error, convert_sent_but(track, slot, "its reply was about a different clip")}
+        end
+
+      {:error, {:live_error, message}} ->
+        {:error, remote_error(message)}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
     end
+  catch
+    :exit, _ -> {:error, convert_sent_but(track, slot, "Ableton Live did not answer")}
   end
 
-  # Live reports the convert as a structural change, not as a reply, so the
-  # count is polled rather than waited on. Bounded, and honest when it does not
-  # move: no index is named unless the count rose by exactly one, exactly as
-  # `Registry.ensure_return_created/2` insists.
-  defp await_converted_track(source_track, before_count, window, attempt \\ 0) do
-    case convert_track_count(:after) do
-      {:ok, count} when count == before_count + 1 ->
-        {:ok, source_track + 1}
+  # Everything after the conversion datagram leaves shares this shape. The
+  # request is on the wire, so "nothing was converted" would be a claim nothing
+  # here can support — the honest report is what was asked for, what went wrong
+  # observing it, and where to look.
+  defp convert_sent_but(track, slot, what_happened) do
+    "The conversion of slot #{slot} on track #{track} was requested, but #{what_happened}, so " <>
+      "whether Live converted it is unknown. Live converts asynchronously, so a new MIDI " <>
+      "track may still appear — check get_session_state before converting again."
+  end
 
-      {:ok, count} when count > before_count + 1 ->
+  # Live reports the finished conversion as a structural change rather than as a
+  # reply, so the track names are polled for it: the length is the count, and the
+  # first place the two lists diverge is the track that appeared. Bounded, and
+  # honest when nothing shows up — no index is named unless exactly one track
+  # arrived, exactly as `Registry.ensure_return_created/2` insists.
+  defp await_converted_track(before_names, attempt \\ 0) do
+    before_count = length(before_names)
+
+    case poll_track_names() do
+      {:ok, names} when length(names) == before_count + 1 ->
+        resolve_new_track(before_names, names)
+
+      {:ok, names} when length(names) > before_count + 1 ->
         {:error,
-         "The track count went from #{before_count} to #{count} — more than one track " <>
-           "appeared, so Seshat can't tell which one Live's Convert made. Check " <>
-           "get_session_state."}
+         "The track count went from #{before_count} to #{length(names)} — more than one track " <>
+           "appeared, so Seshat can't tell which one Live's Convert made. The conversion " <>
+           "itself was accepted; check get_session_state."}
 
-      {:ok, _count} when attempt < @convert_settle_attempts ->
-        Process.sleep(@convert_settle_delay)
-        await_converted_track(source_track, before_count, window, attempt + 1)
+      {:ok, _names} when attempt < @convert_settle_attempts ->
+        Process.sleep(convert_settle_delay())
+        await_converted_track(before_names, attempt + 1)
 
-      {:ok, _count} when window == :window_opened ->
+      {:ok, _names} ->
         {:error,
-         "Ableton Live opened a window after the Convert command and no track appeared, so " <>
-           "it is asking something rather than converting — Seshat does not drive dialogs. " <>
-           "Look at Live, deal with what it is asking, and try again."}
-
-      {:ok, count} ->
-        {:error,
-         "Live's Convert was fired but the track count is still #{count}, so no track " <>
-           "appeared and nothing is named. The Create menu item was enabled, so Live accepted " <>
-           "the command and then produced nothing — check Ableton, and get_session_state " <>
-           "before trying again."}
+         "Ableton Live accepted the conversion, but no new track has appeared yet (waited " <>
+           "about #{@convert_settle_budget_s} seconds). Live converts asynchronously and a " <>
+           "long clip may still be analysing — check get_session_state in a moment rather " <>
+           "than converting again."}
 
       {:error, message} ->
         {:error, message}
     end
   end
 
-  # Everything in the reply is read back from the track that now exists. The new
-  # track lands *directly after* the source, not at the end (measured
-  # 2026-08-30: it arrived at index 3 and the pre-existing MIDI track renumbered
-  # behind it), so the index is derived from the source rather than from the
-  # count.
-  defp convert_reply(source_track, slot, mode, new_track) do
+  # Test-only override, for the same reason `Seshat.AX.Client.call_timeout/0`
+  # has one: proving the "accepted, and nothing appeared" path is worth a test,
+  # and spending five seconds of the suite asleep on it is not.
+  defp convert_settle_delay,
+    do: Application.get_env(:seshat, :convert_settle_delay, @convert_settle_delay)
+
+  defp poll_track_names do
+    case Transport.query("/live/song/get/track_names", [], @guard_timeout) do
+      {:ok, {_addr, names}} ->
+        {:ok, names}
+
+      {:error, reason} ->
+        {:error,
+         "#{Transport.describe_error(reason)} The conversion was accepted, so a new MIDI " <>
+           "track may well exist — check get_session_state before converting again."}
+    end
+  catch
+    :exit, _ ->
+      {:error,
+       "Ableton Live accepted the conversion, but reading the track names back timed out — a " <>
+         "converted track may well exist. Check get_session_state before converting again."}
+  end
+
+  # The count rose by one; this decides *which* one. Two ways it can decline to:
+  # a reply whose length is readable but whose contents are not, and a set where
+  # more than one insertion point explains the diff. Both still prove a track
+  # arrived, so both are reported as an unnamed success rather than as a failure.
+  defp resolve_new_track(before_names, names) do
+    if Enum.all?(names, &is_binary/1) do
+      resolve_insertion(before_names, names)
+    else
+      {:unresolved, :unreadable}
+    end
+  end
+
+  # An index is a candidate when deleting it from the after-list reproduces the
+  # before-list exactly. Scanning for the first disagreeing position instead is
+  # wrong whenever the new track shares a name with an existing one: converting
+  # the same clip twice yields two tracks Live names identically, and the first
+  # disagreement then lands on the *old* one. The name read-back in
+  # `convert_reply/5` cannot catch that, because the two names are equal by
+  # construction — it would confirm a wrong index rather than refuse it. Where
+  # the insertion point is genuinely ambiguous, say so instead of steering Live
+  # to a track picked by a coin toss.
+  defp resolve_insertion(before_names, names) do
+    case candidate_indices(before_names, names) do
+      [index] -> {:ok, index, Enum.at(names, index)}
+      _ -> {:unresolved, :ambiguous}
+    end
+  end
+
+  defp candidate_indices(before_names, names) do
+    names
+    |> Enum.with_index()
+    |> Enum.filter(fn {_name, index} -> List.delete_at(names, index) == before_names end)
+    |> Enum.map(fn {_name, index} -> index end)
+  end
+
+  # Everything in the reply is read back from the track that now exists. Its
+  # index came from the names diff rather than from the source's position: the
+  # fork measured a converted track appended last, the retired Accessibility
+  # path measured one landing directly after the source, and priv/AbletonOSC's
+  # API.md declines to promise either.
+  defp convert_reply(source_track, slot, mode, new_track, resolved_name) do
     FollowCam.steer("convert_audio_to_midi", %{track: new_track})
 
     {name, devices, has_clip?} = read_converted_track(new_track, slot)
 
     Enum.join(
       [
-        convert_headline(source_track, slot, mode, new_track, name),
+        convert_headline(source_track, slot, mode, new_track, resolved_name),
+        convert_name_disagreement(new_track, resolved_name, name),
         convert_notes_line(new_track, slot, has_clip?),
         convert_instrument_line(devices),
         "Convert follows pitch rather than transcribing, so tidy it with quantize_clip and " <>
@@ -3777,6 +3782,25 @@ defmodule Seshat.Tools.Handlers do
       " "
     )
   end
+
+  # A track appeared and Live's names for the set could not be read, so the
+  # index is genuinely unknown. Reported as the success it is, without a steer:
+  # aiming the view at a guess is worse than not moving it.
+  defp convert_unresolved_reply(source_track, slot, mode, reason) do
+    "Ableton Live converted the #{mode} in slot #{slot} on track #{source_track} and one new " <>
+      "track appeared, but #{unresolved_because(reason)} — so which track is the new one " <>
+      "cannot be said here. Check get_session_state; the source audio clip is untouched."
+  end
+
+  defp unresolved_because(:unreadable),
+    do: "its reply naming the tracks could not be read"
+
+  # Naming one of the equally-named candidates would read exactly like a
+  # confident answer, and the read-back would agree with it.
+  defp unresolved_because(:ambiguous),
+    do:
+      "more than one track carries that name, so the new one cannot be told apart from the " <>
+        "track it matches"
 
   # Best-effort, one tick: the convert has already happened, so an unreadable
   # reply here costs a detail in the reply rather than the reply itself. Each
@@ -3799,15 +3823,23 @@ defmodule Seshat.Tools.Handlers do
     :exit, _ -> {nil, [], false}
   end
 
-  defp convert_headline(source_track, slot, mode, new_track, nil) do
-    "Converted the #{mode} in slot #{slot} on track #{source_track} to a new MIDI track " <>
-      "(track #{new_track}); Ableton did not answer when its name was read back."
-  end
-
   defp convert_headline(source_track, slot, mode, new_track, name) do
     "Converted the #{mode} in slot #{slot} on track #{source_track} to a new MIDI track " <>
       ~s{#{new_track} "#{name}".}
   end
+
+  # Two independent reads of the same fact, never merged: the names diff said
+  # which track appeared and what Live called it, and the read-back looked that
+  # index up again afterwards. A disagreement is reported rather than resolved —
+  # one read is not confirmation of the other when the two contradict, and a
+  # silent read-back (`nil`) is not confirmation either, so it says nothing.
+  defp convert_name_disagreement(new_track, resolved, observed)
+       when is_binary(observed) and observed != resolved do
+    ~s{Reading track #{new_track} back named it "#{observed}" rather than "#{resolved}", } <>
+      "though, so which track is the converted one is not certain — check get_session_state."
+  end
+
+  defp convert_name_disagreement(_new_track, _resolved, _observed), do: nil
 
   defp convert_notes_line(_track, slot, false) do
     "Live made the track, but slot #{slot} on it reads as empty — look for the converted clip " <>

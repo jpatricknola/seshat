@@ -39,10 +39,15 @@ be able to say yes/no to each one.
 
      **Before writing that the LOM lacks something, check it at tier 1 or 2**
      — the Live binary's registration table, then Live's own shipped Remote
-     Scripts. `LomTypes.pyc` is the Max for Live registry and `dump_lom`
-     records only classes, so neither can prove a member absent; module-level
-     functions such as `Live.Conversions.audio_to_midi_clip` appear in
-     neither. Commands and the tier table:
+     Scripts. `LomTypes.pyc` is the Max for Live registry and cannot prove a
+     member absent. `dump_lom` used to record only classes, so module-level
+     functions such as `Live.Conversions.audio_to_midi_clip` appeared in
+     neither and the two sources were blind in the same place — fixed
+     2026-08-30 ([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36),
+     merged), so `dump_lom` and `FORK_GAPS.md` are now usable tier-1
+     negatives. They remain *only* tier 1: name, kind and docstring, nothing
+     called, so they never tell you how a member behaves. Commands and the
+     tier table:
      [.claude/docs/ableton-lom.md](.claude/docs/ableton-lom.md). The
      plan must still describe the work accurately: it lands as a commit in
      the submodule plus a pin bump here, it puts a

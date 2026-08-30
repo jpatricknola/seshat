@@ -5559,322 +5559,425 @@ defmodule Seshat.Tools.HandlersTest do
     end
   end
 
-  # Select over OSC, press over AX, observe over OSC. Every assertion here is
-  # about the order: the guards that must happen before Live is ever brought to
-  # the front, and the two selection reads that stop the press acting on the
-  # wrong clip.
+  # OSC end to end — no `FakeAXClient` anywhere in here, which is the headline of
+  # the rewrite. Every assertion is about order and honesty: the predicate before
+  # anything is sent, the names read before and after the conversion, and the
+  # difference between "nothing was converted" (only ever true before the send)
+  # and "may still appear" (everything after it).
   describe "convert_audio_to_midi" do
     setup :osc_sink
 
-    defp convert_ax(response) do
-      FakeAXClient.install(%{convert: response})
-    end
-
+    # The full happy-path script, in the order the handler asks for it.
     defp convert_reads(track, slot, new_track, opts \\ []) do
+      before_names = Keyword.get(opts, :before, ["Audio"])
+      after_names = Keyword.get(opts, :after, ["Audio", "3-Melody to MIDI"])
+      name = Keyword.get(opts, :name, "3-Melody to MIDI")
+
       [
-        {"/live/clip_slot/get/has_clip", [track, slot, 1]},
-        {"/live/clip/get/is_midi_clip", [track, slot, 0]},
-        {"/live/view/get/focused_document_view", ["ok", Keyword.get(opts, :focus, "Session")]},
-        {"/live/view/get/selected_clip", Keyword.get(opts, :selected, [track, slot])},
-        {"/live/view/get/highlighted_clip_slot", Keyword.get(opts, :highlighted, [track, slot])},
-        {"/live/song/get/num_tracks", [2]},
-        {"/live/song/get/num_tracks", [Keyword.get(opts, :after_count, 3)]},
-        {"/live/track/get/name", [new_track, "Melody to MIDI"]},
+        {"/live/clip/get/is_convertible_to_midi", [track, slot, 1]},
+        {"/live/song/get/track_names", before_names},
+        {"/live/clip/audio_to_midi", [track, slot, "ok", -1]},
+        {"/live/song/get/track_names", after_names},
+        {"/live/track/get/name", [new_track, name]},
         {"/live/track/get/devices/name", [new_track, "Electric"]},
         {"/live/clip_slot/get/has_clip", [new_track, slot, 1]},
         {"/live/clip/get/notes", [new_track, slot, 60, 0.0, 1.0, 100, 0]}
       ]
     end
 
-    test "the whole sequence runs in order and reports what Live made", %{sink: sink} do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 1, elapsed_ms: 900}})
+    defp convert_call(track \\ 0, slot \\ 0, mode \\ "melody") do
+      Task.async(fn ->
+        Handlers.call("convert_audio_to_midi", %{
+          "track" => track,
+          "clip_slot" => slot,
+          "mode" => mode
+        })
+      end)
+    end
 
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 0,
-            "mode" => "melody"
-          })
-        end)
+    test "the whole sequence runs in order and reports what Live made", %{sink: sink} do
+      call = convert_call()
 
       trace = scripted_trace(sink, convert_reads(0, 0, 1))
 
       assert {:ok, message} = Task.await(call)
-
-      assert_receive {:ax_call, :convert, ["Convert Melody to New MIDI Track"]}
 
       addresses = Enum.map(trace, &elem(&1, 0))
 
       assert [
                "/live/song/end_undo_step",
                "/live/song/begin_undo_step",
+               "/live/clip/get/is_convertible_to_midi",
+               "/live/song/get/track_names",
+               "/live/clip/audio_to_midi",
+               "/live/song/get/track_names",
+               "/live/view/set/selected_track",
+               "/live/track/get/name",
+               "/live/track/get/devices/name",
                "/live/clip_slot/get/has_clip",
-               "/live/clip/get/is_midi_clip",
-               "/live/view/show_view",
-               "/live/view/focus_view",
-               "/live/view/get/focused_document_view",
-               "/live/view/set/selected_clip",
-               "/live/view/set/highlighted_clip_slot",
-               "/live/view/get/selected_clip",
-               "/live/view/get/highlighted_clip_slot",
-               "/live/song/get/num_tracks" | _rest
+               "/live/clip/get/notes" | _rest
              ] = addresses
 
       assert message =~ "new MIDI track 1"
-      assert message =~ "Melody to MIDI"
+      assert message =~ "3-Melody to MIDI"
       assert message =~ "1 note(s)"
       assert message =~ "Electric"
       assert message =~ "quantize_clip"
     end
 
-    test "a MIDI clip is refused before the helper is ever asked", %{sink: sink} do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 1}})
+    # The mode string is the wire name — the fork takes a name, never the enum
+    # integer — so there is no mapping table between the tool's enum and the
+    # datagram, and this is what says so.
+    test "the mode reaches the wire verbatim", %{sink: sink} do
+      for mode <- ["melody", "harmony", "drums"] do
+        call = convert_call(0, 0, mode)
 
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 0,
-            "mode" => "melody"
-          })
-        end)
+        trace = scripted_trace(sink, convert_reads(0, 0, 1))
+
+        assert {:ok, _message} = Task.await(call)
+
+        assert Enum.any?(trace, fn {address, args} ->
+                 address == "/live/clip/audio_to_midi" and args == [0, 0, mode]
+               end),
+               "expected the conversion datagram to carry #{inspect(mode)} verbatim"
+      end
+    end
+
+    # The test that pins resolve-by-diff over resolve-by-position. The fork
+    # measured a converted track appended last and the retired Accessibility
+    # path measured one landing directly after the source; API.md promises
+    # neither, so nothing here may assume either.
+    test "the names diff resolves a mid-list insertion", %{sink: sink} do
+      call = convert_call(1, 0)
+
+      scripted_trace(
+        sink,
+        convert_reads(1, 0, 2,
+          before: ["Drums", "Voice", "Pad"],
+          after: ["Drums", "Voice", "Voice to MIDI", "Pad"],
+          name: "Voice to MIDI"
+        )
+      )
+
+      assert {:ok, message} = Task.await(call)
+
+      assert message =~ "new MIDI track 2"
+      assert message =~ "Voice to MIDI"
+    end
+
+    # The trap resolve-by-first-divergence falls into, and the reason the
+    # resolver asks which deletions reproduce the before-list instead. Converting
+    # the same clip twice gives two tracks Live names identically: here the new
+    # track could equally be index 1 or index 2, and the name read-back cannot
+    # tell them apart because both names are the same string. Naming either one
+    # would be a confident answer with a coin toss behind it.
+    test "equally named tracks make the insertion ambiguous rather than guessed", %{sink: sink} do
+      call = convert_call(0, 0)
 
       trace =
         scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+          {"/live/song/get/track_names", ["Audio", "Melody to MIDI", "Pad"]},
+          {"/live/clip/audio_to_midi", [0, 0, "ok", -1]},
+          {"/live/song/get/track_names", ["Audio", "Melody to MIDI", "Melody to MIDI", "Pad"]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert message =~ "converted the melody"
+      assert message =~ "more than one track carries that name"
+      assert message =~ "cannot be said here"
+      assert message =~ "source audio clip is untouched"
+
+      # The whole point: no index is named, and nothing is read back from one.
+      refute message =~ "new MIDI track"
+
+      refute Enum.any?(trace, fn {address, _args} -> address == "/live/track/get/name" end),
+             "an ambiguous resolution must not read back a track it only guessed at"
+    end
+
+    # Duplicate names are not themselves the problem — an insertion that only one
+    # deletion explains still resolves, even in a set full of identical names.
+    test "a duplicate name still resolves when only one insertion explains it", %{sink: sink} do
+      call = convert_call(0, 0)
+
+      scripted_trace(
+        sink,
+        convert_reads(0, 0, 2,
+          before: ["Voice", "Voice"],
+          after: ["Voice", "Voice", "Voice to MIDI"],
+          name: "Voice to MIDI"
+        )
+      )
+
+      assert {:ok, message} = Task.await(call)
+
+      assert message =~ "new MIDI track 2"
+      assert message =~ "Voice to MIDI"
+    end
+
+    # `new_track_id` is `-1` today, but even a synchronous Live answering a real
+    # index must not override what the names actually say.
+    test "an index in the reply is not trusted over the diff", %{sink: sink} do
+      call = convert_call(1, 0)
+
+      script =
+        convert_reads(1, 0, 2,
+          before: ["Drums", "Voice", "Pad"],
+          after: ["Drums", "Voice", "Voice to MIDI", "Pad"],
+          name: "Voice to MIDI"
+        )
+        |> List.replace_at(2, {"/live/clip/audio_to_midi", [1, 0, "ok", 0]})
+
+      scripted_trace(sink, script)
+
+      assert {:ok, message} = Task.await(call)
+
+      assert message =~ "new MIDI track 2"
+      refute message =~ "new MIDI track 0"
+    end
+
+    # Live's predicate answers `false` for every unconvertible case alike, so the
+    # three tests below are about the diagnosis reads that turn one bit back into
+    # a refusal the model can act on.
+    test "an empty slot is refused, before anything is sent", %{sink: sink} do
+      call = convert_call(0, 3)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 3, 0]},
+          {"/live/clip_slot/get/has_clip", [0, 3, 0]}
+        ])
+
+      assert {:error, message} = Task.await(call)
+
+      refute Enum.any?(trace, fn {address, _args} -> address == "/live/clip/audio_to_midi" end),
+             "the conversion must never be requested for a slot that holds nothing"
+
+      assert message =~ "is empty"
+      assert message =~ "record_clip"
+      assert message =~ "generate_audio"
+    end
+
+    test "a MIDI clip is refused, naming the notes that are already there", %{sink: sink} do
+      call = convert_call()
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 0]},
           {"/live/clip_slot/get/has_clip", [0, 0, 1]},
           {"/live/clip/get/is_midi_clip", [0, 0, 1]}
         ])
 
       assert {:error, message} = Task.await(call)
 
-      # Reaching the helper's own refusal would mean Seshat activated Live,
-      # stole focus and opened a menu to learn something one OSC read knew.
-      refute_receive {:ax_call, :convert, _}
-
-      refute Enum.any?(trace, fn {address, _args} -> address == "/live/view/focus_view" end)
+      refute Enum.any?(trace, fn {address, _args} -> address == "/live/clip/audio_to_midi" end)
 
       assert message =~ "holds a MIDI clip"
       assert message =~ "get_clip_notes"
+      assert message =~ "edit_notes"
     end
 
-    test "an empty slot is refused before anything else", %{sink: sink} do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 1}})
+    test "an audio clip Live still declines gets the generic reason", %{sink: sink} do
+      call = convert_call()
 
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 3,
-            "mode" => "melody"
-          })
-        end)
-
-      scripted_trace(sink, [{"/live/clip_slot/get/has_clip", [0, 3, 0]}])
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 0]},
+          {"/live/clip_slot/get/has_clip", [0, 0, 1]},
+          {"/live/clip/get/is_midi_clip", [0, 0, 0]}
+        ])
 
       assert {:error, message} = Task.await(call)
 
-      refute_receive {:ax_call, :convert, _}
-      assert message =~ "is empty"
-      assert message =~ "generate_audio"
-    end
+      refute Enum.any?(trace, fn {address, _args} -> address == "/live/clip/audio_to_midi" end)
 
-    # Focus, not selection, is what Live's menu validation reads — so a wrong
-    # focus is named here rather than surfacing three steps later as a
-    # `command_unavailable` that blames the clip.
-    test "a document view that is not Session is refused, naming focus", %{sink: sink} do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 1}})
-
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 0,
-            "mode" => "melody"
-          })
-        end)
-
-      scripted_trace(sink, convert_reads(0, 0, 1, focus: "Arranger"))
-
-      assert {:error, message} = Task.await(call)
-
-      refute_receive {:ax_call, :convert, _}
-      assert message =~ "Arranger view has focus"
-      assert message =~ "Session grid"
-    end
-
-    # The one genuinely dangerous failure: the press acts on whatever Live has
-    # selected, and the two reads disagree exactly when the ring moved but the
-    # slot did not.
-    test "a ring that disagrees with the highlighted slot is refused", %{sink: sink} do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 1}})
-
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 0,
-            "mode" => "melody"
-          })
-        end)
-
-      scripted_trace(sink, convert_reads(0, 0, 1, highlighted: [4, 2]))
-
-      assert {:error, message} = Task.await(call)
-
-      refute_receive {:ax_call, :convert, _}
-      assert message =~ "highlighted clip slot reads track 4, slot 2"
+      assert message =~ "cannot be converted"
       assert message =~ "nothing was converted"
+      assert message =~ "Standard or Suite"
     end
 
-    test "Live declining the command is readable, and blames Live rather than the clip", %{
-      sink: sink
-    } do
-      convert_ax(
-        {:error,
-         %{
-           code: :command_unavailable,
-           message: "Ableton Live has \"Convert Melody to New MIDI Track\" disabled.",
-           devices: nil,
-           current: nil
-         }}
-      )
+    # The gain over the retired mechanism: Live's own words reach the caller,
+    # where the menu press could only say "the item was disabled".
+    test "Live's own rejection reaches the caller, and no poll follows", %{sink: sink} do
+      call = convert_call()
 
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 0,
-            "mode" => "melody"
-          })
-        end)
-
-      scripted_trace(sink, convert_reads(0, 0, 1))
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+          {"/live/song/get/track_names", ["Audio"]},
+          {"/live/clip/audio_to_midi", [0, 0, "error", "no clip at that track and clip slot"]}
+        ])
 
       assert {:error, message} = Task.await(call)
 
-      assert message =~ "would not convert that clip"
-      assert message =~ "Live itself declined"
+      assert message =~ "no clip at that track and clip slot"
+
+      assert Enum.count(trace, fn {address, _args} ->
+               address == "/live/song/get/track_names"
+             end) == 1,
+             "a refused conversion has nothing to wait for"
     end
 
-    # `create_track`'s guard, and for the same reason: the count is the only
-    # observable truth about whether Live made a track, so a count that did not
-    # rise names no index at all.
-    test "a track count that never rises names no index", %{sink: sink} do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 1}})
+    # The honesty property the asynchronous reply forces: "ok" means accepted,
+    # so an empty wait is "not yet", never "it failed".
+    test "accepted with no track says it may still appear", %{sink: sink} do
+      Application.put_env(:seshat, :convert_settle_delay, 0)
+      on_exit(fn -> Application.delete_env(:seshat, :convert_settle_delay) end)
 
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 0,
-            "mode" => "melody"
-          })
-        end)
+      call = convert_call()
 
-      # Every `num_tracks` read answers 2, so the bounded wait runs out.
       scripted_trace(
         sink,
         [
-          {"/live/clip_slot/get/has_clip", [0, 0, 1]},
-          {"/live/clip/get/is_midi_clip", [0, 0, 0]},
-          {"/live/view/get/focused_document_view", ["ok", "Session"]},
-          {"/live/view/get/selected_clip", [0, 0]},
-          {"/live/view/get/highlighted_clip_slot", [0, 0]}
-        ] ++ List.duplicate({"/live/song/get/num_tracks", [2]}, 12),
-        3_000
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+          {"/live/song/get/track_names", ["Audio"]},
+          {"/live/clip/audio_to_midi", [0, 0, "ok", -1]}
+        ] ++ List.duplicate({"/live/song/get/track_names", ["Audio"]}, 30),
+        1_000
       )
 
       assert {:error, message} = Task.await(call, 10_000)
 
-      assert message =~ "still 2"
-      refute message =~ "track 1"
+      assert message =~ "accepted the conversion"
+      assert message =~ "get_session_state"
+
+      refute message =~ "nothing was converted",
+             "the request is on the wire; claiming nothing happened is the one thing this " <>
+               "path must never say"
     end
 
-    # Measured 2026-08-30: Live puts a progress window up while it analyses, so a
-    # successful convert reports a window every time. The window alone must not
-    # deny a conversion that happened — the track count decides.
-    test "a window during a conversion that lands is not treated as a dialog", %{sink: sink} do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 2}})
+    # `convert_sent_but/3` is the shared wording behind every path where the
+    # conversion datagram already left before something about observing its
+    # outcome went wrong. Three shapes are worth telling apart, and none of
+    # them may ever say "nothing was converted" — the request is genuinely on
+    # the wire by the time any of these fire.
+    test "a reply matching neither ok nor error still says it may still appear", %{sink: sink} do
+      call = convert_call()
 
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 0,
-            "mode" => "drums"
-          })
-        end)
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+          {"/live/song/get/track_names", ["Audio"]},
+          {"/live/clip/audio_to_midi", [0, 0, "pending", 7]}
+        ])
 
-      scripted_trace(sink, convert_reads(0, 0, 1))
+      assert {:error, message} = Task.await(call)
+
+      assert message =~ "was requested"
+      assert message =~ "its reply was"
+      assert message =~ "may still appear"
+      refute message =~ "nothing was converted"
+
+      assert Enum.count(trace, fn {address, _args} -> address == "/live/song/get/track_names" end) ==
+               1,
+             "an unreadable accept/reject reply has nothing to poll for"
+    end
+
+    test "a reply echoing a different clip is not trusted, and says it may still appear", %{
+      sink: sink
+    } do
+      call = convert_call()
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+          {"/live/song/get/track_names", ["Audio"]},
+          {"/live/clip/audio_to_midi", [9, 0, "ok", -1]}
+        ])
+
+      assert {:error, message} = Task.await(call)
+
+      assert message =~ "was requested"
+      assert message =~ "different clip"
+      assert message =~ "may still appear"
+      refute message =~ "nothing was converted"
+
+      assert Enum.count(trace, fn {address, _args} -> address == "/live/song/get/track_names" end) ==
+               1,
+             "a stale echo has nothing to poll for either"
+    end
+
+    test "when Ableton never answers the conversion request, it says it may still appear", %{
+      sink: sink
+    } do
+      call = convert_call()
+
+      scripted_trace(sink, [
+        {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+        {"/live/song/get/track_names", ["Audio"]}
+      ])
+
+      assert {:error, message} = Task.await(call, 10_000)
+
+      assert message =~ "did not answer"
+      assert message =~ "may still appear"
+      refute message =~ "nothing was converted"
+    end
+
+    test "a poll that times out reading the track names back still says a track may exist", %{
+      sink: sink
+    } do
+      call = convert_call()
+
+      scripted_trace(sink, [
+        {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+        {"/live/song/get/track_names", ["Audio"]},
+        {"/live/clip/audio_to_midi", [0, 0, "ok", -1]}
+      ])
+
+      assert {:error, message} = Task.await(call, 10_000)
+
+      assert message =~ "timed out"
+      assert message =~ "may well exist"
+      refute message =~ "nothing was converted"
+    end
+
+    test "more than one new track names none of them", %{sink: sink} do
+      call = convert_call()
+
+      scripted_trace(sink, convert_reads(0, 0, 1, after: ["Audio", "A", "B"]))
+
+      assert {:error, message} = Task.await(call)
+
+      assert message =~ "more than one track"
+      assert message =~ "was accepted"
+    end
+
+    # The count rose, so a track really did arrive — reported as the success it
+    # is, without naming an index nobody read and without steering at a guess.
+    test "a track that appeared under an unreadable name is still a success", %{sink: sink} do
+      call = convert_call()
+
+      trace = scripted_trace(sink, convert_reads(0, 0, 1, after: ["Audio", 5]))
 
       assert {:ok, message} = Task.await(call)
 
-      assert_receive {:ax_call, :convert, ["Convert Drums to New MIDI Track"]}
-      assert message =~ "new MIDI track 1"
-      refute message =~ "opened a window"
+      assert message =~ "one new track appeared"
+      assert message =~ "get_session_state"
+
+      refute Enum.any?(trace, fn {address, _args} ->
+               address == "/live/view/set/selected_track"
+             end),
+             "the view must not be aimed at a track index that was never resolved"
     end
 
-    # A dialog Seshat cannot drive is still a refusal — when nothing was made.
-    test "a window with no track appearing is reported as a dialog", %{sink: sink} do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 2}})
+    # The clause-level `catch` is reachable only before the conversion is sent,
+    # which is what keeps its wording true. Nothing answers the predicate here.
+    test "a guard timeout before the send still says nothing was converted", %{sink: sink} do
+      call = convert_call()
 
-      call =
-        Task.async(fn ->
-          Handlers.call("convert_audio_to_midi", %{
-            "track" => 0,
-            "clip_slot" => 0,
-            "mode" => "drums"
-          })
-        end)
-
-      scripted_trace(
-        sink,
-        [
-          {"/live/clip_slot/get/has_clip", [0, 0, 1]},
-          {"/live/clip/get/is_midi_clip", [0, 0, 0]},
-          {"/live/view/get/focused_document_view", ["ok", "Session"]},
-          {"/live/view/get/selected_clip", [0, 0]},
-          {"/live/view/get/highlighted_clip_slot", [0, 0]}
-        ] ++ List.duplicate({"/live/song/get/num_tracks", [2]}, 12),
-        3_000
-      )
+      trace = scripted_trace(sink, [], 2_500)
 
       assert {:error, message} = Task.await(call, 10_000)
 
-      assert_receive {:ax_call, :convert, ["Convert Drums to New MIDI Track"]}
-      assert message =~ "opened a window"
-      assert message =~ "does not drive dialogs"
-      refute message =~ "track 1"
+      refute Enum.any?(trace, fn {address, _args} -> address == "/live/clip/audio_to_midi" end)
+
+      assert message =~ "nothing was converted"
+      assert message =~ "get_clip_slots"
     end
 
-    test "each mode maps to one exact compiled-in menu title", %{sink: sink} do
-      for {mode, title} <- [
-            {"melody", "Convert Melody to New MIDI Track"},
-            {"harmony", "Convert Harmony to New MIDI Track"},
-            {"drums", "Convert Drums to New MIDI Track"}
-          ] do
-        convert_ax({:ok, %{windows_before: 1, windows_after: 1}})
-
-        call =
-          Task.async(fn ->
-            Handlers.call("convert_audio_to_midi", %{
-              "track" => 0,
-              "clip_slot" => 0,
-              "mode" => mode
-            })
-          end)
-
-        scripted_trace(sink, convert_reads(0, 0, 1))
-
-        assert {:ok, _message} = Task.await(call)
-        assert_receive {:ax_call, :convert, [^title]}
-      end
-    end
-
-    test "a mode outside the enum never reaches Ableton or the helper" do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 1}})
-
+    test "a mode outside the enum never reaches Ableton" do
       assert {:error, message} =
                Handlers.call("convert_audio_to_midi", %{
                  "track" => 0,
@@ -5884,17 +5987,14 @@ defmodule Seshat.Tools.HandlersTest do
 
       assert message =~ "Invalid parameters for convert_audio_to_midi"
       assert message =~ "mode: must be one of"
-      refute_receive {:ax_call, :convert, _}
-      refute_receive {:osc_out, "/live/clip_slot/get/has_clip", _}
+      refute_receive {:osc_out, "/live/clip/get/is_convertible_to_midi", _}
     end
 
-    # `/live/view/set/selected_clip` is one of the legacy view setters that
-    # resolves a negative index from the *end* of the list instead of raising,
-    # so without the schema bound a negative index could pass every guard and
-    # convert a clip on the wrong track.
+    # The fork resolves the clip as `song.tracks[track_index]` in Python, where a
+    # negative index reads from the *end* of the list instead of raising — so
+    # without the schema bound a negative index would convert a clip on the wrong
+    # track rather than being refused.
     test "a negative index is refused by the schema before any OSC" do
-      convert_ax({:ok, %{windows_before: 1, windows_after: 1}})
-
       assert {:error, message} =
                Handlers.call("convert_audio_to_midi", %{
                  "track" => -1,
@@ -5903,8 +6003,7 @@ defmodule Seshat.Tools.HandlersTest do
                })
 
       assert message =~ "track: must be at least 0"
-      refute_receive {:ax_call, :convert, _}
-      refute_receive {:osc_out, "/live/view/set/selected_clip", _}
+      refute_receive {:osc_out, "/live/clip/audio_to_midi", _}
     end
   end
 

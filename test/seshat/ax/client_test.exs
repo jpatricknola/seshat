@@ -180,78 +180,6 @@ defmodule Seshat.AX.ClientTest do
     end
   end
 
-  describe "convert/1" do
-    @tag :tmp_dir
-    test "decodes the window counts either side of the pick", context do
-      helper(
-        context,
-        emits(
-          ~s({"ok":true,"command":"Convert Melody to New MIDI Track","windows_before":1,"windows_after":1,"elapsed_ms":870,"protocol_version":2})
-        )
-      )
-
-      assert {:ok, result} = Client.convert("Convert Melody to New MIDI Track")
-      assert result.windows_before == 1
-      assert result.windows_after == 1
-      assert result.elapsed_ms == 870
-    end
-
-    @tag :tmp_dir
-    test "asks the helper for convert with the title as one argv entry", context do
-      helper(
-        context,
-        ~s(printf '{"ok":true,"windows_before":1,"windows_after":1,"command":"%s","protocol_version":2}' "$*")
-      )
-
-      assert {:ok, _result} = Client.convert("Convert Drums to New MIDI Track")
-    end
-
-    # The window counts are the only evidence the caller has that Live converted
-    # rather than raising a dialog, so a reply without them is malformed rather
-    # than an optimistic success.
-    @tag :tmp_dir
-    test "rejects a success carrying no window counts", context do
-      helper(context, emits(~s({"ok":true,"command":"Convert Melody","protocol_version":2})))
-
-      assert {:error, %{code: :ax_failure}} = Client.convert("Convert Melody to New MIDI Track")
-    end
-
-    # `command_unavailable` is the *ordinary* answer for a selection Live will
-    # not convert — Live's own menu validation said no — so it has to reach the
-    # caller as its own code rather than collapsing into the generic failure.
-    @tag :tmp_dir
-    test "command_unavailable survives as its own code", context do
-      helper(
-        context,
-        emits(
-          ~s({"ok":false,"code":"command_unavailable","message":"Live has it disabled.","protocol_version":2}),
-          9
-        )
-      )
-
-      assert {:error, %{code: :command_unavailable, message: message}} =
-               Client.convert("Convert Melody to New MIDI Track")
-
-      assert message == "Live has it disabled."
-    end
-
-    # The protocol stays closed at the helper, not here: a title outside its
-    # three compiled-in strings is refused without Accessibility being touched,
-    # and that refusal has to reach the caller intact.
-    @tag :tmp_dir
-    test "unknown_command survives as its own code", context do
-      helper(
-        context,
-        emits(
-          ~s({"ok":false,"code":"unknown_command","message":"Only three commands.","protocol_version":2}),
-          10
-        )
-      )
-
-      assert {:error, %{code: :unknown_command}} = Client.convert("Open Preferences")
-    end
-  end
-
   describe "structured errors" do
     for {code, atom, status} <- [
           {"permission_required", :permission_required, 2},
@@ -532,8 +460,9 @@ defmodule Seshat.AX.ClientTest do
       release.()
 
       assert {:error, %{code: :timeout, message: message}} = Task.await(caller, 5_000)
-      # Feature-neutral wording: `convert/1` shares this lock, so a message
-      # naming the audio settings would misdescribe a blocked convert.
+      # Feature-neutral wording: every command this module carries shares one
+      # lock, and the next one added will too, so a message naming the audio
+      # settings would misdescribe a caller blocked behind something else.
       assert message =~ "Another request to Ableton Live through macOS Accessibility"
 
       refute File.exists?(Path.join(context.tmp_dir, "ran")),

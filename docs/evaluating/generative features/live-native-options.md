@@ -18,11 +18,19 @@ of those land squarely on capabilities the epic proposed importing a
 dependency for.
 
 Each rung below follows [ui-scripting-options.md](../ui-scripting-options.md)'s
-ladder. **LOM** means present in Live 12.4.3's `_MxDCore/LomTypes.pyc`
-(checked 2026-08-27 by string dump) — a fork handler away. **UI-only** means
-not in the LOM at any spelling, reachable only through Live's menus and
-therefore only through the named-AX rung, which has been validated once
-(Audio Settings, 2026-08-03) and never against a Create-menu command. Edition
+ladder. **LOM** originally meant present in Live 12.4.3's
+`_MxDCore/LomTypes.pyc` (checked 2026-08-27 by string dump) — a fork handler
+away. ⚠️ **That was the wrong source, and this table's dispositions were
+re-derived on 2026-08-30**: `LomTypes.pyc` is the Max for Live property
+registry, safe as a positive and unsafe as a negative, and it produced a false
+"UI-only" on four rows below. Read **LOM** as present in the Live binary's own
+Boost.Python registration table (tier 1), and **UI-only** as absent from *that*
+— which for the rows still marked so has now been confirmed against the fork's
+regenerated LOM walk, module-level members included
+([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36), merged).
+UI-only leaves the named-AX rung, which has been validated twice: Audio
+Settings (2026-08-03) and the Convert Melody menu press that shipped "Sing it
+back as MIDI" (2026-08-30). Edition
 gates are from Ableton's own pages. Everything here is **reported unless
 marked measured**; nothing below was run against Live today.
 
@@ -32,12 +40,12 @@ marked measured**; nothing below was run against Live today.
 
 | Live feature | Since | Edition | Rung | Relevant to |
 |---|---|---|---|---|
-| **Stem Separation** (vocals / drums / bass / other → new tracks; time-selection variant; merge option; GPU on macOS 26.3+) | 12.3 | **Suite** | UI-only (Create / context menu) | Joint-C separation ([midi §Open work](midi-generation-options.md#L860)) |
-| **Convert Drums to New MIDI Track** (kick / snare / hat onto a Drum Rack, from transients) | 9 | Standard, Suite | ⚠️ **Likely LOM/fork, not UI-only** (see note below) | Route C drum transcription ([midi §C.1](midi-generation-options.md#L339)) |
-| **Convert Melody to New MIDI Track** (monophonic → synth/EP Instrument Rack) | 9 | Standard, Suite | ⚠️ **Likely LOM/fork, not UI-only** (see note below) | Route C bass ([midi §C.2](midi-generation-options.md#L448)) |
-| **Convert Harmony to New MIDI Track** (polyphonic → piano Instrument Rack) | 9 | Standard, Suite | ⚠️ **Likely LOM/fork, not UI-only** (see note below) | Route C pads/chords ([midi §C.2](midi-generation-options.md#L448)) |
-| **Slice to New MIDI Track** (transients / beat divisions / warp markers → Drum Rack of Simplers + a MIDI clip, ≤128 slices) | 8 | Standard, Suite | UI-only for the command; **LOM** for Simpler's slice list (`slices`, `insert_slice`, `remove_slice`, `clear_slices`, `reset_slices`, `slicing_playback_mode`) plus `SimplerDevice.replace_sample` (12.2) | Drum loops as editable MIDI without transcription ([midi §C.5](midi-generation-options.md#L505)) |
-| **Extract Groove(s)** (timing + velocity from any audio *or* MIDI clip → Groove Pool) | 8 | all | UI-only | Feel transfer, existing-context conditioning ([midi §E.2](midi-generation-options.md#L782), [§D](midi-generation-options.md#L582)) |
+| **Stem Separation** (vocals / drums / bass / other → new tracks; time-selection variant; merge option; GPU on macOS 26.3+) | 12.3 | **Suite** | UI-only (Create / context menu) — **re-checked 2026-08-30 against the fixed tier-1 LOM walk and still absent**, so this one is a real negative, not a tooling artefact | Joint-C separation ([midi §Open work](midi-generation-options.md#L860)) |
+| **Convert Drums to New MIDI Track** (kick / snare / hat onto a Drum Rack, from transients) | 9 | Standard, Suite | **LOM — shipped** as `/live/clip/audio_to_midi` (see note below) | Route C drum transcription ([midi §C.1](midi-generation-options.md#L339)) |
+| **Convert Melody to New MIDI Track** (monophonic → synth/EP Instrument Rack) | 9 | Standard, Suite | **LOM — shipped** as `/live/clip/audio_to_midi` (see note below) | Route C bass ([midi §C.2](midi-generation-options.md#L448)) |
+| **Convert Harmony to New MIDI Track** (polyphonic → piano Instrument Rack) | 9 | Standard, Suite | **LOM — shipped** as `/live/clip/audio_to_midi` (see note below) | Route C pads/chords ([midi §C.2](midi-generation-options.md#L448)) |
+| **Slice to New MIDI Track** (transients / beat divisions / warp markers → Drum Rack of Simplers + a MIDI clip, ≤128 slices) | 8 | Standard, Suite | **LOM — shipped** as `/live/device/sliced_simpler_to_drum_rack` (the command was never UI-only; see note below); **LOM** for Simpler's slice list (`slices`, `insert_slice`, `remove_slice`, `clear_slices`, `reset_slices`, `slicing_playback_mode`) plus `SimplerDevice.replace_sample` (12.2) | Drum loops as editable MIDI without transcription ([midi §C.5](midi-generation-options.md#L505)) |
+| **Extract Groove(s)** (timing + velocity from any audio *or* MIDI clip → Groove Pool) | 8 | all | UI-only — **re-checked 2026-08-30 against the fixed tier-1 LOM walk and still absent** | Feel transfer, existing-context conditioning ([midi §E.2](midi-generation-options.md#L782), [§D](midi-generation-options.md#L582)) |
 | **Groove Pool + Core Library grooves** (`Song.groove_pool.grooves`; `Groove.base / timing_amount / random_amount / velocity_amount / quantization_amount`; `Clip.groove` get/set/observe since Live 11; ~3,000 shipped `.agr` files) | 8 / 11 | all | **Fork** — the fork now exposes groove-pool reads/settings and `/live/clip/get\|set/groove` by pool index (measured on Live 12.4.5, 2026-08-29); Seshat still has no clip-groove tool | Humanising generated MIDI ([midi §D](midi-generation-options.md#L582)); now a tool-layer gap, not a fork gap |
 | **MIDI Tools — Generators** (Rhythm, Seed, Shape, Stacks; Euclidean via M4L) and **Transformations** (Arpeggiate, Chop, Connect, Glissando, LFO, Ornament, Quantize, Recombine, Span, Strum, Time Warp; Velocity Shaper via M4L); custom `.amxd` tools allowed | 12.0 | Standard, Suite | UI-only (clip-view panel, parameters, Apply) | Route A/D drum and pattern generation; feel post-processing ([midi §D](midi-generation-options.md#L582)) |
 | **Bounce Track in Place / Bounce to New Track / Paste Bounced Audio / Bounce Group** | 12.2–12.3 | all | UI-only | Rendering existing MIDI to audio for joint-C or audio-to-audio conditioning; improv capture ([improv §9](live-improv-exploration.md#L492)) |
@@ -69,16 +77,33 @@ marked measured**; nothing below was run against Live today.
 > `is_convertible_to_midi` and six siblings, all module-level free functions,
 > with the `AudioToMidiType` enum confirmed live in the running Remote Script
 > interpreter. Filed as [fork
-> #34](https://github.com/jpatricknola/AbletonOSC/issues/34); Seshat's half is
-> ROADMAP #14. The free-function shape is also why the fork's `dump_lom` never
-> reported them ([fork
+> #34](https://github.com/jpatricknola/AbletonOSC/issues/34). The free-function
+> shape is also why the fork's `dump_lom` never reported them ([fork
 > #36](https://github.com/jpatricknola/AbletonOSC/issues/36)) — so this row's
-> "UI-only" label was a tooling artefact, not a measurement. **The call itself
-> is still unexecuted**, so its synchronicity is open. The same module also
-> carries `sliced_simpler_to_drum_rack` and `create_drum_rack_from_audio_clip`,
-> which put the **Slice to New MIDI Track** row in the same position. **Stem
-> Separation was not re-checked** and keeps its UI-only disposition. Found while walking
-> the LOM for a harmonisation member; see
+> "UI-only" label was a tooling artefact, not a measurement, and the two
+> sources that agreed on it were blind in the same place.
+>
+> **Both merged, shipped and measured, still 2026-08-30.** Not "likely" and no
+> longer open: `/live/clip/audio_to_midi`, `/live/clip/get/is_convertible_to_midi`,
+> `/live/clip/create_midi_track_with_simpler`,
+> `/live/clip/create_drum_rack_from_audio_clip` and
+> `/live/device/sliced_simpler_to_drum_rack` all exist — the fork's `API.md`
+> § "Conversions" owns the contract and the measurements, and is the only place
+> that should restate them. Two results change how anything is planned against
+> this row, so they are named and not restated: `audio_to_midi` turned out to
+> be **asynchronous**, and `is_convertible_to_midi` **raises on a MIDI clip**
+> in Live and is wrapped by the fork so it answers instead. Both were invisible
+> until the call was executed, which is the standing argument for measuring
+> before planning. Seshat's half is the roadmap item **"`convert_audio_to_midi`
+> drops the Accessibility helper"** (cited by title — this note previously said
+> "ROADMAP #14", and it is now the top item).
+>
+> `sliced_simpler_to_drum_rack` and `create_drum_rack_from_audio_clip` in the
+> same module put the **Slice to New MIDI Track** row in the same position, and
+> it shipped with them. **Stem Separation was not re-checked at the time**; it
+> has been since, against the fixed walk, and it really is absent — that row's
+> UI-only disposition is now a tier-1 negative rather than an inherited one.
+> Found while walking the LOM for a harmonisation member; see
 > [harmony-from-a-melody-options.md §2.6](harmony-from-a-melody-options.md).
 
 Not relevant after checking: Similar Sounds search (not in the LOM; sound

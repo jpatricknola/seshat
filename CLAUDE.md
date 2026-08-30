@@ -153,8 +153,8 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/music/pitch.ex](lib/seshat/music/pitch.ex) | MIDI pitch → note name, shared by the notes reader and session state |
 | [lib/seshat/library/catalog.ex](lib/seshat/library/catalog.ex) | Tag-aware sound catalog — ETS + `~/.seshat/catalog.json`, merge and search |
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
-| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools and for `convert_audio_to_midi`'s single menu press — one of the two modules under `lib/seshat/` allowed to start a process, pinned by a grep test |
-| [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a five-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for, and `convert` fires only one of three compiled-in menu titles |
+| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools, and nothing else — one of the two modules under `lib/seshat/` allowed to start a process, pinned by a grep test |
+| [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a four-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for. It briefly carried a fifth, `convert`, and gave it up the day `Live.Conversions` turned out to be in the LOM after all |
 | [lib/seshat/generation/audio_clip.ex](lib/seshat/generation/audio_clip.ex) | The `generate_audio` workflow: session read, duration arithmetic, target guards, the reserved take filename, the import through `/live/clip_slot/create_audio_clip`, and the read-back that decides whether any of it worked. Guards run before the render, so a failed generation leaves Live untouched |
 | [lib/seshat/generation/backend.ex](lib/seshat/generation/backend.ex) | The boundary between that workflow and whatever renders audio. `Spec` in, `{:ok, %{path:, seed:, wall_ms:}}` out; the implementation is a compile-time choice so the suite's fake cannot leak into the real adapter |
 | [lib/seshat/generation/stable_audio.ex](lib/seshat/generation/stable_audio.ex) | **The second native-process door.** Drives the local Stable Audio 3 MLX runtime one process per request — argv only, never a shell; every weight preflighted so a missing one refuses instead of starting a download; a 60s deadline that terminates the runtime's exact OS pid |
@@ -200,13 +200,24 @@ it has a tier order.** The Live binary's registration table is tier 1 (it
 carries Ableton's own docstrings and argument names); Live's shipped Remote
 Scripts are tier 2 (they run in the same interpreter AbletonOSC does).
 `_MxDCore/LomTypes.pyc` is **the Max for Live property registry, not the
-LOM** — safe as a positive, unsafe as a negative — and `dump_lom` /
-`FORK_GAPS.md` record only classes, so module-level functions such as
-`Live.Conversions.audio_to_midi_clip` are missing from both. **Never call a
-capability absent from the LOM on tier-3 evidence.** Doing exactly that put
+LOM** — safe as a positive, unsafe as a negative. **Never call a capability
+absent from the LOM on tier-3 evidence.** Doing exactly that put
 Convert-to-MIDI on the Accessibility helper for a month
 ([fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34)). Table and
 commands: [.claude/docs/ableton-lom.md](.claude/docs/ableton-lom.md).
+
+**`dump_lom` / `FORK_GAPS.md` used to record only classes** — module-level
+free functions such as `Live.Conversions.audio_to_midi_clip` appeared in
+neither, which is the *second* reason Convert sat on the helper: the tier-1
+inventory agreed with the tier-3 grep by being blind in the same place. Fixed
+in the fork on 2026-08-30 ([#36](https://github.com/jpatricknola/AbletonOSC/issues/36)):
+the walk now records module-level members under the module's qualname, and
+classes it walks but cannot diff are reported in their own section rather
+than silently filtered by a hand-written list. So an absence in `FORK_GAPS.md`
+is worth something now, where before it was worth very little — but it is
+still tier 1 (name, kind, docstring; nothing called), and the fork's
+[BLIND_SPOTS.md](priv/AbletonOSC/BLIND_SPOTS.md) states what that inventory
+still does not claim. Read it before concluding from a silence.
 
 **Anything that is bridge work only is filed as a GitHub issue on the fork and
 cited from wherever Seshat needed it** — a missing address, a bridge defect, a
@@ -324,6 +335,57 @@ services, writing the result into [docs/evaluating/](docs/evaluating/).
 That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
+
+**`convert_audio_to_midi` drops the Accessibility helper, shipped 2026-08-30**
+on branch `convert-audio-to-midi-over-osc`, closing what had been the
+roadmap's top item — the tier-1/tier-3 blind spot recorded in
+`.claude/docs/ableton-lom.md` ("Why this is spelled out") found that
+`Live.Conversions` had been in the LOM the whole time, and
+[fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34) exposed
+`audio_to_midi_clip` and `is_convertible_to_midi` the same day. `convert_audio_to_midi`
+now runs the conversion `sing-it-back-as-midi` had driven by AX menu press
+entirely over ordinary OSC: `is_convertible_to_midi` replaces the hand-rolled
+empty-slot/MIDI-clip guards with Live's own predicate; the address itself
+(`/live/clip/audio_to_midi`) is asynchronous and always answers `-1` on
+accept, since the new track doesn't exist yet, so the handler reads
+`/live/song/get/track_names` before and after, resolves the new track by the
+first name that diverges between the two reads, and polls up to ~7s
+(20×250ms, up from the plan's 10×150ms once the fork's ~3s measured arrival
+time was accounted for) rather than trusting a synchronous reply. Because the
+reissue-once stale-reply defence in the shared `query_correlated/4` helper
+would fire a *second* conversion on a stale echo, the request itself
+deliberately bypasses it for a raw `Transport.query` plus manual correlation
+— a plan deviation the reviewer called out as the best thing in the diff.
+`native/seshat_ax/main.m`'s five-command protocol drops to four (`convert`
+and its now-dead `kCodeUnknownCommand` status deleted along with it), leaving
+`get_audio_outputs`/`set_audio_output` as the only Accessibility-backed
+tools; `Seshat.AX.Client` and its one process-starting door stay, pinned as
+before by `test/seshat/ax/client_test.exs`. The tool no longer drives
+`focus_view Session` or leaves Live parked on the Session view, since nothing
+needs a menu open any more. PR review found all five OSC addresses correct on
+independent re-derivation against `priv/AbletonOSC/API.md` and raised one
+real gap, fixed before merge: `convert_sent_but/3` — the "was requested, may
+still appear" wording carrying the whole async design's honesty — had no test
+pinning it across its four call sites; three tests now do. Two nits were left
+for a human reader to judge (`remote_error/1`'s generic "check
+get_session_state" suffix misdirecting on a genuine `audio_to_midi_clip`
+raise; `first_divergence/2` resolving the wrong track if one is renamed
+mid-conversion, judged not worth code against how narrow the window is).
+**`mix routing.eval` was not run** despite Part 2's description rewrite — the
+same call made on the two prior generation PRs, still outstanding. **Live
+verification has not run at all** — Ableton Live was not running at any point
+during implementation or review, so all four `docs/smoke_tests/auto/convert.md`
+checks and the three manual checks it cites (`on-screen.md`'s focus/view
+check, `by-ear.md`'s "Sing a line, hear it back as a guitar" — still unrun
+since the sing-it-back ship — and `conversation.md`'s routing check) read
+`*Last run: —*`. Restart Live (the installed `conversions.py` predates the
+running interpreter) and the Seshat server on this code before `/smoke-test
+convert`. `mix ax.install` was also not run, deliberately — installing
+rewrites `~/.seshat/bin/seshat-ax`, and macOS Accessibility trust is keyed to
+the binary, so an unattended reinstall risked revoking
+`get_audio_outputs`/`set_audio_output`'s trust with nobody present to
+re-approve it; someone should run it and re-approve by hand. Plan archived at
+[docs/archive/PLAN_convert_audio_to_midi_over_osc.md](docs/archive/PLAN_convert_audio_to_midi_over_osc.md).
 
 **Sing it back as MIDI shipped 2026-08-30** on branch `sing-it-back-as-midi`,
 closing what had been the roadmap's top item: a sung or hummed take can now be

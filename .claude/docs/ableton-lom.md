@@ -19,23 +19,57 @@ negatives.
 | Tier | Source | Notes |
 |---|---|---|
 | **1** | `strings -n 5 "/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live"` | Ground truth — Boost.Python's own registration table, carrying **Ableton's docstrings and declared argument names**. `grep -E "^Live\.[A-Z][A-Za-z0-9]*$"` enumerates every submodule. |
-| **2** | Live's shipped Python: `App-Resources/MIDI Remote Scripts`, `Helpers/Push3.app/…/live_model/Live` | `grep -rl "<term>" ".../MIDI Remote Scripts/"` — Ableton's own Remote Scripts run in **the same interpreter AbletonOSC does**, so one of them calling an operation ends the question. |
+| **2** | Live's shipped Python: `App-Resources/MIDI Remote Scripts`, `Helpers/Push3.app/…/live_model/Live` | `grep -rl "<term>" ".../MIDI Remote Scripts/"` — Ableton's own Remote Scripts run in **the same interpreter AbletonOSC does**, so one of them calling an operation ends the question. ⚠️ **Grep for the operation name, never for `Live.<Module>`.** `from Live import Conversions` leaves no dotted path in the compiled file, so a module-path grep misses it entirely — measured across every shipped `.pyc` on 2026-08-30, which found twelve modules and none of the ones that mattered. |
 | **3** | `_MxDCore/LomTypes.pyc` | ⚠️ **Not the LOM.** The *Max for Live property registry* — what M4L is permitted to see, curated for a different host. Fine as a positive, unsafe as a negative. |
 | **4** | [Cycling '74 apiref](https://docs.cycling74.com/apiref/lom/) | Third-party, known to drift (it understated `groove_amount`'s range). |
 
+These scripts are an **existence proof for a specific operation, not a surface
+to enumerate.** `_Framework`, `ableton/v2`, `ableton/v3`, `pushbase`, `Push2`,
+`Push` and `Move` are Python *clients* of the Live API, not more of it —
+everything they do, they do by calling `Live.*`. Walking them yields Ableton's
+control-surface helpers, not Live capability (measured and recorded in the
+fork's `BLIND_SPOTS.md`, 2026-08-30). Grep them for a verb you already suspect;
+do not mine them for new members.
+
 `/live/application/dump_lom` writes the reachable surface to JSON in one OSC
-call and is usually the cheapest first move — but ⚠️ **it records only
-classes**, so module-level functions are missing from it and therefore missing
-from `FORK_GAPS.md`
-([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36)). Until that
-lands, absence from the gap file is not evidence of absence from the LOM.
+call and is usually the cheapest first move. It **used to record only
+classes**, so module-level functions were missing from it and therefore
+missing from `FORK_GAPS.md` — fixed on 2026-08-30
+([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36), merged).
+The walk now records module-level members under the module's qualname with
+`"kind": "module"`, and the gap file reports classes it walked but could not
+diff instead of dropping them against a hand-written list.
+
+Two consequences. Absence from the gap file **is** now worth something, where
+before it was worth very little — a genuine negative at tier 1 rather than a
+filtered view. And it is still only tier 1: name, kind and docstring, read
+from a running Live or the binary's registration table, with nothing called.
+Argument order, return shapes and whether a member raises are all unmeasured
+until someone calls it — `Live.Conversions.is_convertible_to_midi` raising on
+a MIDI clip instead of answering `false` is the worked example, found only by
+calling it. The fork's
+[BLIND_SPOTS.md](../../priv/AbletonOSC/BLIND_SPOTS.md) states what that
+inventory still does not claim; read it before concluding from a silence, and
+use `API.md` § "Measuring the Live API without building the feature first"
+before planning against anything the walk reports but nobody has called.
 
 **Why this is spelled out.** Convert-to-MIDI was recorded as UI-only, and
 `convert_audio_to_midi` shipped on an Accessibility helper, on the strength of
 one `LomTypes.pyc` grep on 2026-08-27. The operation had been in the LOM the
 whole time, and Live's own `Push2/convert.py` had been calling it. Found
 2026-08-30; bridge half is
-[fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34).
+[fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34), **merged the
+same day** — `/live/clip/audio_to_midi` and four siblings now exist, and the
+Seshat half — `convert_audio_to_midi` running over OSC instead of the
+Accessibility helper — has since shipped too.
+
+Note what made that a month-long error rather than a day-long one: the tier-3
+grep and the tier-1 inventory were **blind in the same place**. `LomTypes.pyc`
+did not list the members, and `dump_lom` could not see a module-level function
+to contradict it, so a check against two independent sources returned the same
+false negative twice and read as confirmation. That is the failure mode the
+tier table above exists to prevent, and #36 is what removed the second half of
+it.
 
 ## Seshat policy
 
