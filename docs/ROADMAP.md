@@ -292,6 +292,17 @@ promise meets an audio render.
   Generated loops are a friendlier input than records: no room, no bleed,
   no vocals to strip first. So a separation arm belongs in the plan, and
   the by-ear gate decides whether a masked split is material or mud.
+- **Read [extensions-sdk.md](evaluating/extensions-sdk.md) before weighing
+  that list again** (researched 2026-08-30). The Side Brain entry above is no
+  longer the lone extension: the ecosystem now lists ~334 extensions
+  including an **Audio Separator** and **Basic Pitch** (MIT wrapper, offline,
+  one drag) — the same lanes this survey went licence-hunting for. That does
+  not make them selectable *for us*: Extensions are Live 12 Suite only and
+  need beta access Seshat does not have, and they run only when a user
+  right-clicks. It does argue against Seshat owning a separator or a
+  transcriber at all — whatever produces the stems or the notes, the result
+  is ordinary clips, and Seshat's edit surface is the part that has to be
+  good.
 - The routes that do exist, each with a known ceiling on lane count:
   *Convert Drums to New MIDI Track* — kick / snare / hat, three lanes, onto
   one Drum Rack on one track, so Seshat still has to split lanes across
