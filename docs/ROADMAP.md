@@ -299,10 +299,15 @@ promise meets an audio render.
   one drag) — the same lanes this survey went licence-hunting for. That does
   not make them selectable *for us*: Extensions are Live 12 Suite only and
   need beta access Seshat does not have, and they run only when a user
-  right-clicks. It does argue against Seshat owning a separator or a
-  transcriber at all — whatever produces the stems or the notes, the result
-  is ordinary clips, and Seshat's edit surface is the part that has to be
-  good.
+  right-clicks. What it argues against is narrower than it first looks:
+  **owning a separator or transcriber to serve the generation pipeline** —
+  this item's own purpose — is what the free lanes undercut, because whatever
+  produces the stems or the notes, the result is ordinary clips and Seshat's
+  edit surface is the part that has to be good. It says nothing against
+  transcription as a *user-asked-for feature*: `convert_audio_to_midi` ships
+  exactly that, on human performance rather than generated audio, and the
+  2026-08-30 ruling was scoped to Route C, never to transcription in
+  general.
 - The routes that do exist, each with a known ceiling on lane count:
   *Convert Drums to New MIDI Track* — kick / snare / hat, three lanes, onto
   one Drum Rack on one track, so Seshat still has to split lanes across

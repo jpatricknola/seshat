@@ -532,7 +532,9 @@ defmodule Seshat.AX.ClientTest do
       release.()
 
       assert {:error, %{code: :timeout, message: message}} = Task.await(caller, 5_000)
-      assert message =~ "Another audio-settings request"
+      # Feature-neutral wording: `convert/1` shares this lock, so a message
+      # naming the audio settings would misdescribe a blocked convert.
+      assert message =~ "Another request to Ableton Live through macOS Accessibility"
 
       refute File.exists?(Path.join(context.tmp_dir, "ran")),
              "the helper was started after the lock freed with the budget already spent"

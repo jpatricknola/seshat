@@ -251,6 +251,23 @@ defmodule Seshat.Tools.Handlers do
   @monitoring_states %{"in" => 0, "auto" => 1, "off" => 2}
   @monitoring_names %{0 => "in", 1 => "auto", 2 => "off"}
 
+  # What Live answers on `input_routing_type` when a track is listening to
+  # nothing. **Measured 2026-08-30 against Live 12.4.5** (PR #80 review), which
+  # closed what the plan carried as open question 2 with the opposite answer to
+  # the one it assumed: "no input" is a routing type like any other, named
+  # `"No Input"`, and it is on `available_input_routing_types` alongside
+  # `Ext. In` and `Resampling`. The fork returns
+  # `track.input_routing_type.display_name`, and a track always has a routing
+  # object, so the empty string is not how Live spells this — it is kept only
+  # because a reply that lost its payload decodes to one, and treating that as
+  # "nothing routed" is the safe direction.
+  #
+  # Both readers below match on this list rather than on `""` alone. Getting it
+  # wrong is silent in the worst way: `record_clip`'s refusal is the guard that
+  # exists to stop a take recording silence, and the performance that produced
+  # a silent take is gone by the time anyone plays it back.
+  @no_input_names ["", "No Input"]
+
   # The two targets whose index means something. The schema cannot express
   # "required when target is one of these", so the handler reports the omission
   # by name.
@@ -1706,7 +1723,8 @@ defmodule Seshat.Tools.Handlers do
   end
 
   defp input_phrase(nil, _channel), do: nil
-  defp input_phrase("", _channel), do: "no input routed"
+
+  defp input_phrase(type, _channel) when type in @no_input_names, do: "no input routed"
 
   defp input_phrase(type, channel) when is_binary(channel) and channel != "",
     do: ~s{in="#{type}"/"#{channel}"}
@@ -4379,11 +4397,21 @@ defmodule Seshat.Tools.Handlers do
            [track],
            "whether track #{track} can be armed"
          ) do
+      # Live refuses to arm a track with nothing to record from, and
+      # `can_be_armed` does not say which of the two reasons applies. Naming
+      # only the group case sent the model to a fix that does not exist: an
+      # audio track routed to "No Input" reads `can_be_armed` false too
+      # (measured 2026-08-30). `check_audio_input/1` runs before this on the
+      # `record_clip` path and now catches that case with the better message, so
+      # what reaches here is the group track, a frozen track, or a route that
+      # changed between the two reads — hence both causes, group first.
       {:ok, false} ->
         {:error,
-         "Track #{track} can't be armed for recording, so nothing was recorded. Group tracks " <>
-           "have no clip slots of their own — record into one of the tracks inside the " <>
-           "group; get_clip_slots labels group tracks 'group'."}
+         "Track #{track} can't be armed for recording, so nothing was recorded. Live refuses " <>
+           "to arm a track with no input to record from: a group track has no clip slots of " <>
+           "its own (get_clip_slots labels those 'group') — record into one of the tracks " <>
+           "inside it — and an audio track with nothing routed in needs one, which " <>
+           "set_mixer's input_type sets. get_session_state reports both."}
 
       {:ok, true} ->
         with :ok <- Transport.send_message("/live/track/set/arm", [track, 1]),
@@ -4425,10 +4453,10 @@ defmodule Seshat.Tools.Handlers do
   # is a lost datagram rather than a bad index, and this guard only fires on a
   # track *known* to be audio.
   #
-  # ⚠️ What Live calls "no input" is unmeasured (docs/archive/PLAN_sing_it_back_as_midi.md,
-  # open question 2). An empty type string is treated as no input; anything
-  # non-empty is reported verbatim and not refused, so getting this wrong makes
-  # the warning weaker, never wrong.
+  # What Live calls "no input" is `@no_input_names` — measured, not assumed; see
+  # that attribute for what was read off the wire and why the empty string stays
+  # in the list. Anything else is reported verbatim and never refused, because
+  # the name belongs to the user's audio interface rather than to us.
   defp check_audio_input(track) do
     case query_flag(
            "/live/track/get/has_audio_input",
@@ -4487,7 +4515,7 @@ defmodule Seshat.Tools.Handlers do
   defp batch_list({:ok, values}) when is_list(values), do: Enum.filter(values, &is_binary/1)
   defp batch_list(_other), do: []
 
-  defp input_note(track, "", _channel, _monitoring, opts),
+  defp input_note(track, type, _channel, _monitoring, opts) when type in @no_input_names,
     do: {:error, no_input_error(track, Keyword.fetch!(opts, :available))}
 
   defp input_note(_track, type, channel, monitoring, _opts) when is_binary(type) do

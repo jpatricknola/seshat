@@ -449,11 +449,56 @@ Parts 1–3:
 - `smoke_tests/auto/mixer.md § An input route round-trips, and a name Live
   doesn't have changes nothing` — the measured silent-no-op; a bogus name
   reported as applied means the validation or the read-back is missing.
+  **Ran 2026-08-30 (PR review), passed.** On a fresh audio track,
+  `input_type: "Seshat Not A Real Route"` was refused before anything went out,
+  naming Live's real list: `'Ext. In', 'Resampling', 'Main', 'No Input'`.
+  `get_session_state refresh: true` afterwards still read
+  `in="Ext. In"/"1"` — unchanged. `input_type: "Resampling"` was accepted and
+  read back as `in="Resampling"` (no channel, and the renderer correctly omits
+  the channel clause when Live reports none). Live's `Log.txt` tail past the
+  baseline offset carries **zero** `input_routing` lines, so the refused name
+  reached neither the wire nor the fork's fall-through warning.
+  ⚠️ This run also **answers open question 2**, which the implementation
+  assumed the other way: Live's name for "nothing routed" on this machine is
+  the literal routing type `"No Input"`, not an empty string. See the findings
+  in the PR review — the empty-string branches in `check_audio_input` and
+  `track_input_summary` never fire here.
 - `smoke_tests/auto/mixer.md § input_type and monitoring are refused on a return
   and the master`
+  **Ran 2026-08-30 (PR review), passed.** `target: "return", track: 0,
+  input_type: "Ext. In"` → *"A return track has no input_type — it has volume,
+  pan, mute, solo, name. Nothing in this call was sent."*; `target: "master",
+  monitoring: "in"` → *"The master has no monitoring — it has volume, pan.
+  Nothing in this call was sent."* Refused at the `@mixer_supported` preflight,
+  before index resolution — the set has no return tracks at all and neither
+  call complained about the index. `Log.txt` shows no `input_routing` line for
+  either.
 - `smoke_tests/auto/recording.md § An audio take names its input, or refuses
   before recording`
+  **Ran 2026-08-30 (PR review). Second half passed; the refusal half did not
+  reproduce as written, and what happened instead is a finding.** A fresh audio
+  track on this machine defaults to a *real* input (`Ext. In` / `1`), so the
+  test's first call recorded rather than refusing — exactly the case the test's
+  own ⚠️ anticipates. `record_clip bars: 1` named it verbatim:
+  *"Listening to \"Ext. In\" on \"1/2\"."*, and `get_clip_slots` showed the
+  4.0-beat take land. Driving the track to Live's actual no-input value
+  (`set_mixer input_type: "No Input"`) and recording did **not** reach
+  `check_audio_input`'s refusal: `can_be_armed` is false under `No Input`, so
+  `ensure_armed` refused first with *"Track 1 can't be armed for recording…
+  Group tracks have no clip slots of their own"* — a correct refusal with a
+  wrong reason. Nothing was recorded either way, so no silent take escaped, but
+  the guard this citation exists to exercise was never the thing that fired.
 - `smoke_tests/auto/recording.md § Monitoring set to off warns but still records`
+  **Ran 2026-08-30 (PR review), passed.** `set_mixer monitoring: "off"` on the
+  routed audio track, then `record_clip bars: 1` on an empty slot: the reply
+  carried *"Monitoring is off, so the input won't be heard through Live while
+  it records; that is normal when the player monitors through their interface,
+  and set_mixer monitoring: 'in' changes it"* **and** fired the take, which
+  `get_clip_slots` confirmed as a 4.0-beat clip. `monitoring: "in"` then
+  round-tripped and read back as `monitoring in` through
+  `get_session_state refresh: true`. Which physical button each name moves is
+  still the manual `on-screen.md` check — see the finding on the fresh-track
+  default reading `off`.
 - `smoke_tests/manual/on-screen.md § Monitoring in, auto, off move the right
   button` — the dial check for a mapping derived from Live's shipped Push 2
   script plus one wire reading. Getting it backwards is completely silent.
@@ -465,10 +510,42 @@ Parts 4–6:
 - `smoke_tests/auto/convert.md § A converted clip lands as a new track whose
   notes read back` — `generate_audio` supplies the audio clip, so an agent runs
   it alone.
+  **Ran 2026-08-30 (PR review), passed — first end-to-end run of this feature
+  through the tool surface.** `generate_audio bars: 2` put an 8.0-beat clip in
+  track 1 slot 2, then `convert_audio_to_midi mode: "melody"` replied
+  *"Converted the melody in slot 2 on track 1 to a new MIDI track 2
+  \"3-Melody to MIDI\". It holds 10 note(s). Live put \"Melody to MIDI\" on
+  it…"*. Verified by read-back, not by the reply: `get_clip_slots` showed the
+  track count risen from 2 to **3**, the new track at index **2** (directly
+  after the source, as the plan requires — not last), holding
+  `"MIDI simple solo clarinet melody, one note at"` at 8.0 beats in slot 2,
+  with the source audio clip still in track 1 slot 2 untouched.
+  `get_clip_notes` returned 10 notes, the first at
+  `start=-0.0116` — reproducing the plan's measured negative note start on a
+  second, independent convert.
 - `smoke_tests/auto/convert.md § A MIDI clip is refused before Live is ever
   touched` — guard-before-side-effects; reaching the helper's own refusal is a
   failure even though the answer is right.
+  **Ran 2026-08-30 (PR review), passed on the observable half.**
+  `write_midi_notes` put a 2-note clip in track 0 slot 0;
+  `convert_audio_to_midi` on it returned *"Slot 0 on track 0 holds a MIDI clip,
+  and Convert turns *audio* into MIDI — nothing was converted and Ableton Live
+  was never brought to the front."* `get_clip_slots` afterwards showed the
+  track count unchanged. ⚠️ **Not covered by this run:** whether Live actually
+  stayed in the background. That is a screen observation, and it belongs to
+  `manual/on-screen.md § Convert brings Live forward and gives it back`; the
+  refusal wording asserts it, and `handlers_test`'s
+  `refute_receive {:ax_call, :convert, _}` pins the code path, but neither is
+  the same as seeing it.
 - `smoke_tests/auto/convert.md § An empty slot and a bad index refuse cleanly`
+  **Ran 2026-08-30 (PR review), passed.** `clip_slot: 5` on the audio track →
+  *"Slot 5 on track 1 is empty… Convert needs an audio clip to work from —
+  record one with record_clip, or make one with generate_audio."*; `track: 99`
+  → *"Index out of range. Nothing further was sent — check get_session_state
+  for the indices that actually exist."* — Live's own structured `/live/error`
+  arriving through the `has_clip` guard, not an AX deadline. Both returned
+  promptly with no ~5s pause, and `get_clip_slots` showed the track count
+  unchanged after both.
 - `smoke_tests/manual/on-screen.md § Convert brings Live forward and gives it
   back` — focus restore, no menu or dialog left open, and how many `undo` calls
   the convert costs.
@@ -482,7 +559,23 @@ Surface:
 - `smoke_tests/auto/mcp-surface.md § The tool list survives a real handshake` —
   a client that rejects the schema refuses the **whole list**. Its only recorded
   run is 2026-08-28 at 52 tools and is stale.
+  **Ran 2026-08-30 (PR review), passed.** `mcp_call.py list` over a real
+  handshake against the running server: **54 tools**, matching
+  `Definitions.all()` and `definitions_test.exs`'s pin, with
+  `convert_audio_to_midi` present. `mcp_call.py schema convert_audio_to_midi`
+  survives intact — `minimum: 0` preserved on both `track` and `clip_slot`
+  (load-bearing against `set/selected_clip`'s negative-index wrap-around),
+  `mode` carrying its three-value enum, and all three in `required`.
+  `set_mixer` advertises `input_type`, `input_channel` and `monitoring`, the
+  last with its `["in","auto","off"]` enum.
 - `smoke_tests/auto/mcp-surface.md § The surface budget is measured, not guessed`
+  **Ran 2026-08-30 (PR review), passed.** `mcp_call.py stats`: **54 tools /
+  66,960 bytes / largest `generate_audio` at 3,875 bytes**. Up one tool and
+  2,838 bytes from the 2026-08-30 `generate_audio` baseline of 53 / 64,122 /
+  3,875 — the largest tool is unchanged, so the growth is `convert_audio_to_midi`
+  plus `set_mixer`'s three new properties. The client-visible number is ~5%
+  above the plan's Elixir-side estimate of 63,880, the same direction and rough
+  size as the gap recorded for the two previous surfaces.
 
 **Uncovered:**
 

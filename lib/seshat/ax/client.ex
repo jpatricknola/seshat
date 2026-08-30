@@ -306,8 +306,9 @@ defmodule Seshat.AX.Client do
         {:error,
          failure(
            :timeout,
-           "Another audio-settings request was still running, and this one ran out of time " <>
-             "waiting for it. Nothing was changed. Try again in a moment."
+           "Another request to Ableton Live through macOS Accessibility was still running, " <>
+             "and this one ran out of time waiting for it. Nothing was changed. Try again in " <>
+             "a moment."
          )}
     end
   end

@@ -4063,11 +4063,20 @@ defmodule Seshat.Tools.HandlersTest do
       end
     end
 
-    test "an audio track with nothing routed says so" do
-      track = mirrored_track(%{audio_input?: true, input_type: "", monitoring: 1})
+    # Both spellings, and `"No Input"` is the one that actually happens:
+    # measured 2026-08-30 against Live 12.4.5, "no input" is a routing type like
+    # any other and appears on `available_input_routing_types` by that name. The
+    # empty string is kept only for a reply that lost its payload. Rendering
+    # `in="No Input"` here would report a track listening to nothing as a
+    # routed one, which is the read `record_clip`'s own guard is paired with.
+    test "an audio track with nothing routed says so, by either spelling" do
+      for absent <- ["", "No Input"] do
+        track = mirrored_track(%{audio_input?: true, input_type: absent, monitoring: 1})
 
-      assert {text, false} = Handlers.format_track_summary([track])
-      assert text =~ "no input routed"
+        assert {text, false} = Handlers.format_track_summary([track])
+        assert text =~ "no input routed"
+        refute text =~ ~s{in="}
+      end
     end
 
     # Polled, not pushed: these four can be `nil` on an ordinary refresh, and a
@@ -5507,6 +5516,46 @@ defmodule Seshat.Tools.HandlersTest do
       assert message =~ "set_mixer"
       assert message =~ "'Ext. In'"
       assert message =~ "'Resampling'"
+    end
+
+    # The spelling that actually reaches the wire. Measured 2026-08-30 against
+    # Live 12.4.5: "no input" is a routing type named `"No Input"`, listed on
+    # `available_input_routing_types` beside `Ext. In` — the fork returns
+    # `input_routing_type.display_name` and a track always has a routing object,
+    # so the empty string above is the theoretical case and this is the real
+    # one. Matching only `""` left this guard unreachable: the take was stopped
+    # by the later `can_be_armed` read instead, under a message about group
+    # tracks.
+    test "Live's own \"No Input\" refuses the same way an empty name does", %{sink: sink} do
+      call = Task.async(fn -> Handlers.call("record_clip", %{"track" => 2, "clip_slot" => 0}) end)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip_slot/get/has_clip", [2, 0, 0]},
+          {"/live/track/get/has_audio_input", [2, 1]},
+          {"/live/track/get/input_routing_type", [2, "No Input"]},
+          {"/live/track/get/input_routing_channel", [2, ""]},
+          {"/live/track/get/current_monitoring_state", [2, 1]},
+          {"/live/track/get/available_input_routing_types",
+           [2, "Ext. In", "Resampling", "No Input"]}
+        ])
+
+      assert {:error, message} = Task.await(call)
+
+      refute Enum.any?(trace, fn {address, _args} -> address == "/live/clip_slot/fire" end),
+             "a take that records silence is worse than a refusal"
+
+      refute Enum.any?(trace, fn {address, _args} -> address == "/live/track/get/can_be_armed" end),
+             "the input guard must refuse first — reaching the arm read means the take was " <>
+               "stopped for the wrong reason, under the wrong message"
+
+      assert message =~ "nothing routed into its input"
+      assert message =~ "set_mixer"
+      assert message =~ "'Ext. In'"
+
+      refute message =~ "Listening to",
+             "a track routed to \"No Input\" is listening to nothing, not to a source called " <>
+               "\"No Input\""
     end
   end
 
