@@ -66,6 +66,9 @@ restart. Lift dropped from 4 to 3 because the fork answered both of this
 entry's open questions by measuring them against Live, and did the guard and
 read-back work on its own side.
 
+Plan: [PLAN_convert_audio_to_midi_over_osc.md](PLAN_convert_audio_to_midi_over_osc.md)
+(2026-08-30).
+
 **Goal:** re-implement `convert_audio_to_midi` on an ordinary OSC address and
 delete the `convert` command from the AX helper, leaving `get_audio_outputs` /
 `set_audio_output` as the only Accessibility-backed tools.
@@ -466,7 +469,25 @@ promise meets an audio render.
 
 ## #5 · Live-native generation spike — can AX drive the Create menu?
 
-**Impact 4 · Lift 3 · 1.33 impact-per-effort**
+**Impact 3 · Lift 2 · 1.50 impact-per-effort**
+
+**Narrowed again 2026-08-30 (third time), and its central premise was wrong.**
+This item said of its five commands: *"Every one is UI-only (absent from
+`_MxDCore/LomTypes.pyc` at any spelling)."* That is tier-3 evidence, which
+[CLAUDE.md](../CLAUDE.md) says is safe as a positive and unsafe as a negative,
+and it produced a **false negative on two of the five**: Convert
+Harmony/Melody/Drums *and* Slice to New MIDI Track are `Live.Conversions`
+module-level free functions, and both now have OSC addresses (`API.md` §
+"Conversions"). They were never UI-only. Neither belongs to this spike, and
+neither is evidence for what the remaining commands can do.
+
+**What is left is two commands: Stem Separation and Extract Groove.** Both are
+absent from the regenerated tier-1 inventory — 134 classes and 7 modules
+walked, with module-level members now recorded and previously-dropped classes
+reported rather than silently filtered — so unlike the Convert case, their
+absence is a real negative rather than a blind spot. Scores drop with the
+scope: two commands, no transcription lane to decide, and the impact is
+whatever Stem Separation is worth to the audio items alone.
 
 **Un-pinned 2026-08-30.** It was ranked above its quotient on 2026-08-28 as
 the gate for the MIDI decision experiment, because it decided which of
@@ -511,33 +532,46 @@ and clip-context-menu commands through the named-AX rung, recorded in
 **Why:** the 2026-08-27 native pass found Live already ships the pieces the
 generation research had been surveying dependencies for — **Stem
 Separation** (12.3, Suite), **Convert Drums / Melody / Harmony to New MIDI
-Track**, **Slice to New MIDI Track**, **Extract Groove**, and **Bounce**.
-Every one is UI-only (absent from `_MxDCore/LomTypes.pyc` at any spelling)
-and reachable, if at all, only through the Accessibility helper. That rung
-has been validated exactly once (the Settings window, 2026-08-03) and never
-against a menu command. Live's separator is the zero-dependency,
-zero-licence path to per-instrument audio, and Convert Drums is the
-zero-licence floor for drum transcription should a specific case for
-audio→MIDI arise. Whether any of that is real is a one-afternoon question
+Track**, **Slice to New MIDI Track**, **Extract Groove**, and **Bounce**. It
+then called all five UI-only on a `LomTypes.pyc` grep, and two of them were
+not; see the correction above. For **Stem Separation** and **Extract Groove**
+the finding stands, on better evidence than it originally had: they are absent
+from the tier-1 LOM walk as well, so the Accessibility helper really is the
+only rung left. That rung has now been validated twice — the Settings window
+(2026-08-03) and the Convert Melody press that shipped "Sing it back as MIDI"
+(2026-08-30) — so the open question is no longer *can AX press a menu command
+at all*, which is answered, but whether these two particular commands behave
+under it: both spawn a job rather than returning, and Stem Separation may
+raise a mode dialog. Live's separator is the zero-dependency, zero-licence
+path to per-instrument audio. Whether that is real is a one-afternoon question
 that has not been asked.
 
 **Context for the plan author:**
 - Read [ui-scripting-options.md](evaluating/ui-scripting-options.md) for
   the mechanism ladder and safety model, and its 2026-08-27 production-
   helper measurement. `native/seshat_ax/main.m` is deliberately a closed
-  four-command protocol with no generic press command; the spike may use a
-  scratch build or `ax-probe`, but the result should say what a *bounded*
-  new command would look like, not add a generic one.
-- Procedure the doc already names: enumerate Live's Create menu and a
-  clip's context menu; import one SA3 render from `~/.seshat/audio-spike/`
-  by hand; run Stem Separation and Convert Drums once each; record menu
-  reachability, any mode dialog (`press_current_dialog_button` exists in the
-  LOM), duration, and what `Session.State` sees — the track-count push is
-  the natural completion signal.
-- Also worth one check each while there: Convert Drums' lane count and
-  whether its velocities vary on SA3 material; whether a `.agr` groove loads
-  into the pool through `Browser.load_item`; Stem Separation's behaviour on
-  a short loop.
+  protocol with no generic press command — five commands today, back to four
+  once "`convert_audio_to_midi` drops the Accessibility helper" lands. The
+  spike may use a scratch build or `ax-probe`, but the result should say what
+  a *bounded* new command would look like, not add a generic one.
+- Procedure the doc already names, minus the commands that left: enumerate
+  Live's Create menu and a clip's context menu; import one SA3 render from
+  `~/.seshat/audio-spike/` by hand; run **Stem Separation and Extract Groove**
+  once each; record menu reachability, any mode dialog, duration, and what
+  `Session.State` sees — the track-count push is the natural completion
+  signal. Note the dialog question has a fork-side answer already: the fork
+  **declined** `Application.press_current_dialog_button` on the grounds that a
+  dialog may be guarding unsaved work and pressing it blind is unrecoverable
+  (`FORK_GAPS.md`), so a command that raises a modal is AX-or-nothing by
+  policy, not by Live's limits. If Stem Separation raises one, say so — that
+  is the finding.
+- Also worth one check each while there: whether a `.agr` groove loads into
+  the pool through `Browser.load_item`; Stem Separation's behaviour on a short
+  loop. **Dropped from this list:** Convert Drums' lane count and whether its
+  velocities vary on SA3 material. That is still a real question, but it is
+  now answerable over OSC through `/live/clip/audio_to_midi` with no AX and no
+  spike, so it belongs to whatever item revisits drum transcription — not
+  here.
 - Output is a result section in `live-native-options.md` plus, for each
   command, a verdict of route / not-a-route / needs-its-own-item. If the
   menu is unreachable, say so; that is a valid outcome, and nothing on the
