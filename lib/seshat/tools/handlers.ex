@@ -212,7 +212,13 @@ defmodule Seshat.Tools.Handlers do
   # Fixed order rather than map-iteration order, so a multi-property call's
   # write list is deterministic and testable — the `@clip_scalar_properties`
   # precedent.
-  @mixer_properties ~w(volume pan mute solo arm name)
+  #
+  # `input_type` before `input_channel` is not alphabetical accident: Live
+  # rebuilds a track's channel list per type, so a channel accepted under the
+  # old type is silently dropped under the new one. Setting the type first and
+  # re-reading the available channels between them is what makes a single call
+  # changing both actually land.
+  @mixer_properties ~w(volume pan mute solo arm name input_type input_channel monitoring)
 
   # What each strip actually has. Returns have no `arm` (return_track.py
   # registers none); the master has no mute, solo, arm or name setter at all
@@ -222,12 +228,28 @@ defmodule Seshat.Tools.Handlers do
   # nothing is sent. Once preflight passes, supported properties are written
   # sequentially over UDP; a later transport failure can therefore leave the
   # earlier writes applied, which `mixer_partial_error/5` reports honestly.
+  # Input routing and monitoring are regular-track-only for the same kind of
+  # reason the master has no mute: returns and the master have no input section
+  # in Live's UI at all, and the fork deliberately registers no input address
+  # for either — a datagram sent there would reach an address that does not
+  # exist and vanish, indistinguishable from success.
   @mixer_supported %{
-    "track" => ~w(volume pan mute solo arm name),
+    "track" => ~w(volume pan mute solo arm name input_type input_channel monitoring),
     "return" => ~w(volume pan mute solo name),
     "master" => ~w(volume pan),
     "cue" => ~w(volume)
   }
+
+  # `Live.Track.Track.monitoring_states` order — In, Auto, Off — read out of
+  # Live's own shipped Push 2 script (`routing.pyc`'s
+  # `_connect_monitoring_state_encoder` binds `.IN`/`.AUTO`/`.OFF` in that
+  # order) and corroborated by one wire reading, where a fresh track answered
+  # `1` and Live shows Auto. The tool takes the *name*: the integers are the
+  # reverse of what a reader assumes, the setter never replies, and every value
+  # is legal — so a wrong integer is an undetectable no-op that would have the
+  # model reporting "monitoring off" on a track passing audio through.
+  @monitoring_states %{"in" => 0, "auto" => 1, "off" => 2}
+  @monitoring_names %{0 => "in", 1 => "auto", 2 => "off"}
 
   # The two targets whose index means something. The schema cannot express
   # "required when target is one of these", so the handler reports the omission
@@ -287,6 +309,17 @@ defmodule Seshat.Tools.Handlers do
   # Live defers inserting the captured clip past the LOM call's return. Short
   # enough to be invisible next to the round trips either side of it.
   @capture_retry_delay 250
+
+  # Live reports a completed Convert as a structural change rather than as a
+  # reply, so `convert_audio_to_midi` polls the track count for it. Each poll is
+  # itself an AbletonOSC tick (~100ms), so this is roughly 2.5s of patience on
+  # top of the round trips — generous next to the measured convert, and bounded
+  # so a Convert that produced nothing is reported rather than waited on.
+  @convert_settle_attempts 10
+  @convert_settle_delay 150
+
+  @convert_empty_hint " Convert needs an audio clip to work from — record one with record_clip, " <>
+                        "or make one with generate_audio."
 
   # A delete steers to whatever now occupies the index it emptied, which needs
   # the post-delete count. Best-effort by design: this read exists only to aim
@@ -1641,8 +1674,53 @@ defmodule Seshat.Tools.Handlers do
 
     unknown? = is_nil(t.name) or is_nil(t.pan) or is_nil(t.volume) or flags_unknown?
 
-    {"#{label}: #{pan}, #{volume}#{mute}#{solo}#{flags}", unknown?}
+    {"#{label}: #{pan}, #{volume}#{mute}#{solo}#{flags}#{track_input_summary(t)}", unknown?}
   end
+
+  # Audio tracks only, so a MIDI-only set's reply doesn't grow by a clause that
+  # says nothing. Deliberately outside `unknown?`: these four are polled rather
+  # than pushed (`Session.State.read_tracks/2`), so a `nil` here is an ordinary
+  # "not applicable or not read this time" and must not drag the whole reply's
+  # trailing unknown-explanation in behind it.
+  #
+  # `Map.get/2` rather than dot access: the block is optional, and a caller
+  # holding a track map from before this existed reads as a track with no input
+  # rather than raising.
+  #
+  # Names are quoted and never interpreted. They come from the user's audio
+  # interface and their set — `set_mixer` matches them verbatim, so a
+  # normalisation here would produce a name the model cannot then set.
+  defp track_input_summary(track) do
+    if Map.get(track, :audio_input?) == true do
+      parts =
+        [
+          input_phrase(Map.get(track, :input_type), Map.get(track, :input_channel)),
+          monitoring_phrase(Map.get(track, :monitoring))
+        ]
+        |> Enum.reject(&is_nil/1)
+
+      if parts == [], do: "", else: " [#{Enum.join(parts, ", ")}]"
+    else
+      ""
+    end
+  end
+
+  defp input_phrase(nil, _channel), do: nil
+  defp input_phrase("", _channel), do: "no input routed"
+
+  defp input_phrase(type, channel) when is_binary(channel) and channel != "",
+    do: ~s{in="#{type}"/"#{channel}"}
+
+  defp input_phrase(type, _channel), do: ~s{in="#{type}"}
+
+  defp monitoring_phrase(state) when is_integer(state) do
+    case Map.get(@monitoring_names, state) do
+      nil -> nil
+      name -> "monitoring #{name}"
+    end
+  end
+
+  defp monitoring_phrase(_state), do: nil
 
   @doc """
   Formats the return tracks and the master mixer state for `get_session_state`.
@@ -2101,10 +2179,11 @@ defmodule Seshat.Tools.Handlers do
     with :ok <- ensure_bars(bars),
          {:ok, beats} <- record_length(bars),
          :ok <- ensure_slot_empty(track, slot),
+         {:ok, input_note} <- check_audio_input(track),
          {:ok, just_armed?} <- ensure_armed(track),
          {:ok, input_doubt} <- check_will_record(track, slot),
          :ok <- fire_for_record(track, slot, beats) do
-      report_record_started(track, slot, bars, beats, just_armed?, input_doubt)
+      report_record_started(track, slot, bars, beats, just_armed?, input_doubt, input_note)
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
@@ -3290,6 +3369,65 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # --- Audio to MIDI (OSC selection, Accessibility press) ---
+  #
+  # The one clause here that uses *both* doors, and the only Accessibility-backed
+  # tool that changes the Live Set — which is why it stays undo-stepped where the
+  # two audio-output tools opt out.
+  #
+  # The mechanism is select over OSC, press over AX, observe over OSC. Nothing
+  # reads a result off the screen: the helper reports only whether Live's own
+  # menu validation enabled the command and whether a window appeared, and every
+  # fact in the reply comes back through the Live Object Model afterwards.
+  #
+  # Order is the whole design. Two things can go wrong here that nothing later
+  # could distinguish:
+  #
+  #   * The press acts on **whatever Live has selected**, so a selection that
+  #     silently failed to land converts the wrong clip. Both selection reads
+  #     are checked, and they disagree exactly when the ring moved but the slot
+  #     did not.
+  #   * UI *focus*, not selection, is what Live's menu validation reads —
+  #     measured 2026-08-30 over OSC with nobody touching Live: `focus_view
+  #     Arranger` → disabled, `Session` → enabled, `Browser` → disabled,
+  #     `Session` → enabled. So focus is established and read back before the
+  #     press, and anything but `Session` is refused here naming focus, rather
+  #     than surfacing three steps later as a `command_unavailable` that blames
+  #     the clip.
+  #
+  # And the clip-type guards come before all of it: reaching the helper's own
+  # refusal for a MIDI clip means Seshat activated Live, stole focus and pulled a
+  # menu open to learn something one OSC read already knew.
+  defp do_call("convert_audio_to_midi", %{
+         "track" => track,
+         "clip_slot" => slot,
+         "mode" => mode
+       }) do
+    with {:ok, command} <- convert_command(mode),
+         :ok <- ensure_clip(track, slot, @convert_empty_hint),
+         :ok <- ensure_convertible_clip(track, slot),
+         :ok <- focus_session_grid(),
+         :ok <- select_clip_for_convert(track, slot),
+         {:ok, before_count} <- convert_track_count(:before),
+         :ok <- press_convert(command, track, slot),
+         {:ok, new_track} <- await_converted_track(track, before_count) do
+      {:ok, convert_reply(track, slot, mode, new_track)}
+    else
+      {:error, reason} when is_binary(reason) -> {:error, reason}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
+    end
+  catch
+    # Only the guards ahead of the press can land here — `convert_track_count/1`
+    # and `await_converted_track/2` catch their own exits, precisely so a
+    # timeout *after* the press never inherits this "nothing was converted"
+    # wording.
+    :exit, _ ->
+      {:error,
+       "Timed out checking slot #{slot} on track #{track} before converting, so nothing was " <>
+         "converted. Check the indices with get_clip_slots, and that Ableton is running with " <>
+         "AbletonOSC enabled."}
+  end
+
   # --- Audio output (macOS Accessibility, not OSC) ---
   #
   # The only two clauses in this file that never touch `Transport`. Live's
@@ -3366,6 +3504,294 @@ defmodule Seshat.Tools.Handlers do
       {:error, failure} ->
         {:error, audio_error(failure)}
     end
+  end
+
+  # --- Audio to MIDI helpers ---
+
+  # The tool's `mode` enum to the exact menu title the helper compiles in. Not
+  # interpolated: the helper matches these three strings literally and refuses
+  # anything else, so building one here out of `mode` would move a closed
+  # allowlist into string arithmetic.
+  defp convert_command("melody"), do: {:ok, "Convert Melody to New MIDI Track"}
+  defp convert_command("harmony"), do: {:ok, "Convert Harmony to New MIDI Track"}
+  defp convert_command("drums"), do: {:ok, "Convert Drums to New MIDI Track"}
+
+  defp convert_command(mode) do
+    {:error,
+     "mode must be 'melody', 'harmony' or 'drums' (got #{inspect(mode)}). Nothing was converted."}
+  end
+
+  defp ensure_convertible_clip(track, slot) do
+    case clip_is_midi(track, slot) do
+      {:ok, false} ->
+        :ok
+
+      {:ok, true} ->
+        {:error,
+         "Slot #{slot} on track #{track} holds a MIDI clip, and Convert turns *audio* into " <>
+           "MIDI — nothing was converted and Ableton Live was never brought to the front. " <>
+           "The notes are already there: read them with get_clip_notes, or change them with " <>
+           "edit_notes and quantize_clip."}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  # Both sends, then the read-back. `show_view` makes the Session grid visible
+  # and `focus_view` gives it keyboard focus; only the second enables the menu
+  # command, and neither replies, so the read is the only evidence either landed.
+  #
+  # ⚠️ Partial verification, per priv/AbletonOSC/API.md: this getter answers only
+  # `Session` or `Arranger`, so it catches an Arranger focus and *not* a Browser
+  # one. A `Session` reading is necessary, not sufficient — the helper's own
+  # `command_unavailable` refusal is still the backstop.
+  defp focus_session_grid do
+    with :ok <- Transport.send_message("/live/view/show_view", ["Session"]),
+         :ok <- Transport.send_message("/live/view/focus_view", ["Session"]) do
+      confirm_session_focus()
+    end
+  end
+
+  defp confirm_session_focus do
+    case Transport.query("/live/view/get/focused_document_view", [], @guard_timeout) do
+      {:ok, {_addr, ["ok", "Session"]}} ->
+        :ok
+
+      {:ok, {_addr, ["ok", view]}} ->
+        {:error,
+         "Ableton Live's #{view} view has focus, not the Session grid, and Live's menu " <>
+           "validation reads focus rather than selection — so nothing was converted. Ask the " <>
+           "user to click once in the Session grid, then try again."}
+
+      {:ok, {_addr, ["error", message]}} ->
+        {:error, remote_error(message)}
+
+      {:ok, {_addr, _other}} ->
+        {:error, unreadable_reply_error("which of Live's views has focus")}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error, guard_timeout_error("which of Live's views has focus", @view_extension_hint)}
+  end
+
+  # The one genuinely dangerous failure on this path: the press acts on whatever
+  # Live has selected, so a selection that did not land converts a different
+  # clip and reports it as this one. Two independent reads, and they disagree
+  # exactly when the ring moved but the highlighted slot did not.
+  #
+  # `set/highlighted_clip_slot` is available as a second *write* path if the ring
+  # ever proves insufficient. It is not needed on the measured path, so it is not
+  # sent speculatively.
+  defp select_clip_for_convert(track, slot) do
+    with :ok <- Transport.send_message("/live/view/set/selected_clip", [track, slot]),
+         {:ok, selected} <- read_clip_coordinate("/live/view/get/selected_clip", "selected clip"),
+         {:ok, highlighted} <-
+           read_clip_coordinate("/live/view/get/highlighted_clip_slot", "highlighted clip slot") do
+      cond do
+        selected != {track, slot} ->
+          {:error, selection_error("selected clip", selected, track, slot)}
+
+        highlighted != {track, slot} ->
+          {:error, selection_error("highlighted clip slot", highlighted, track, slot)}
+
+        true ->
+          :ok
+      end
+    end
+  end
+
+  # Neither view getter echoes anything, so there is no prefix to correlate on —
+  # `query_correlated/4` would have nothing to check. The cross-check of the two
+  # independent reads above is the defence against a straggler here, which is
+  # why both are read rather than either alone.
+  defp read_clip_coordinate(address, subject) do
+    case Transport.query(address, [], @guard_timeout) do
+      {:ok, {_addr, [track, slot]}} when is_integer(track) and is_integer(slot) ->
+        {:ok, {track, slot}}
+
+      {:ok, {_addr, _other}} ->
+        {:error, unreadable_reply_error("Ableton Live's #{subject}")}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error, guard_timeout_error("Ableton Live's #{subject}", @view_extension_hint)}
+  end
+
+  defp selection_error(what, {observed_track, observed_slot}, track, slot) do
+    "Asked Ableton Live to select slot #{slot} on track #{track}, but its #{what} reads " <>
+      "track #{observed_track}, slot #{observed_slot} — so nothing was converted rather than " <>
+      "converting the wrong clip. Check the indices with get_clip_slots and try again."
+  end
+
+  # The `create_track` guard's shape, for the same reason: the count is the only
+  # observable truth about whether Live made a track, and only a rise of exactly
+  # one supports a claim about *which* index is ours.
+  defp convert_track_count(stage) do
+    case Transport.query("/live/song/get/num_tracks", [], @guard_timeout) do
+      {:ok, {_addr, [count]}} when is_integer(count) ->
+        {:ok, count}
+
+      {:ok, {_addr, args}} ->
+        {:error, "Unexpected reply from /live/song/get/num_tracks: #{inspect(args)}"}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
+    end
+  catch
+    :exit, _ -> {:error, convert_count_timeout(stage)}
+  end
+
+  defp convert_count_timeout(:before) do
+    "Timed out reading the track count, so nothing was converted. Check that Ableton Live is " <>
+      "running with AbletonOSC enabled."
+  end
+
+  defp convert_count_timeout(:after) do
+    "Live's Convert was fired, but reading the track count back timed out — a converted track " <>
+      "may well exist. Check get_session_state before converting again."
+  end
+
+  defp press_convert(command, track, slot) do
+    case ax_client().convert(command) do
+      {:ok, %{windows_before: before, windows_after: after_}} when after_ > before ->
+        {:error,
+         "Ableton Live opened a window after \"#{command}\" instead of converting — Seshat " <>
+           "does not drive dialogs, so this is reported rather than answered. Look at Live, " <>
+           "deal with what it is asking, and try again."}
+
+      {:ok, _observed} ->
+        :ok
+
+      {:error, %{code: :command_unavailable}} ->
+        {:error,
+         "Ableton Live would not convert that clip: its Create menu had \"#{command}\" " <>
+           "disabled with slot #{slot} on track #{track} selected and the Session grid " <>
+           "focused, both of which were verified first. Live itself declined — the clip may " <>
+           "be too short or silent, or this Live edition may not offer Convert."}
+
+      {:error, failure} ->
+        {:error, audio_error(failure)}
+    end
+  end
+
+  # Live reports the convert as a structural change, not as a reply, so the
+  # count is polled rather than waited on. Bounded, and honest when it does not
+  # move: no index is named unless the count rose by exactly one, exactly as
+  # `Registry.ensure_return_created/2` insists.
+  defp await_converted_track(source_track, before_count, attempt \\ 0) do
+    case convert_track_count(:after) do
+      {:ok, count} when count == before_count + 1 ->
+        {:ok, source_track + 1}
+
+      {:ok, count} when count > before_count + 1 ->
+        {:error,
+         "The track count went from #{before_count} to #{count} — more than one track " <>
+           "appeared, so Seshat can't tell which one Live's Convert made. Check " <>
+           "get_session_state."}
+
+      {:ok, _count} when attempt < @convert_settle_attempts ->
+        Process.sleep(@convert_settle_delay)
+        await_converted_track(source_track, before_count, attempt + 1)
+
+      {:ok, count} ->
+        {:error,
+         "Live's Convert was fired but the track count is still #{count}, so no track " <>
+           "appeared and nothing is named. The Create menu item was enabled, so Live accepted " <>
+           "the command and then produced nothing — check Ableton, and get_session_state " <>
+           "before trying again."}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  # Everything in the reply is read back from the track that now exists. The new
+  # track lands *directly after* the source, not at the end (measured
+  # 2026-08-30: it arrived at index 3 and the pre-existing MIDI track renumbered
+  # behind it), so the index is derived from the source rather than from the
+  # count.
+  defp convert_reply(source_track, slot, mode, new_track) do
+    FollowCam.steer("convert_audio_to_midi", %{track: new_track})
+
+    {name, devices, has_clip?} = read_converted_track(new_track, slot)
+
+    Enum.join(
+      [
+        convert_headline(source_track, slot, mode, new_track, name),
+        convert_notes_line(new_track, slot, has_clip?),
+        convert_instrument_line(devices),
+        "Convert follows pitch rather than transcribing, so tidy it with quantize_clip and " <>
+          "edit_notes rather than expecting a clean part. The source audio clip is untouched."
+      ]
+      |> Enum.reject(&is_nil/1),
+      " "
+    )
+  end
+
+  # Best-effort, one tick: the convert has already happened, so an unreadable
+  # reply here costs a detail in the reply rather than the reply itself. Each
+  # unknown says so on its own line rather than being filled in.
+  defp read_converted_track(new_track, slot) do
+    entries = [
+      {"/live/track/get/name", [new_track]},
+      {"/live/track/get/devices/name", [new_track]},
+      {"/live/clip_slot/get/has_clip", [new_track, slot]}
+    ]
+
+    case Transport.query_batch(entries, @guard_timeout) do
+      {:ok, [name_reply, devices_reply, clip_reply]} ->
+        {batch_value(name_reply), batch_list(devices_reply), truthy?(batch_value(clip_reply))}
+
+      _unreadable ->
+        {nil, [], false}
+    end
+  catch
+    :exit, _ -> {nil, [], false}
+  end
+
+  defp convert_headline(source_track, slot, mode, new_track, nil) do
+    "Converted the #{mode} in slot #{slot} on track #{source_track} to a new MIDI track " <>
+      "(track #{new_track}); Ableton did not answer when its name was read back."
+  end
+
+  defp convert_headline(source_track, slot, mode, new_track, name) do
+    "Converted the #{mode} in slot #{slot} on track #{source_track} to a new MIDI track " <>
+      ~s{#{new_track} "#{name}".}
+  end
+
+  defp convert_notes_line(_track, slot, false) do
+    "Live made the track, but slot #{slot} on it reads as empty — look for the converted clip " <>
+      "in Live with get_clip_slots before assuming this worked."
+  end
+
+  defp convert_notes_line(track, slot, true) do
+    case query_correlated("/live/clip/get/notes", [track, slot],
+           echo: [track, slot],
+           timeout: @guard_timeout
+         ) do
+      {:ok, fields} when is_list(fields) ->
+        "It holds #{div(length(fields), 5)} note(s)."
+
+      _unreadable ->
+        "Its notes could not be read back — check them with get_clip_notes."
+    end
+  catch
+    :exit, _ -> "Its notes could not be read back — check them with get_clip_notes."
+  end
+
+  defp convert_instrument_line([]),
+    do: "Live loaded no instrument onto it that could be read back — load_device puts one on it."
+
+  defp convert_instrument_line([instrument | _rest]) do
+    ~s{Live put "#{instrument}" on it — replace that with load_device once you know what the } <>
+      "user wants it to sound like."
   end
 
   # Two halves, never merged: what was asked for, then what Live said afterwards.
@@ -3972,6 +4398,115 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
+  # The pre-record input check, and the one guard here that can save a take
+  # rather than a round trip: an audio track with nothing routed records
+  # silence, and the performance that produced it is gone by the time anyone
+  # plays it back. So an audio track with no input is refused *before* the fire,
+  # and one with an input has it named verbatim in the reply — Live's own
+  # spelling, never paraphrased, because the string belongs to the user's
+  # interface and their set rather than to us.
+  #
+  # **The type read is gated, not batched in.** A MIDI take — every
+  # `capture_midi`-adjacent recording, which is most of them — costs one extra
+  # query and stops there; only a track Live has confirmed is audio pays for the
+  # four-entry batch below. Batching all five unconditionally would put four
+  # extra datagrams on the wire for every MIDI take, and would make one lost
+  # reply among them fail the whole batch, turning a dropped datagram into a
+  # refused recording.
+  #
+  # A track whose type could not be read takes neither path either: the guards
+  # ahead of this one already proved the track and slot exist, so a failure here
+  # is a lost datagram rather than a bad index, and this guard only fires on a
+  # track *known* to be audio.
+  #
+  # ⚠️ What Live calls "no input" is unmeasured (docs/PLAN_sing_it_back_as_midi.md,
+  # open question 2). An empty type string is treated as no input; anything
+  # non-empty is reported verbatim and not refused, so getting this wrong makes
+  # the warning weaker, never wrong.
+  defp check_audio_input(track) do
+    case query_flag(
+           "/live/track/get/has_audio_input",
+           [track],
+           "whether track #{track} records audio"
+         ) do
+      {:ok, true} -> audio_input_note(track)
+      {:ok, false} -> {:ok, nil}
+      {:error, _unreadable} -> {:ok, nil}
+    end
+  end
+
+  # Four reads, one `query_batch/2`, one AbletonOSC tick — the whole check costs
+  # what a single serialized query would. The available list rides along so the
+  # refusal is one call from being actionable instead of one guess plus one
+  # call.
+  defp audio_input_note(track) do
+    entries = [
+      {"/live/track/get/input_routing_type", [track]},
+      {"/live/track/get/input_routing_channel", [track]},
+      {"/live/track/get/current_monitoring_state", [track]},
+      {"/live/track/get/available_input_routing_types", [track]}
+    ]
+
+    case Transport.query_batch(entries, @guard_timeout) do
+      {:ok, [type, channel, monitoring, available]} ->
+        input_note(track, batch_value(type), batch_value(channel), batch_value(monitoring),
+          available: batch_list(available)
+        )
+
+      # The track is known to be audio and its input is not known at all, which
+      # is the one combination worth saying out loud: refusing would block a
+      # correct setup over a dropped datagram, and silence would let a silent
+      # take pass as a normal one.
+      _unreadable ->
+        {:ok,
+         "Ableton did not answer when this track's input was read, so whether anything is " <>
+           "routed into it is unknown — if the take comes back silent, check it with " <>
+           "get_session_state."}
+    end
+  end
+
+  # One value out of a batch entry, or `nil` for anything unreadable. Deliberately
+  # forgiving: every caller of this treats "unknown" as "say nothing", so a
+  # rejected or malformed entry must not become an exception here.
+  defp batch_value({:ok, [value]}), do: value
+  defp batch_value(_other), do: nil
+
+  defp batch_list({:ok, values}) when is_list(values), do: Enum.filter(values, &is_binary/1)
+  defp batch_list(_other), do: []
+
+  defp input_note(track, "", _channel, _monitoring, opts),
+    do: {:error, no_input_error(track, Keyword.fetch!(opts, :available))}
+
+  defp input_note(_track, type, channel, monitoring, _opts) when is_binary(type) do
+    {:ok,
+     [listening_line(type, channel), monitoring_note(monitoring)]
+     |> Enum.reject(&is_nil/1)
+     |> Enum.join(" ")}
+  end
+
+  defp input_note(_track, _type, _channel, _monitoring, _opts), do: {:ok, nil}
+
+  defp listening_line(type, channel) when is_binary(channel) and channel != "",
+    do: ~s{Listening to "#{type}" on "#{channel}".}
+
+  defp listening_line(type, _channel), do: ~s{Listening to "#{type}".}
+
+  # Off is legal and normal — a player monitoring through their own interface
+  # wants exactly this — so it warns and records rather than refusing.
+  defp monitoring_note(2) do
+    "Monitoring is off, so the input won't be heard through Live while it records; that is " <>
+      "normal when the player monitors through their interface, and set_mixer monitoring: " <>
+      "'in' changes it."
+  end
+
+  defp monitoring_note(_state), do: nil
+
+  defp no_input_error(track, available) do
+    "Track #{track} is an audio track with nothing routed into its input, so nothing was " <>
+      "recorded — the take would have been silence. Set one with set_mixer (input_type, plus " <>
+      "input_channel if the input has channels) and record again. " <> routing_options(available)
+  end
+
   # Advisory, not a precondition — and it used to be the latter, which made
   # `record_clip` refuse every call it was ever asked to make.
   #
@@ -4032,11 +4567,13 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp report_record_started(track, slot, bars, beats, just_armed?, input_doubt) do
+  defp report_record_started(track, slot, bars, beats, just_armed?, input_doubt, input_note) do
     case record_echo(track, slot) do
       {:ok, status} ->
         FollowCam.steer("record_clip", %{track: track, slot: slot})
-        {:ok, record_reply(track, slot, bars, beats, just_armed?, status, input_doubt)}
+
+        {:ok,
+         record_reply(track, slot, bars, beats, just_armed?, status, input_doubt, input_note)}
 
       {:error, message} ->
         # `record_echo/2` shares its guard helpers with the pre-fire checks, so
@@ -4122,9 +4659,10 @@ defmodule Seshat.Tools.Handlers do
     end
   end
 
-  defp record_reply(track, slot, bars, beats, just_armed?, status, input_doubt) do
+  defp record_reply(track, slot, bars, beats, just_armed?, status, input_doubt, input_note) do
     [
       record_headline(track, slot, bars, beats),
+      input_note,
       record_status_line(status),
       if(just_armed?, do: "Armed the track first."),
       input_doubt
@@ -4582,6 +5120,61 @@ defmodule Seshat.Tools.Handlers do
     send_mixer("/live/track/set/name", [index, value], "renamed to '#{value}'")
   end
 
+  # The three that are deliberately *not* fire-and-forget.
+  #
+  # Volume, pan, mute, solo, arm and name can each be sent and forgotten because
+  # every one has a listener pushing Live's accepted value back into
+  # `Session.State` within a beat. The two routing properties have neither a
+  # listener nor an error: `track_set_input_routing_type` loops the track's
+  # available list and falls through to `logger.warning` when nothing matches —
+  # no reply, no `/live/error`, nothing on the wire at all (measured 2026-08-30,
+  # priv/AbletonOSC/API.md). So a name Live doesn't have is *silently* dropped,
+  # and a tool that merely sent would report every wrong input as applied.
+  #
+  # Hence: validate against the list Live itself offers before sending, and
+  # report the value Live holds after. The refusal is also the discovery path,
+  # on purpose — input names come from the user's audio interface and their set,
+  # so they cannot be documented in a tool description or guessed, and this
+  # error is where the model learns the real ones.
+  defp mixer_write("track", index, "input_type", value) do
+    route_write(
+      index,
+      value,
+      "/live/track/get/available_input_routing_types",
+      "/live/track/set/input_routing_type",
+      "/live/track/get/input_routing_type",
+      "input type"
+    )
+  end
+
+  # Read fresh at *this* property's turn, which is what makes a call setting
+  # both work: `@mixer_properties` orders type before channel, so by the time
+  # this runs the type is already set and Live has rebuilt the channel list
+  # under it. AbletonOSC handles datagrams in arrival order, so this read sees
+  # the post-set track.
+  defp mixer_write("track", index, "input_channel", value) do
+    route_write(
+      index,
+      value,
+      "/live/track/get/available_input_routing_channels",
+      "/live/track/set/input_routing_channel",
+      "/live/track/get/input_routing_channel",
+      "input channel"
+    )
+  end
+
+  defp mixer_write("track", index, "monitoring", value) do
+    with {:ok, state} <- monitoring_state(value),
+         :ok <- ensure_can_monitor(index),
+         :ok <-
+           Transport.send_message("/live/track/set/current_monitoring_state", [index, state]) do
+      confirm_monitoring(index, value, state)
+    else
+      {:error, message} when is_binary(message) -> {:error, message}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
+    end
+  end
+
   # Returns: guard-read then set, as before. The guard proves the index exists
   # and tells a bad index (an error reply) from an uninstalled extension
   # (silence) apart, and it is where the "was" value comes from.
@@ -4710,6 +5303,151 @@ defmodule Seshat.Tools.Handlers do
     case Transport.send_message(address, args) do
       :ok -> {:ok, line}
       {:error, reason} -> {:error, Transport.describe_error(reason)}
+    end
+  end
+
+  # --- Input routing and monitoring ---
+
+  defp route_write(index, value, list_address, set_address, read_address, label) do
+    with {:ok, available} <- routing_names(index, list_address, label),
+         :ok <- ensure_routing_name(value, available, label),
+         :ok <- Transport.send_message(set_address, [index, value]) do
+      confirm_routing(index, value, read_address, label)
+    else
+      {:error, message} when is_binary(message) -> {:error, message}
+      {:error, reason} -> {:error, Transport.describe_error(reason)}
+    end
+  end
+
+  # The tail behind the echoed track index is the whole flat list of display
+  # names — no count prefix (that shape belongs to the return/master *output*
+  # family, a different address family entirely). Non-strings are dropped rather
+  # than rendered: this list is quoted back to the model as the names it may
+  # use, so anything that isn't one has no business in it.
+  defp routing_names(index, address, label) do
+    case query_correlated(address, [index], timeout: @guard_timeout, decode: &{:ok, &1}) do
+      {:ok, names} ->
+        {:ok, Enum.filter(names, &is_binary/1)}
+
+      {:error, {:stale, _values}} ->
+        {:error, stale_reply_error("the #{label}s available on track #{index}")}
+
+      {:error, {:live_error, message}} ->
+        {:error, remote_error(message)}
+
+      {:error, reason} ->
+        {:error, Transport.describe_error(reason)}
+    end
+  catch
+    :exit, _ ->
+      {:error, guard_timeout_error("the #{label}s on track #{index}", @track_index_hint)}
+  end
+
+  defp ensure_routing_name(value, available, label) do
+    if value in available do
+      :ok
+    else
+      {:error,
+       "Ableton Live has no #{label} called '#{value}' on that track, and a name it doesn't " <>
+         "have is dropped without any error at all. #{routing_options(available)}"}
+    end
+  end
+
+  defp routing_options([]) do
+    "Live listed no choices for it — check the track index with get_session_state."
+  end
+
+  defp routing_options(available) do
+    "It offers: #{Enum.map_join(available, ", ", &"'#{&1}'")}. Use one of those verbatim."
+  end
+
+  # Report what Live holds, never what was asked for. A mismatch is a real
+  # failure (the set was refused after passing the list check — a race with a
+  # hand edit in Live, or a name that matched the list but not the object); an
+  # unanswered read leaves the outcome genuinely unknown, which is a sentence in
+  # the success line rather than a claim of failure, because the set did go out.
+  defp confirm_routing(index, value, read_address, label) do
+    case query_echoed(read_address, [index], "the #{label} of track #{index}", @track_index_hint) do
+      {:ok, ^value} ->
+        {:ok, "#{label} '#{value}'"}
+
+      {:ok, observed} when is_binary(observed) ->
+        {:error,
+         "the set was sent but Ableton Live reports the #{label} as '#{observed}', not " <>
+           "'#{value}', so it did not land."}
+
+      _unconfirmed ->
+        {:ok,
+         "#{label} set to '#{value}', though reading it back did not confirm it — check " <>
+           "get_session_state"}
+    end
+  end
+
+  defp monitoring_state(value) when is_binary(value) do
+    case Map.fetch(@monitoring_states, String.downcase(value)) do
+      {:ok, state} -> {:ok, state}
+      :error -> {:error, monitoring_name_error(value)}
+    end
+  end
+
+  defp monitoring_state(value), do: {:error, monitoring_name_error(value)}
+
+  defp monitoring_name_error(value) do
+    names =
+      @monitoring_states |> Map.keys() |> Enum.sort() |> Enum.map_join(", ", &"'#{&1}'")
+
+    "monitoring must be one of #{names} (got #{inspect(value)})."
+  end
+
+  # Live's own `can_monitor` is `can_be_armed and not is_frozen`, so this is the
+  # cheap half of it: a track that cannot be armed cannot monitor an input, and
+  # the setter would be a silent no-op on one.
+  defp ensure_can_monitor(index) do
+    case query_flag(
+           "/live/track/get/can_be_armed",
+           [index],
+           "whether track #{index} can be armed"
+         ) do
+      {:ok, true} ->
+        :ok
+
+      {:ok, false} ->
+        {:error,
+         "Ableton Live says it can't be armed, so it has no input to monitor — a group track " <>
+           "has none of its own."}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  # The read-back cannot catch a *backwards* enum — it would read back the same
+  # integer this wrote and name it the same way — so what it catches is a
+  # refused or lost set. The mapping itself is checked by eye against Live's
+  # track header (`smoke_tests/manual/on-screen.md`).
+  defp confirm_monitoring(index, name, state) do
+    read =
+      query_echoed(
+        "/live/track/get/current_monitoring_state",
+        [index],
+        "the monitoring state of track #{index}",
+        @track_index_hint
+      )
+
+    case read do
+      {:ok, ^state} ->
+        {:ok, "monitoring #{name}"}
+
+      {:ok, observed} when is_integer(observed) ->
+        {:error,
+         "the set was sent but Ableton Live reports monitoring as " <>
+           "'#{Map.get(@monitoring_names, observed, observed)}', not '#{name}', so it did not " <>
+           "land."}
+
+      _unconfirmed ->
+        {:ok,
+         "monitoring set to #{name}, though reading it back did not confirm it — check " <>
+           "get_session_state"}
     end
   end
 

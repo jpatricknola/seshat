@@ -875,6 +875,23 @@ defmodule Seshat.Session.StateTest do
         end
       end
 
+      # The per-track input block goes out as one batch. Answering it from the
+      # same map keeps the stub one thing: `{:ok, tail}` per entry, where the
+      # tail is what `Transport.query_batch/2` hands back — the reply's values
+      # with the echoed index already stripped.
+      def query_batch(entries, _timeout) do
+        results =
+          Enum.map(entries, fn {address, [index]} ->
+            case Process.get({__MODULE__, address, index}, :timeout) do
+              :timeout -> {:error, {:live_error, "stub has no answer"}}
+              {:ok, {_addr, [^index | tail]}} -> {:ok, tail}
+              {:ok, {_addr, values}} -> {:ok, values}
+            end
+          end)
+
+        {:ok, results}
+      end
+
       def put(address, index, reply), do: Process.put({__MODULE__, address, index}, reply)
     end
 
@@ -923,6 +940,38 @@ defmodule Seshat.Session.StateTest do
       stub_track(0, "Drums")
 
       assert State.read_tracks(StubTransport, 3) == {:degraded, 1}
+    end
+
+    # The input block rides in each track's existing step as one batch — four
+    # reads for one AbletonOSC tick — rather than four more serialized queries.
+    test "each track carries the input block its batch answered" do
+      stub_track(0, "Vocals")
+      StubTransport.put("/live/track/get/has_audio_input", 0, {:ok, {"", [0, 1]}})
+      StubTransport.put("/live/track/get/input_routing_type", 0, {:ok, {"", [0, "Ext. In"]}})
+      StubTransport.put("/live/track/get/input_routing_channel", 0, {:ok, {"", [0, "3/4"]}})
+      StubTransport.put("/live/track/get/current_monitoring_state", 0, {:ok, {"", [0, 2]}})
+
+      assert {:ok, [track]} = State.read_tracks(StubTransport, 1)
+
+      assert track.audio_input? == true
+      assert track.input_type == "Ext. In"
+      assert track.input_channel == "3/4"
+      assert track.monitoring == 2
+    end
+
+    # Unknown, never a guess — the rule the whole module runs on. An unanswered
+    # input read leaves the field `nil` and costs nothing else: unlike a name,
+    # it is not the identity field, so the row survives.
+    test "an unanswered input block leaves the fields nil without degrading" do
+      stub_track(0, "Drums")
+
+      assert {:ok, [track]} = State.read_tracks(StubTransport, 1)
+
+      assert track.name == "Drums"
+      assert track.audio_input? == nil
+      assert track.input_type == nil
+      assert track.input_channel == nil
+      assert track.monitoring == nil
     end
   end
 end

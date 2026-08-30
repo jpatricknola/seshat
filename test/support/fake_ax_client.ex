@@ -19,9 +19,9 @@ defmodule Seshat.Test.FakeAXClient do
   @doc """
   Point `Seshat.Tools.Handlers` at this module for the duration of the test.
 
-  `responses` maps `:list_outputs` / `:set_output` to the value the fake should
-  return — including the failure shapes, so every error rendering is reachable
-  without a real failure to provoke.
+  `responses` maps `:list_outputs` / `:set_output` / `:convert` to the value the
+  fake should return — including the failure shapes, so every error rendering is
+  reachable without a real failure to provoke.
   """
   @spec install(map()) :: :ok
   def install(responses) do
@@ -41,6 +41,9 @@ defmodule Seshat.Test.FakeAXClient do
 
   @impl true
   def set_output(device), do: respond(:set_output, [device])
+
+  @impl true
+  def convert(command), do: respond(:convert, [command])
 
   defp respond(operation, arguments) do
     config = Application.get_env(:seshat, :fake_ax, %{})

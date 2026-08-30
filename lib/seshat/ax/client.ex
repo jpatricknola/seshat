@@ -24,9 +24,13 @@ defmodule Seshat.AX.Client do
   way `vendored_addresses_test` watches the fork's address surface.
 
   The helper's protocol is closed for the same reason. It offers audio-output
-  listing, audio-output setting, and a permission check. There is no "press this
-  element" command to reach for, so adding a UI operation means adding a command
-  to the native protocol *and* arguing the LOM-gap case for it.
+  listing, audio-output setting, a permission check, and — since
+  `docs/PLAN_sing_it_back_as_midi.md` — firing one of *three compiled-in* Create
+  menu commands. There is no "press this element" command to reach for, so
+  adding a UI operation means adding a command to the native protocol *and*
+  arguing the LOM-gap case for it. `convert/1` is that case argued once: Live's
+  `Create > Convert … to New MIDI Track` has no Live Object Model member at any
+  spelling, and the helper still refuses any title but those three.
 
   ## One process per call
 
@@ -91,7 +95,7 @@ defmodule Seshat.AX.Client do
   # Must match `kProtocolVersion` in native/seshat_ax/main.m. A helper built from
   # an older checkout answers with its own number and is rejected by name rather
   # than misread.
-  @protocol_version 1
+  @protocol_version 2
 
   @call_timeout 5_000
 
@@ -152,6 +156,7 @@ defmodule Seshat.AX.Client do
 
   @callback list_outputs() :: {:ok, map()} | {:error, failure()}
   @callback set_output(String.t()) :: {:ok, map()} | {:error, failure()}
+  @callback convert(String.t()) :: {:ok, map()} | {:error, failure()}
 
   # Native codes are mapped through a fixed table rather than `String.to_atom/1`:
   # the helper's output is external input, and an unrecognised code becomes the
@@ -163,7 +168,9 @@ defmodule Seshat.AX.Client do
     "device_not_found" => :device_not_found,
     "ax_failure" => :ax_failure,
     "timeout" => :timeout,
-    "usage" => :ax_failure
+    "usage" => :ax_failure,
+    "command_unavailable" => :command_unavailable,
+    "unknown_command" => :unknown_command
   }
 
   @doc """
@@ -213,6 +220,39 @@ defmodule Seshat.AX.Client do
       case payload do
         %{previous: previous, current: current} when is_binary(previous) and is_binary(current) ->
           {:ok, %{previous: previous, current: current, elapsed_ms: payload[:elapsed_ms]}}
+
+        _ ->
+          {:error, malformed()}
+      end
+    end
+  end
+
+  @doc """
+  Fire one of Ableton Live's three `Create > Convert … to New MIDI Track`
+  commands, which act on whatever Live currently has selected.
+
+  `command` must be one of the exact titles the helper compiles in; anything
+  else is refused as `:unknown_command` without Accessibility being touched.
+  The caller owns the selection: this function only presses the menu.
+
+  Returns `{:ok, %{windows_before: n, windows_after: n, elapsed_ms: integer() | nil}}`.
+  The two window counts are the helper's observation either side of the pick, so
+  a caller can refuse to claim success when Live raised a dialog instead of
+  converting — the helper never drives one.
+
+  `:command_unavailable` is the *ordinary* answer for a selection Live will not
+  convert (a MIDI clip, an empty slot, a grid without focus), not a
+  malfunction — Live's own menu validation said no.
+  """
+  @spec convert(String.t()) :: {:ok, map()} | {:error, failure()}
+  def convert(command) when is_binary(command) do
+    with {:ok, payload} <- run(["convert", "--command", command], :convert) do
+      case payload do
+        %{windows_before: before, windows_after: after_}
+        when is_integer(before) and
+               is_integer(after_) ->
+          {:ok,
+           %{windows_before: before, windows_after: after_, elapsed_ms: payload[:elapsed_ms]}}
 
         _ ->
           {:error, malformed()}
@@ -444,7 +484,9 @@ defmodule Seshat.AX.Client do
        devices: payload["devices"],
        previous: payload["previous"],
        trusted: payload["trusted"],
-       elapsed_ms: payload["elapsed_ms"]
+       elapsed_ms: payload["elapsed_ms"],
+       windows_before: payload["windows_before"],
+       windows_after: payload["windows_after"]
      }}
   end
 
