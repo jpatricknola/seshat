@@ -19,12 +19,23 @@ this plan builds both:
    from the LOM at any spelling. It is a menu command, reachable only through
    the macOS Accessibility helper.
 
-**The fork half is done and verified against the running bridge.**
-`/live/view/focus_view` shipped in the fork's `b3db749` (#27), `API.md`'s
-`current_monitoring_state` rows are corrected, Seshat's gitlink is bumped
-`fe6730e` → `b3db749`, and `mix abletonosc.install` has deployed it — the
-installed `view.py` is byte-identical to the pin and Live has been restarted.
-**This plan is Elixir and Objective-C only.**
+**The fork half is done.** `/live/view/focus_view` shipped in `b3db749` (#27)
+and the three focus/selection reads in `ef4189e` (#29); `API.md`'s
+`current_monitoring_state` rows are corrected. Seshat's gitlink is at `ef4189e`
+and `mix abletonosc.install` has deployed it byte-identically.
+**This plan is Elixir and Objective-C only** — every address it names is
+registered and documented in the fork.
+
+All of it is exercised against the running bridge. `focus_view` was measured
+against `b3db749` (four focus transitions, bidirectional); the #29 reads were
+checked at `ef4189e` on 2026-08-30 after a Live restart:
+`get/highlighted_clip_slot` answered `(0, 0)`, `set/highlighted_clip_slot 0 0`
+applied and read back, and `set/highlighted_clip_slot 99 0` was refused with
+`ValueError: Track index out of range for category 'track': 99 (this song has 1)`
+— validated, not subscripted, as the row promises.
+⚠️ `get/focused_document_view` is confirmed **registered and not raising** only:
+it does not log, and its reply goes to the port Seshat holds, so its *value* is
+unverified until Part 6 is the first caller to read one.
 
 ### Measured facts this plan is built on
 
@@ -71,8 +82,13 @@ Convert is Live 9+, **Standard and Suite** — no edition gate.
 ## OSC contract
 
 Every address is registered in the fork and documented in
-[priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md). Replies carry the echoed
-`track_id` first, which is what `query_correlated/4` matches on.
+[priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md). The track- and clip-family
+replies carry the echoed indices first, which is what `query_correlated/4`
+matches on. The view getters (`selected_clip`, `highlighted_clip_slot`,
+`focused_document_view`) and `num_tracks` echo **nothing** — they correlate by
+address alone, so a stale straggler is indistinguishable by content; Part 6's
+cross-check of two independent selection reads is the defence there, not an
+echo.
 
 ### Input routing and monitoring — Parts 1–3
 
@@ -98,8 +114,11 @@ regular-track-only.
 |---|---|---|---|
 | `/live/view/show_view` | `view_name` | — | Makes the pane visible |
 | `/live/view/focus_view` | `view_name` | — | Gives it keyboard focus. **This is what enables the menu command**; `show_view` alone does not |
+| `/live/view/get/focused_document_view` | | `"ok", view_name` or `"error", message` | Reads focus back. `view_name` is `Session` or `Arranger` only — partial verification, see `API.md` |
 | `/live/view/set/selected_clip` | `track_index, scene_index` | — | Moves the ring; honoured by the menu once the grid has focus |
 | `/live/view/get/selected_clip` | | `track_index, scene_index` | Read-back proving the ring landed |
+| `/live/view/get/highlighted_clip_slot` | | `track_index, scene_index` | The slot itself, as a second read-back independent of the ring |
+| `/live/view/set/highlighted_clip_slot` | `track_index, scene_index` | — on success, `/live/error` on a bad index | **Not a silent setter** — it validates both indices, so an out-of-range value is an error rather than a wrap-around |
 | `/live/song/get/num_tracks` | | `num_tracks` | Before/after count bracketing the pick |
 | `/live/clip_slot/get/has_clip` | `track_index, clip_index` | `track_index, clip_index, has_clip` | Guard: the slot holds something |
 | `/live/clip/get/is_midi_clip` | `track_id, clip_id` | `track_id, clip_id, is_midi_clip` | Guard: it is audio, not MIDI |
@@ -201,9 +220,22 @@ recorded in `mcp-surface.md`.
 **Files:** [lib/seshat/session/state.ex](../lib/seshat/session/state.ex),
 [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
 
-Three new per-track fields: `input_type`, `input_channel`, `monitoring`. Read in
-the existing batched track read via `Transport.query_batch/2` — not one query
-each.
+Three new per-track fields: `input_type`, `input_channel`, `monitoring`.
+
+⚠️ **There is no existing batched track read.** `Session.State.read_tracks/2`
+is a deliberate per-index serial loop, and its own doc block defers a batched
+rewrite to the gated roadmap item "Monitored refresh worker for
+`Session.State`" — do not rewrite that loop here. Add the new fields to its
+per-track step, reading them in **one `Transport.query_batch/2` call per
+track** rather than three more serial queries, so the rebuild does not grow by
+three round trips per track.
+
+The mirror does not yet know a track's *type* — `read_tracks/2` reads name,
+volume, pan, mute and solo only — so "audio tracks only" needs a
+discriminator: read `/live/track/get/has_audio_input` in the same batch and
+store it. A routing read that errors or goes unanswered stays `nil` and
+renders nothing, which also quietly covers any track (a group, say) that
+reports audio input but has no input chooser.
 
 **No listeners.** `current_monitoring_state` has a listen pair; the two routing
 properties are custom handlers with none. Mixing one pushed value with two
@@ -277,6 +309,14 @@ convert_audio_to_midi(track, clip_slot, mode)
   mode: "melody" | "harmony" | "drums"   (required, no default)
 ```
 
+`track` and `clip_slot` declare `minimum: 0` in the schema, and `Validation`
+enforces it before dispatch. Load-bearing, not style:
+`/live/view/set/selected_clip` is one of the three legacy view setters that
+resolve a negative index from the *end* of the list instead of raising
+(`API.md` § Selected-track identity — "`-1` is an answer, never an argument"),
+so without the bound a negative index could slip past the guards and convert a
+clip on the wrong track.
+
 Draft description:
 
 > Turn an audio clip into a new MIDI track playing the same part — Ableton
@@ -296,27 +336,29 @@ Handler sequence, in this order:
 1. `/live/clip_slot/get/has_clip` and `/live/clip/get/is_midi_clip` — **refuse
    an empty slot or a MIDI clip before touching AX.** Guards before side
    effects.
-2. `/live/view/show_view Session`, then `/live/view/focus_view Session`. Focus
-   is what makes Live's menu validation see the selection at all — measured, and
-   measured bidirectionally.
-   ⚠️ **Sent blind today.** `focused_document_view` is not in the fork, so
-   nothing reads focus back, and a focus that silently failed surfaces later as
-   `command_unavailable` from the helper rather than as an error naming the real
-   cause. Requested in
-   [jpatricknola/AbletonOSC#28](https://github.com/jpatricknola/AbletonOSC/issues/28),
-   which holds the contract and its limits.
-   **If #28 lands before this part is written**, read focus back here and refuse
-   at this step with the accurate cause instead of at step 5 with a misleading
-   one. **If it does not**, ship as described: the helper's refusal is safe and
-   the mechanism measured deterministic across four focus transitions, so the
-   cost is a wrong message, never a wrong mutation.
-3. `/live/view/set/selected_clip`, then `/live/view/get/selected_clip` to
-   confirm the ring landed. A selection that did not land would make the pick
-   act on something else — the one genuinely dangerous failure here.
+2. `/live/view/show_view Session`, then `/live/view/focus_view Session`, then
+   `/live/view/get/focused_document_view` to **confirm focus landed**. Focus is
+   what makes Live's menu validation see the selection at all — measured, and
+   measured bidirectionally. Anything but `Session` is a refusal here, naming
+   focus, rather than a `command_unavailable` three steps later that blames the
+   clip.
+   ⚠️ Partial verification, per `API.md`: the read answers only `Session` or
+   `Arranger`, so it catches an Arranger focus and not a Browser one. Treat a
+   `Session` reading as necessary, not sufficient — step 5's refusal is still
+   the backstop.
+3. `/live/view/set/selected_clip`, then `/live/view/get/selected_clip` **and**
+   `/live/view/get/highlighted_clip_slot` to confirm the selection landed. A
+   selection that did not land would make the pick act on something else — the
+   one genuinely dangerous failure here — and the two reads disagree exactly
+   when the ring moved but the slot did not. Refuse on disagreement.
+   `set/highlighted_clip_slot` is available as a second write path if the ring
+   ever proves insufficient; it is not needed on the measured path, so do not
+   send it speculatively.
 4. `/live/song/get/num_tracks` — the before count.
 5. `Seshat.AX.Client.convert/1`. `command_unavailable` renders as *"Live would
-   not convert that clip"* plus the selection it saw. Focus was already verified
-   in step 2, so this error no longer has to hedge about it.
+   not convert that clip"* plus the selection it saw. Focus and selection were
+   both verified above, so this error means Live itself declined — not that a
+   precondition silently failed.
 6. Wait, bounded, for the count to rise by **exactly one**. No rise, or more than
    one → report honestly and name no index, as `Registry`'s `create_track` guard
    does. **Resolve the new track by position after the source track, never by
@@ -345,8 +387,9 @@ Handler sequence, in this order:
   Keep it committed: the 2026-08-03 `ax-probe`'s source was never kept and only
   its binary survives, which is why tonight's findings needed a new probe from
   scratch.
-- The submodule pin bump `fe6730e` → `b3db749` is staged and belongs in this
-  branch's first commit.
+- The submodule pin is at `ef4189e` and already committed on this branch
+  (`38e9ef5`). Nothing further to do; noted so a reviewer reading the diff knows
+  the gitlink move is intentional and which fork PRs it carries (#27, #29).
 - `mix routing.eval` — required, `Definitions` changed. Attach `report.md`.
 - `mix precommit`.
 
@@ -369,8 +412,10 @@ Pure, no Ableton:
 - `convert_audio_to_midi` against the fake `Seshat.AX.Client`: the MIDI-clip
   refusal happens before any AX call; `command_unavailable` produces the
   readable refusal; a count that does not rise names no index. Assert arrival
-  order at the sink — has_clip, is_midi_clip, show, focus, set selected, get
-  selected, count.
+  order at the sink — has_clip, is_midi_clip, show, focus, **read focus back**,
+  set selected, get selected, **get highlighted slot**, count. Cover the two new
+  refusals: a focused view that is not `Session`, and a ring that disagrees with
+  the highlighted slot; neither reaches the AX client.
 - MCP component parity with `Definitions`, as generated.
 
 Not testable here, by construction: every AX call, and the silent-no-op of a bad
@@ -426,8 +471,6 @@ Surface:
 
 **Uncovered:**
 
-- **Whether `focus_view` reproduces what a click does.** Open question 1 — the
-  first thing to run, before any Elixir.
 - **Whether `AXPress` works on the command item.** The contract uses `AXPick`
   because that is what was measured; no test here covers `AXPress`.
 - **Every input name but this machine's.** A set opened elsewhere offers
@@ -462,9 +505,9 @@ Surface:
    Yes, and it is bidirectional: `Arranger` → `false`, `Session` → `true`,
    `Browser` → `false`, `Session` → `true`, all over OSC with nobody touching
    Live. The full arc then ran end to end and produced a converted MIDI track.
-   `highlighted_clip_slot` and `focused_document_view` were **not** needed and
-   are not in the fork; see the note under Part 6 step 2 for what their absence
-   costs.
+   `focused_document_view` and `highlighted_clip_slot` were not needed to make
+   it work and have since shipped anyway in `ef4189e` (#29), so Part 6 verifies
+   both preconditions rather than sending them blind.
 
 2. **What does Live call "no input"?** ⚠️ Unmeasured, so Part 3 cannot refuse by
    name. **Assumed:** an empty string, with any non-empty value reported verbatim
