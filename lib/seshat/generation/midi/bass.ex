@@ -16,7 +16,13 @@ defmodule Seshat.Generation.Midi.Bass do
   Three relationships:
 
     * `lock` — a note on every followed onset, rests elsewhere. The default
-      reading of "play with the kick".
+      reading of "play with the kick". The onsets are shared, but each part is
+      then humanized independently on its own RNG stream
+      (`Seshat.Generation.Midi.Performance`), so a `lock` bass and its kick
+      can land a beat fraction apart after humanization rather than sample-
+      exact — measured up to ~0.065 beats (~32ms at 120 BPM) on a real
+      request. Whether that still reads as "locked" by ear is for the
+      by-ear slate, not this module.
     * `answer` — a note on the 8th *after* each followed onset that is not
       itself answered by another within a beat, so the bass fills the gaps
       rather than doubling a busy kick.

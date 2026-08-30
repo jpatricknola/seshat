@@ -508,18 +508,82 @@ install landed whole before trusting a green run.)
   and one undo removes it` — the headline: independent read-back of tracks,
   slots, notes, feel mechanics (velocity spread, off-grid starts, bass
   lock), the one-undo-step promise, and the dense-lane chunk boundary.
+
+  **Ran 2026-08-30 (PR review round 2), passed.** Live 12.4.5, 120 BPM 4/4,
+  baseline one MIDI track. A four-part funk request (kick 36, snare 38, hats
+  42, bass `lock` on roots `[36,36,38,38]`, seed 20260830, no instrument
+  URIs) created tracks 1–4 named by role, each with a 16.0-beat clip named
+  by role in slot 0 — confirmed through `get_clip_slots`, not the tool's
+  reply. `get_clip_notes` on the kick: 24 notes, pitch 36 only, all inside
+  16 beats, velocities 10.2–120.7, starts off the 16th grid (grid 0.75 →
+  0.6852, 1.5 → 1.4656, 3.0 → 2.9782), so the performance layer ran. The
+  bass read back 24 notes, C2 for bars 1–2 and D2 for bars 3–4 as the roots
+  asked, one per kick onset. Dense lane: 16 bars × 1/16 = **256 notes**
+  written in two chunks and confirmed across two read-back windows, with
+  notes present at beat 63.7 of a 64-beat clip — the chunked write and the
+  windowed read both work on a real wire, which nothing in `mix test`
+  reaches. Two `undo` calls (newest first) removed both requests whole: the
+  session returned to exactly one track and eight empty slots, so
+  one call = one undo step holds for a five-datagram, four-track request.
+  Caveats: bass onsets sit on the *drum pattern's grid* positions and are
+  then humanized independently, so a `lock` bass and its kick landed up to
+  ~0.065 beats (~32 ms at 120 BPM) apart — per plan, but it is the by-ear
+  slate that decides whether that reads as lock. The velocity band clamp
+  pins outliers to exact boundary values (see the review's quality finding).
 - `smoke_tests/auto/generation.md § Extended note fields survive the wire` —
   closes `API.md`'s ⚠️: probability / velocity_deviation read back as sent,
   or the finding that Live discards them.
+
+  **Ran 2026-08-30 (PR review round 2), passed — and the ⚠️ is answered.**
+  The four-part funk beat above (ghosts in every drum pattern) reported
+  "Per-note chance and velocity spread came back as sent", read through
+  `/live/clip/get/notes_extended` after a write on
+  `/live/clip/add/notes_extended`. **Live persists `probability` and
+  `velocity_deviation` as sent** on Live 12.4.5 — the first time either has
+  been read back at all. The all-`x` dense lane (no ghosts) reported
+  "Velocity spread came back as sent" and said nothing about per-note
+  chance, which is the per-field split behaving correctly on real data.
+  `priv/AbletonOSC/API.md`'s ⚠️ on the extended-notes family can now be
+  narrowed by a doc-only fork commit (Part 9); PR review does not edit API
+  docs, so that is left outstanding.
 - `smoke_tests/auto/generation.md § An occupied MIDI target slot is refused
   before anything is created` — guard ordering under a real Live.
+
+  **Ran 2026-08-30 (PR review round 2), passed.** Targeting `track: 1`,
+  `clip_slot: 0` while the funk beat occupied it was refused with "Slot 0 on
+  track 1 … already holds a clip … Nothing was written and no track was
+  created", and `get_clip_slots` showed the track count and the clip
+  unchanged. Targeting a scratch **audio** track was refused with "…is not a
+  MIDI track…", again with no track created; the scratch audio track was
+  deleted afterwards and the session left as found.
 - `smoke_tests/auto/views.md § The selected scene reads back` — the new
   upstream address consumed for the first time, self-checking against
   `select_scene`.
+
+  **Ran 2026-08-30 (PR review round 2), passed.** `select_scene 0` →
+  `get_view_state` "Selected scene: 0."; `select_scene 7` (the set's last
+  scene) → "Selected scene: 7."; `select_scene 3` → "Selected scene: 3.".
+  Setter and getter agree in both directions. Selection restored to 0.
 - `smoke_tests/auto/mcp-surface.md` (handshake and budget checks) — the tool
   count and serialized bytes move, and `parts` is a root-level array of
   rich objects; a client that rejects the schema loses the **whole** tool
   list, not one tool. The last recorded run predates this surface.
+
+  **Ran 2026-08-30 (PR review round 2), passed.** `mcp_call.py list` over a
+  real handshake: **55 tools**, matching `Definitions.all/0`. `mcp_call.py
+  stats`: **55 tools / 73,569 bytes / largest `generate_midi` at 5,470
+  bytes** — up 9,447 bytes and two tools from the file's 2026-08-30
+  baseline of 53 / 64,122 / `generate_audio` 3,875 (one of those two tools
+  is `convert_audio_to_midi`, which shipped after that stamp). `parts`
+  survives the handshake intact and is the surface's first **array of rich
+  objects**: `items.type: object`, `items.additionalProperties: false`,
+  `items.required: ["role"]`, `minimum`/`maximum` preserved on nested
+  integers *and* on the doubly-nested `roots.items` (28–43). Measured
+  against a server that was **not** freshly restarted — dev code reloading
+  had brought it to this checkout, proven by the 55-tool list and by
+  `get_view_state` answering the new selected-scene line. Note these
+  client-visible bytes are ~1.8 % above the Elixir-side estimate Part 6
+  records (72,239 / 5,446); quote these.
 - `smoke_tests/manual/engineered-state.md § A groove from the pool lands on a
   clip, and an empty pool is told plainly` — pool stocking is drag-only, so
   a person; covers the empty-pool refusal, assignment read-back, bad index,

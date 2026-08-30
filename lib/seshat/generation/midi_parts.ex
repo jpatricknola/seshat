@@ -103,7 +103,9 @@ defmodule Seshat.Generation.MidiParts do
 
   `Seshat.Tools.Validation` has already checked types, bounds, enums and unknown
   keys from the declared schema. What is left is the relationships between
-  parameters and the two length rules the schema has no `maxLength` for.
+  parameters, the two length rules the schema has no `maxLength` for, and the
+  1–#{@max_parts} bound on `parts` itself, since `Validation` has no
+  `minItems`/`maxItems` either.
 
   Runs before the session is read and before any OSC, so every refusal carries
   the same guarantee: nothing was written and nothing was created.
@@ -1064,7 +1066,8 @@ defmodule Seshat.Generation.MidiParts do
       case part.instrument do
         {:loaded, name} -> ", playing #{name}"
         {:failed, _message} -> ", with no instrument (the load failed)"
-        :none -> ", with no instrument yet"
+        :none when part.created? -> ", with no instrument yet"
+        :none -> ""
       end
 
     "  #{part.role}: #{length(part.notes)} notes on #{where}, slot #{slot}#{instrument}"
@@ -1149,8 +1152,14 @@ defmodule Seshat.Generation.MidiParts do
       ", so #{those_did} not stick — the timing and velocity shape did, which is most of the feel."
   end
 
+  # `:none` on an existing track only means this call didn't try to load
+  # anything — the track may already carry a device. That claim is only true
+  # for a track this call created, which starts genuinely empty.
   defp silent_note(parts) do
-    case Enum.filter(parts, &(&1.instrument == :none or match?({:failed, _}, &1.instrument))) do
+    case Enum.filter(
+           parts,
+           &((&1.instrument == :none and &1.created?) or match?({:failed, _}, &1.instrument))
+         ) do
       [] ->
         []
 

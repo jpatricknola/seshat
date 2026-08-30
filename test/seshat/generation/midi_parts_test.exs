@@ -387,6 +387,17 @@ defmodule Seshat.Generation.MidiPartsTest do
       assert reply =~ "with no instrument yet"
       assert reply =~ "search_library"
     end
+
+    # An existing track may already carry a device — this call just didn't
+    # load one. Claiming silence here would be a guess, not an observation.
+    test "a part with no instrument_uri on an existing track claims nothing about silence",
+         context do
+      {result, _trace} = run(context, request(%{"parts" => [kick_part(%{"track" => 1})]}))
+
+      assert {:ok, reply} = result
+      refute reply =~ "with no instrument yet"
+      refute reply =~ "Silent until a device"
+    end
   end
 
   describe "the read-back" do
