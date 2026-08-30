@@ -4425,7 +4425,7 @@ defmodule Seshat.Tools.Handlers do
   # is a lost datagram rather than a bad index, and this guard only fires on a
   # track *known* to be audio.
   #
-  # ⚠️ What Live calls "no input" is unmeasured (docs/PLAN_sing_it_back_as_midi.md,
+  # ⚠️ What Live calls "no input" is unmeasured (docs/archive/PLAN_sing_it_back_as_midi.md,
   # open question 2). An empty type string is treated as no input; anything
   # non-empty is reported verbatim and not refused, so getting this wrong makes
   # the warning weaker, never wrong.

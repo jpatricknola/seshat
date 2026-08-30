@@ -25,7 +25,7 @@ defmodule Seshat.AX.Client do
 
   The helper's protocol is closed for the same reason. It offers audio-output
   listing, audio-output setting, a permission check, and — since
-  `docs/PLAN_sing_it_back_as_midi.md` — firing one of *three compiled-in* Create
+  `docs/archive/PLAN_sing_it_back_as_midi.md` — firing one of *three compiled-in* Create
   menu commands. There is no "press this element" command to reach for, so
   adding a UI operation means adding a command to the native protocol *and*
   arguing the LOM-gap case for it. `convert/1` is that case argued once: Live's

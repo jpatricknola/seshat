@@ -312,6 +312,70 @@ That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
 
+**Sing it back as MIDI shipped 2026-08-30** on branch `sing-it-back-as-midi`,
+closing what had been the roadmap's top item: a sung or hummed take can now be
+routed, recorded, converted to a MIDI clip on Live's own `Create → Convert
+Melody/Harmony/Drums to New MIDI Track`, and handed an instrument, with no
+step where the user is sent into Live's UI by hand. Three new `set_mixer`
+properties (`input_type`, `input_channel`, `monitoring`) cover the first named
+gap — every address was already registered in the fork and unused under
+`lib/` — validating each routing name against Live's own available-list reply
+before sending (a bad name is a silent no-op on the wire, so the tool refuses
+by name and lists the machine's real inputs) and mapping `monitoring` through
+a string enum (`in`/`auto`/`off`) rather than exposing the reversed raw
+integer. `Session.State`'s per-track mirror gained the same three fields plus
+`has_audio_input` as a type discriminator, read in one `query_batch/2` per
+track without rewriting the deliberately serial `read_tracks/2` loop.
+`record_clip` now names the input verbatim before an audio take, refuses
+before recording (not after) when the type reads empty, and warns but still
+records when monitoring is `off`. The second gap — Convert is a menu command
+absent from the LOM at any spelling — is closed by a fifth command on the AX
+helper's closed protocol, `convert --command "<title>"` over three
+compiled-in titles only (no generic press, no tree dump), firing with
+`AXPick` after `AXPress` opens the `Create` menu and a ~350ms wait for
+`AXEnabled` to stop lying (AppKit validates lazily); `Seshat.AX.Client.convert/1`
+reuses the existing lock, budget and failure shape with no new process door.
+`convert_audio_to_midi` (tool 53 → 54) guards an empty slot or a MIDI-clip
+source before touching AX, drives `focus_view Session` (selection alone left
+the command disabled — measured both ways), confirms the selection landed
+through two independent reads, waits on the track count rather than polling
+AX, and resolves the new track by position after the source rather than
+assuming it is last. It stays undo-stepped, unlike the two audio-output AX
+tools — `unstepped_names/0` still pins exactly those two. `mix routing.eval`
+ran (54 tools vs. the `base-c3096d6` 67-tool surface) but is inconclusive:
+every valid trial routed correctly on both surfaces, but 21 of 40 trials were
+void on a recorder-init isolation failure in the nested environment, not a
+routing result. PR review found the implementation correct on independent
+re-derivation (all 21 addresses checked verbatim against `priv/AbletonOSC/API.md`,
+guard-before-side-effect ordering pinned by wire-order assertions) and raised
+nine non-blocking items; the nit-triage pass applied six of them before merge
+— `record_clip`'s silent-take refusal now points at `get_session_state`/
+`set_mixer` instead of Live's UI, `convert_notes_line/3` now routes through
+the shared 5-field-validating note parser instead of a bare `div/2`, a
+silent per-entry batch failure in the pre-record input check now reports the
+input as unknown instead of nothing, the AX helper's failure messages were
+generalized from audio-settings-specific wording to cover Convert too, a
+stale `report_record_started/5` doc comment was corrected to `/7`, and
+`convert_audio_to_midi`'s description now notes that `focus_view` leaves Live
+on the Session view rather than restoring it — while declining
+`monitoring_state/1`'s `String.downcase` (a defensible tension, left for a
+human PR reader) and filing the one fork-documentation gap (the measured
+silent-drop of `input_routing_type`/`_channel` on a bad name has no `API.md`
+citation to point at) as [fork issue
+#31](https://github.com/jpatricknola/AbletonOSC/issues/31) rather than a
+roadmap entry, per the fork-owns-wire-facts rule. **Live verification has not
+run at all** — the running Seshat MCP server was serving pre-change code
+during review, so every `auto/` citation (`mixer.md`'s two new checks,
+`recording.md`'s two new checks, all three of `convert.md`, and
+`mcp-surface.md`'s handshake and budget checks, the latter's last recorded
+run predating this branch's tool count) was skipped by environment rather
+than run, and the five `manual/` citations (`on-screen.md`'s monitoring
+button, input-chooser and Convert-focus-restore checks, `by-ear.md`'s "Sing a
+line, hear it back as a guitar," `conversation.md`'s routing check) all still
+read `*Last run: —*` and need a person with Live, a restarted server on this
+code, and an audio interface. Plan archived at
+[docs/archive/PLAN_sing_it_back_as_midi.md](docs/archive/PLAN_sing_it_back_as_midi.md).
+
 **Audio→MIDI transcription is rejected as the primary MIDI strategy,
 decided 2026-08-30** the same day `generate_audio` shipped, on a property of
 the generator rather than a listening result: Stable Audio's text

@@ -1,3 +1,13 @@
+> **Archived 2026-08-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The feature now lives in
+> `set_mixer`'s input-routing and monitoring properties, `Session.State`'s
+> per-track mirror, `record_clip`'s silent-take warning, the fifth `convert`
+> command on `native/seshat_ax/main.m`, `Seshat.AX.Client.convert/1`, and the
+> `convert_audio_to_midi` tool definition and handler. Live verification has
+> not run — see the plan's own "Live verification" section below and the
+> cited `docs/smoke_tests/` files, all still `*Last run: —*` for the checks
+> this feature added.
+
 # Plan — Sing it back as MIDI: a sung take, converted, on the instrument you meant
 
 _Roadmap item: **"Sing it back as MIDI — a sung take, converted, on the
@@ -42,7 +52,7 @@ unverified until Part 6 is the first caller to read one.
 All measured 2026-08-30 against Live 12.4.5 Suite, macOS 15.7.4. They are
 stated here because each one constrains an implementation choice below; the
 probe that produced the AX half is committed at
-[native/seshat_ax/probe/menu_probe.m](../native/seshat_ax/probe/menu_probe.m).
+[native/seshat_ax/probe/menu_probe.m](../../native/seshat_ax/probe/menu_probe.m).
 
 | Fact | What it constrains |
 |---|---|
@@ -82,7 +92,7 @@ Convert is Live 9+, **Standard and Suite** — no edition gate.
 ## OSC contract
 
 Every address is registered in the fork and documented in
-[priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md). The track- and clip-family
+[priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md). The track- and clip-family
 replies carry the echoed indices first, which is what `query_correlated/4`
 matches on. The view getters (`selected_clip`, `highlighted_clip_slot`,
 `focused_document_view`) and `num_tracks` echo **nothing** — they correlate by
@@ -161,8 +171,8 @@ seshat-ax convert --command "Convert Melody to New MIDI Track"
 
 ### 1. `set_mixer` gains input routing and monitoring
 
-**Files:** [lib/seshat/tools/definitions.ex](../lib/seshat/tools/definitions.ex),
-[lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
+**Files:** [lib/seshat/tools/definitions.ex](../../lib/seshat/tools/definitions.ex),
+[lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
 
 This is a property on an existing intention, not a new tool — setting a track's
 input is the same producer intention as setting its arm.
@@ -217,8 +227,8 @@ recorded in `mcp-surface.md`.
 
 ### 2. `Session.State` mirrors the input, `get_session_state` renders it
 
-**Files:** [lib/seshat/session/state.ex](../lib/seshat/session/state.ex),
-[lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
+**Files:** [lib/seshat/session/state.ex](../../lib/seshat/session/state.ex),
+[lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
 
 Three new per-track fields: `input_type`, `input_channel`, `monitoring`.
 
@@ -247,7 +257,7 @@ does not grow. Report the strings verbatim — never interpret an input name.
 
 ### 3. `record_clip` warns before a silent take
 
-**File:** [lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
+**File:** [lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
 
 When the target track is an **audio** track, read `input_routing_type` and
 `current_monitoring_state` in one batch before firing, then:
@@ -273,7 +283,7 @@ Delete the *"Seshat cannot choose or check the input"* sentence from
 
 ### 4. The helper's fifth command
 
-**File:** [native/seshat_ax/main.m](../native/seshat_ax/main.m)
+**File:** [native/seshat_ax/main.m](../../native/seshat_ax/main.m)
 
 Implement `convert --command "<title>"` exactly as the AX contract above
 specifies. Reuse the existing transaction shape: one `kActionDeadline`, one
@@ -287,7 +297,7 @@ not an upgrade, and macOS will need the printed path approved.
 
 ### 5. `Seshat.AX.Client.convert/1`
 
-**File:** [lib/seshat/ax/client.ex](../lib/seshat/ax/client.ex)
+**File:** [lib/seshat/ax/client.ex](../../lib/seshat/ax/client.ex)
 
 One public function beside `list_outputs/0` and `set_output/1`, one new
 `@callback`, sharing the existing lock, the existing 5,000 ms budget measured
@@ -298,8 +308,8 @@ No new door — same module, same binary, same grep exemption.
 
 ### 6. `convert_audio_to_midi`
 
-**Files:** [lib/seshat/tools/definitions.ex](../lib/seshat/tools/definitions.ex),
-[lib/seshat/tools/handlers.ex](../lib/seshat/tools/handlers.ex)
+**Files:** [lib/seshat/tools/definitions.ex](../../lib/seshat/tools/definitions.ex),
+[lib/seshat/tools/handlers.ex](../../lib/seshat/tools/handlers.ex)
 
 This one earns a tool name: it consumes an audio clip and produces a track — a
 different workflow, not a property of an existing intention.
