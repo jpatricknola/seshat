@@ -1725,7 +1725,8 @@ defmodule Seshat.Tools.Definitions do
           "next empty scene; an occupied slot on any target track is refused before anything " <>
           "is created. A new MIDI track is created per part unless track names an existing " <>
           "one. Pass instrument_uri per part (a URI from search_library) so the result makes " <>
-          "sound — without it the track is silent and the reply says so. Read " <>
+          "sound — without it a track this call creates is silent, and the reply says so; an " <>
+          "existing track named by `track` keeps whatever instrument it already has. Read " <>
           "get_session_state first for tempo, time signature and key. Track indices are " <>
           "0-based.",
       parameters: %{
@@ -1863,7 +1864,8 @@ defmodule Seshat.Tools.Definitions do
                   type: "string",
                   description:
                     "A browser URI from search_library, loaded onto this part's track so it " <>
-                      "makes sound. Without it the track is silent."
+                      "makes sound. Without it a newly created track is silent; an existing track named by " <>
+                      "`track` keeps whatever instrument it already has."
                 }
               },
               required: ["role"]

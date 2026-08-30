@@ -971,15 +971,24 @@ defmodule Seshat.Generation.MidiParts do
   # one field while dropping the other is exactly the case a single combined
   # "kept" boolean cannot report — it would call the drop "kept" because the
   # other field happened to survive.
+  # Compared **per note, sent against returned** — never against the field's
+  # default. "Some note came back non-default" is not the measurement: Live
+  # keeping one ghost's chance while resetting the other five, or normalising
+  # 0.35 to some other non-default value, would satisfy a default-comparison
+  # and produce a reply claiming the values came back as sent. Each sent note
+  # is paired with the returned note at its own pitch and start (the same
+  # float32 tolerance the start match uses, because both sides crossed the
+  # wire as 32-bit floats), and every pair must agree.
+  @expression_tolerance 1.0e-2
+
   defp compare(part, notes) do
+    pairs = pair_notes(part.notes, notes)
+
     probability_sent? = Enum.any?(part.notes, &(&1.probability < 1.0))
     deviation_sent? = Enum.any?(part.notes, &(&1.velocity_deviation > 0.0))
 
-    probability_kept? =
-      probability_sent? and Enum.any?(notes, &number_below?(&1.probability, 1.0))
-
-    deviation_kept? =
-      deviation_sent? and Enum.any?(notes, &number_above?(&1.velocity_deviation, 0.0))
+    probability_state = field_state(pairs, part.notes, & &1.probability, 1.0)
+    deviation_state = field_state(pairs, part.notes, & &1.velocity_deviation, 0.0)
 
     # No note-count comparison lives here, deliberately: every window already
     # had to return exactly the starts it was asked for before it was accepted,
@@ -990,16 +999,61 @@ defmodule Seshat.Generation.MidiParts do
       notes: Enum.count(notes),
       probability_sent?: probability_sent?,
       deviation_sent?: deviation_sent?,
-      probability_kept?: probability_kept?,
-      deviation_kept?: deviation_kept?
+      probability_state: probability_state,
+      deviation_state: deviation_state
     }
   end
 
-  defp number_below?(value, ceiling) when is_number(value), do: value < ceiling - 1.0e-6
-  defp number_below?(_value, _ceiling), do: false
+  # Three outcomes, not two. `:default` is Live discarding the field; `:changed`
+  # is Live returning something else — a value it normalised, or the field kept
+  # on some notes and reset on others. Reporting `:changed` as "Live returned
+  # default values" would be its own false claim, so the reply distinguishes
+  # them.
+  defp field_state(pairs, sent, field, default) do
+    cond do
+      values_match?(pairs, sent, field) -> :kept
+      all_at?(pairs, field, default) -> :default
+      true -> :changed
+    end
+  end
 
-  defp number_above?(value, floor) when is_number(value), do: value > floor + 1.0e-6
-  defp number_above?(_value, _floor), do: false
+  defp all_at?(pairs, field, default) do
+    pairs != [] and
+      Enum.all?(pairs, fn {_out, back} ->
+        got = field.(back)
+        is_number(got) and abs(got * 1.0 - default) <= @expression_tolerance
+      end)
+  end
+
+  # One returned note per sent note, matched on pitch and start. A sent note
+  # with no partner leaves the list short, which `values_match?/3` treats as a
+  # failed comparison rather than a pass over the notes that did come back.
+  defp pair_notes(sent, returned) do
+    {pairs, _left} =
+      Enum.reduce(sent, {[], returned}, fn note, {pairs, pool} ->
+        case Enum.split_with(pool, &same_note?(&1, note)) do
+          {[match | rest], others} -> {[{note, match} | pairs], rest ++ others}
+          {[], _others} -> {pairs, pool}
+        end
+      end)
+
+    Enum.reverse(pairs)
+  end
+
+  defp same_note?(returned, sent) do
+    is_number(returned.pitch) and round(returned.pitch) == sent.pitch and
+      is_number(returned.start_time) and
+      abs(returned.start_time * 1.0 - sent.start_time * 1.0) <= @start_tolerance
+  end
+
+  defp values_match?(pairs, sent, field) do
+    length(pairs) == length(sent) and
+      Enum.all?(pairs, fn {out, back} ->
+        got = field.(back)
+
+        is_number(got) and abs(got * 1.0 - field.(out) * 1.0) <= @expression_tolerance
+      end)
+  end
 
   # --- The reply ---
 
@@ -1094,29 +1148,36 @@ defmodule Seshat.Generation.MidiParts do
   # and drop the other — a combined verdict would misreport that case either
   # way.
   @expression_fields [
-    {"per-note chance", :probability_sent?, :probability_kept?},
-    {"velocity spread", :deviation_sent?, :deviation_kept?}
+    {"per-note chance", :probability_sent?, :probability_state},
+    {"velocity spread", :deviation_sent?, :deviation_state}
   ]
 
   defp expression_note(parts) do
     sent =
-      Enum.filter(@expression_fields, fn {_label, sent_key, _kept_key} ->
+      Enum.filter(@expression_fields, fn {_label, sent_key, _state_key} ->
         Enum.any?(parts, &Map.fetch!(&1.readback, sent_key))
       end)
 
     if sent == [] do
       ""
     else
-      kept =
-        Enum.filter(sent, fn {_label, sent_key, kept_key} ->
+      by_state =
+        Enum.group_by(sent, fn {_label, sent_key, state_key} ->
           parts
           |> Enum.filter(&Map.fetch!(&1.readback, sent_key))
-          |> Enum.all?(&Map.fetch!(&1.readback, kept_key))
+          |> Enum.map(&Map.fetch!(&1.readback, state_key))
+          |> Enum.uniq()
+          |> case do
+            [:kept] -> :kept
+            states -> if :changed in states, do: :changed, else: :default
+          end
         end)
 
-      dropped = sent -- kept
-
-      [kept_sentence(kept), dropped_sentence(dropped)]
+      [
+        kept_sentence(Map.get(by_state, :kept, [])),
+        dropped_sentence(Map.get(by_state, :default, [])),
+        changed_sentence(Map.get(by_state, :changed, []))
+      ]
       |> Enum.reject(&(&1 == ""))
       |> Enum.map_join(" ", & &1)
       |> case do
@@ -1124,6 +1185,18 @@ defmodule Seshat.Generation.MidiParts do
         sentence -> " " <> sentence
       end
     end
+  end
+
+  defp changed_sentence([]), do: ""
+
+  defp changed_sentence(fields) do
+    names = Enum.map_join(fields, " and ", &elem(&1, 0))
+    those = if length(fields) > 1, do: "those values", else: "that value"
+
+    "Live returned " <>
+      names <>
+      " with values other than the ones sent, so do not rely on #{those} — the timing and " <>
+      "velocity shape did come back as sent, which is most of the feel."
   end
 
   defp kept_sentence([]), do: ""

@@ -426,6 +426,40 @@ defmodule Seshat.Generation.MidiPartsTest do
       assert reply =~ "timing and velocity shape did"
     end
 
+    # PR #84 review: comparing each field against its *default* passes as soon
+    # as one note comes back non-default, so Live keeping the first ghost's
+    # chance and resetting the rest would still be reported as "came back as
+    # sent". The comparison is per note, sent against returned.
+    test "does not claim the fields came back when only the first note kept them", context do
+      {result, _trace} =
+        run(
+          context,
+          request(%{"parts" => [kick_part(%{"pattern" => "Xggx"})]}),
+          live(%{expression_mode: :first_only})
+        )
+
+      assert {:ok, reply} = result
+      refute reply =~ "Per-note chance and velocity spread came back as sent"
+      assert reply =~ "with values other than the ones sent"
+    end
+
+    # The other half of the same finding: non-default, but not the values that
+    # were sent.
+    test "does not claim the fields came back when Live returns different values", context do
+      {result, _trace} =
+        run(
+          context,
+          request(%{"parts" => [kick_part(%{"pattern" => "Xggx"})]}),
+          live(%{expression_mode: :normalized})
+        )
+
+      assert {:ok, reply} = result
+      refute reply =~ "Per-note chance and velocity spread came back as sent"
+      assert reply =~ "with values other than the ones sent"
+      # Not the default-drop wording: nothing came back at a default here.
+      refute reply =~ "Live returned default values"
+    end
+
     test "a clip that never answers is reported as unconfirmed, not as done", context do
       {result, _trace} = run(context, request(), live(%{swallow_notes: true}))
 

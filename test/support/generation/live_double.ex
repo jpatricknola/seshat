@@ -193,32 +193,65 @@ defmodule Seshat.Test.LiveDouble do
   defp respond("/live/clip/add/notes_extended", [track, slot | fields], live) do
     existing = clip(live, track, slot)[:notes] || []
 
-    added =
+    {added, _first_expressive_kept?} =
       fields
       |> Enum.chunk_every(8)
       |> Enum.filter(&(length(&1) == 8))
       |> Enum.with_index(length(existing))
-      |> Enum.map(fn {[pitch, start, duration, velocity, mute, probability, deviation, release],
-                      id} ->
+      |> Enum.map_reduce(false, fn {[
+                                      pitch,
+                                      start,
+                                      duration,
+                                      velocity,
+                                      mute,
+                                      probability,
+                                      deviation,
+                                      release
+                                    ], id},
+                                   kept_one? ->
         # `:drops_expression` is how "Live kept the note but not the three
         # expression fields" is reachable at all — the exact uncertainty
-        # `priv/AbletonOSC/API.md` carries a ⚠️ on.
-        {probability, deviation} =
-          if Map.get(live, :drops_expression, false),
-            do: {1.0, 0.0},
-            else: {probability, deviation}
+        # `priv/AbletonOSC/API.md` carries a ⚠️ on. `:expression_mode` covers
+        # the two ways a *partial* keep can lie to a comparison that only
+        # checks values against their defaults: Live keeping the first note's
+        # expression and resetting the rest (`:first_only`), and Live keeping
+        # non-default values that are not the ones that were sent
+        # (`:normalized`).
+        expressive? = probability < 1.0 or deviation > 0.0
 
-        %{
-          pitch: pitch,
-          start: start,
-          duration: duration,
-          velocity: velocity,
-          mute: mute,
-          probability: probability,
-          deviation: deviation,
-          release: release,
-          id: id
-        }
+        {{probability, deviation}, kept_one?} =
+          cond do
+            Map.get(live, :drops_expression, false) ->
+              {{1.0, 0.0}, kept_one?}
+
+            # Keep the first note that actually carries expression and reset
+            # every later one. Keying on index would not do it: an accent's
+            # probability is 1.0 and its velocity deviation can be 0, so
+            # "keep note 0" is indistinguishable from dropping everything.
+            Map.get(live, :expression_mode) == :first_only and expressive? and not kept_one? ->
+              {{probability, deviation}, true}
+
+            Map.get(live, :expression_mode) == :first_only ->
+              {{1.0, 0.0}, kept_one?}
+
+            Map.get(live, :expression_mode) == :normalized and expressive? ->
+              {{probability / 2, deviation + 7.0}, kept_one?}
+
+            true ->
+              {{probability, deviation}, kept_one?}
+          end
+
+        {%{
+           pitch: pitch,
+           start: start,
+           duration: duration,
+           velocity: velocity,
+           mute: mute,
+           probability: probability,
+           deviation: deviation,
+           release: release,
+           id: id
+         }, kept_one?}
       end)
 
     {:silent, put_in(live.clips[{track, slot}][:notes], existing ++ added)}
