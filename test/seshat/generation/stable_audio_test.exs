@@ -293,6 +293,13 @@ defmodule Seshat.Generation.StableAudioTest do
       assert message =~ "not a regular file"
     end
 
+    # The guarantee is "the last `cap` bytes", not "the newest chunks that
+    # happen to fit". Asserting a mere 100 bytes hid a real defect and made this
+    # test load-dependent: a port splits one write arbitrarily (`[40000]`,
+    # `[19456, 20544]` and `[38912, 1088]` all measured for the same 40,000-byte
+    # write), and when the newest chunk was small, `trim/3` dropped everything
+    # older and retained only that — 64 bytes of a 1,000-byte budget on the run
+    # that caught it. So this asserts the full cap, which is chunk-independent.
     test "retained diagnostics are bounded", %{root: root} do
       install_runtime(root, status: 1, noise: String.duplicate("x", 40_000), write_file?: false)
       Application.put_env(:seshat, :generation_max_output_bytes, 1_000)
@@ -300,7 +307,24 @@ defmodule Seshat.Generation.StableAudioTest do
       assert {:error, message} = StableAudio.generate(spec(root))
       assert byte_size(message) < 4_000
       assert message =~ "The runtime's last output was:"
-      assert message =~ String.duplicate("x", 100)
+      assert message =~ String.duplicate("x", 1_000)
+    end
+
+    # The same boundary with a deliberately small trailing write, which is the
+    # shape a real runtime produces: a traceback, then a short closing line.
+    # Before the split, this retained the closing line alone.
+    test "a small final write does not discard the output before it", %{root: root} do
+      install_runtime(root,
+        status: 1,
+        noise: String.duplicate("x", 40_000) <> "\\ndone\\n",
+        write_file?: false
+      )
+
+      Application.put_env(:seshat, :generation_max_output_bytes, 1_000)
+
+      assert {:error, message} = StableAudio.generate(spec(root))
+      assert message =~ "done"
+      assert message =~ String.duplicate("x", 900)
     end
   end
 

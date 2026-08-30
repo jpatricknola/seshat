@@ -359,24 +359,37 @@ defmodule Seshat.Generation.StableAudio do
     end
   end
 
+  # ⚠️ The chunk that takes the total over the cap is *split*, never dropped
+  # whole. A port delivers one write in an arbitrary number of pieces — the same
+  # 40,000-byte write was measured arriving as `[40000]`, `[19456, 20544]` and
+  # `[38912, 1088]` on one machine, varying with load — so chunk boundaries carry
+  # no meaning and must not decide what survives. Dropping the boundary chunk
+  # entirely used to retain whatever the newest chunk happened to be: a runtime
+  # whose last write was a 64-byte closing line reported 64 bytes of diagnostics
+  # out of a 32KB budget, having discarded the traceback immediately before it.
+  # The rule is "the last `cap` bytes", and only splitting implements it.
   defp trim(chunks, size, cap) do
     case List.pop_at(chunks, -1) do
       {nil, _rest} ->
         {chunks, size}
 
       {oldest, rest} ->
-        size = size - byte_size(oldest)
+        without_oldest = size - byte_size(oldest)
 
         cond do
-          size > cap and rest != [] ->
-            trim(rest, size, cap)
-
-          rest == [] and byte_size(oldest) > cap ->
-            kept = binary_part(oldest, byte_size(oldest) - cap, cap)
-            {[kept], cap}
+          without_oldest > cap and rest != [] ->
+            trim(rest, without_oldest, cap)
 
           true ->
-            {rest, size}
+            keep = cap - without_oldest
+
+            if keep > 0 and byte_size(oldest) > keep do
+              kept = binary_part(oldest, byte_size(oldest) - keep, keep)
+              # Chunks are newest-first, so the partial oldest goes back on the end.
+              {rest ++ [kept], without_oldest + keep}
+            else
+              {rest, without_oldest}
+            end
         end
     end
   end

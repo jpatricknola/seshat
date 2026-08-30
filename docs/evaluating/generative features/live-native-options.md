@@ -99,7 +99,11 @@ Proposal: SA3 → **Basic Pitch** (Apache-2.0, 225 KB ONNX, measured 0.06 s)
 
 **Merit:** for bass, Basic Pitch is measured, instant, and returns data
 Seshat controls; Convert Melody offers nothing it lacks and costs an import,
-a selection, a focus-dependent menu action and a cleanup pass. **Keep Basic
+a selection, a focus-dependent menu action and a cleanup pass. **One axis this
+table missed** — expression. Neither the note-writing path nor Live's Convert
+carries pitch bend, but a Basic Pitch `.mid` handed to Live's own importer
+does, measured 2026-08-30; see
+[midi §C.2a](midi-generation-options.md#c2a-getting-a-transcription-into-live--notes-vs-the-file-measured-2026-08-30). **Keep Basic
 Pitch.** Convert Harmony is worth one comparison on the pad render only
 because polyphonic transcription is where Basic Pitch is weakest and Live's
 converter is a different algorithm — a single afternoon's A/B, not a route.

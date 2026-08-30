@@ -551,6 +551,69 @@ and takes the install from **1.5 GB to ~50 MB**. If this route ships,
 vendoring the 225 KB ONNX file and calling onnxruntime directly is likely
 better than depending on the package.
 
+#### C.2a Getting a transcription into Live — notes vs. the file, measured 2026-08-30
+
+Two routes exist, and they are not equivalent. Measured against Live 12.4.5
+(build `2026-08-19_225ce5e356`) on a 54.000 s / 108-beat sung take, transcribed
+by Basic Pitch (92 notes tuned: `--minimum-frequency 80 --maximum-frequency 600
+--minimum-note-length 200`; 131 notes stock).
+
+**Route 1 — write the notes.** Parse the `.mid`, send the notes through
+`write_midi_notes`. Lands wherever Seshat says, one undo step, fully verifiable
+by reading the clip back. **Pitch bend is lost, permanently and by
+construction**: the LOM describes a note as nine fields
+(`pitch, start_time, duration, velocity, mute, probability, velocity_deviation,
+release_velocity, note_id`) and none of them is expression. Widening the note
+write cannot carry bend, at any fork version.
+
+⚠️ **Correction, same day.** A first pass here claimed Live has no
+envelope-authoring member at all, from a string dump of
+`_MxDCore/LomTypes.pyc`. **That was the wrong source** — LomTypes is *Max for
+Live's* type table, not the Python LOM a Remote Script uses. The fork's own
+[FORK_GAPS.md](../../../priv/AbletonOSC/FORK_GAPS.md) lists `automation_envelope`,
+`automation_envelopes` and `create_automation_envelope` on `Clip`, unexposed,
+with a blank M4L column — which is precisely why the M4L table lacked them.
+They are `DeviceParameter`-typed, so they reach *device automation* rather than
+a MIDI clip's pitch-bend or CC lanes, and nothing exposed today authors
+envelope data of any kind. So the practical position is unchanged and the
+principled one is not: this is a fork gap plus an open question about whether
+any spelling reaches MIDI lanes, **not** a proven Live wall. Whenever a claim
+here rests on LomTypes, check the member's M4L column before concluding
+anything about the Python API.
+
+**Route 2 — hand Live the file.** Copy the `.mid` into a browser-visible folder
+and load it by URI. Measured, working today with no fork change:
+`~/Music/Ableton/User Library/Clips/x.mid` appeared in the browser
+**immediately** (no rescan, no restart) as
+`query:UserLibrary#Clips:x.mid`, and `/live/browser/load_item` imported it.
+**Pitch bend survived** — confirmed on screen in the clip's envelope lane.
+Note timing survived exactly: a first note at beat 3.4818 in the file read
+`start=3.4818` in Live.
+
+Route 2's costs, all measured rather than assumed:
+
+- **Live creates its own track.** The track index passed, the selected track and
+  the selected scene are all ignored; the clip does not land in the chosen slot.
+  A caller resolves the created track by position afterwards — the same shape
+  `convert_audio_to_midi` and `create_track` already use.
+- The clip takes the MIDI file's internal track name (`Track 1`), not the
+  filename, and read back 84.0 beats for content ending at ~81.7.
+- **Seshat cannot verify the part that matters.** `Clip.has_envelopes` is in the
+  LOM, read-only and observable, but has no OSC address — so "did the bend
+  arrive?" is answerable only by a person looking at Live. Filed as
+  [fork issue #32](https://github.com/jpatricknola/AbletonOSC/issues/32) along
+  with the `load_item` documentation gap.
+- Bend depth depends on the instrument's `pitch_bend_range`, which is itself an
+  unexposed device parameter (`FORK_GAPS.md`), so a client cannot match the
+  ±2-semitone range Basic Pitch assumes.
+
+**Reading:** if a transcription route ever ships for *performance* material —
+a sung or played take, where scoops and vibrato are the musical content — it
+should deliver the file, not the notes. For material that will be quantised and
+re-instrumented anyway, notes are better: verifiable, placeable, and one undo
+step. Nothing here revives Route C for **generated** audio; the 2026-08-30
+ruling stands on the generator, not on the transcriber or its delivery.
+
 ### C.3 Prompt implications
 
 The brief asked whether material generated *for transcription* wants
