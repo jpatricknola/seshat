@@ -336,6 +336,57 @@ That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
 
+**`convert_audio_to_midi` drops the Accessibility helper, shipped 2026-08-30**
+on branch `convert-audio-to-midi-over-osc`, closing what had been the
+roadmap's top item — the tier-1/tier-3 blind spot recorded in
+`.claude/docs/ableton-lom.md` ("Why this is spelled out") found that
+`Live.Conversions` had been in the LOM the whole time, and
+[fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34) exposed
+`audio_to_midi_clip` and `is_convertible_to_midi` the same day. `convert_audio_to_midi`
+now runs the conversion `sing-it-back-as-midi` had driven by AX menu press
+entirely over ordinary OSC: `is_convertible_to_midi` replaces the hand-rolled
+empty-slot/MIDI-clip guards with Live's own predicate; the address itself
+(`/live/clip/audio_to_midi`) is asynchronous and always answers `-1` on
+accept, since the new track doesn't exist yet, so the handler reads
+`/live/song/get/track_names` before and after, resolves the new track by the
+first name that diverges between the two reads, and polls up to ~7s
+(20×250ms, up from the plan's 10×150ms once the fork's ~3s measured arrival
+time was accounted for) rather than trusting a synchronous reply. Because the
+reissue-once stale-reply defence in the shared `query_correlated/4` helper
+would fire a *second* conversion on a stale echo, the request itself
+deliberately bypasses it for a raw `Transport.query` plus manual correlation
+— a plan deviation the reviewer called out as the best thing in the diff.
+`native/seshat_ax/main.m`'s five-command protocol drops to four (`convert`
+and its now-dead `kCodeUnknownCommand` status deleted along with it), leaving
+`get_audio_outputs`/`set_audio_output` as the only Accessibility-backed
+tools; `Seshat.AX.Client` and its one process-starting door stay, pinned as
+before by `test/seshat/ax/client_test.exs`. The tool no longer drives
+`focus_view Session` or leaves Live parked on the Session view, since nothing
+needs a menu open any more. PR review found all five OSC addresses correct on
+independent re-derivation against `priv/AbletonOSC/API.md` and raised one
+real gap, fixed before merge: `convert_sent_but/3` — the "was requested, may
+still appear" wording carrying the whole async design's honesty — had no test
+pinning it across its four call sites; three tests now do. Two nits were left
+for a human reader to judge (`remote_error/1`'s generic "check
+get_session_state" suffix misdirecting on a genuine `audio_to_midi_clip`
+raise; `first_divergence/2` resolving the wrong track if one is renamed
+mid-conversion, judged not worth code against how narrow the window is).
+**`mix routing.eval` was not run** despite Part 2's description rewrite — the
+same call made on the two prior generation PRs, still outstanding. **Live
+verification has not run at all** — Ableton Live was not running at any point
+during implementation or review, so all four `docs/smoke_tests/auto/convert.md`
+checks and the three manual checks it cites (`on-screen.md`'s focus/view
+check, `by-ear.md`'s "Sing a line, hear it back as a guitar" — still unrun
+since the sing-it-back ship — and `conversation.md`'s routing check) read
+`*Last run: —*`. Restart Live (the installed `conversions.py` predates the
+running interpreter) and the Seshat server on this code before `/smoke-test
+convert`. `mix ax.install` was also not run, deliberately — installing
+rewrites `~/.seshat/bin/seshat-ax`, and macOS Accessibility trust is keyed to
+the binary, so an unattended reinstall risked revoking
+`get_audio_outputs`/`set_audio_output`'s trust with nobody present to
+re-approve it; someone should run it and re-approve by hand. Plan archived at
+[docs/archive/PLAN_convert_audio_to_midi_over_osc.md](docs/archive/PLAN_convert_audio_to_midi_over_osc.md).
+
 **Sing it back as MIDI shipped 2026-08-30** on branch `sing-it-back-as-midi`,
 closing what had been the roadmap's top item: a sung or hummed take can now be
 routed, recorded, converted to a MIDI clip on Live's own `Create → Convert

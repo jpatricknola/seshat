@@ -1,5 +1,16 @@
 # Plan: `convert_audio_to_midi` drops the Accessibility helper
 
+> **Archived 2026-08-30 — shipped.** This is the plan as written *before*
+> implementation; the code as merged may differ. The feature now lives in
+> `Seshat.Tools.Handlers`'s `convert_audio_to_midi` clause, running over
+> `/live/clip/audio_to_midi` and `/live/clip/get/is_convertible_to_midi`;
+> `native/seshat_ax/main.m` and `Seshat.AX.Client` lost the `convert` command
+> and now serve only `get_audio_outputs`/`set_audio_output`. Live
+> verification did not run — see CLAUDE.md's "Current focus" for what still
+> needs a person and a running Ableton. Open follow-ups: `mix routing.eval`
+> was not run for the description change, and `mix ax.install` was
+> deliberately not run to avoid an unattended Accessibility re-approval.
+
 **Roadmap item:** `convert_audio_to_midi` drops the Accessibility helper —
 re-implement the conversion on the fork's `/live/clip/audio_to_midi` address
 and delete the `convert` command from the AX helper, leaving
@@ -58,7 +69,7 @@ No fork change, no new tool, no `Definitions` count change, no
 ## OSC contract
 
 The fork owns the wire facts; the conversions rows below cite
-[priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md) § "Conversions — audio to
+[priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md) § "Conversions — audio to
 MIDI, Simpler and Drum Rack" rather than restating its measurements.
 
 New to `lib/` (both registered in `abletonosc/conversions.py`, both already
@@ -312,7 +323,7 @@ the old wording.
   delete the focus-dance checks with the mechanism and add one covering the
   view not moving. Its undo observation moved into `auto/convert.md` as an
   agent-runnable check. The archived
-  [PLAN_sing_it_back_as_midi.md](archive/PLAN_sing_it_back_as_midi.md) still
+  [PLAN_sing_it_back_as_midi.md](PLAN_sing_it_back_as_midi.md) still
   cites the old title; archived plans are point-in-time records and are left
   as they stand — the citation was never run, and the mechanism it covered
   is what this change deletes.
