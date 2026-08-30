@@ -195,6 +195,19 @@ reject, defer, downgrade, or rank a feature lower because it needs a fork
 update. Account for the Python change, pin bump, install/restart, and live
 verification in the plan, then build it.
 
+**"The LOM" means what `import Live` exposes to a Remote Script — and checking
+it has a tier order.** The Live binary's registration table is tier 1 (it
+carries Ableton's own docstrings and argument names); Live's shipped Remote
+Scripts are tier 2 (they run in the same interpreter AbletonOSC does).
+`_MxDCore/LomTypes.pyc` is **the Max for Live property registry, not the
+LOM** — safe as a positive, unsafe as a negative — and `dump_lom` /
+`FORK_GAPS.md` record only classes, so module-level functions such as
+`Live.Conversions.audio_to_midi_clip` are missing from both. **Never call a
+capability absent from the LOM on tier-3 evidence.** Doing exactly that put
+Convert-to-MIDI on the Accessibility helper for a month
+([fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34)). Table and
+commands: [.claude/docs/ableton-lom.md](.claude/docs/ableton-lom.md).
+
 **Anything that is bridge work only is filed as a GitHub issue on the fork and
 cited from wherever Seshat needed it** — a missing address, a bridge defect, a
 wrong `API.md` row, a `FORK_GAPS.md` disposition measurement contradicts.

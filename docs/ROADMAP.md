@@ -764,7 +764,82 @@ didn't observe a difference" into "there isn't one, on this evidence."
 - `mix routing.eval` is on-demand only, never in `mix precommit` — keep it
   that way; it is externally metered and stochastic.
 
-## #14 · `screenshot_live` — let Seshat see the screen
+## #14 · `convert_audio_to_midi` drops the Accessibility helper
+
+**Impact 6 · Lift 4 · 1.50 impact-per-effort**
+
+**Blocked** on [fork #34 — Expose `Live.Conversions`: `audio_to_midi_clip` and
+`is_convertible_to_midi`](https://github.com/jpatricknola/AbletonOSC/issues/34).
+There is no address today, so there is nothing to build until it lands. The
+quotient above is what the work is worth once it does, not a claim it is ready.
+
+**Goal:** re-implement `convert_audio_to_midi` on an ordinary OSC address and
+delete the `convert` command from the AX helper, leaving `get_audio_outputs` /
+`set_audio_output` as the only Accessibility-backed tools.
+
+**Why:** the tool works, so this is a reliability item, not a capability one.
+What goes away is a list of failure modes that have nothing to do with the
+conversion: Live must be the frontmost application, the helper presses one of
+three menu titles compiled in by name (so a Live rename or a non-English
+install breaks it silently), `AXEnabled` lies until AppKit validates lazily —
+hence the ~350 ms wait — and the whole path has no failure channel, so a
+command that was disabled for the wrong reason is indistinguishable from one
+that was never pressed. The current implementation also has to drive
+`focus_view Session` and confirm the selection through two independent reads
+purely to satisfy the menu, and leaves the user on the Session view afterwards
+because of it. None of that survives the move.
+
+Two things are gained rather than merely removed. `is_convertible_to_midi`
+replaces the hand-rolled empty-slot and MIDI-clip guards with Live's own
+predicate. And per fork #34 the new address is asked to name the created
+track's index in its reply, which retires the count-before/count-after
+inference and the resolve-by-position-after-the-source logic that stands in
+for it today.
+
+**Context for the plan author:**
+
+- **Read the fork issue for the wire contract; do not restate it here.** Two
+  things in it are load-bearing for the plan and unmeasured at filing time:
+  whether `audio_to_midi_clip` is synchronous, and whether
+  `is_convertible_to_midi` raises on a MIDI clip or answers `false`. Both
+  change the shape of the handler. Verify against the running bridge after
+  the pin bump, before writing the Elixir.
+- **The AX helper shrinks but does not go.** `native/seshat_ax/main.m`'s
+  five-command protocol loses `convert`; `Seshat.AX.Client.convert/1` goes with
+  it. `lib/seshat/ax/client.ex` stays — the audio-output tools still need it,
+  and it is still one of the two process-starting doors the grep test in
+  `test/seshat/ax/client_test.exs` pins. Check that test still asserts what it
+  means to after the command is gone.
+- **The undo-step set does not change.** `convert_audio_to_midi` is already
+  undo-stepped and stays so; `Definitions.unstepped_names/0` still pins exactly
+  the two audio-output tools.
+- **The tool description changes twice over.** The sentence about leaving Live
+  on the Session view stops being true, and the failure wording should name
+  Live's own rejection instead of a menu that could not be pressed.
+- **Sequencing:** fork merge → gitlink bump to merged `origin/master` →
+  `mix abletonosc.install` → Live restart → verify the address by hand → then
+  the Elixir. A merged handler is not a working one.
+- **Live verification.** `docs/smoke_tests/auto/convert.md`'s three checks all
+  still read `*Last run: —*` — they were written for this tool and have never
+  run. This item should be the first thing that runs them. The three
+  `manual/on-screen.md` checks tied to the AX focus dance become obsolete
+  rather than needing a re-run; delete them with the mechanism they test, and
+  add one covering the fact that the view no longer moves.
+- **Watch the scope creep.** Fork #34 leaves the rest of `Live.Conversions`
+  (`sliced_simpler_to_drum_rack`, `create_drum_rack_from_audio_clip`,
+  `create_midi_track_with_simpler`) to the fork's judgement. If those land in
+  the same merge they are a separate Seshat item, not this one — *Slice to New
+  MIDI Track* is a different producer intention and deserves its own scoring.
+- Two companion fork defects were filed alongside #34 and neither blocks this:
+  [#35](https://github.com/jpatricknola/AbletonOSC/issues/35) (`/live/api/reload`
+  aborts on a fresh session while logging success — it breaks `API.md`'s probe
+  rig, so budget for that if the plan wants to measure anything in Live before
+  the address exists) and
+  [#36](https://github.com/jpatricknola/AbletonOSC/issues/36) (`walk_live()`
+  drops module-level members, which is why this whole module was missing from
+  `FORK_GAPS.md` in the first place).
+
+## #15 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -790,7 +865,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #15 · Opt-in `samples` index
+## #16 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -814,7 +889,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #16 · Accepted-search memory
+## #17 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
@@ -838,7 +913,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #17 · Producer personas — switchable musical taste
+## #18 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -873,7 +948,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #18 · Verify destructive mutations before reporting success
+## #19 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -945,7 +1020,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #19 · User XMP tags
+## #20 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -964,7 +1039,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #20 · Small OSC breadth — grab bag
+## #21 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -986,7 +1061,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
   pool; recorded so the "groove amount is inert" audit finding doesn't get
   re-litigated.
 
-## #21 · Pin the wording of `edit_notes`' partial-failure message
+## #22 · Pin the wording of `edit_notes`' partial-failure message
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1020,7 +1095,7 @@ convention across the module.
 - Low lift once the mocking question is settled — the message itself is
   already correct and doesn't need to change, only get pinned.
 
-## #22 · Routing eval report should self-identify which case expectations it scored against
+## #23 · Routing eval report should self-identify which case expectations it scored against
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1052,7 +1127,7 @@ loader through the run map `mix routing.eval` assembles, through
   only a hash, since a hash alone still sends a PR reader back to the case
   JSON to see what changed.
 
-## #23 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
+## #24 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1085,7 +1160,7 @@ against real second-slice cases than speculatively.
   holds ("the model must not proceed on invented state") — this item is only
   about whether that reply should count against `no_tool_errors`.
 
-## #24 · Tighten the process-start grep so it does not shape prose in unrelated modules
+## #25 · Tighten the process-start grep so it does not shape prose in unrelated modules
 
 **Impact 1 · Lift 1 · 1.00 impact-per-effort**
 
@@ -1105,7 +1180,7 @@ non-blocking nit rather than fixed inline because it touches a shared
 invariant test outside the routing-evals change's own files, not something
 that plan's implementation owns.
 
-## #25 · LLM enrichment at reindex
+## #26 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -1132,7 +1207,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #26 · Monitored refresh worker for `Session.State`
+## #27 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -1176,7 +1251,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #27 · Device list per track in session state
+## #28 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1197,7 +1272,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #28 · Adopt MCP `2026-07-28` when Anubis supports it
+## #29 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1248,7 +1323,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #29 · Clip grid in session state — only if usage demands it
+## #30 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 

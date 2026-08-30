@@ -1,6 +1,41 @@
 # Ableton Live Object Model (LOM)
 
-The LOM is the hierarchy of objects that Ableton Live exposes for programmatic control.
+The LOM is what `import Live` exposes to a Remote Script. That is the surface
+AbletonOSC runs on, and the one that decides what Seshat can do.
+
+It is *mostly* a hierarchy of objects (below), but **not entirely**: some
+operations are **module-level functions on a `Live` submodule**, owned by no
+object in the session tree. `Live.Conversions.audio_to_midi_clip` (Live's
+Convert Harmony/Melody/Drums to New MIDI Track) and `Live.MidiMap.map_midi_cc`
+are both of that shape. A search that walks the object tree will not find
+them.
+
+## How to check whether the LOM has something
+
+Four sources, in this order of authority. **A negative is only trustworthy
+from tier 1 or 2** — every lower source is a filtered view and produces false
+negatives.
+
+| Tier | Source | Notes |
+|---|---|---|
+| **1** | `strings -n 5 "/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live"` | Ground truth — Boost.Python's own registration table, carrying **Ableton's docstrings and declared argument names**. `grep -E "^Live\.[A-Z][A-Za-z0-9]*$"` enumerates every submodule. |
+| **2** | Live's shipped Python: `App-Resources/MIDI Remote Scripts`, `Helpers/Push3.app/…/live_model/Live` | `grep -rl "<term>" ".../MIDI Remote Scripts/"` — Ableton's own Remote Scripts run in **the same interpreter AbletonOSC does**, so one of them calling an operation ends the question. |
+| **3** | `_MxDCore/LomTypes.pyc` | ⚠️ **Not the LOM.** The *Max for Live property registry* — what M4L is permitted to see, curated for a different host. Fine as a positive, unsafe as a negative. |
+| **4** | [Cycling '74 apiref](https://docs.cycling74.com/apiref/lom/) | Third-party, known to drift (it understated `groove_amount`'s range). |
+
+`/live/application/dump_lom` writes the reachable surface to JSON in one OSC
+call and is usually the cheapest first move — but ⚠️ **it records only
+classes**, so module-level functions are missing from it and therefore missing
+from `FORK_GAPS.md`
+([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36)). Until that
+lands, absence from the gap file is not evidence of absence from the LOM.
+
+**Why this is spelled out.** Convert-to-MIDI was recorded as UI-only, and
+`convert_audio_to_midi` shipped on an Accessibility helper, on the strength of
+one `LomTypes.pyc` grep on 2026-08-27. The operation had been in the LOM the
+whole time, and Live's own `Push2/convert.py` had been calling it. Found
+2026-08-30; bridge half is
+[fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34).
 
 ## Seshat policy
 

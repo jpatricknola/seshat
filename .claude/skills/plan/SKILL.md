@@ -35,7 +35,15 @@ be able to say yes/no to each one.
 
      A Python half is normal feature scope, not a deterrent. **Never reject,
      defer, downgrade, narrow, or rank a feature lower because it needs a
-     fork update; everything the installed LOM exposes is fair game.** The
+     fork update; everything the installed LOM exposes is fair game.**
+
+     **Before writing that the LOM lacks something, check it at tier 1 or 2**
+     — the Live binary's registration table, then Live's own shipped Remote
+     Scripts. `LomTypes.pyc` is the Max for Live registry and `dump_lom`
+     records only classes, so neither can prove a member absent; module-level
+     functions such as `Live.Conversions.audio_to_midi_clip` appear in
+     neither. Commands and the tier table:
+     [.claude/docs/ableton-lom.md](.claude/docs/ableton-lom.md). The
      plan must still describe the work accurately: it lands as a commit in
      the submodule plus a pin bump here, it puts a
      `mix abletonosc.install` + Live restart on the user, and **no test in

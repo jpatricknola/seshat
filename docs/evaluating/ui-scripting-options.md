@@ -29,6 +29,10 @@ The architectural rule is:
 > **Use UI scripting only for a concrete operation absent from the current
 > LOM. When the LOM exposes an operation, add it to the fork instead.**
 
+The rule has held up; what failed once was the evidence behind the word
+*absent*. See "What counts as evidence that the LOM lacks a target" below
+before applying it.
+
 ## What is already established
 
 ### The LOM reaches more UI state than Seshat currently exposes
@@ -105,6 +109,44 @@ allows a target to fall to AX or another mechanism.
 Falling back a rung requires evidence about the particular target. The
 existence of a shortcut is not a reason to skip checking the LOM or AX tree.
 
+### What counts as evidence that the LOM lacks a target
+
+Rung 1 is the default, so **falling below it is a claim that needs a source**,
+and the source has to be one that can produce a trustworthy negative:
+
+- **Sufficient:** the operation is absent from the Live binary's Boost.Python
+  registration table (`strings -n 5 …/Contents/MacOS/Live`), **and** absent
+  from Live's own shipped Remote Scripts
+  (`grep -rl "<term>" ".../MIDI Remote Scripts/"`). Ableton's scripts run in
+  the same interpreter AbletonOSC does; one of them calling the operation
+  settles it in the other direction.
+- **Not sufficient:** a `_MxDCore/LomTypes.pyc` grep. That file is the *Max
+  for Live property registry*, not the LOM — a member absent there can be
+  fully present and callable.
+- **Not sufficient:** absence from `FORK_GAPS.md` or `lom_dump.json`.
+  `walk_live()` records only classes, so module-level functions never appear
+  in either ([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36)).
+- **Not sufficient, and the one that actually bit:** *a UI-scripting spike
+  that works.* A working mechanism proves the mechanism works. It says nothing
+  about whether a lower rung existed, and it is a powerful stop signal exactly
+  when the search should continue.
+
+**The worked failure.** *Convert Harmony/Melody/Drums to New MIDI Track* was
+placed at rung 5 in §"What UI scripting could buy" on one `LomTypes.pyc` grep
+(2026-08-27), the AX path was then measured working, and
+`convert_audio_to_midi` shipped on the Accessibility helper. On 2026-08-30 the
+Live binary turned out to register `Live.Conversions.audio_to_midi_clip` —
+with Ableton's own docstring — and Live's `Push2/convert.py` turned out to
+call it. It was a fork gap the whole time. See the correction in §2 above,
+[fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34), and
+[.claude/docs/ableton-lom.md](../../.claude/docs/ableton-lom.md) for the tier
+table.
+
+An operation with **no natural owning object** — "convert this", "separate
+that", "slice this" — is the shape most likely to be a module-level function
+and therefore the shape most likely to be misfiled here. Grep the binary for
+the verb before writing it down as UI-only.
+
 ## Safety model
 
 Neither OSC nor UI scripting is automatically verified.
@@ -146,6 +188,40 @@ Candidate uses, ordered by current value:
    12.4.3's `LomTypes.pyc` on 2026-08-27: **Stem Separation** (12.3+, Suite
    only; vocals/drums/bass/other onto new tracks) and **Convert
    Harmony/Melody/Drums to New MIDI Track** (Live 9+, Standard and Suite).
+
+   > ⚠️ **Correction, 2026-08-30 — Convert-to-MIDI is very likely NOT
+   > UI-only.** The 2026-08-27 check grepped `LomTypes.pyc`, which registers
+   > *properties*; it did not look for a service class. On Live 12.4.5:
+   > `LomTypes.pyc` **imports `Conversions` from `Live`**;
+   > `Push3.app`'s `live_model/Live/Conversions.pyc` declares
+   > `audio_to_midi_clip`, `is_convertible_to_midi` and an
+   > `AudioToMidiTypeEnum` of `harmony_to_midi` / `melody_to_midi` /
+   > `drums_to_midi`; and **Live's own shipped Remote Script**
+   > `MIDI Remote Scripts/Push2/convert.pyc` imports `Conversions`, calls
+   > `is_convertible_to_midi`, and names `ConvertAudioClipToHarmonyMidi`,
+   > `ConvertAudioClipToMelodyMidi` and `ConvertAudioClipToDrumsMidi`.
+   > AbletonOSC is a Remote Script and runs in that same embed, so this reads
+   > as a **fork gap — a missing address — not a UI-only feature**, and the
+   > case for driving `convert_audio_to_midi` through AX rests on a premise
+   > that has not survived re-checking.
+   >
+   > **Settled the same day.** The Live 12.4.5 binary's Boost.Python
+   > registration for `Live.Conversions` was read directly: `audio_to_midi_clip`
+   > (*"Creates a MIDI clip in a new MIDI track with the notes extracted from
+   > the given `audio_clip`"*), `is_convertible_to_midi`, and six siblings, all
+   > **module-level free functions** — which is also why the fork's own
+   > `dump_lom` never saw them ([fork
+   > #36](https://github.com/jpatricknola/AbletonOSC/issues/36)). The
+   > `AudioToMidiType` enum was confirmed live in the running Remote Script
+   > interpreter. **Convert-to-MIDI is a fork gap, filed as [fork
+   > #34](https://github.com/jpatricknola/AbletonOSC/issues/34)**; Seshat's half
+   > is ROADMAP #14. The call itself has still not been executed, so its
+   > synchronicity is open. Stem
+   > Separation was *not* re-checked and its UI-only disposition still stands
+   > on the 2026-08-27 evidence. Found while walking the LOM for a
+   > harmonisation member; see
+   > [generative features/harmony-from-a-melody-options.md §2.6](generative%20features/harmony-from-a-melody-options.md).
+
    Both are stronger targets than Audio Settings was, because their read-back
    is on the OSC side, not AX: new tracks arrive as structural pushes into
    `Session.State`, converted notes are readable through `get_clip_notes`,

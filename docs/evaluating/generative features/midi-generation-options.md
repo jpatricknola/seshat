@@ -614,6 +614,35 @@ re-instrumented anyway, notes are better: verifiable, placeable, and one undo
 step. Nothing here revives Route C for **generated** audio; the 2026-08-30
 ruling stands on the generator, not on the transcriber or its delivery.
 
+#### C.2b The listening result, 2026-08-30
+
+Judged by ear, by the user, on one sung 54 s take through the same
+`Fuzzy Analog Keys` patch on every track: **Live's Convert Melody was preferred
+over Basic Pitch on note quality**, comparing the bend-free versions. Basic
+Pitch's value was in the one thing Convert cannot do — preserving the note
+bends.
+
+That reverses the prediction this document's own reasoning implied (that
+frequency clamping plus a note-length floor would make tuned Basic Pitch the
+better transcription of a clean line). It did not. Record it as the measurement
+it is: one take, one voice, one listener, one patch — a direction, not a
+benchmark, and taken on a keys sound where bend flatters nothing.
+
+**The consequence is the sharp part: the two properties cannot be combined.**
+Convert produces the better notes and emits no bend; the Basic Pitch import
+route carries bend and loses on notes; and nothing exposed can graft one onto
+the other, because no address authors an envelope
+(`create_automation_envelope` is `DeviceParameter`-typed — device automation,
+not a clip's bend lane). A user gets better notes *or* expression, not both.
+
+So `convert_audio_to_midi` stays the default and is not under challenge. Basic
+Pitch's remaining case is **narrow and specific**: expression-preserving
+transcription for takes whose musical content is the sliding, on instruments
+where bend reads as expression rather than as drift. That is a smaller feature
+than "a second transcriber", and it should be judged on a guitar or lead patch
+before anyone builds it — the comparison above deliberately did not test the
+condition Basic Pitch would ship for.
+
 ### C.3 Prompt implications
 
 The brief asked whether material generated *for transcription* wants
@@ -820,7 +849,18 @@ Do not transfer a drummer's velocity curve mechanically onto bass or keys and
 call that human performance; the articulation and phrase hierarchy are
 different. Route D is a strong drum finalist, not an overall winner. Bass and
 harmony remain Route C experiments; a bounded rule-derived bass is an
-additional baseline, not a proven replacement. A performance-aware symbolic
+additional baseline, not a proven replacement.
+
+> **Scope note, 2026-08-30 — "harmony" here means *composing* a harmony part
+> from a description.** *Harmonising a melody the user already has in a MIDI
+> clip* is a different problem with a different answer, and this doc's verdicts
+> do not apply to it: rhythm and velocity are inherited from the existing
+> notes, only pitch is chosen, and pitch against a known scale is
+> deterministic. It needs no model and no dependency. Evaluated separately in
+> [harmony-from-a-melody-options.md](harmony-from-a-melody-options.md), which
+> also records that Live's own Chord device harmonises **by scale degree**
+> with a `Use Current Scale` switch, and that all 29 of its parameters were
+> measured reachable through AbletonOSC on 2026-08-30. A performance-aware symbolic
 model such as Agogic may add another option when it becomes runnable, while
 combined bass-and-drums generation requires the comparison below.
 

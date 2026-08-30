@@ -63,12 +63,47 @@ capability gap or a candidate disadvantage. **Everything the installed LOM
 exposes is 100% fair game for Seshat. Never reject, defer, downgrade, score
 down, or rank a feature or approach lower because the fork needs an update.**
 
-**2.3 The LOM.** Three sources, in order of authority: the installed
-`_MxDCore/LomTypes.pyc` (`strings -n 4 … | grep -i <term>`), Live's own
-shipped Python under `App-Resources/MIDI Remote Scripts` (Push/Move scripts
-show how Ableton itself calls things), then the
-[Cycling '74 LOM apiref](https://docs.cycling74.com/apiref/lom/). Something
-in the LOM but not in the fork is a **fork gap** — plan it as Python, never
+**2.3 The LOM.** The LOM is **what `import Live` exposes to a Remote
+Script** — that is the surface AbletonOSC runs on, and the only one that
+decides feasibility. Four sources, in this order of authority. Do not stop at
+the first that answers "no": a negative is only trustworthy from tier 1 or 2.
+
+**Tier 1 — the Live binary's registration table.** `strings -n 5
+"/Applications/Ableton Live 12 Suite.app/Contents/MacOS/Live" | grep -n -B12
+-A12 "<term>"`. This is ground truth: Boost.Python's own registration, and it
+carries **Ableton's docstrings and the declared argument names**, which is
+usually the whole contract. Nothing else on this list is authoritative
+against it. Module names appear as bare `Live.<Module>` lines, so you can
+enumerate the whole surface with `grep -E "^Live\.[A-Z][A-Za-z0-9]*$"`.
+
+**Tier 2 — Live's own shipped Python**, under
+`App-Resources/MIDI Remote Scripts` and `Helpers/Push3.app/…/live_model/Live`.
+`grep -rl "<term>" "…/MIDI Remote Scripts/"` is the single highest-value
+command on this list: Ableton's own Remote Scripts run in **the same
+interpreter AbletonOSC does**, so one of them calling the operation is an
+existence proof that ends the question. Push and Move scripts also show how
+Ableton itself calls things.
+
+**Tier 3 — `_MxDCore/LomTypes.pyc`** (`strings -n 4 … | grep -i <term>`).
+⚠️ **This is not the LOM.** It is the *Max for Live property registry* — the
+member lists M4L is permitted to see, curated for a different host. It is a
+useful cross-check and a bad negative: a member absent here can be fully
+present in the LOM. **Never write "verified absent from the LOM" on the
+strength of a `LomTypes.pyc` grep alone** — that exact sentence is how
+`Live.Conversions` (the entire Convert-to-MIDI feature) was misfiled as
+UI-only for a month, and shipped on an Accessibility helper it never needed.
+
+**Tier 4 — the [Cycling '74 LOM apiref](https://docs.cycling74.com/apiref/lom/).**
+Third-party and known to drift; it understated `groove_amount`'s range.
+
+**A LOM member need not be a class member.** `Live.Conversions.audio_to_midi_clip`
+and `Live.MidiMap.map_midi_cc` are **module-level free functions** on a `Live`
+submodule — no object in the session tree owns them. Searching only for
+members of `Song` / `Track` / `Clip` / `Device` cannot find them, and neither
+can `dump_lom` (see the traps below). When an operation has no obvious owning
+object, grep the binary for the **verb**, not for an object's member list.
+
+Something in the LOM but not in the fork is a **fork gap** — plan it as Python, never
 as UI scripting. It changes implementation scope, not feasibility, product
 merit, or priority. **Record it in the fork's
 [priv/AbletonOSC/FORK_GAPS.md](priv/AbletonOSC/FORK_GAPS.md)** (member,
@@ -81,7 +116,19 @@ restart is needed); check that file first so you don't
 re-record one. If Live is running, the probe rig under "Measuring the Live
 API without building the feature first" in
 [priv/AbletonOSC/API.md](priv/AbletonOSC/API.md)
-answers behavioural questions in minutes.
+answers behavioural questions in minutes — and
+`/live/application/dump_lom` writes the whole reachable surface to JSON in one
+call, with no file edits at all, which is usually the cheaper first move.
+
+⚠️ **Two live defects to know before you rely on either** (both filed
+2026-08-30): `/live/api/reload` aborts on a fresh Live session and still logs
+`Reloaded code`, so the probe rig does not work as written until
+`dump_lom` has been fired once
+([fork #35](https://github.com/jpatricknola/AbletonOSC/issues/35)); and
+`dump_lom` records only classes, so **module-level functions are absent from
+it and therefore absent from `FORK_GAPS.md`**
+([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36)). Until #36
+lands, absence from the gap file is not evidence of absence from the LOM.
 
 **2.4 Extensions SDK** (Live 12.4.5+, public beta, Suite). JavaScript/TypeScript
 inside Live with clip/track/device/MIDI access, audio-file import, undo
@@ -97,8 +144,18 @@ confirmed on the Extension Host class versus merely present in Live's Push
 document, and which of them the extension ecosystem already ships for free.
 
 **2.5 UI-only.** A feature in Live's menus or context menus with no API at
-any rung above (Stem Separation and the Convert-to-MIDI commands are the
-canonical examples). Evaluate it against the mechanism ladder in
+any rung above.
+
+⚠️ **The bar for "no API at any rung above" is tier 1 or tier 2 evidence, and
+a spike that works does not clear it.** Convert-to-MIDI was the canonical
+example of a UI-only feature until 2026-08-30, when the Live binary turned out
+to register `Live.Conversions.audio_to_midi_clip` all along and Live's own
+`Push2/convert.py` turned out to call it. It reached this rung on one
+`LomTypes.pyc` grep, and stayed here because the Accessibility spike
+*succeeded* — a working mechanism is a powerful stop signal, and it stopped
+the search a rung too low. **Before placing anything here, say in the doc
+which tier-1 or tier-2 check you ran and what it returned.** Stem Separation
+remains a genuine example; it has not been re-checked against tier 1. Evaluate it against the mechanism ladder in
 [ui-scripting-options.md](docs/evaluating/ui-scripting-options.md): named
 AX element with read-back is the only rung that has been validated. Per
 target, answer: menu-bar reachable (enumerable) or context-menu only; what
@@ -202,6 +259,21 @@ Ableton" is not an answer when Ableton is running.
   brief "obviously" needs a model.
 - **"Seshat can't" ≠ "Live can't".** Tool gap, fork gap, LOM gap, UI-only:
   four different costs. Name which.
+- **A negative needs a better source than a positive.** Finding a member
+  anywhere proves it exists. Proving one *absent* needs tier 1 (the Live
+  binary) or tier 2 (Live's own Remote Scripts). Every other source is a
+  filtered view and will produce false negatives — `LomTypes.pyc` is the M4L
+  registry, `dump_lom` records only classes, the apiref drifts.
+- **A LOM member need not hang off an object.** `Live.Conversions` and
+  `Live.MidiMap` are submodules of free functions with no owning object in the
+  session tree. If an operation has no natural owner — "convert this",
+  "separate that" — grep the binary for the verb before concluding it is
+  absent. `Live.MidiMap.map_midi_cc` had been called by the fork's own
+  `manager.py` for the entire time `dump_lom` was failing to report it.
+- **A successful spike is not evidence that a lower rung was checked.** The
+  ladder decides the mechanism; the spike only proves the mechanism you chose
+  works. Re-read §2.1–2.3 before writing "UI-only" in a doc, even when
+  something already works.
 - **Version anchoring.** Capabilities you remember are from a version you
   remember. Live ships point releases with real features (12.3 stems, 12.4.5
   Extensions SDK); check the notes since the installed build.
