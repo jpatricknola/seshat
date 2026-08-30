@@ -57,7 +57,7 @@ defmodule Seshat.Eval.Fixture do
     %__MODULE__{
       name: name,
       song: atomize(map["song"], ~w(tempo time_sig_numerator time_sig_denominator is_playing
-        root_note scale_name groove_amount swing_amount)a),
+        root_note scale_name groove_amount swing_amount groove_pool)a),
       tracks: Enum.map(map["tracks"] || [], &track/1),
       return_tracks: Enum.map(map["return_tracks"] || [], &return_track/1),
       master: atomize(map["master"], ~w(volume pan cue_volume)a),

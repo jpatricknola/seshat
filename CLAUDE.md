@@ -158,6 +158,11 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/generation/audio_clip.ex](lib/seshat/generation/audio_clip.ex) | The `generate_audio` workflow: session read, duration arithmetic, target guards, the reserved take filename, the import through `/live/clip_slot/create_audio_clip`, and the read-back that decides whether any of it worked. Guards run before the render, so a failed generation leaves Live untouched |
 | [lib/seshat/generation/backend.ex](lib/seshat/generation/backend.ex) | The boundary between that workflow and whatever renders audio. `Spec` in, `{:ok, %{path:, seed:, wall_ms:}}` out; the implementation is a compile-time choice so the suite's fake cannot leak into the real adapter |
 | [lib/seshat/generation/stable_audio.ex](lib/seshat/generation/stable_audio.ex) | **The second native-process door.** Drives the local Stable Audio 3 MLX runtime one process per request — argv only, never a shell; every weight preflighted so a missing one refuses instead of starting a download; a 60s deadline that terminates the runtime's exact OS pid |
+| [lib/seshat/generation/midi_parts.ex](lib/seshat/generation/midi_parts.ex) | The `generate_midi` workflow: cross-field validation, compile-and-perform every part before any OSC, the target guards, track creation, optional instrument loads, the chunked `add/notes_extended` writes and the windowed read-back that decides what the reply may claim |
+| [lib/seshat/generation/midi/pattern.ex](lib/seshat/generation/midi/pattern.ex) | The step-pattern compiler — `X x g -` plus a resolution, to onsets on an exact grid. Pure; repeats a short pattern whole and refuses one that does not divide |
+| [lib/seshat/generation/midi/performance.ex](lib/seshat/generation/midi/performance.ex) | The performance layer — microtiming, velocity contour and spread, swing, ghost `probability`, `velocity_deviation`. Pure and seeded, so the same seed is the same take; `humanize: 0.0` is the raw grid exactly |
+| [lib/seshat/generation/midi/bass.ex](lib/seshat/generation/midi/bass.ex) | The bounded bass rules — one root per bar plus `lock`/`answer`/`sustain` derived from a drum part's *compiled onsets*, or a pattern of its own. Reads onset positions only, never drum velocities |
+| [lib/seshat/generation/midi/profiles.ex](lib/seshat/generation/midi/profiles.ex) | The committed style profiles, read at compile time from `priv/midi_generation/style_profiles.json` — six harvested from the Groove MIDI Dataset offline, five authored from those and labelled as such. Data, not a model; nothing reads a dataset at run time |
 | [lib/seshat_web/endpoint.ex](lib/seshat_web/endpoint.ex) | Lean Phoenix endpoint hosting streamable HTTP MCP |
 | [lib/seshat/eval/](lib/seshat/eval/) | **Routing evals — no OSC, no Ableton, no `Definitions` change.** `Surface` freezes the model-facing contract (instructions + published tools) as JSON; `Recorder` replays one as a record-only MCP server over a `Fixture` synthetic set; `Stream`/`Trial` parse the client's `stream-json` and refuse a trial whose isolation broke; `Judge` scores a trace against a `Case`'s per-surface expectation; `Report` writes the gate table. A grep test keeps the whole tree off the wire |
 | [lib/mix/tasks/routing.eval.ex](lib/mix/tasks/routing.eval.ex) | `mix routing.eval` — the on-demand run. `routing.eval.runner.ex` is the one process-starting half (under `lib/mix/tasks/` on purpose); `routing.recorder.ex` is what Claude Code spawns per trial; `routing.snapshot.ex` prints the current surface with nothing running |
@@ -335,6 +340,76 @@ services, writing the result into [docs/evaluating/](docs/evaluating/).
 That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
+
+**MIDI generation — the first solution, composed symbolically, shipped
+2026-08-30** on branch `midi-generation-symbolic`, closing what had been the
+roadmap's top item. One new tool, `generate_midi` (tool 54 → 55): Claude
+writes per-part step patterns (`X x g -`) plus bass roots and a relationship;
+Seshat compiles and performs them deterministically, landing one named MIDI
+track and clip per part in one Session scene, in one call, under one undo
+step. `lib/seshat/generation/midi/pattern.ex` turns a step string plus
+resolution into onsets on an exact grid, refusing a short pattern's
+non-dividing length by name rather than repeating it wrong.
+`lib/seshat/generation/midi/performance.ex` layers microtiming, a velocity
+contour and spread, swing, ghost `probability` and `velocity_deviation` on
+top, seeded via `:rand.seed_s` threaded functionally so the same seed
+reproduces a take and parts never share a stream — `humanize: 0.0` is the
+raw grid exactly. `lib/seshat/generation/midi/bass.ex` derives roots plus
+`lock`/`answer`/`sustain` from the followed drum part's own compiled onsets.
+`lib/seshat/generation/midi/profiles.ex` reads `priv/midi_generation/style_profiles.json`
+at compile time — 6 styles genuinely harvested offline from the Groove MIDI
+Dataset v1.0.0 via `experiments/gmd_profiles/harvest.py` (stdlib-only; rock
+144 / funk 50 / latin 48 / jazz 42 / hiphop 30 / dance 7 files ≥ 4 bars,
+`dance` falling back to the pooled statistic on every lane, recorded in the
+JSON itself), CC-BY-4.0 with `ATTRIBUTION.md`, no dataset file shipped or
+read at runtime. `lib/seshat/generation/midi_parts.ex` is the workflow:
+compile everything pure, then guards, creates, instrument loads, chunked
+writes (200 notes), and a windowed read-back, in that order. Three riders:
+`set_clip_properties` gained `groove` (assigns a Groove Pool clip by index,
+one-way, an empty pool refused by name since nothing in the LOM can stock
+one), `Session.State` mirrors the pool's names, and `get_view_state` reports
+the selected scene. Six named deviations from the plan were logged in the
+shipping commit's body, the two most consequential being the harvested
+velocity-σ envelope widening from the planned 10–45 to 10–55 (measured data
+reaches 50.2) and the `style` schema enum being derived from `Profiles.names()`
+so the surface and the data cannot drift apart. `mix routing.eval` ran
+(13 valid trials, 2/cell): 100% semantic success and correct-target on both
+surfaces and models, formally inconclusive on so few trials — report at
+`priv/routing_eval/runs/2026-08-30T190814Z/` (gitignored).
+
+PR review's first round found two real bugs, both fixed before the second
+round: `starts_match?` rounded to 3 decimals before comparing, so OSC
+float32 wire truncation alone produced a false "could not confirm" on about
+17% of dense clips; and two parts naming the same destination `track` were
+unguarded, silently merging into one misnamed clip while the reply claimed
+two separate ones landed. The second round (`approve_with_nits`) is the
+first time `probability`/`velocity_deviation` were read back on a real wire
+at all: **Live 12.4.5 persists both exactly as sent**, closing an `API.md`
+⚠️ standing since the extended-notes address was added. All five automated
+`docs/smoke_tests/auto/` citations then ran and passed against real Live
+12.4.5 — a four-part funk beat landing as four named tracks and clips with
+off-grid onsets and a working `lock` bass, a 256-note dense lane chunked and
+read back across two windows, two undos removing both requests whole, an
+occupied-slot refusal before anything was created, the new selected-scene
+address round-tripping through `select_scene`, and the MCP handshake/budget
+check at the new 55-tool / 73,569-byte surface (largest tool now
+`generate_midi` at 5,470 bytes). The four manual citations this plan cites —
+`by-ear.md`'s fixed-slate acceptance test, `on-screen.md`'s Chance-lane
+check, `conversation.md`'s routing check, and `engineered-state.md`'s
+groove-from-pool check — all still read `*Last run: —*` and need a person;
+the by-ear slate in particular is this feature's actual acceptance bar, not
+a formality. Nit triage (commit `c4a7006`) applied a wording fix (a track
+with no `instrument_uri` is no longer called "silent" unless it was actually
+created empty) plus a doc note, and declined two nits into new roadmap
+work rather than local fixes: the velocity-class clamp's hard boundary
+pinning (measured 53% of a dense hat lane onto two exact values) became its
+own item, "Soften the velocity-class clamp in symbolic MIDI generation";
+the untested partial-failure wording in `write_failure/3`/`created_so_far/1`
+was folded into the pre-existing "Pin the wording of `edit_notes`' partial-
+failure message" item; and the routing corpus's blind spot on the
+`generate_midi`/`generate_audio` boundary was folded into "Routing evals —
+general corpus and client-realism lane" as a planner note. Plan archived at
+[docs/archive/PLAN_midi_generation_symbolic.md](docs/archive/PLAN_midi_generation_symbolic.md).
 
 **`convert_audio_to_midi` drops the Accessibility helper, shipped 2026-08-30**
 on branch `convert-audio-to-midi-over-osc`, closing what had been the

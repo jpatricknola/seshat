@@ -586,6 +586,12 @@ defmodule Seshat.Tools.ValidationTest do
       (Map.has_key?(spec, :minimum) or Map.has_key?(spec, :maximum))
   end
 
+  # The terminal clause has to come first, and it has to be shapeless: a bounded
+  # scalar inside an *array* (`parts[0].roots[0]`) ends its path on an index
+  # rather than a property name, so the list clause below recurses into a bare
+  # integer with nothing left to walk.
+  defp put_path(_current, [], value), do: value
+
   defp put_path(params, [name], value) when is_binary(name), do: Map.put(params, name, value)
 
   defp put_path(params, [name | rest], value) when is_binary(name) do

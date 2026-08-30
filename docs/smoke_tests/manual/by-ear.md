@@ -124,3 +124,29 @@ is what has to teach that.
 Note also whether the whole arc happened without you being told to do anything
 in Live's UI by hand. Being sent to the Input Type chooser is the failure this
 feature exists to remove.
+
+## The fixed slate — composed beats judged blind
+
+*Why manual: this is the feature's acceptance test and it is entirely ears —
+keep/delete preference, groove and prompt match cannot be judged from a trace*
+*Last run: —*
+
+The by-ear verdict the roadmap item promises, run once per
+`docs/archive/PLAN_midi_generation_symbolic.md` and recorded as a dated Result in
+`docs/evaluating/generative features/midi-generation-options.md` — this entry
+exists so the run is never skipped as "covered by the auto checks", which
+prove placement and feel *mechanics*, not musical worth.
+
+Eight prompts fixed before any generation, across four styles, at 4 and 8
+bars, one requiring a fill and one a dropout; three takes each (different
+seeds); fixed instruments per lane, chosen once and reused. Clips carry
+opaque codes; a second person (or a shuffled key the judge never sees)
+decides the order. Score keep/delete, groove/feel, prompt match, and — for
+the combined prompts — whether bass and kick audibly interlock.
+
+The controlled A/B on one skeleton: the same pattern rendered (a) raw grid,
+no performance layer, (b) with the harvested performance layer, (c) with (b)
+plus an assigned Live groove from the pool. This is the measurement that says
+whether feel comes from composition, post-processing, or both — and it is the
+result that would overturn the symbolic-first verdict if (b) does not beat
+(a) audibly.

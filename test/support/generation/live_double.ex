@@ -172,6 +172,154 @@ defmodule Seshat.Test.LiveDouble do
     end
   end
 
+  # --- The composed-MIDI workflow ---
+  #
+  # `generate_midi` writes through the extended-notes family, which the audio
+  # workflow never touches. The model keeps the notes it was sent so the
+  # read-back is a real read of what landed, windows included.
+
+  defp respond("/live/clip_slot/create_clip", [track, slot, length], live) do
+    clip = %{name: "", length: length, looping: 1, warping: 0, audio?: false, notes: []}
+    {:silent, put_in(live.clips[{track, slot}], clip)}
+  end
+
+  defp respond(
+         "/live/clip/add/notes_extended",
+         [_track, _slot | _fields],
+         %{swallow_notes: true} = live
+       ),
+       do: {:silent, live}
+
+  defp respond("/live/clip/add/notes_extended", [track, slot | fields], live) do
+    existing = clip(live, track, slot)[:notes] || []
+
+    {added, _first_expressive_kept?} =
+      fields
+      |> Enum.chunk_every(8)
+      |> Enum.filter(&(length(&1) == 8))
+      |> Enum.with_index(length(existing))
+      |> Enum.map_reduce(false, fn {[
+                                      pitch,
+                                      start,
+                                      duration,
+                                      velocity,
+                                      mute,
+                                      probability,
+                                      deviation,
+                                      release
+                                    ], id},
+                                   kept_one? ->
+        # `:drops_expression` is how "Live kept the note but not the three
+        # expression fields" is reachable at all — the exact uncertainty
+        # `priv/AbletonOSC/API.md` carries a ⚠️ on. `:expression_mode` covers
+        # the two ways a *partial* keep can lie to a comparison that only
+        # checks values against their defaults: Live keeping the first note's
+        # expression and resetting the rest (`:first_only`), and Live keeping
+        # non-default values that are not the ones that were sent
+        # (`:normalized`).
+        expressive? = probability < 1.0 or deviation > 0.0
+
+        {{probability, deviation}, kept_one?} =
+          cond do
+            Map.get(live, :drops_expression, false) ->
+              {{1.0, 0.0}, kept_one?}
+
+            # Keep the first note that actually carries expression and reset
+            # every later one. Keying on index would not do it: an accent's
+            # probability is 1.0 and its velocity deviation can be 0, so
+            # "keep note 0" is indistinguishable from dropping everything.
+            Map.get(live, :expression_mode) == :first_only and expressive? and not kept_one? ->
+              {{probability, deviation}, true}
+
+            Map.get(live, :expression_mode) == :first_only ->
+              {{1.0, 0.0}, kept_one?}
+
+            Map.get(live, :expression_mode) == :normalized and expressive? ->
+              {{probability / 2, deviation + 7.0}, kept_one?}
+
+            true ->
+              {{probability, deviation}, kept_one?}
+          end
+
+        {%{
+           pitch: pitch,
+           start: start,
+           duration: duration,
+           velocity: velocity,
+           mute: mute,
+           probability: probability,
+           deviation: deviation,
+           release: release,
+           id: id
+         }, kept_one?}
+      end)
+
+    {:silent, put_in(live.clips[{track, slot}][:notes], existing ++ added)}
+  end
+
+  # `:stale_reads_left` is how "the first reply is a straggler, the reissue is
+  # answered correctly" is reachable at all — distinct from `:swallow_notes`,
+  # which never answers either try. One counted-down empty reply per window is
+  # exactly a stale reply about a different (empty) clip: it never matches the
+  # expected starts, so the read-back's reissue-once defence has to fire and
+  # then succeed.
+  defp respond(
+         "/live/clip/get/notes_extended",
+         [track, slot, _low_pitch, _pitch_span, _start, _span],
+         %{stale_reads_left: n} = live
+       )
+       when is_integer(n) and n > 0 do
+    {[track, slot], put_in(live.stale_reads_left, n - 1)}
+  end
+
+  defp respond(
+         "/live/clip/get/notes_extended",
+         [track, slot, low_pitch, pitch_span, start, span],
+         live
+       ) do
+    notes =
+      (clip(live, track, slot)[:notes] || [])
+      |> Enum.filter(fn note ->
+        note.pitch >= low_pitch and note.pitch < low_pitch + pitch_span and
+          note.start >= start and note.start < start + span
+      end)
+      |> Enum.flat_map(fn note ->
+        [
+          note.pitch,
+          note.start,
+          note.duration,
+          note.velocity,
+          note.mute,
+          note.probability,
+          note.deviation,
+          note.release,
+          note.id
+        ]
+      end)
+
+    {[track, slot] ++ notes, live}
+  end
+
+  # The fork's widened reply: `track, uri, "ok", name, device_index`.
+  defp respond("/live/browser/load_item", [track, uri], live) do
+    case Map.get(live, :load, :ok) do
+      :ok -> {[track, uri, "ok", "Loaded Device", 0], live}
+      {:error, message} -> {[track, uri, "error", message], live}
+      :silent -> {:silent, live}
+    end
+  end
+
+  defp respond("/live/song/create_midi_track", [-1], live) do
+    index = live.num_tracks
+
+    live =
+      live
+      |> Map.put(:num_tracks, index + 1)
+      |> put_in([:tracks, index], %{audio?: false, group?: false})
+
+    {:silent, live}
+  end
+
   defp respond("/live/song/create_audio_track", [-1], live) do
     index = live.num_tracks
 

@@ -12,10 +12,10 @@ requirement.
 
 | File | Needs | Tests |
 |---|---|---|
-| [conversation.md](conversation.md) | a fresh conversation; judges what the model says and picks | 21 |
-| [on-screen.md](on-screen.md) | eyes on Live, or hands on Live's own controls | 16 |
-| [engineered-state.md](engineered-state.md) | the app or session put into a state no tool can create | 11 |
-| [by-ear.md](by-ear.md) | audio routed somewhere you can hear it | 6 |
+| [conversation.md](conversation.md) | a fresh conversation; judges what the model says and picks | 22 |
+| [on-screen.md](on-screen.md) | eyes on Live, or hands on Live's own controls | 20 |
+| [engineered-state.md](engineered-state.md) | the app or session put into a state no tool can create | 14 |
+| [by-ear.md](by-ear.md) | audio routed somewhere you can hear it | 8 |
 
 ## Finding a subsystem's manual tests
 

@@ -358,7 +358,14 @@ defmodule Seshat.Session.State do
       root_note: nil,
       scale_name: nil,
       groove_amount: nil,
-      swing_amount: nil
+      swing_amount: nil,
+
+      # Names only. The pool's *amounts* are per-groove reads on
+      # `/live/groove/*`, and nothing mirrors them: a name is what a model needs
+      # to say "the Swing 16ths groove", and what an empty pool needs to be
+      # reported as. `[]` here would assert an empty pool, which is a real state
+      # and a different one from "never read".
+      groove_pool: nil
     }
 
     state = %{
@@ -608,6 +615,15 @@ defmodule Seshat.Session.State do
     {:noreply, update_song(state, :groove_amount, value)}
   end
 
+  # `GroovePool.grooves` is what the listen pair subscribes, so this pushes the
+  # whole dump on a *membership* change — a groove dragged in, removed or
+  # reordered — and never when an amount or a name is edited. A name list is
+  # exactly what that granularity supports, which is the reason the mirror holds
+  # names and nothing else. Zero arguments is an answer: the pool is empty.
+  def handle_info({:osc_message, "/live/song/get/groove_pool", args}, state) do
+    {:noreply, update_song(state, :groove_pool, groove_pool_names(args))}
+  end
+
   def handle_info({:osc_message, "/live/song/get/swing_amount", [value]}, state) do
     {:noreply, update_song(state, :swing_amount, value)}
   end
@@ -806,7 +822,8 @@ defmodule Seshat.Session.State do
       # @return_probe_timeout: the extra 5s exists only in the
       # not-yet-reinstalled state, whereas a 2s probe risks a false "swing
       # unknown" on a healthy install.
-      swing_amount: query_song_float(Transport, "/live/song/get/swing_amount")
+      swing_amount: query_song_float(Transport, "/live/song/get/swing_amount"),
+      groove_pool: query_groove_pool(Transport)
     }
 
     Logger.info(
@@ -1139,6 +1156,10 @@ defmodule Seshat.Session.State do
     # than a scalar — and because upstream serves neither address.
     Transport.send_message("/live/song/start_listen/tracks", [])
     Transport.send_message("/live/song/start_listen/return_tracks", [])
+
+    # Also a fork extension, and also written out rather than interpolated, for
+    # the `vendored_addresses_test` reason above.
+    Transport.send_message("/live/song/start_listen/groove_pool", [])
   end
 
   # Also Seshat extensions, so a Live where `mix abletonosc.install` was never run
@@ -1327,6 +1348,27 @@ defmodule Seshat.Session.State do
       _ -> nil
     end
   end
+
+  # Five fields per groove — name, quantization, timing, random, velocity — with
+  # **no count prefix**, so the shape check is the arity. A reply that is not a
+  # whole number of grooves is unreadable rather than partly readable: taking
+  # every fifth element out of a truncated dump would silently rename the pool.
+  defp query_groove_pool(transport) do
+    case probe(transport, "/live/song/get/groove_pool", [], @query_timeout) do
+      {:ok, args} -> groove_pool_names(args)
+      _ -> nil
+    end
+  end
+
+  defp groove_pool_names(args) when is_list(args) do
+    if rem(length(args), 5) == 0 do
+      args |> Enum.chunk_every(5) |> Enum.map(&List.first/1) |> Enum.filter(&is_binary/1)
+    else
+      nil
+    end
+  end
+
+  defp groove_pool_names(_args), do: nil
 
   # `nil` in means the query went unanswered, and unknown has to survive the
   # conversion — a `to_bool(nil)` that returned `false` would put the guess back

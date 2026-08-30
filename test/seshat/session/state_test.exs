@@ -17,7 +17,8 @@ defmodule Seshat.Session.StateTest do
           root_note: 0,
           scale_name: "Major",
           groove_amount: nil,
-          swing_amount: nil
+          swing_amount: nil,
+          groove_pool: nil
         },
         tracks: [],
         return_tracks: [],
@@ -126,6 +127,52 @@ defmodule Seshat.Session.StateTest do
 
     test "an unhandled address is ignored rather than crashing" do
       assert push(state(), "/live/song/get/something_new", [1]) == state()
+    end
+  end
+
+  # The pool dump is five fields per groove with **no count prefix**, so the
+  # arity is the only shape check there is. The mirror keeps the names: they are
+  # what a user recognises and what `set_clip_properties`' index is written in,
+  # and the listen pair only fires on membership changes anyway.
+  describe "groove pool pushes" do
+    test "records the pool's names, five fields at a time" do
+      state =
+        push(state(), "/live/song/get/groove_pool", [
+          "Swing 16ths 66",
+          0.0,
+          100.0,
+          0.0,
+          0.0,
+          "MPC 8 Swing",
+          50.0,
+          100.0,
+          10.0,
+          0.0
+        ])
+
+      assert state.song.groove_pool == ["Swing 16ths 66", "MPC 8 Swing"]
+    end
+
+    # Zero arguments is an answer, not a failure: the pool really is empty.
+    test "an empty pool is empty, not unknown" do
+      state = push(state(), "/live/song/get/groove_pool", [])
+
+      assert state.song.groove_pool == []
+    end
+
+    # Taking every fifth element out of a truncated dump would silently rename
+    # the pool, so a reply that is not a whole number of grooves is unknown.
+    test "a dump that is not a whole number of grooves is unknown, not partly read" do
+      state = push(state(), "/live/song/get/groove_pool", ["Swing 16ths 66", 0.0, 100.0])
+
+      assert state.song.groove_pool == nil
+    end
+
+    test "a pool push leaves the rest of the song state alone" do
+      state = push(state(), "/live/song/get/groove_pool", ["Groove", 0.0, 0.0, 0.0, 0.0])
+
+      assert state.song.tempo == 120.0
+      assert state.song.scale_name == "Major"
     end
   end
 

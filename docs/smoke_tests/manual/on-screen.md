@@ -307,3 +307,19 @@ changing the pane.
 Live coming forward, a Create menu flashing open, or the view jumping to
 Session is the deleted Accessibility path still being exercised — a stale
 server running pre-change code, not a new defect in this one.
+
+## Probability shows as Chance in the clip editor
+
+*Why manual: needs eyes on Live's clip editor lanes — no tool reads the
+editor's UI, and the extended read-back proves the wire, not the display*
+*Last run: —*
+
+After `auto/generation.md § Extended note fields survive the wire` has
+written a beat whose ghost hats carry `probability < 1.0`: double-click the
+hat clip, show the note expression lanes, and select the Chance lane. The
+ghost notes display a chance visibly below 100% and the accented notes sit at
+100%. Fire the clip a few times with the metronome on — ghosts that
+sometimes do not sound are the same fact heard rather than seen; either
+observation passes. A Chance lane pinned at 100% everywhere while the wire
+read-back reported the sent values means Live stores the field somewhere the
+editor and playback do not honour — report it as a finding.

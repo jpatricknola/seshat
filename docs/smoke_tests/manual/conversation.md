@@ -281,25 +281,41 @@ rather than promising swing.
 *Why manual: requires a fresh unprompted client conversation and judging the model's tool choice and language*
 *Last run: —*
 
+Since `generate_midi` shipped, **MIDI is the default form** (the user-stories
+contract): a material request that names no form must land as composed MIDI,
+and only an explicit audio ask selects `generate_audio`. This check judges
+that boundary as well as the one-call shape.
+
 In a fresh local Claude Desktop conversation with Seshat connected, ask:
 
-> Give me a four-bar dusty lo-fi drum loop on a new track.
+> Make me a four-bar dusty lo-fi beat — kick, snare and hats.
 
-Expect exactly one `generate_audio` call, not a separate `create_track` call or
-an improvised file-import workflow. The reply speaks in musical terms, says the
-result is audio, names the track and Session slot, and does not read the file
-path aloud unless asked. It reports Live's observed looping/warping state and
-does not claim that the raw MVP render is grid-aligned or seamlessly loopable.
+Expect exactly one `generate_midi` call carrying all three drum parts — not
+one call per part, not a `create_track`/`write_midi_notes` chain, and not
+`generate_audio`. The reply speaks in musical terms, says the result is MIDI,
+names the tracks and the Session slot, and mentions that one undo removes the
+whole beat. Instruments are either loaded (picked from the library with a
+one-line reason) or the reply says plainly the tracks are silent and offers to
+pick sounds — never silent tracks presented as finished.
 
-Then say:
+Then ask:
 
-> Another take, darker.
+> Another take, a little lazier.
 
-Expect one `generate_audio` call using the prior audio as `variation_of` (or a
-fresh description only if the model explicitly explains why variation is not
-available), targeting the same track without an explicit occupied slot. The
-new take lands in the next empty slot and the reply never claims that the first
-take was replaced.
+Expect one `generate_midi` call targeting the next empty scene on the same
+tracks — the accepted take is never overwritten, and the reply never claims
+the first take was replaced.
+
+Then ask, explicitly audio:
+
+> Now give me a four-bar dusty breakbeat loop as audio, on a new track.
+
+Expect exactly one `generate_audio` call. The reply says the result is audio,
+names the track and slot, and does not claim the raw render is grid-aligned or
+seamlessly loopable. A "darker" follow-up take uses `variation_of` (or a fresh
+description only if the model explicitly explains why variation is not
+available), lands in the next empty slot, and never claims the first take was
+replaced.
 
 ## A sung take routes to setup, record, then convert
 

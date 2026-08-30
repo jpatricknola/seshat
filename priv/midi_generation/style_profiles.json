@@ -1,0 +1,2315 @@
+{
+  "attribution": {
+    "citation": "Jon Gillick, Adam Roberts, Jesse Engel, Douglas Eck, David Bamman. 'Learning to Groove with Inverse Sequence Transformations.' International Conference on Machine Learning (ICML), 2019.",
+    "dataset": "Groove MIDI Dataset (GMD) v1.0.0",
+    "licence": "CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",
+    "note": "Derived statistics only. No dataset file is redistributed, and nothing in Seshat reads the dataset at run time.",
+    "sha256": "651cbc524ffb891be1a3e46d89dc82a1cecb09a57c748c7b45b844c4841dcc1e",
+    "url": "https://storage.googleapis.com/magentadata/datasets/groove/groove-v1.0.0-midionly.zip"
+  },
+  "generated_at": "2026-08-30T19:33:04Z",
+  "generated_by": "experiments/gmd_profiles/harvest.py",
+  "min_files_per_lane": 8,
+  "styles": {
+    "boom_bap": {
+      "authored_from": "hiphop",
+      "authored_note": "hiphop, tighter and harder-hitting",
+      "fallback_lanes": [],
+      "harvested": false,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 4.65,
+            "p50": 8.24,
+            "p90": 13.57
+          },
+          "files": 30,
+          "ghost_fraction": 0.419,
+          "ghost_probability": 0.782,
+          "hits": 6792,
+          "timing_mean": -0.0243,
+          "timing_sd": 0.1088,
+          "velocity": {
+            "accent": {
+              "mean": 112.0,
+              "sd": 17.6
+            },
+            "ghost": {
+              "mean": 36.2,
+              "sd": 16.4
+            },
+            "hit": {
+              "mean": 72.3,
+              "sd": 18.2
+            }
+          },
+          "velocity_sd": 36.2
+        },
+        "crash": {
+          "density": {
+            "p10": 0.04,
+            "p50": 0.27,
+            "p90": 0.82
+          },
+          "files": 23,
+          "ghost_fraction": 0.412,
+          "ghost_probability": 0.785,
+          "hits": 216,
+          "timing_mean": 0.0629,
+          "timing_sd": 0.1251,
+          "velocity": {
+            "accent": {
+              "mean": 116.4,
+              "sd": 12.4
+            },
+            "ghost": {
+              "mean": 13.0,
+              "sd": 15.8
+            },
+            "hit": {
+              "mean": 93.6,
+              "sd": 15.0
+            }
+          },
+          "velocity_sd": 49.6
+        },
+        "kick": {
+          "density": {
+            "p10": 2.79,
+            "p50": 4.7,
+            "p90": 6.53
+          },
+          "files": 30,
+          "ghost_fraction": 0.337,
+          "ghost_probability": 0.815,
+          "hits": 3923,
+          "timing_mean": -0.0002,
+          "timing_sd": 0.1207,
+          "velocity": {
+            "accent": {
+              "mean": 107.1,
+              "sd": 23.0
+            },
+            "ghost": {
+              "mean": 39.4,
+              "sd": 15.8
+            },
+            "hit": {
+              "mean": 67.6,
+              "sd": 15.2
+            }
+          },
+          "velocity_sd": 26.6
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.07,
+            "p50": 0.48,
+            "p90": 4.23
+          },
+          "files": 22,
+          "ghost_fraction": 0.154,
+          "ghost_probability": 0.889,
+          "hits": 1210,
+          "timing_mean": 0.012,
+          "timing_sd": 0.0753,
+          "velocity": {
+            "accent": {
+              "mean": 123.9,
+              "sd": 7.4
+            },
+            "ghost": {
+              "mean": 38.5,
+              "sd": 8.6
+            },
+            "hit": {
+              "mean": 75.1,
+              "sd": 20.1
+            }
+          },
+          "velocity_sd": 34.6
+        },
+        "ride": {
+          "density": {
+            "p10": 0.13,
+            "p50": 0.58,
+            "p90": 2.69
+          },
+          "files": 10,
+          "ghost_fraction": 0.14,
+          "ghost_probability": 0.894,
+          "hits": 492,
+          "timing_mean": 0.0052,
+          "timing_sd": 0.0897,
+          "velocity": {
+            "accent": {
+              "mean": 118.5,
+              "sd": 11.8
+            },
+            "ghost": {
+              "mean": 18.3,
+              "sd": 16.6
+            },
+            "hit": {
+              "mean": 73.8,
+              "sd": 18.9
+            }
+          },
+          "velocity_sd": 38.2
+        },
+        "snare": {
+          "density": {
+            "p10": 1.97,
+            "p50": 3.78,
+            "p90": 7.54
+          },
+          "files": 30,
+          "ghost_fraction": 0.319,
+          "ghost_probability": 0.822,
+          "hits": 3680,
+          "timing_mean": 0.0365,
+          "timing_sd": 0.1499,
+          "velocity": {
+            "accent": {
+              "mean": 122.8,
+              "sd": 8.6
+            },
+            "ghost": {
+              "mean": 26.9,
+              "sd": 13.2
+            },
+            "hit": {
+              "mean": 64.8,
+              "sd": 26.8
+            }
+          },
+          "velocity_sd": 45.6
+        },
+        "tom": {
+          "density": {
+            "p10": 0.07,
+            "p50": 0.81,
+            "p90": 1.59
+          },
+          "files": 20,
+          "ghost_fraction": 0.033,
+          "ghost_probability": 0.937,
+          "hits": 337,
+          "timing_mean": 0.0027,
+          "timing_sd": 0.1646,
+          "velocity": {
+            "accent": {
+              "mean": 118.4,
+              "sd": 13.4
+            },
+            "ghost": {
+              "mean": 27.7,
+              "sd": 14.4
+            },
+            "hit": {
+              "mean": 84.3,
+              "sd": 17.3
+            }
+          },
+          "velocity_sd": 26.2
+        }
+      },
+      "swing": -0.0157,
+      "swing_pooled": false
+    },
+    "dance": {
+      "fallback_lanes": [
+        "kick",
+        "snare",
+        "closed_hat",
+        "open_hat",
+        "tom",
+        "ride",
+        "crash"
+      ],
+      "files": 7,
+      "harvested": true,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 1.99,
+            "p50": 5.82,
+            "p90": 11.34
+          },
+          "files": 383,
+          "ghost_fraction": 0.323,
+          "ghost_probability": 0.821,
+          "hits": 113480,
+          "timing_mean": -0.0232,
+          "timing_sd": 0.1973,
+          "velocity": {
+            "accent": {
+              "mean": 97.4,
+              "sd": 23.5
+            },
+            "ghost": {
+              "mean": 37.4,
+              "sd": 17.1
+            },
+            "hit": {
+              "mean": 66.5,
+              "sd": 18.6
+            }
+          },
+          "velocity_sd": 31.5
+        },
+        "crash": {
+          "density": {
+            "p10": 0.06,
+            "p50": 0.2,
+            "p90": 0.6
+          },
+          "files": 290,
+          "ghost_fraction": 0.205,
+          "ghost_probability": 0.868,
+          "hits": 5585,
+          "timing_mean": 0.0349,
+          "timing_sd": 0.2289,
+          "velocity": {
+            "accent": {
+              "mean": 104.7,
+              "sd": 17.0
+            },
+            "ghost": {
+              "mean": 35.8,
+              "sd": 29.2
+            },
+            "hit": {
+              "mean": 77.0,
+              "sd": 18.9
+            }
+          },
+          "velocity_sd": 33.8
+        },
+        "kick": {
+          "density": {
+            "p10": 1.97,
+            "p50": 3.83,
+            "p90": 5.96
+          },
+          "files": 409,
+          "ghost_fraction": 0.453,
+          "ghost_probability": 0.769,
+          "hits": 83799,
+          "timing_mean": 0.0071,
+          "timing_sd": 0.2132,
+          "velocity": {
+            "accent": {
+              "mean": 107.6,
+              "sd": 23.9
+            },
+            "ghost": {
+              "mean": 37.0,
+              "sd": 21.7
+            },
+            "hit": {
+              "mean": 62.7,
+              "sd": 20.0
+            }
+          },
+          "velocity_sd": 32.6
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.05,
+            "p50": 0.5,
+            "p90": 1.78
+          },
+          "files": 317,
+          "ghost_fraction": 0.244,
+          "ghost_probability": 0.852,
+          "hits": 13731,
+          "timing_mean": -0.0026,
+          "timing_sd": 0.1896,
+          "velocity": {
+            "accent": {
+              "mean": 114.9,
+              "sd": 19.3
+            },
+            "ghost": {
+              "mean": 32.0,
+              "sd": 28.2
+            },
+            "hit": {
+              "mean": 70.9,
+              "sd": 21.8
+            }
+          },
+          "velocity_sd": 41.3
+        },
+        "ride": {
+          "density": {
+            "p10": 0.06,
+            "p50": 2.51,
+            "p90": 6.64
+          },
+          "files": 252,
+          "ghost_fraction": 0.225,
+          "ghost_probability": 0.86,
+          "hits": 48815,
+          "timing_mean": 0.0164,
+          "timing_sd": 0.2034,
+          "velocity": {
+            "accent": {
+              "mean": 100.8,
+              "sd": 22.8
+            },
+            "ghost": {
+              "mean": 42.1,
+              "sd": 17.0
+            },
+            "hit": {
+              "mean": 64.0,
+              "sd": 16.2
+            }
+          },
+          "velocity_sd": 30.5
+        },
+        "snare": {
+          "density": {
+            "p10": 2.03,
+            "p50": 4.44,
+            "p90": 10.33
+          },
+          "files": 409,
+          "ghost_fraction": 0.391,
+          "ghost_probability": 0.794,
+          "hits": 124729,
+          "timing_mean": 0.0093,
+          "timing_sd": 0.2244,
+          "velocity": {
+            "accent": {
+              "mean": 108.6,
+              "sd": 22.6
+            },
+            "ghost": {
+              "mean": 30.0,
+              "sd": 16.7
+            },
+            "hit": {
+              "mean": 59.2,
+              "sd": 20.6
+            }
+          },
+          "velocity_sd": 40.3
+        },
+        "tom": {
+          "density": {
+            "p10": 0.17,
+            "p50": 0.73,
+            "p90": 3.56
+          },
+          "files": 327,
+          "ghost_fraction": 0.189,
+          "ghost_probability": 0.874,
+          "hits": 28124,
+          "timing_mean": -0.0027,
+          "timing_sd": 0.2204,
+          "velocity": {
+            "accent": {
+              "mean": 107.0,
+              "sd": 19.5
+            },
+            "ghost": {
+              "mean": 52.3,
+              "sd": 19.3
+            },
+            "hit": {
+              "mean": 75.0,
+              "sd": 18.9
+            }
+          },
+          "velocity_sd": 29.2
+        }
+      },
+      "swing": -0.0297,
+      "swing_pooled": true
+    },
+    "funk": {
+      "fallback_lanes": [],
+      "files": 50,
+      "harvested": true,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 4.75,
+            "p50": 7.81,
+            "p90": 13.0
+          },
+          "files": 49,
+          "ghost_fraction": 0.342,
+          "ghost_probability": 0.813,
+          "hits": 19602,
+          "timing_mean": -0.0188,
+          "timing_sd": 0.1558,
+          "velocity": {
+            "accent": {
+              "mean": 96.2,
+              "sd": 24.6
+            },
+            "ghost": {
+              "mean": 31.3,
+              "sd": 12.6
+            },
+            "hit": {
+              "mean": 61.0,
+              "sd": 18.1
+            }
+          },
+          "velocity_sd": 31.9
+        },
+        "crash": {
+          "density": {
+            "p10": 0.04,
+            "p50": 0.13,
+            "p90": 0.54
+          },
+          "files": 31,
+          "ghost_fraction": 0.316,
+          "ghost_probability": 0.824,
+          "hits": 421,
+          "timing_mean": -0.0115,
+          "timing_sd": 0.2025,
+          "velocity": {
+            "accent": {
+              "mean": 107.0,
+              "sd": 20.9
+            },
+            "ghost": {
+              "mean": 18.5,
+              "sd": 11.2
+            },
+            "hit": {
+              "mean": 59.2,
+              "sd": 18.8
+            }
+          },
+          "velocity_sd": 43.0
+        },
+        "kick": {
+          "density": {
+            "p10": 2.59,
+            "p50": 4.1,
+            "p90": 4.97
+          },
+          "files": 50,
+          "ghost_fraction": 0.323,
+          "ghost_probability": 0.821,
+          "hits": 10150,
+          "timing_mean": 0.0088,
+          "timing_sd": 0.1979,
+          "velocity": {
+            "accent": {
+              "mean": 107.9,
+              "sd": 23.4
+            },
+            "ghost": {
+              "mean": 33.9,
+              "sd": 17.8
+            },
+            "hit": {
+              "mean": 62.8,
+              "sd": 17.3
+            }
+          },
+          "velocity_sd": 30.4
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.34,
+            "p50": 0.97,
+            "p90": 1.59
+          },
+          "files": 45,
+          "ghost_fraction": 0.062,
+          "ghost_probability": 0.925,
+          "hits": 2339,
+          "timing_mean": -0.0332,
+          "timing_sd": 0.1443,
+          "velocity": {
+            "accent": {
+              "mean": 110.9,
+              "sd": 22.0
+            },
+            "ghost": {
+              "mean": 29.6,
+              "sd": 11.7
+            },
+            "hit": {
+              "mean": 63.8,
+              "sd": 19.0
+            }
+          },
+          "velocity_sd": 32.3
+        },
+        "ride": {
+          "density": {
+            "p10": 0.06,
+            "p50": 1.27,
+            "p90": 4.95
+          },
+          "files": 33,
+          "ghost_fraction": 0.215,
+          "ghost_probability": 0.864,
+          "hits": 3493,
+          "timing_mean": -0.0138,
+          "timing_sd": 0.1595,
+          "velocity": {
+            "accent": {
+              "mean": 109.6,
+              "sd": 19.6
+            },
+            "ghost": {
+              "mean": 33.9,
+              "sd": 10.4
+            },
+            "hit": {
+              "mean": 65.0,
+              "sd": 18.2
+            }
+          },
+          "velocity_sd": 34.8
+        },
+        "snare": {
+          "density": {
+            "p10": 2.0,
+            "p50": 6.63,
+            "p90": 10.08
+          },
+          "files": 50,
+          "ghost_fraction": 0.432,
+          "ghost_probability": 0.777,
+          "hits": 16947,
+          "timing_mean": 0.0253,
+          "timing_sd": 0.2203,
+          "velocity": {
+            "accent": {
+              "mean": 113.9,
+              "sd": 19.7
+            },
+            "ghost": {
+              "mean": 26.9,
+              "sd": 10.9
+            },
+            "hit": {
+              "mean": 57.6,
+              "sd": 20.2
+            }
+          },
+          "velocity_sd": 43.2
+        },
+        "tom": {
+          "density": {
+            "p10": 0.06,
+            "p50": 0.4,
+            "p90": 0.82
+          },
+          "files": 30,
+          "ghost_fraction": 0.041,
+          "ghost_probability": 0.934,
+          "hits": 901,
+          "timing_mean": -0.02,
+          "timing_sd": 0.2337,
+          "velocity": {
+            "accent": {
+              "mean": 114.9,
+              "sd": 18.1
+            },
+            "ghost": {
+              "mean": 39.2,
+              "sd": 12.4
+            },
+            "hit": {
+              "mean": 73.3,
+              "sd": 19.1
+            }
+          },
+          "velocity_sd": 27.8
+        }
+      },
+      "swing": -0.0307,
+      "swing_pooled": false
+    },
+    "hiphop": {
+      "fallback_lanes": [],
+      "files": 30,
+      "harvested": true,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 4.65,
+            "p50": 8.24,
+            "p90": 13.57
+          },
+          "files": 30,
+          "ghost_fraction": 0.419,
+          "ghost_probability": 0.782,
+          "hits": 6792,
+          "timing_mean": -0.0243,
+          "timing_sd": 0.1554,
+          "velocity": {
+            "accent": {
+              "mean": 112.0,
+              "sd": 17.6
+            },
+            "ghost": {
+              "mean": 36.2,
+              "sd": 16.4
+            },
+            "hit": {
+              "mean": 72.3,
+              "sd": 18.2
+            }
+          },
+          "velocity_sd": 36.2
+        },
+        "crash": {
+          "density": {
+            "p10": 0.04,
+            "p50": 0.27,
+            "p90": 0.82
+          },
+          "files": 23,
+          "ghost_fraction": 0.412,
+          "ghost_probability": 0.785,
+          "hits": 216,
+          "timing_mean": 0.0629,
+          "timing_sd": 0.1787,
+          "velocity": {
+            "accent": {
+              "mean": 116.4,
+              "sd": 12.4
+            },
+            "ghost": {
+              "mean": 13.0,
+              "sd": 15.8
+            },
+            "hit": {
+              "mean": 93.6,
+              "sd": 15.0
+            }
+          },
+          "velocity_sd": 49.6
+        },
+        "kick": {
+          "density": {
+            "p10": 2.79,
+            "p50": 4.7,
+            "p90": 6.53
+          },
+          "files": 30,
+          "ghost_fraction": 0.337,
+          "ghost_probability": 0.815,
+          "hits": 3923,
+          "timing_mean": -0.0002,
+          "timing_sd": 0.1725,
+          "velocity": {
+            "accent": {
+              "mean": 107.1,
+              "sd": 23.0
+            },
+            "ghost": {
+              "mean": 39.4,
+              "sd": 15.8
+            },
+            "hit": {
+              "mean": 67.6,
+              "sd": 15.2
+            }
+          },
+          "velocity_sd": 26.6
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.07,
+            "p50": 0.48,
+            "p90": 4.23
+          },
+          "files": 22,
+          "ghost_fraction": 0.154,
+          "ghost_probability": 0.889,
+          "hits": 1210,
+          "timing_mean": 0.012,
+          "timing_sd": 0.1076,
+          "velocity": {
+            "accent": {
+              "mean": 123.9,
+              "sd": 7.4
+            },
+            "ghost": {
+              "mean": 38.5,
+              "sd": 8.6
+            },
+            "hit": {
+              "mean": 75.1,
+              "sd": 20.1
+            }
+          },
+          "velocity_sd": 34.6
+        },
+        "ride": {
+          "density": {
+            "p10": 0.13,
+            "p50": 0.58,
+            "p90": 2.69
+          },
+          "files": 10,
+          "ghost_fraction": 0.14,
+          "ghost_probability": 0.894,
+          "hits": 492,
+          "timing_mean": 0.0052,
+          "timing_sd": 0.1282,
+          "velocity": {
+            "accent": {
+              "mean": 118.5,
+              "sd": 11.8
+            },
+            "ghost": {
+              "mean": 18.3,
+              "sd": 16.6
+            },
+            "hit": {
+              "mean": 73.8,
+              "sd": 18.9
+            }
+          },
+          "velocity_sd": 38.2
+        },
+        "snare": {
+          "density": {
+            "p10": 1.97,
+            "p50": 3.78,
+            "p90": 7.54
+          },
+          "files": 30,
+          "ghost_fraction": 0.319,
+          "ghost_probability": 0.822,
+          "hits": 3680,
+          "timing_mean": 0.0365,
+          "timing_sd": 0.2142,
+          "velocity": {
+            "accent": {
+              "mean": 122.8,
+              "sd": 8.6
+            },
+            "ghost": {
+              "mean": 26.9,
+              "sd": 13.2
+            },
+            "hit": {
+              "mean": 64.8,
+              "sd": 26.8
+            }
+          },
+          "velocity_sd": 45.6
+        },
+        "tom": {
+          "density": {
+            "p10": 0.07,
+            "p50": 0.81,
+            "p90": 1.59
+          },
+          "files": 20,
+          "ghost_fraction": 0.033,
+          "ghost_probability": 0.937,
+          "hits": 337,
+          "timing_mean": 0.0027,
+          "timing_sd": 0.2351,
+          "velocity": {
+            "accent": {
+              "mean": 118.4,
+              "sd": 13.4
+            },
+            "ghost": {
+              "mean": 27.7,
+              "sd": 14.4
+            },
+            "hit": {
+              "mean": 84.3,
+              "sd": 17.3
+            }
+          },
+          "velocity_sd": 26.2
+        }
+      },
+      "swing": -0.0157,
+      "swing_pooled": false
+    },
+    "house": {
+      "authored_from": "dance",
+      "authored_note": "dance, straight 16ths and tighter still",
+      "fallback_lanes": [
+        "kick",
+        "snare",
+        "closed_hat",
+        "open_hat",
+        "tom",
+        "ride",
+        "crash"
+      ],
+      "harvested": false,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 1.99,
+            "p50": 5.82,
+            "p90": 11.34
+          },
+          "files": 383,
+          "ghost_fraction": 0.323,
+          "ghost_probability": 0.739,
+          "hits": 113480,
+          "timing_mean": -0.0232,
+          "timing_sd": 0.0987,
+          "velocity": {
+            "accent": {
+              "mean": 97.4,
+              "sd": 20.0
+            },
+            "ghost": {
+              "mean": 37.4,
+              "sd": 14.5
+            },
+            "hit": {
+              "mean": 66.5,
+              "sd": 15.8
+            }
+          },
+          "velocity_sd": 26.8
+        },
+        "crash": {
+          "density": {
+            "p10": 0.06,
+            "p50": 0.2,
+            "p90": 0.6
+          },
+          "files": 290,
+          "ghost_fraction": 0.205,
+          "ghost_probability": 0.781,
+          "hits": 5585,
+          "timing_mean": 0.0349,
+          "timing_sd": 0.1144,
+          "velocity": {
+            "accent": {
+              "mean": 104.7,
+              "sd": 14.4
+            },
+            "ghost": {
+              "mean": 35.8,
+              "sd": 24.8
+            },
+            "hit": {
+              "mean": 77.0,
+              "sd": 16.1
+            }
+          },
+          "velocity_sd": 28.7
+        },
+        "kick": {
+          "density": {
+            "p10": 1.97,
+            "p50": 3.83,
+            "p90": 5.96
+          },
+          "files": 409,
+          "ghost_fraction": 0.453,
+          "ghost_probability": 0.692,
+          "hits": 83799,
+          "timing_mean": 0.0071,
+          "timing_sd": 0.1066,
+          "velocity": {
+            "accent": {
+              "mean": 107.6,
+              "sd": 20.3
+            },
+            "ghost": {
+              "mean": 37.0,
+              "sd": 18.4
+            },
+            "hit": {
+              "mean": 62.7,
+              "sd": 17.0
+            }
+          },
+          "velocity_sd": 27.7
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.05,
+            "p50": 0.5,
+            "p90": 1.78
+          },
+          "files": 317,
+          "ghost_fraction": 0.244,
+          "ghost_probability": 0.767,
+          "hits": 13731,
+          "timing_mean": -0.0026,
+          "timing_sd": 0.0948,
+          "velocity": {
+            "accent": {
+              "mean": 114.9,
+              "sd": 16.4
+            },
+            "ghost": {
+              "mean": 32.0,
+              "sd": 24.0
+            },
+            "hit": {
+              "mean": 70.9,
+              "sd": 18.5
+            }
+          },
+          "velocity_sd": 35.1
+        },
+        "ride": {
+          "density": {
+            "p10": 0.06,
+            "p50": 2.51,
+            "p90": 6.64
+          },
+          "files": 252,
+          "ghost_fraction": 0.225,
+          "ghost_probability": 0.774,
+          "hits": 48815,
+          "timing_mean": 0.0164,
+          "timing_sd": 0.1017,
+          "velocity": {
+            "accent": {
+              "mean": 100.8,
+              "sd": 19.4
+            },
+            "ghost": {
+              "mean": 42.1,
+              "sd": 14.4
+            },
+            "hit": {
+              "mean": 64.0,
+              "sd": 13.8
+            }
+          },
+          "velocity_sd": 25.9
+        },
+        "snare": {
+          "density": {
+            "p10": 2.03,
+            "p50": 4.44,
+            "p90": 10.33
+          },
+          "files": 409,
+          "ghost_fraction": 0.391,
+          "ghost_probability": 0.715,
+          "hits": 124729,
+          "timing_mean": 0.0093,
+          "timing_sd": 0.1122,
+          "velocity": {
+            "accent": {
+              "mean": 108.6,
+              "sd": 19.2
+            },
+            "ghost": {
+              "mean": 30.0,
+              "sd": 14.2
+            },
+            "hit": {
+              "mean": 59.2,
+              "sd": 17.5
+            }
+          },
+          "velocity_sd": 34.3
+        },
+        "tom": {
+          "density": {
+            "p10": 0.17,
+            "p50": 0.73,
+            "p90": 3.56
+          },
+          "files": 327,
+          "ghost_fraction": 0.189,
+          "ghost_probability": 0.787,
+          "hits": 28124,
+          "timing_mean": -0.0027,
+          "timing_sd": 0.1102,
+          "velocity": {
+            "accent": {
+              "mean": 107.0,
+              "sd": 16.6
+            },
+            "ghost": {
+              "mean": 52.3,
+              "sd": 16.4
+            },
+            "hit": {
+              "mean": 75.0,
+              "sd": 16.1
+            }
+          },
+          "velocity_sd": 24.8
+        }
+      },
+      "swing": 0.0,
+      "swing_pooled": false
+    },
+    "jazz": {
+      "fallback_lanes": [],
+      "files": 42,
+      "harvested": true,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 1.66,
+            "p50": 2.2,
+            "p90": 5.84
+          },
+          "files": 36,
+          "ghost_fraction": 0.368,
+          "ghost_probability": 0.803,
+          "hits": 6009,
+          "timing_mean": -0.0219,
+          "timing_sd": 0.2677,
+          "velocity": {
+            "accent": {
+              "mean": 91.3,
+              "sd": 17.1
+            },
+            "ghost": {
+              "mean": 40.4,
+              "sd": 16.1
+            },
+            "hit": {
+              "mean": 67.2,
+              "sd": 16.3
+            }
+          },
+          "velocity_sd": 28.0
+        },
+        "crash": {
+          "density": {
+            "p10": 0.05,
+            "p50": 0.21,
+            "p90": 0.41
+          },
+          "files": 34,
+          "ghost_fraction": 0.054,
+          "ghost_probability": 0.928,
+          "hits": 368,
+          "timing_mean": -0.0149,
+          "timing_sd": 0.269,
+          "velocity": {
+            "accent": {
+              "mean": 106.3,
+              "sd": 22.2
+            },
+            "ghost": {
+              "mean": 43.2,
+              "sd": 18.0
+            },
+            "hit": {
+              "mean": 76.6,
+              "sd": 25.8
+            }
+          },
+          "velocity_sd": 29.8
+        },
+        "kick": {
+          "density": {
+            "p10": 0.36,
+            "p50": 2.11,
+            "p90": 3.89
+          },
+          "files": 41,
+          "ghost_fraction": 0.325,
+          "ghost_probability": 0.82,
+          "hits": 5218,
+          "timing_mean": 0.0027,
+          "timing_sd": 0.2557,
+          "velocity": {
+            "accent": {
+              "mean": 100.3,
+              "sd": 26.5
+            },
+            "ghost": {
+              "mean": 42.8,
+              "sd": 16.5
+            },
+            "hit": {
+              "mean": 65.9,
+              "sd": 20.0
+            }
+          },
+          "velocity_sd": 31.2
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.02,
+            "p50": 0.12,
+            "p90": 1.76
+          },
+          "files": 25,
+          "ghost_fraction": 0.223,
+          "ghost_probability": 0.861,
+          "hits": 655,
+          "timing_mean": 0.0467,
+          "timing_sd": 0.247,
+          "velocity": {
+            "accent": {
+              "mean": 113.1,
+              "sd": 23.7
+            },
+            "ghost": {
+              "mean": 56.4,
+              "sd": 16.8
+            },
+            "hit": {
+              "mean": 75.3,
+              "sd": 22.8
+            }
+          },
+          "velocity_sd": 32.5
+        },
+        "ride": {
+          "density": {
+            "p10": 0.13,
+            "p50": 4.24,
+            "p90": 8.1
+          },
+          "files": 31,
+          "ghost_fraction": 0.207,
+          "ghost_probability": 0.867,
+          "hits": 7348,
+          "timing_mean": -0.0157,
+          "timing_sd": 0.2345,
+          "velocity": {
+            "accent": {
+              "mean": 94.4,
+              "sd": 20.5
+            },
+            "ghost": {
+              "mean": 45.1,
+              "sd": 12.3
+            },
+            "hit": {
+              "mean": 64.3,
+              "sd": 12.7
+            }
+          },
+          "velocity_sd": 24.8
+        },
+        "snare": {
+          "density": {
+            "p10": 0.95,
+            "p50": 3.53,
+            "p90": 9.0
+          },
+          "files": 41,
+          "ghost_fraction": 0.476,
+          "ghost_probability": 0.759,
+          "hits": 10436,
+          "timing_mean": 0.005,
+          "timing_sd": 0.2522,
+          "velocity": {
+            "accent": {
+              "mean": 101.5,
+              "sd": 23.8
+            },
+            "ghost": {
+              "mean": 32.6,
+              "sd": 13.0
+            },
+            "hit": {
+              "mean": 58.8,
+              "sd": 16.6
+            }
+          },
+          "velocity_sd": 34.5
+        },
+        "tom": {
+          "density": {
+            "p10": 0.29,
+            "p50": 0.83,
+            "p90": 4.05
+          },
+          "files": 37,
+          "ghost_fraction": 0.265,
+          "ghost_probability": 0.844,
+          "hits": 3500,
+          "timing_mean": 0.0442,
+          "timing_sd": 0.2609,
+          "velocity": {
+            "accent": {
+              "mean": 110.6,
+              "sd": 19.4
+            },
+            "ghost": {
+              "mean": 46.6,
+              "sd": 14.6
+            },
+            "hit": {
+              "mean": 79.1,
+              "sd": 23.2
+            }
+          },
+          "velocity_sd": 33.1
+        }
+      },
+      "swing": 0.0441,
+      "swing_pooled": false
+    },
+    "latin": {
+      "fallback_lanes": [],
+      "files": 48,
+      "harvested": true,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 3.69,
+            "p50": 5.0,
+            "p90": 9.44
+          },
+          "files": 46,
+          "ghost_fraction": 0.238,
+          "ghost_probability": 0.855,
+          "hits": 19153,
+          "timing_mean": -0.0294,
+          "timing_sd": 0.2001,
+          "velocity": {
+            "accent": {
+              "mean": 84.0,
+              "sd": 20.4
+            },
+            "ghost": {
+              "mean": 35.0,
+              "sd": 14.9
+            },
+            "hit": {
+              "mean": 64.1,
+              "sd": 17.7
+            }
+          },
+          "velocity_sd": 26.2
+        },
+        "crash": {
+          "density": {
+            "p10": 0.05,
+            "p50": 0.12,
+            "p90": 0.25
+          },
+          "files": 28,
+          "ghost_fraction": 0.117,
+          "ghost_probability": 0.903,
+          "hits": 410,
+          "timing_mean": -0.0525,
+          "timing_sd": 0.1639,
+          "velocity": {
+            "accent": {
+              "mean": 93.1,
+              "sd": 16.6
+            },
+            "ghost": {
+              "mean": 33.9,
+              "sd": 15.3
+            },
+            "hit": {
+              "mean": 72.8,
+              "sd": 14.6
+            }
+          },
+          "velocity_sd": 25.2
+        },
+        "kick": {
+          "density": {
+            "p10": 3.6,
+            "p50": 5.27,
+            "p90": 7.62
+          },
+          "files": 48,
+          "ghost_fraction": 0.626,
+          "ghost_probability": 0.699,
+          "hits": 19456,
+          "timing_mean": 0.0366,
+          "timing_sd": 0.2252,
+          "velocity": {
+            "accent": {
+              "mean": 107.9,
+              "sd": 26.4
+            },
+            "ghost": {
+              "mean": 27.6,
+              "sd": 14.8
+            },
+            "hit": {
+              "mean": 50.8,
+              "sd": 17.4
+            }
+          },
+          "velocity_sd": 26.0
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.02,
+            "p50": 0.1,
+            "p90": 1.08
+          },
+          "files": 34,
+          "ghost_fraction": 0.119,
+          "ghost_probability": 0.902,
+          "hits": 729,
+          "timing_mean": -0.0186,
+          "timing_sd": 0.1422,
+          "velocity": {
+            "accent": {
+              "mean": 114.6,
+              "sd": 21.3
+            },
+            "ghost": {
+              "mean": 22.4,
+              "sd": 14.0
+            },
+            "hit": {
+              "mean": 56.1,
+              "sd": 19.0
+            }
+          },
+          "velocity_sd": 40.1
+        },
+        "ride": {
+          "density": {
+            "p10": 0.06,
+            "p50": 3.89,
+            "p90": 6.52
+          },
+          "files": 32,
+          "ghost_fraction": 0.137,
+          "ghost_probability": 0.895,
+          "hits": 11147,
+          "timing_mean": 0.0119,
+          "timing_sd": 0.1613,
+          "velocity": {
+            "accent": {
+              "mean": 93.5,
+              "sd": 26.8
+            },
+            "ghost": {
+              "mean": 37.6,
+              "sd": 12.0
+            },
+            "hit": {
+              "mean": 55.0,
+              "sd": 15.3
+            }
+          },
+          "velocity_sd": 30.8
+        },
+        "snare": {
+          "density": {
+            "p10": 2.95,
+            "p50": 8.49,
+            "p90": 17.75
+          },
+          "files": 48,
+          "ghost_fraction": 0.385,
+          "ghost_probability": 0.796,
+          "hits": 32001,
+          "timing_mean": 0.0008,
+          "timing_sd": 0.2208,
+          "velocity": {
+            "accent": {
+              "mean": 94.7,
+              "sd": 25.9
+            },
+            "ghost": {
+              "mean": 28.0,
+              "sd": 13.8
+            },
+            "hit": {
+              "mean": 52.5,
+              "sd": 17.1
+            }
+          },
+          "velocity_sd": 34.2
+        },
+        "tom": {
+          "density": {
+            "p10": 0.38,
+            "p50": 1.24,
+            "p90": 6.52
+          },
+          "files": 47,
+          "ghost_fraction": 0.082,
+          "ghost_probability": 0.917,
+          "hits": 8798,
+          "timing_mean": -0.0309,
+          "timing_sd": 0.1935,
+          "velocity": {
+            "accent": {
+              "mean": 100.8,
+              "sd": 19.4
+            },
+            "ghost": {
+              "mean": 43.2,
+              "sd": 13.5
+            },
+            "hit": {
+              "mean": 68.0,
+              "sd": 15.5
+            }
+          },
+          "velocity_sd": 26.4
+        }
+      },
+      "swing": -0.0372,
+      "swing_pooled": false
+    },
+    "lofi": {
+      "authored_from": "hiphop",
+      "authored_note": "hiphop, dragged further behind the grid and looser, with fewer ghosts",
+      "fallback_lanes": [],
+      "harvested": false,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 4.65,
+            "p50": 8.24,
+            "p90": 13.57
+          },
+          "files": 30,
+          "ghost_fraction": 0.419,
+          "ghost_probability": 0.587,
+          "hits": 6792,
+          "timing_mean": 0.0357,
+          "timing_sd": 0.2098,
+          "velocity": {
+            "accent": {
+              "mean": 112.0,
+              "sd": 19.4
+            },
+            "ghost": {
+              "mean": 36.2,
+              "sd": 18.0
+            },
+            "hit": {
+              "mean": 72.3,
+              "sd": 20.0
+            }
+          },
+          "velocity_sd": 39.8
+        },
+        "crash": {
+          "density": {
+            "p10": 0.04,
+            "p50": 0.27,
+            "p90": 0.82
+          },
+          "files": 23,
+          "ghost_fraction": 0.412,
+          "ghost_probability": 0.589,
+          "hits": 216,
+          "timing_mean": 0.1229,
+          "timing_sd": 0.2412,
+          "velocity": {
+            "accent": {
+              "mean": 116.4,
+              "sd": 13.6
+            },
+            "ghost": {
+              "mean": 13.0,
+              "sd": 17.4
+            },
+            "hit": {
+              "mean": 93.6,
+              "sd": 16.5
+            }
+          },
+          "velocity_sd": 54.6
+        },
+        "kick": {
+          "density": {
+            "p10": 2.79,
+            "p50": 4.7,
+            "p90": 6.53
+          },
+          "files": 30,
+          "ghost_fraction": 0.337,
+          "ghost_probability": 0.611,
+          "hits": 3923,
+          "timing_mean": 0.0598,
+          "timing_sd": 0.2329,
+          "velocity": {
+            "accent": {
+              "mean": 107.1,
+              "sd": 25.3
+            },
+            "ghost": {
+              "mean": 39.4,
+              "sd": 17.4
+            },
+            "hit": {
+              "mean": 67.6,
+              "sd": 16.7
+            }
+          },
+          "velocity_sd": 29.3
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.07,
+            "p50": 0.48,
+            "p90": 4.23
+          },
+          "files": 22,
+          "ghost_fraction": 0.154,
+          "ghost_probability": 0.667,
+          "hits": 1210,
+          "timing_mean": 0.072,
+          "timing_sd": 0.1453,
+          "velocity": {
+            "accent": {
+              "mean": 123.9,
+              "sd": 8.1
+            },
+            "ghost": {
+              "mean": 38.5,
+              "sd": 9.5
+            },
+            "hit": {
+              "mean": 75.1,
+              "sd": 22.1
+            }
+          },
+          "velocity_sd": 38.1
+        },
+        "ride": {
+          "density": {
+            "p10": 0.13,
+            "p50": 0.58,
+            "p90": 2.69
+          },
+          "files": 10,
+          "ghost_fraction": 0.14,
+          "ghost_probability": 0.67,
+          "hits": 492,
+          "timing_mean": 0.0652,
+          "timing_sd": 0.1731,
+          "velocity": {
+            "accent": {
+              "mean": 118.5,
+              "sd": 13.0
+            },
+            "ghost": {
+              "mean": 18.3,
+              "sd": 18.3
+            },
+            "hit": {
+              "mean": 73.8,
+              "sd": 20.8
+            }
+          },
+          "velocity_sd": 42.0
+        },
+        "snare": {
+          "density": {
+            "p10": 1.97,
+            "p50": 3.78,
+            "p90": 7.54
+          },
+          "files": 30,
+          "ghost_fraction": 0.319,
+          "ghost_probability": 0.616,
+          "hits": 3680,
+          "timing_mean": 0.0965,
+          "timing_sd": 0.2892,
+          "velocity": {
+            "accent": {
+              "mean": 122.8,
+              "sd": 9.5
+            },
+            "ghost": {
+              "mean": 26.9,
+              "sd": 14.5
+            },
+            "hit": {
+              "mean": 64.8,
+              "sd": 29.5
+            }
+          },
+          "velocity_sd": 50.2
+        },
+        "tom": {
+          "density": {
+            "p10": 0.07,
+            "p50": 0.81,
+            "p90": 1.59
+          },
+          "files": 20,
+          "ghost_fraction": 0.033,
+          "ghost_probability": 0.703,
+          "hits": 337,
+          "timing_mean": 0.0627,
+          "timing_sd": 0.3174,
+          "velocity": {
+            "accent": {
+              "mean": 118.4,
+              "sd": 14.7
+            },
+            "ghost": {
+              "mean": 27.7,
+              "sd": 15.8
+            },
+            "hit": {
+              "mean": 84.3,
+              "sd": 19.0
+            }
+          },
+          "velocity_sd": 28.8
+        }
+      },
+      "swing": -0.0157,
+      "swing_pooled": false
+    },
+    "rock": {
+      "fallback_lanes": [],
+      "files": 144,
+      "harvested": true,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 0.92,
+            "p50": 4.63,
+            "p90": 10.74
+          },
+          "files": 125,
+          "ghost_fraction": 0.32,
+          "ghost_probability": 0.822,
+          "hits": 29620,
+          "timing_mean": -0.0266,
+          "timing_sd": 0.219,
+          "velocity": {
+            "accent": {
+              "mean": 107.5,
+              "sd": 21.5
+            },
+            "ghost": {
+              "mean": 41.2,
+              "sd": 20.5
+            },
+            "hit": {
+              "mean": 69.9,
+              "sd": 19.2
+            }
+          },
+          "velocity_sd": 34.2
+        },
+        "crash": {
+          "density": {
+            "p10": 0.1,
+            "p50": 0.24,
+            "p90": 0.76
+          },
+          "files": 111,
+          "ghost_fraction": 0.209,
+          "ghost_probability": 0.866,
+          "hits": 3323,
+          "timing_mean": 0.0441,
+          "timing_sd": 0.2343,
+          "velocity": {
+            "accent": {
+              "mean": 105.4,
+              "sd": 15.1
+            },
+            "ghost": {
+              "mean": 41.5,
+              "sd": 33.4
+            },
+            "hit": {
+              "mean": 78.9,
+              "sd": 16.8
+            }
+          },
+          "velocity_sd": 32.5
+        },
+        "kick": {
+          "density": {
+            "p10": 2.13,
+            "p50": 3.57,
+            "p90": 5.54
+          },
+          "files": 142,
+          "ghost_fraction": 0.405,
+          "ghost_probability": 0.788,
+          "hits": 22925,
+          "timing_mean": -0.0186,
+          "timing_sd": 0.219,
+          "velocity": {
+            "accent": {
+              "mean": 107.7,
+              "sd": 23.0
+            },
+            "ghost": {
+              "mean": 50.5,
+              "sd": 27.5
+            },
+            "hit": {
+              "mean": 69.0,
+              "sd": 19.7
+            }
+          },
+          "velocity_sd": 32.8
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.09,
+            "p50": 0.56,
+            "p90": 1.74
+          },
+          "files": 112,
+          "ghost_fraction": 0.487,
+          "ghost_probability": 0.755,
+          "hits": 4929,
+          "timing_mean": -0.0035,
+          "timing_sd": 0.233,
+          "velocity": {
+            "accent": {
+              "mean": 116.1,
+              "sd": 17.0
+            },
+            "ghost": {
+              "mean": 30.3,
+              "sd": 31.3
+            },
+            "hit": {
+              "mean": 72.7,
+              "sd": 20.7
+            }
+          },
+          "velocity_sd": 45.6
+        },
+        "ride": {
+          "density": {
+            "p10": 0.12,
+            "p50": 2.55,
+            "p90": 7.02
+          },
+          "files": 88,
+          "ghost_fraction": 0.294,
+          "ghost_probability": 0.832,
+          "hits": 15615,
+          "timing_mean": 0.0557,
+          "timing_sd": 0.2172,
+          "velocity": {
+            "accent": {
+              "mean": 100.9,
+              "sd": 18.7
+            },
+            "ghost": {
+              "mean": 45.6,
+              "sd": 21.1
+            },
+            "hit": {
+              "mean": 69.3,
+              "sd": 14.3
+            }
+          },
+          "velocity_sd": 28.9
+        },
+        "snare": {
+          "density": {
+            "p10": 2.13,
+            "p50": 3.62,
+            "p90": 6.94
+          },
+          "files": 142,
+          "ghost_fraction": 0.375,
+          "ghost_probability": 0.8,
+          "hits": 26962,
+          "timing_mean": 0.0049,
+          "timing_sd": 0.2278,
+          "velocity": {
+            "accent": {
+              "mean": 115.5,
+              "sd": 18.6
+            },
+            "ghost": {
+              "mean": 36.2,
+              "sd": 24.9
+            },
+            "hit": {
+              "mean": 68.6,
+              "sd": 22.5
+            }
+          },
+          "velocity_sd": 42.0
+        },
+        "tom": {
+          "density": {
+            "p10": 0.19,
+            "p50": 0.67,
+            "p90": 6.83
+          },
+          "files": 122,
+          "ghost_fraction": 0.327,
+          "ghost_probability": 0.819,
+          "hits": 10164,
+          "timing_mean": 0.0078,
+          "timing_sd": 0.2216,
+          "velocity": {
+            "accent": {
+              "mean": 112.7,
+              "sd": 17.8
+            },
+            "ghost": {
+              "mean": 57.3,
+              "sd": 20.0
+            },
+            "hit": {
+              "mean": 77.9,
+              "sd": 18.0
+            }
+          },
+          "velocity_sd": 28.9
+        }
+      },
+      "swing": -0.0007,
+      "swing_pooled": false
+    },
+    "techno": {
+      "authored_from": "dance",
+      "authored_note": "dance, machine-tight and straight",
+      "fallback_lanes": [
+        "kick",
+        "snare",
+        "closed_hat",
+        "open_hat",
+        "tom",
+        "ride",
+        "crash"
+      ],
+      "harvested": false,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 1.99,
+            "p50": 5.82,
+            "p90": 11.34
+          },
+          "files": 383,
+          "ghost_fraction": 0.323,
+          "ghost_probability": 0.657,
+          "hits": 113480,
+          "timing_mean": -0.0232,
+          "timing_sd": 0.0592,
+          "velocity": {
+            "accent": {
+              "mean": 97.4,
+              "sd": 16.4
+            },
+            "ghost": {
+              "mean": 37.4,
+              "sd": 12.0
+            },
+            "hit": {
+              "mean": 66.5,
+              "sd": 13.0
+            }
+          },
+          "velocity_sd": 22.0
+        },
+        "crash": {
+          "density": {
+            "p10": 0.06,
+            "p50": 0.2,
+            "p90": 0.6
+          },
+          "files": 290,
+          "ghost_fraction": 0.205,
+          "ghost_probability": 0.694,
+          "hits": 5585,
+          "timing_mean": 0.0349,
+          "timing_sd": 0.0687,
+          "velocity": {
+            "accent": {
+              "mean": 104.7,
+              "sd": 11.9
+            },
+            "ghost": {
+              "mean": 35.8,
+              "sd": 20.4
+            },
+            "hit": {
+              "mean": 77.0,
+              "sd": 13.2
+            }
+          },
+          "velocity_sd": 23.7
+        },
+        "kick": {
+          "density": {
+            "p10": 1.97,
+            "p50": 3.83,
+            "p90": 5.96
+          },
+          "files": 409,
+          "ghost_fraction": 0.453,
+          "ghost_probability": 0.615,
+          "hits": 83799,
+          "timing_mean": 0.0071,
+          "timing_sd": 0.064,
+          "velocity": {
+            "accent": {
+              "mean": 107.6,
+              "sd": 16.7
+            },
+            "ghost": {
+              "mean": 37.0,
+              "sd": 15.2
+            },
+            "hit": {
+              "mean": 62.7,
+              "sd": 14.0
+            }
+          },
+          "velocity_sd": 22.8
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.05,
+            "p50": 0.5,
+            "p90": 1.78
+          },
+          "files": 317,
+          "ghost_fraction": 0.244,
+          "ghost_probability": 0.682,
+          "hits": 13731,
+          "timing_mean": -0.0026,
+          "timing_sd": 0.0569,
+          "velocity": {
+            "accent": {
+              "mean": 114.9,
+              "sd": 13.5
+            },
+            "ghost": {
+              "mean": 32.0,
+              "sd": 19.7
+            },
+            "hit": {
+              "mean": 70.9,
+              "sd": 15.3
+            }
+          },
+          "velocity_sd": 28.9
+        },
+        "ride": {
+          "density": {
+            "p10": 0.06,
+            "p50": 2.51,
+            "p90": 6.64
+          },
+          "files": 252,
+          "ghost_fraction": 0.225,
+          "ghost_probability": 0.688,
+          "hits": 48815,
+          "timing_mean": 0.0164,
+          "timing_sd": 0.061,
+          "velocity": {
+            "accent": {
+              "mean": 100.8,
+              "sd": 16.0
+            },
+            "ghost": {
+              "mean": 42.1,
+              "sd": 11.9
+            },
+            "hit": {
+              "mean": 64.0,
+              "sd": 11.3
+            }
+          },
+          "velocity_sd": 21.3
+        },
+        "snare": {
+          "density": {
+            "p10": 2.03,
+            "p50": 4.44,
+            "p90": 10.33
+          },
+          "files": 409,
+          "ghost_fraction": 0.391,
+          "ghost_probability": 0.635,
+          "hits": 124729,
+          "timing_mean": 0.0093,
+          "timing_sd": 0.0673,
+          "velocity": {
+            "accent": {
+              "mean": 108.6,
+              "sd": 15.8
+            },
+            "ghost": {
+              "mean": 30.0,
+              "sd": 11.7
+            },
+            "hit": {
+              "mean": 59.2,
+              "sd": 14.4
+            }
+          },
+          "velocity_sd": 28.2
+        },
+        "tom": {
+          "density": {
+            "p10": 0.17,
+            "p50": 0.73,
+            "p90": 3.56
+          },
+          "files": 327,
+          "ghost_fraction": 0.189,
+          "ghost_probability": 0.699,
+          "hits": 28124,
+          "timing_mean": -0.0027,
+          "timing_sd": 0.0661,
+          "velocity": {
+            "accent": {
+              "mean": 107.0,
+              "sd": 13.6
+            },
+            "ghost": {
+              "mean": 52.3,
+              "sd": 13.5
+            },
+            "hit": {
+              "mean": 75.0,
+              "sd": 13.2
+            }
+          },
+          "velocity_sd": 20.4
+        }
+      },
+      "swing": 0.0,
+      "swing_pooled": false
+    },
+    "trap": {
+      "authored_from": "dance",
+      "authored_note": "dance timing with a half-time accent contour",
+      "fallback_lanes": [
+        "kick",
+        "snare",
+        "closed_hat",
+        "open_hat",
+        "tom",
+        "ride",
+        "crash"
+      ],
+      "harvested": false,
+      "lanes": {
+        "closed_hat": {
+          "density": {
+            "p10": 1.99,
+            "p50": 5.82,
+            "p90": 11.34
+          },
+          "files": 383,
+          "ghost_fraction": 0.323,
+          "ghost_probability": 0.821,
+          "hits": 113480,
+          "timing_mean": -0.0232,
+          "timing_sd": 0.1184,
+          "velocity": {
+            "accent": {
+              "mean": 97.4,
+              "sd": 22.3
+            },
+            "ghost": {
+              "mean": 37.4,
+              "sd": 16.2
+            },
+            "hit": {
+              "mean": 66.5,
+              "sd": 17.7
+            }
+          },
+          "velocity_sd": 29.9
+        },
+        "crash": {
+          "density": {
+            "p10": 0.06,
+            "p50": 0.2,
+            "p90": 0.6
+          },
+          "files": 290,
+          "ghost_fraction": 0.205,
+          "ghost_probability": 0.868,
+          "hits": 5585,
+          "timing_mean": 0.0349,
+          "timing_sd": 0.1373,
+          "velocity": {
+            "accent": {
+              "mean": 104.7,
+              "sd": 16.1
+            },
+            "ghost": {
+              "mean": 35.8,
+              "sd": 27.7
+            },
+            "hit": {
+              "mean": 77.0,
+              "sd": 18.0
+            }
+          },
+          "velocity_sd": 32.1
+        },
+        "kick": {
+          "density": {
+            "p10": 1.97,
+            "p50": 3.83,
+            "p90": 5.96
+          },
+          "files": 409,
+          "ghost_fraction": 0.453,
+          "ghost_probability": 0.769,
+          "hits": 83799,
+          "timing_mean": 0.0071,
+          "timing_sd": 0.1279,
+          "velocity": {
+            "accent": {
+              "mean": 107.6,
+              "sd": 22.7
+            },
+            "ghost": {
+              "mean": 37.0,
+              "sd": 20.6
+            },
+            "hit": {
+              "mean": 62.7,
+              "sd": 19.0
+            }
+          },
+          "velocity_sd": 31.0
+        },
+        "open_hat": {
+          "density": {
+            "p10": 0.05,
+            "p50": 0.5,
+            "p90": 1.78
+          },
+          "files": 317,
+          "ghost_fraction": 0.244,
+          "ghost_probability": 0.852,
+          "hits": 13731,
+          "timing_mean": -0.0026,
+          "timing_sd": 0.1138,
+          "velocity": {
+            "accent": {
+              "mean": 114.9,
+              "sd": 18.3
+            },
+            "ghost": {
+              "mean": 32.0,
+              "sd": 26.8
+            },
+            "hit": {
+              "mean": 70.9,
+              "sd": 20.7
+            }
+          },
+          "velocity_sd": 39.2
+        },
+        "ride": {
+          "density": {
+            "p10": 0.06,
+            "p50": 2.51,
+            "p90": 6.64
+          },
+          "files": 252,
+          "ghost_fraction": 0.225,
+          "ghost_probability": 0.86,
+          "hits": 48815,
+          "timing_mean": 0.0164,
+          "timing_sd": 0.122,
+          "velocity": {
+            "accent": {
+              "mean": 100.8,
+              "sd": 21.7
+            },
+            "ghost": {
+              "mean": 42.1,
+              "sd": 16.1
+            },
+            "hit": {
+              "mean": 64.0,
+              "sd": 15.4
+            }
+          },
+          "velocity_sd": 29.0
+        },
+        "snare": {
+          "density": {
+            "p10": 2.03,
+            "p50": 4.44,
+            "p90": 10.33
+          },
+          "files": 409,
+          "ghost_fraction": 0.391,
+          "ghost_probability": 0.794,
+          "hits": 124729,
+          "timing_mean": 0.0093,
+          "timing_sd": 0.1346,
+          "velocity": {
+            "accent": {
+              "mean": 108.6,
+              "sd": 21.5
+            },
+            "ghost": {
+              "mean": 30.0,
+              "sd": 15.9
+            },
+            "hit": {
+              "mean": 59.2,
+              "sd": 19.6
+            }
+          },
+          "velocity_sd": 38.3
+        },
+        "tom": {
+          "density": {
+            "p10": 0.17,
+            "p50": 0.73,
+            "p90": 3.56
+          },
+          "files": 327,
+          "ghost_fraction": 0.189,
+          "ghost_probability": 0.874,
+          "hits": 28124,
+          "timing_mean": -0.0027,
+          "timing_sd": 0.1322,
+          "velocity": {
+            "accent": {
+              "mean": 107.0,
+              "sd": 18.5
+            },
+            "ghost": {
+              "mean": 52.3,
+              "sd": 18.3
+            },
+            "hit": {
+              "mean": 75.0,
+              "sd": 18.0
+            }
+          },
+          "velocity_sd": 27.7
+        }
+      },
+      "swing": 0.0,
+      "swing_pooled": false
+    }
+  },
+  "units": {
+    "density": "hits per bar for this lane (p10/p50/p90 across source files)",
+    "ghost_probability": "Live per-note probability applied to ghost hits",
+    "swing": "median off-8th offset, same units",
+    "timing_mean": "signed mean onset offset relative to the style's own average onset (which removes GMD's capture-chain rush), as a fraction of a 16th note",
+    "timing_sd": "onset offset standard deviation, same units",
+    "velocity": "MIDI velocity, 1-127, per accent class"
+  }
+}
