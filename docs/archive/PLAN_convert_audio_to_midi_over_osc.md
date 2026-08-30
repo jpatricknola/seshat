@@ -396,6 +396,8 @@ ones below remain `*Last run: —*` and still need a person.
   "appended last" samples all had the source on the last track, where the two
   outcomes are indistinguishable. Resolve-by-diff read it correctly; the
   appended-last assumption the plan rejected would have named the marker track.
+  Filed as [fork #38](https://github.com/jpatricknola/AbletonOSC/issues/38); Seshat needs no change either
+  way, since the handler resolves by reading rather than by position.
 - *One undo accounts…* — **Open question 3 answered: the clean answer.** One undo
   restored the pre-convert count with the source untouched, measured twice
   (converted track last, and inserted mid-list). Live folds the asynchronous

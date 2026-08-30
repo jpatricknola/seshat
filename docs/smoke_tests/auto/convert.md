@@ -22,7 +22,7 @@ and [../manual/by-ear.md § Sing a line, hear it back as a guitar](../manual/by-
 
 ## A converted clip lands as a new track whose notes read back
 
-*Last run: 2026-08-30 — passed. 2-bar generate_audio source on track 1; count 2 → 3, reply named track 2 "3-Melody to MIDI" only after it existed, get_clip_notes returned 11 unquantized notes (G5–C6, starts 0.0348–5.2709) in the source's own slot 0, source clip untouched. Placement: with the source last, index 2 is ambiguous, so a second convert was run with a marker track below it — the new track landed at index 2, **directly after the source**, pushing the marker to 3. Not appended last; API.md's three "appended last" samples all had the source on the last track and cannot discriminate. Resolve-by-diff read it right; an appended-last assumption would have named the marker track.*
+*Last run: 2026-08-30 — passed. 2-bar generate_audio source on track 1; count 2 → 3, reply named track 2 "3-Melody to MIDI" only after it existed, get_clip_notes returned 11 unquantized notes (G5–C6, starts 0.0348–5.2709) in the source's own slot 0, source clip untouched. Placement: with the source last, index 2 is ambiguous, so a second convert was run with a marker track below it — the new track landed at index 2, **directly after the source**, pushing the marker to 3. Not appended last; API.md's three "appended last" samples all had the source on the last track and cannot discriminate. Resolve-by-diff read it right; an appended-last assumption would have named the marker track. Filed as [fork #38](https://github.com/jpatricknola/AbletonOSC/issues/38).*
 
 Put an audio clip in a slot with `generate_audio` (any short prompt, `bars: 2`)
 — that is the cheapest audio clip an agent can make alone. Note the track count
