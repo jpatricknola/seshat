@@ -123,9 +123,14 @@ and the source has to be one that can produce a trustworthy negative:
 - **Not sufficient:** a `_MxDCore/LomTypes.pyc` grep. That file is the *Max
   for Live property registry*, not the LOM — a member absent there can be
   fully present and callable.
-- **Not sufficient:** absence from `FORK_GAPS.md` or `lom_dump.json`.
-  `walk_live()` records only classes, so module-level functions never appear
-  in either ([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36)).
+- **Was not sufficient, now largely is:** absence from `FORK_GAPS.md` or
+  `lom_dump.json`. `walk_live()` used to record only classes, so module-level
+  functions never appeared in either — fixed and merged 2026-08-30
+  ([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36)). The walk
+  now records module-level members and reports classes it walked but could not
+  diff, so an absence there is a genuine tier-1 negative. It remains tier 1
+  only: nothing in that inventory has been *called*, so it tells you a member
+  does not exist, never how it behaves.
 - **Not sufficient, and the one that actually bit:** *a UI-scripting spike
   that works.* A working mechanism proves the mechanism works. It says nothing
   about whether a lower rung existed, and it is a powerful stop signal exactly
@@ -214,11 +219,17 @@ Candidate uses, ordered by current value:
    > #36](https://github.com/jpatricknola/AbletonOSC/issues/36)). The
    > `AudioToMidiType` enum was confirmed live in the running Remote Script
    > interpreter. **Convert-to-MIDI is a fork gap, filed as [fork
-   > #34](https://github.com/jpatricknola/AbletonOSC/issues/34)**; Seshat's half
-   > is ROADMAP #14. The call itself has still not been executed, so its
-   > synchronicity is open. Stem
-   > Separation was *not* re-checked and its UI-only disposition still stands
-   > on the 2026-08-27 evidence. Found while walking the LOM for a
+   > #34](https://github.com/jpatricknola/AbletonOSC/issues/34)**, merged
+   > 2026-08-30; Seshat's half is the roadmap item "`convert_audio_to_midi`
+   > drops the Accessibility helper", now the top item (cited by title — this
+   > line said "ROADMAP #14"). The call has since been executed and the
+   > synchronicity question is answered: `audio_to_midi_clip` is
+   > **asynchronous**, and `is_convertible_to_midi` **raises on a MIDI clip**,
+   > which the fork wraps. The fork's `API.md` § "Conversions" owns both
+   > measurements. Stem Separation was *not* re-checked at the time; it has
+   > been since, against the fixed LOM walk, and it is genuinely absent — its
+   > UI-only disposition now stands on tier-1 evidence rather than on the
+   > 2026-08-27 grep. Found while walking the LOM for a
    > harmonisation member; see
    > [generative features/harmony-from-a-melody-options.md §2.6](generative%20features/harmony-from-a-melody-options.md).
 

@@ -550,10 +550,11 @@ that has not been asked.
 - Read [ui-scripting-options.md](evaluating/ui-scripting-options.md) for
   the mechanism ladder and safety model, and its 2026-08-27 production-
   helper measurement. `native/seshat_ax/main.m` is deliberately a closed
-  protocol with no generic press command — five commands today, back to four
-  once "`convert_audio_to_midi` drops the Accessibility helper" lands. The
-  spike may use a scratch build or `ax-probe`, but the result should say what
-  a *bounded* new command would look like, not add a generic one.
+  protocol with no generic press command — four commands today, down from
+  five now that "`convert_audio_to_midi` drops the Accessibility helper" has
+  landed. The spike may use a scratch build or `ax-probe`, but the result
+  should say what a *bounded* new command would look like, not add a generic
+  one.
 - Procedure the doc already names, minus the commands that left: enumerate
   Live's Create menu and a clip's context menu; import one SA3 render from
   `~/.seshat/audio-spike/` by hand; run **Stem Separation and Extract Groove**

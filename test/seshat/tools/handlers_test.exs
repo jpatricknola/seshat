@@ -5796,6 +5796,92 @@ defmodule Seshat.Tools.HandlersTest do
                "path must never say"
     end
 
+    # `convert_sent_but/3` is the shared wording behind every path where the
+    # conversion datagram already left before something about observing its
+    # outcome went wrong. Three shapes are worth telling apart, and none of
+    # them may ever say "nothing was converted" — the request is genuinely on
+    # the wire by the time any of these fire.
+    test "a reply matching neither ok nor error still says it may still appear", %{sink: sink} do
+      call = convert_call()
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+          {"/live/song/get/track_names", ["Audio"]},
+          {"/live/clip/audio_to_midi", [0, 0, "pending", 7]}
+        ])
+
+      assert {:error, message} = Task.await(call)
+
+      assert message =~ "was requested"
+      assert message =~ "its reply was"
+      assert message =~ "may still appear"
+      refute message =~ "nothing was converted"
+
+      assert Enum.count(trace, fn {address, _args} -> address == "/live/song/get/track_names" end) ==
+               1,
+             "an unreadable accept/reject reply has nothing to poll for"
+    end
+
+    test "a reply echoing a different clip is not trusted, and says it may still appear", %{
+      sink: sink
+    } do
+      call = convert_call()
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+          {"/live/song/get/track_names", ["Audio"]},
+          {"/live/clip/audio_to_midi", [9, 0, "ok", -1]}
+        ])
+
+      assert {:error, message} = Task.await(call)
+
+      assert message =~ "was requested"
+      assert message =~ "different clip"
+      assert message =~ "may still appear"
+      refute message =~ "nothing was converted"
+
+      assert Enum.count(trace, fn {address, _args} -> address == "/live/song/get/track_names" end) ==
+               1,
+             "a stale echo has nothing to poll for either"
+    end
+
+    test "when Ableton never answers the conversion request, it says it may still appear", %{
+      sink: sink
+    } do
+      call = convert_call()
+
+      scripted_trace(sink, [
+        {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+        {"/live/song/get/track_names", ["Audio"]}
+      ])
+
+      assert {:error, message} = Task.await(call, 10_000)
+
+      assert message =~ "did not answer"
+      assert message =~ "may still appear"
+      refute message =~ "nothing was converted"
+    end
+
+    test "a poll that times out reading the track names back still says a track may exist", %{
+      sink: sink
+    } do
+      call = convert_call()
+
+      scripted_trace(sink, [
+        {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+        {"/live/song/get/track_names", ["Audio"]},
+        {"/live/clip/audio_to_midi", [0, 0, "ok", -1]}
+      ])
+
+      assert {:error, message} = Task.await(call, 10_000)
+
+      assert message =~ "timed out"
+      assert message =~ "may well exist"
+      refute message =~ "nothing was converted"
+    end
+
     test "more than one new track names none of them", %{sink: sink} do
       call = convert_call()
 

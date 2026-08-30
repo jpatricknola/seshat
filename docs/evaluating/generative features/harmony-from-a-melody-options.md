@@ -95,7 +95,8 @@ composes the notes from a description." This asks "who *harmonises notes that
 already exist*." A grep of `docs/evaluating/` for "harmon" finds only the
 Convert-Harmony-to-MIDI entries (audio input) and the Notochord / ReaLchords
 mentions in `live-improv-exploration.md` (real-time, live playing) — nothing
-on symbolic harmonisation of a clip. ROADMAP #1 currently states "Melody and
+on symbolic harmonisation of a clip. The roadmap item **"MIDI generation —
+the first solution, composed symbolically"** states "Melody and
 harmony have no symbolic candidate today." That sentence is true of
 *generating* a melody and **false of harmonising one**; §5 says what should
 replace it.
@@ -300,21 +301,30 @@ a new MIDI track with the notes extracted from the given `audio_clip`. The
 with the enum `AudioToMidiType` confirmed live in the running Remote Script
 interpreter via the fork's own `/live/application/dump_lom`. Filed as
 [fork issue #34](https://github.com/jpatricknola/AbletonOSC/issues/34);
-Seshat's half is ROADMAP #14, "`convert_audio_to_midi` drops the Accessibility
-helper".
+Seshat's half is the roadmap item "`convert_audio_to_midi` drops the
+Accessibility helper" — the top item as of 2026-08-30, cited by title because
+ranks move.
+
+**Executed 2026-08-30, and both open questions are answered** — see the
+correction below and the fork's `API.md` § "Conversions", which owns the
+measurements. The paragraph that follows was written before the call was made
+and is kept as the record of what was unknown at the time:
 
 **Still not executed** — nobody has called `audio_to_midi_clip` and watched a
 track appear, so whether it is synchronous, and whether
 `is_convertible_to_midi` raises on a MIDI clip or answers `false`, are open.
 Both are named in #34 as things to confirm before the Elixir is written.
 
-Two fork defects surfaced while establishing this, both filed:
+Two fork defects surfaced while establishing this, both filed and **both
+merged on 2026-08-30**:
 [#35](https://github.com/jpatricknola/AbletonOSC/issues/35) — `/live/api/reload`
-aborts on a fresh session while still logging "Reloaded code", which is why
-`API.md`'s documented probe rig does not work as written — and
+aborted on a fresh session while still logging "Reloaded code", which is why
+`API.md`'s documented probe rig did not work as written; it now names the
+module it stopped at and reports a partial reload at `error` level — and
 [#36](https://github.com/jpatricknola/AbletonOSC/issues/36) — `walk_live()`
-drops module-level members, which is exactly why `Live.Conversions` was
-invisible to `FORK_GAPS.md`.
+dropped module-level members, which is exactly why `Live.Conversions` was
+invisible to `FORK_GAPS.md`; the walk now records them under the module's
+qualname.
 
 Sibling docs are edited, per the cross-link rule:
 [ui-scripting-options.md](../ui-scripting-options.md) §2 and
@@ -505,14 +515,20 @@ and it must not pretend to.
 > binary, and its enum is live in the Remote Script interpreter. Convert-to-MIDI
 > is a fork gap, not a UI-only feature, so `convert_audio_to_midi` need not use
 > the Accessibility helper at all. Bridge half:
-> [fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34). Seshat half:
-> ROADMAP #14. **What remains unexecuted** is the call itself — sync/async and
-> the `is_convertible_to_midi` failure mode are both open, and both are named
-> in #34. None of this touches the harmony feature, whose input is already
-> MIDI.
+> [fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34) — **merged
+> the same day**. Seshat half: the roadmap item "`convert_audio_to_midi` drops
+> the Accessibility helper", now the top item.
+>
+> **The call has since been executed, and both open questions are answered.**
+> `audio_to_midi_clip` is **asynchronous**, and `is_convertible_to_midi`
+> **raises on a MIDI clip** rather than answering false — the fork wraps it so
+> the address always answers. Neither was predictable from the registration
+> table, which is the point of K2 as a measurement. The fork's `API.md`
+> § "Conversions" holds the contract; do not restate it here. None of this
+> touches the harmony feature, whose input is already MIDI.
 
-Run **K1 → H1**. K2 is independent and belongs to whoever picks up
-`convert_audio_to_midi`.
+Run **K1 → H1**. K2 is **done**; its result belongs to whoever picks up
+`convert_audio_to_midi`, which is now planned.
 
 ### Roadmap shape, if this is picked up
 
@@ -527,7 +543,8 @@ added, the honest framing is:
   addresses to start reading, no Python, no install, no Live restart.
 - **≈2.7 impact-per-effort**, which would place it **above the current #1**.
 
-It should also **correct ROADMAP #1's sentence** "Melody and harmony have no
+It should also **correct the sentence in "MIDI generation — the first
+solution, composed symbolically"** reading "Melody and harmony have no
 symbolic candidate today." That is true of generating a melody from a
 description and false of harmonising one that exists. The two should not share
 a lane: this needs no model, no listening bake-off against models, and none of
@@ -593,17 +610,23 @@ real, recorded here, not yet filed:
   `Live.Conversions` is a registered module of free functions. Both docs are
   corrected, and the bridge half is
   [fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34) with
-  Seshat's half at ROADMAP #14.
+  Seshat's half is the roadmap item **"`convert_audio_to_midi` drops the
+  Accessibility helper"** (cited by title: it was written here as "#14" and is
+  now the top item, which is why ranks are not identifiers).
 - **`/live/api/reload` has been silently broken on every fresh Live session** —
   [fork #35](https://github.com/jpatricknola/AbletonOSC/issues/35). It aborts
   on `abletonosc.introspection` (imported lazily inside a callback, so the
   attribute does not exist) and then logs "Reloaded code" anyway. `API.md`'s
   probe rig depends on it.
-- **`FORK_GAPS.md` cannot see module-level LOM members at all** —
-  [fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36).
-  `walk_live()` recurses into modules and types and drops everything else, so
-  absence from the gap file is not evidence of absence from the LOM. Unknown
-  how much else this hides.
+- **`FORK_GAPS.md` could not see module-level LOM members at all** —
+  [fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36), **merged
+  2026-08-30**. `walk_live()` recursed into modules and types and dropped
+  everything else, so absence from the gap file was not evidence of absence
+  from the LOM. It now records module-level members and reports the classes it
+  walks but cannot diff, so that absence is worth something. The "unknown how
+  much else this hides" question was answered by the regeneration: seven Live
+  modules, and a *Walked but not diffed* section carrying 198 members across
+  38 entries that the old hand-written filter dropped without a note.
 
 ---
 

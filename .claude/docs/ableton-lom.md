@@ -60,7 +60,8 @@ whole time, and Live's own `Push2/convert.py` had been calling it. Found
 2026-08-30; bridge half is
 [fork #34](https://github.com/jpatricknola/AbletonOSC/issues/34), **merged the
 same day** — `/live/clip/audio_to_midi` and four siblings now exist, and the
-Seshat half is the roadmap's top item.
+Seshat half — `convert_audio_to_midi` running over OSC instead of the
+Accessibility helper — has since shipped too.
 
 Note what made that a month-long error rather than a day-long one: the tier-3
 grep and the tier-1 inventory were **blind in the same place**. `LomTypes.pyc`

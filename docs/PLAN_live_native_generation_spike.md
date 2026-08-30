@@ -4,10 +4,30 @@
 > above its quotient as the gate for the MIDI decision experiment, deciding
 > which of Live's transcription commands could be an arm. Audio→MIDI
 > transcription has since been rejected as the primary MIDI strategy, so the
-> MIDI item no longer waits on it. The procedure and acceptance below are
-> unchanged; what changed is what the result feeds — Stem Separation and
-> Extract Groove for the audio side, Convert Drums / Melody / Harmony for a
-> specific case that has not been opened. Run it at its own quotient.
+> MIDI item no longer waits on it. Run it at its own quotient.
+>
+> **Correction, same day: two of the commands below are not UI-only, and the
+> scope is now two.** The premise this plan inherited — "five of those
+> commands are UI-only, absent from `_MxDCore/LomTypes.pyc` at any spelling" —
+> rested on tier-3 evidence, which is unsafe as a negative. **Convert Drums /
+> Melody / Harmony** and **Slice to New MIDI Track** are `Live.Conversions`
+> module-level free functions and have had OSC addresses since the fork merge
+> of 2026-08-30 (`API.md` § "Conversions"). Drop both from every list in this
+> plan: they are not AX targets, their results are not this spike's to
+> measure, and the "zero-licence floor for drum transcription" sentence below
+> describes something now reachable with no AX at all.
+>
+> **What remains is Stem Separation and Extract Groove**, plus Bounce if the
+> runner wants it. For those the UI-only finding holds on *better* evidence
+> than it started with: they are absent from the regenerated tier-1 LOM walk
+> too, not merely from the M4L registry. Two further changes to the procedure
+> — the AX menu-press mechanism is no longer an open question (the Convert
+> Melody press shipped in "Sing it back as MIDI", using `AXPick` after
+> `AXPress`, so measure behaviour rather than reachability), and the dialog
+> question has a fork-side answer: `Application.press_current_dialog_button`
+> was **declined** by the fork as unsafe, so a command raising a modal is
+> AX-or-nothing by policy. Acceptance below still says "eight commands";
+> read it as the commands actually attempted, each with its reason.
 
 Roadmap item **"Live-native generation spike — can AX drive the Create
 menu?"** A spike with a written result, not a tool. It answers, by
@@ -37,14 +57,20 @@ The generation research
 ([midi-generation-options.md](evaluating/generative%20features/midi-generation-options.md),
 [live-native-options.md](evaluating/generative%20features/live-native-options.md))
 spent a week surveying separators and transcribers before noticing Live Suite
-ships both. Five of those commands are UI-only — absent from Live 12.4.3's
-`_MxDCore/LomTypes.pyc` at any spelling, and still absent from the fork's
-`application.py` — so the only route is the macOS Accessibility rung, which
-has been validated once (the Audio Settings popup, 2026-08-03) and never
-against a menu command. Until it is measured, the MIDI decision experiment
-(roadmap #3) cannot fix its arms: joint Route C "uses Live Stem Separation or
-does not run", and Convert Drums is the zero-licence floor for drum
-transcription. This item is the gate.
+ships both. This plan then recorded five of those commands as UI-only, on the
+strength of their absence from Live 12.4.3's `_MxDCore/LomTypes.pyc` — **and
+two of the five were not**; see the correction in the status banner. For
+**Stem Separation** and **Extract Groove** the finding holds, and now rests on
+tier 1 rather than tier 3: they are absent from the regenerated LOM walk as
+well as from the fork's `application.py`, so the macOS Accessibility rung
+really is the only route. That rung has been validated twice — the Audio
+Settings popup (2026-08-03) and the Convert Melody menu press that shipped
+"Sing it back as MIDI" (2026-08-30) — so what is unmeasured is these two
+commands' behaviour, not whether a menu command can be pressed. Nothing on the
+MIDI side waits on this any more: **"MIDI generation — the first solution,
+composed symbolically"** was re-scoped away from audio→MIDI, and Convert Drums
+— the sentence this paragraph used to end on — is reachable over OSC now
+without a spike at all.
 
 **What planning measured today (2026-08-28, Live 12.4.5 Suite, macOS 15.7.4,
 Seshat stopped, UDP 11001 free).** These close half the roadmap entry's
@@ -410,8 +436,10 @@ one.
 - **The Extensions SDK** as an alternative bridge to the same commands —
   behind a sign-up, unread; a separate `/evaluate`.
 - **Localisation.** English labels only, as with the audio-output helper.
-- **The MIDI decision experiment itself** (roadmap #3) — this spike fixes its
-  arms, nothing more.
+- **The MIDI generation item itself** — now **"MIDI generation — the first
+  solution, composed symbolically"**, which no longer waits on this spike at
+  all. (This line cited it by rank, "roadmap #3"; ranks are not stable
+  identifiers and that one had already drifted twice. Cite by title.)
 
 ## Open questions
 

@@ -120,15 +120,27 @@ answers behavioural questions in minutes — and
 `/live/application/dump_lom` writes the whole reachable surface to JSON in one
 call, with no file edits at all, which is usually the cheaper first move.
 
-⚠️ **Two live defects to know before you rely on either** (both filed
-2026-08-30): `/live/api/reload` aborts on a fresh Live session and still logs
-`Reloaded code`, so the probe rig does not work as written until
-`dump_lom` has been fired once
-([fork #35](https://github.com/jpatricknola/AbletonOSC/issues/35)); and
-`dump_lom` records only classes, so **module-level functions are absent from
-it and therefore absent from `FORK_GAPS.md`**
-([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36)). Until #36
-lands, absence from the gap file is not evidence of absence from the LOM.
+✅ **Two defects that used to limit both were fixed and merged on 2026-08-30**,
+so the guidance here is the post-fix guidance:
+`/live/api/reload` aborted on a fresh Live session and still logged
+`Reloaded code`; it now names the module it stopped at and reports a partial
+reload at `error` level, which reaches the client as `/live/error`, so the
+probe rig works as written
+([fork #35](https://github.com/jpatricknola/AbletonOSC/issues/35)). And
+`dump_lom` recorded only classes, so module-level functions were absent from
+it and therefore from `FORK_GAPS.md`; the walk now records them under the
+module's qualname and reports classes it walked but could not diff
+([fork #36](https://github.com/jpatricknola/AbletonOSC/issues/36)).
+
+**So absence from the gap file is now evidence — tier-1 evidence, and only
+that.** Every member in it is a name, kind and docstring read from Live;
+nothing has been *called*. Argument order, return shapes, synchronicity and
+whether a member raises are all unmeasured until you call it. The worked
+example is `Live.Conversions`: the inventory could not have told you that
+`audio_to_midi_clip` is asynchronous or that `is_convertible_to_midi` raises
+on a MIDI clip. Use the probe rig in the fork's `API.md` § "Measuring the Live
+API without building the feature first" before planning against anything the
+walk reports but nobody has run.
 
 **2.4 Extensions SDK** (Live 12.4.5+, public beta, Suite). JavaScript/TypeScript
 inside Live with clip/track/device/MIDI access, audio-file import, undo
@@ -263,7 +275,10 @@ Ableton" is not an answer when Ableton is running.
   anywhere proves it exists. Proving one *absent* needs tier 1 (the Live
   binary) or tier 2 (Live's own Remote Scripts). Every other source is a
   filtered view and will produce false negatives — `LomTypes.pyc` is the M4L
-  registry, `dump_lom` records only classes, the apiref drifts.
+  registry and the apiref drifts. `dump_lom` joined tier 1 on 2026-08-30 when
+  it stopped dropping module-level members; before that it agreed with
+  `LomTypes.pyc` by being blind in the same place, which is how one false
+  negative survived a check against two sources.
 - **A LOM member need not hang off an object.** `Live.Conversions` and
   `Live.MidiMap` are submodules of free functions with no owning object in the
   session tree. If an operation has no natural owner — "convert this",
