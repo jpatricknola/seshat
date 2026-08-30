@@ -130,8 +130,13 @@ defmodule Seshat.Session.State do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc """
-  The mirrored track list — `%{index, name, volume, pan, mute, solo}` per track,
-  in Live's order.
+  The mirrored track list — `%{index, name, volume, pan, mute, solo,
+  audio_input?, input_type, input_channel, monitoring}` per track, in Live's
+  order.
+
+  The first six are pushed by listeners; the input block is read on refresh and
+  never pushed (see `read_tracks/2`), so it can lag a hand edit in Live's own
+  input choosers until the next rebuild.
 
   `nil` when the last read couldn't establish how many tracks the set has:
   unknown, never "no tracks". `[]` is the verified-empty set. An individual
@@ -922,6 +927,12 @@ defmodule Seshat.Session.State do
   for `Session.State`", which is gated on re-measurement — and deliberately not
   done here.
 
+  The input block each row carries (`audio_input?`, `input_type`,
+  `input_channel`, `monitoring`) is the one place that batch is already used:
+  four reads in a single `query_batch/2` per track, inside this loop rather than
+  instead of it, so the fields cost one AbletonOSC tick per track rather than
+  four. Rewriting the *loop* remains the gated roadmap item above.
+
   Aborting the whole read rather than skipping the one index is deliberate:
   `do_refresh/1` is about to discard the list anyway, so every query after the
   first unanswered name is spent on a result that gets thrown away. A vanished
@@ -950,14 +961,16 @@ defmodule Seshat.Session.State do
           {:halt, {:degraded, i}}
 
         name ->
-          track = %{
-            index: i,
-            name: name,
-            volume: query_float(transport, "/live/track/get/volume", i),
-            pan: query_float(transport, "/live/track/get/panning", i),
-            mute: query_int(transport, "/live/track/get/mute", i) |> to_bool(),
-            solo: query_int(transport, "/live/track/get/solo", i) |> to_bool()
-          }
+          track =
+            %{
+              index: i,
+              name: name,
+              volume: query_float(transport, "/live/track/get/volume", i),
+              pan: query_float(transport, "/live/track/get/panning", i),
+              mute: query_int(transport, "/live/track/get/mute", i) |> to_bool(),
+              solo: query_int(transport, "/live/track/get/solo", i) |> to_bool()
+            }
+            |> Map.merge(read_track_input(transport, i))
 
           {:cont, [track | acc]}
       end
@@ -967,6 +980,75 @@ defmodule Seshat.Session.State do
       tracks -> {:ok, Enum.reverse(tracks)}
     end
   end
+
+  # The input block of one track's row: what it is listening to, on which
+  # channel, and whether it passes that through.
+  #
+  # **One `query_batch/2`, not four more serialized queries.** The loop above is
+  # deliberately per-index (see `read_tracks/2`'s own note, and the gated
+  # "Monitored refresh worker" roadmap item that owns rewriting it), so these
+  # fields join a track's existing step rather than growing the rebuild by four
+  # round trips per track: a burst and a single query cost the same one
+  # AbletonOSC tick.
+  #
+  # `has_audio_input` rides along because the mirror otherwise has no idea what
+  # *kind* of track it is holding — name, volume, pan, mute and solo say
+  # nothing about it — and these three fields are only rendered for an audio
+  # track.
+  #
+  # **Polled, never pushed.** `current_monitoring_state` does have a listen pair;
+  # the two routing properties are custom handlers with none. Mixing one pushed
+  # value with two polled ones in the same row is exactly the staleness this
+  # module is careful about, so all three are read here and none by listener —
+  # which does mean a hand edit in Live's own input choosers is invisible until
+  # the next refresh. `set_mixer`'s read-back and `record_clip`'s pre-read are
+  # both always-fresh reads for that reason; nothing correctness-critical is
+  # served from these.
+  #
+  # Anything unanswered or rejected stays `nil` and renders nothing, which also
+  # quietly covers a track that reports audio input but has no input chooser of
+  # its own (a group).
+  defp read_track_input(transport, index) do
+    entries = [
+      {"/live/track/get/has_audio_input", [index]},
+      {"/live/track/get/input_routing_type", [index]},
+      {"/live/track/get/input_routing_channel", [index]},
+      {"/live/track/get/current_monitoring_state", [index]}
+    ]
+
+    case batch(transport, entries) do
+      {:ok, [audio, type, channel, monitoring]} ->
+        %{
+          audio_input?: entry_bool(audio),
+          input_type: entry_string(type),
+          input_channel: entry_string(channel),
+          monitoring: entry_int(monitoring)
+        }
+
+      _no_answer ->
+        %{audio_input?: nil, input_type: nil, input_channel: nil, monitoring: nil}
+    end
+  end
+
+  defp batch(transport, entries) do
+    transport.query_batch(entries, @query_timeout)
+  catch
+    :exit, _ -> {:error, :timeout}
+  end
+
+  # Batch entries are already correlated by address *and* echoed prefix inside
+  # Transport, so unlike the serialized helpers below there is no index to
+  # re-check here — only a shape to read or refuse.
+  defp entry_string({:ok, [value]}) when is_binary(value), do: value
+  defp entry_string(_entry), do: nil
+
+  defp entry_int({:ok, [value]}) when is_integer(value), do: value
+  defp entry_int(_entry), do: nil
+
+  defp entry_bool({:ok, [true]}), do: true
+  defp entry_bool({:ok, [false]}), do: false
+  defp entry_bool({:ok, [value]}) when is_integer(value), do: value != 0
+  defp entry_bool(_entry), do: nil
 
   defp refresh_returns(transport) do
     case probe(transport, "/live/return_track/get/count", [], @return_probe_timeout) do

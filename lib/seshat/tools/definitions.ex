@@ -48,7 +48,10 @@ defmodule Seshat.Tools.Definitions do
           "only; cue has volume only (the browser-preview/headphone level, not what the " <>
           "audience hears) — a property the target lacks is refused by name and nothing " <>
           "else in the call is sent. Return, master and cue replies name the previous " <>
-          "value. To change how much a track feeds a return, use set_track_send.",
+          "value. To change how much a track feeds a return, use set_track_send. " <>
+          "input_type, input_channel and monitoring choose where an audio track listens and " <>
+          "whether it passes that through — regular tracks only, and set them before recording " <>
+          "a take; get_session_state reports all three per audio track.",
       parameters: %{
         type: "object",
         properties: %{
@@ -85,6 +88,31 @@ defmodule Seshat.Tools.Definitions do
           "name" => %{
             type: "string",
             description: "New name (regular and return tracks only)"
+          },
+          "input_type" => %{
+            type: "string",
+            description:
+              "Live's own name for the input source, exactly as it appears in the track's " <>
+                "Input Type chooser (for example 'Ext. In', 'Resampling', or another track's " <>
+                "name). Names come from the user's audio interface and their set, so never " <>
+                "guess one — read them from get_session_state or from this tool's own error, " <>
+                "which lists the real names."
+          },
+          "input_channel" => %{
+            type: "string",
+            description:
+              "Live's own name for the channel within that input, again verbatim (for example " <>
+                "'1', '1/2'). Set input_type in the same call when changing both; the channel " <>
+                "list depends on the type."
+          },
+          "monitoring" => %{
+            type: "string",
+            enum: ["in", "auto", "off"],
+            description:
+              "How the track passes its input through. 'auto' (Live's default) passes it " <>
+                "through only while the track is armed and no clip is playing; 'in' always " <>
+                "does, which is what you want while a player sets levels before a take; 'off' " <>
+                "never does."
           }
         },
         required: []
@@ -404,9 +432,10 @@ defmodule Seshat.Tools.Definitions do
           "is already playing, recording starts at the next launch-quantization boundary " <>
           "(usually the next bar) — start playback first when the user wants a predictable " <>
           "punch-in; from a stopped transport it starts immediately, so make sure the user is " <>
-          "ready *before* calling. Audio tracks record whatever input is routed to them in " <>
-          "Live — Seshat cannot choose or check the input, so a silent take usually means the " <>
-          "input isn't set. The reply says whether recording is running or queued for the " <>
+          "ready *before* calling. On an audio track the input is read first: the reply names " <>
+          "what the track is listening to, and a track with nothing routed is refused before " <>
+          "any recording starts — set_mixer's input_type, input_channel and monitoring are " <>
+          "what fix that. The reply says whether recording is running or queued for the " <>
           "boundary. The view follows: the slot is selected in the Session grid, turning red " <>
           "as it records.",
       parameters: %{
@@ -1650,6 +1679,59 @@ defmodule Seshat.Tools.Definitions do
           }
         },
         required: ["description"]
+      }
+    },
+    # --- Audio to MIDI (OSC selection, macOS Accessibility press) ---
+    #
+    # The third tool that leaves the Live Object Model, and the first that
+    # changes the Set while doing it. Live's `Create > Convert … to New MIDI
+    # Track` is a menu command with no LOM member at any spelling, so the
+    # selection and every observation are OSC and only the press is
+    # Accessibility. It stays undo-stepped for exactly that reason: what it
+    # produces is an ordinary Live Set change.
+    %{
+      name: "convert_audio_to_midi",
+      description:
+        "Turn an audio clip into a new MIDI track playing the same part — Ableton Live's own " <>
+          "Convert. Use 'melody' for a single line (a sung or hummed solo, a bass part), " <>
+          "'harmony' for chords and pads, 'drums' for a beat, which lands on a Drum Rack. " <>
+          "Track and slot are 0-based and must hold an **audio** clip; a MIDI clip is " <>
+          "refused. Live analyses pitch, so the result follows what was actually played, " <>
+          "warts included: expect to follow up with quantize_clip and edit_notes rather than " <>
+          "expecting a clean part. The new track arrives directly after the source track, " <>
+          "carrying an instrument Live chose — replace it with load_device once you know what " <>
+          "the user wants it to sound like. **This briefly brings Ableton Live to the front and " <>
+          "switches it to the Session grid to fire the command, and does not switch it back** — " <>
+          "so do it between takes, never during one, and say so if the user was working in the " <>
+          "Arranger. Live 9+, Standard and Suite.",
+      parameters: %{
+        type: "object",
+        properties: %{
+          # `minimum: 0` is load-bearing, not house style:
+          # `/live/view/set/selected_clip` is one of the legacy view setters that
+          # resolves a negative index from the *end* of the list instead of
+          # raising, so without the bound a negative index could pass the guards
+          # and convert a clip on the wrong track.
+          "track" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed track holding the audio clip to convert"
+          },
+          "clip_slot" => %{
+            type: "integer",
+            minimum: 0,
+            description: "0-indexed scene/clip slot holding that audio clip"
+          },
+          "mode" => %{
+            type: "string",
+            enum: ["melody", "harmony", "drums"],
+            description:
+              "Which conversion Live runs: 'melody' for one line at a time, 'harmony' for " <>
+                "chords, 'drums' for a beat. Pick from what the audio actually is, not from " <>
+                "what the user wants it to become."
+          }
+        },
+        required: ["track", "clip_slot", "mode"]
       }
     },
     # --- Audio output (macOS Accessibility, not OSC) ---

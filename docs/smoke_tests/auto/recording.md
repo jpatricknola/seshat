@@ -148,10 +148,16 @@ to be worth a better message.
 
 *Last run: —*
 
-Create an audio track. Without setting its input, call `record_clip` on an
-empty slot with `bars: 1`. Then set a real input with `set_mixer`'s
-`input_type` (any name from the list its error or `get_session_state` reports),
-and call `record_clip` again on another empty slot.
+Create an audio track and route it to nothing — `set_mixer input_type:
+"No Input"`. Call `record_clip` on an empty slot with `bars: 1`. Then set a real
+input with `set_mixer`'s `input_type` (any name from the list its error or
+`get_session_state` reports), and call `record_clip` again on another empty slot.
+
+Setting `"No Input"` explicitly is the whole method, and substituting "just
+don't set the input" is what makes this test unable to fail: a freshly created
+audio track does **not** start unrouted — measured 2026-08-30 on Live 12.4.5, a
+new one came up on `Ext. In` / `1`, so the first call records and the guard is
+never exercised.
 
 The first call is **refused before any recording starts** — the reply says the
 track has no input routed, names the `set_mixer` properties that fix it, and
@@ -164,10 +170,21 @@ gone. A first call that records anyway means the pre-read was skipped or its
 result ignored; a reply that paraphrases or normalises the input name means
 someone interpreted a string that belongs to the user's interface, not to us.
 
-⚠️ The display name Live uses for an unrouted audio input is **unmeasured** —
-if the first call records instead of refusing, check whether Live reported a
-non-empty name rather than assuming the guard is broken, and record what it
-was in [API.md](../../../priv/AbletonOSC/API.md).
+Live's name for an unrouted audio input is `"No Input"` — a routing type like
+any other, listed on `available_input_routing_types` beside `Ext. In` and
+`Resampling` (measured 2026-08-30 against Live 12.4.5, closing what
+[PLAN_sing_it_back_as_midi.md](../../archive/PLAN_sing_it_back_as_midi.md)
+carried as open question 2). It is not the empty string the first
+implementation matched on, and this test is where that would have been caught.
+⚠️ Not yet recorded in [API.md](../../../priv/AbletonOSC/API.md) — that is
+fork-owned and needs a fork commit, not an edit here.
+
+⚠️ On a machine with no audio input device, Live also reads `can_be_armed` as
+false under `"No Input"`. So a refusal alone does not prove the input guard
+fired: check the wording. "nothing routed into its input" naming `set_mixer` is
+this guard; anything about arming or group tracks means the later
+`can_be_armed` read stopped the take instead, which is the regression this
+check exists to catch.
 
 ## Monitoring set to off warns but still records
 

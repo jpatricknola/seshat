@@ -39,7 +39,9 @@ defmodule Seshat.Tools.FollowCam do
   the moment the recorded thing exists and can be looked at. `generate_audio`
   is an ordinary clip write for this purpose — it steers only after the
   imported clip has been read back and confirmed, so the view never jumps to a
-  slot whose import failed.
+  slot whose import failed. `convert_audio_to_midi` is a create for the same
+  purpose — it selects the track Live's Convert made, and changes no pane, for
+  the same reason `create_track` doesn't.
   """
 
   alias Seshat.OSC.Transport
@@ -116,7 +118,8 @@ defmodule Seshat.Tools.FollowCam do
   #
   # No pane change: track headers are visible in Session and Arrangement both,
   # so forcing Session here would fight a user working in the Arrangement.
-  def calls(tool, %{track: track}) when tool in ["create_track", "duplicate_track"] do
+  def calls(tool, %{track: track})
+      when tool in ["create_track", "duplicate_track", "convert_audio_to_midi"] do
     [{"/live/view/set/selected_track", [track]}]
   end
 

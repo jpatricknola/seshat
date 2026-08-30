@@ -82,7 +82,7 @@ defmodule Seshat.AX.ClientTest do
 
     @tag :tmp_dir
     test "is overridable, which is how the suite avoids the real helper", context do
-      path = helper(context, emits(~s({"ok":true,"protocol_version":1})))
+      path = helper(context, emits(~s({"ok":true,"protocol_version":2})))
 
       assert Client.helper_path() == path
     end
@@ -104,7 +104,7 @@ defmodule Seshat.AX.ClientTest do
       helper(
         context,
         emits(
-          ~s({"ok":true,"current":"Use System: 25 AirPods","devices":["No Device","Use System Device","MacBook Pro Speakers"],"elapsed_ms":412,"protocol_version":1})
+          ~s({"ok":true,"current":"Use System: 25 AirPods","devices":["No Device","Use System Device","MacBook Pro Speakers"],"elapsed_ms":412,"protocol_version":2})
         )
       )
 
@@ -118,7 +118,7 @@ defmodule Seshat.AX.ClientTest do
     test "asks the helper for list-outputs and nothing else", context do
       helper(
         context,
-        ~s(printf '{"ok":true,"current":"%s","devices":[],"protocol_version":1}' "$*")
+        ~s(printf '{"ok":true,"current":"%s","devices":[],"protocol_version":2}' "$*")
       )
 
       assert {:ok, %{current: "list-outputs"}} = Client.list_outputs()
@@ -128,14 +128,14 @@ defmodule Seshat.AX.ClientTest do
     # speaking this protocol, not a device list of zero.
     @tag :tmp_dir
     test "rejects a success carrying no current value", context do
-      helper(context, emits(~s({"ok":true,"devices":[],"protocol_version":1})))
+      helper(context, emits(~s({"ok":true,"devices":[],"protocol_version":2})))
 
       assert {:error, %{code: :ax_failure}} = Client.list_outputs()
     end
 
     @tag :tmp_dir
     test "rejects a device list that is not all strings", context do
-      helper(context, emits(~s({"ok":true,"current":"X","devices":[1,2],"protocol_version":1})))
+      helper(context, emits(~s({"ok":true,"current":"X","devices":[1,2],"protocol_version":2})))
 
       assert {:error, %{code: :ax_failure}} = Client.list_outputs()
     end
@@ -147,7 +147,7 @@ defmodule Seshat.AX.ClientTest do
       helper(
         context,
         emits(
-          ~s({"ok":true,"previous":"MacBook Pro Speakers","current":"Use System: 25 AirPods","elapsed_ms":980,"protocol_version":1})
+          ~s({"ok":true,"previous":"MacBook Pro Speakers","current":"Use System: 25 AirPods","elapsed_ms":980,"protocol_version":2})
         )
       )
 
@@ -163,7 +163,7 @@ defmodule Seshat.AX.ClientTest do
     test "passes the device name through as one argv entry, unshelled", context do
       helper(
         context,
-        ~s(printf '{"ok":true,"previous":"old","current":"%s","protocol_version":1}' "$3")
+        ~s(printf '{"ok":true,"previous":"old","current":"%s","protocol_version":2}' "$3")
       )
 
       hostile = ~s[Device $(touch /tmp/seshat-pwned); echo x]
@@ -174,9 +174,81 @@ defmodule Seshat.AX.ClientTest do
 
     @tag :tmp_dir
     test "rejects a success missing the read-back value", context do
-      helper(context, emits(~s({"ok":true,"previous":"old","protocol_version":1})))
+      helper(context, emits(~s({"ok":true,"previous":"old","protocol_version":2})))
 
       assert {:error, %{code: :ax_failure}} = Client.set_output("Anything")
+    end
+  end
+
+  describe "convert/1" do
+    @tag :tmp_dir
+    test "decodes the window counts either side of the pick", context do
+      helper(
+        context,
+        emits(
+          ~s({"ok":true,"command":"Convert Melody to New MIDI Track","windows_before":1,"windows_after":1,"elapsed_ms":870,"protocol_version":2})
+        )
+      )
+
+      assert {:ok, result} = Client.convert("Convert Melody to New MIDI Track")
+      assert result.windows_before == 1
+      assert result.windows_after == 1
+      assert result.elapsed_ms == 870
+    end
+
+    @tag :tmp_dir
+    test "asks the helper for convert with the title as one argv entry", context do
+      helper(
+        context,
+        ~s(printf '{"ok":true,"windows_before":1,"windows_after":1,"command":"%s","protocol_version":2}' "$*")
+      )
+
+      assert {:ok, _result} = Client.convert("Convert Drums to New MIDI Track")
+    end
+
+    # The window counts are the only evidence the caller has that Live converted
+    # rather than raising a dialog, so a reply without them is malformed rather
+    # than an optimistic success.
+    @tag :tmp_dir
+    test "rejects a success carrying no window counts", context do
+      helper(context, emits(~s({"ok":true,"command":"Convert Melody","protocol_version":2})))
+
+      assert {:error, %{code: :ax_failure}} = Client.convert("Convert Melody to New MIDI Track")
+    end
+
+    # `command_unavailable` is the *ordinary* answer for a selection Live will
+    # not convert — Live's own menu validation said no — so it has to reach the
+    # caller as its own code rather than collapsing into the generic failure.
+    @tag :tmp_dir
+    test "command_unavailable survives as its own code", context do
+      helper(
+        context,
+        emits(
+          ~s({"ok":false,"code":"command_unavailable","message":"Live has it disabled.","protocol_version":2}),
+          9
+        )
+      )
+
+      assert {:error, %{code: :command_unavailable, message: message}} =
+               Client.convert("Convert Melody to New MIDI Track")
+
+      assert message == "Live has it disabled."
+    end
+
+    # The protocol stays closed at the helper, not here: a title outside its
+    # three compiled-in strings is refused without Accessibility being touched,
+    # and that refusal has to reach the caller intact.
+    @tag :tmp_dir
+    test "unknown_command survives as its own code", context do
+      helper(
+        context,
+        emits(
+          ~s({"ok":false,"code":"unknown_command","message":"Only three commands.","protocol_version":2}),
+          10
+        )
+      )
+
+      assert {:error, %{code: :unknown_command}} = Client.convert("Open Preferences")
     end
   end
 
@@ -194,7 +266,7 @@ defmodule Seshat.AX.ClientTest do
         helper(
           context,
           emits(
-            ~s({"ok":false,"code":"#{unquote(code)}","message":"Native said so.","protocol_version":1}),
+            ~s({"ok":false,"code":"#{unquote(code)}","message":"Native said so.","protocol_version":2}),
             unquote(status)
           )
         )
@@ -210,7 +282,7 @@ defmodule Seshat.AX.ClientTest do
     test "an unrecognised code collapses to ax_failure", context do
       helper(
         context,
-        emits(~s({"ok":false,"code":"invented_here","message":"Odd.","protocol_version":1}), 6)
+        emits(~s({"ok":false,"code":"invented_here","message":"Odd.","protocol_version":2}), 6)
       )
 
       assert {:error, %{code: :ax_failure, message: "Odd."}} = Client.list_outputs()
@@ -221,7 +293,7 @@ defmodule Seshat.AX.ClientTest do
       helper(
         context,
         emits(
-          ~s({"ok":false,"code":"permission_required","message":"Not trusted.","protocol_version":1}),
+          ~s({"ok":false,"code":"permission_required","message":"Not trusted.","protocol_version":2}),
           2
         )
       )
@@ -236,7 +308,7 @@ defmodule Seshat.AX.ClientTest do
       helper(
         context,
         emits(
-          ~s({"ok":false,"code":"device_not_found","message":"No such output.","current":"Speakers","devices":["Speakers","Use System Device"],"protocol_version":1}),
+          ~s({"ok":false,"code":"device_not_found","message":"No such output.","current":"Speakers","devices":["Speakers","Use System Device"],"protocol_version":2}),
           5
         )
       )
@@ -269,7 +341,7 @@ defmodule Seshat.AX.ClientTest do
     # believing either half would be a fabricated result.
     @tag :tmp_dir
     test "a success payload with a non-zero exit status is malformed", context do
-      helper(context, emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1}), 3))
+      helper(context, emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":2}), 3))
 
       assert {:error, %{code: :ax_failure}} = Client.list_outputs()
     end
@@ -278,7 +350,7 @@ defmodule Seshat.AX.ClientTest do
     test "a failure payload with a zero exit status is malformed", context do
       helper(
         context,
-        emits(~s({"ok":false,"code":"ax_failure","message":"Hmm.","protocol_version":1}), 0)
+        emits(~s({"ok":false,"code":"ax_failure","message":"Hmm.","protocol_version":2}), 0)
       )
 
       assert {:error, %{code: :ax_failure, message: message}} = Client.list_outputs()
@@ -346,7 +418,7 @@ defmodule Seshat.AX.ClientTest do
     test "two concurrent calls cannot overlap", context do
       helper(
         context,
-        "sleep 0.3\n" <> emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1}))
+        "sleep 0.3\n" <> emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":2}))
       )
 
       Application.put_env(:seshat, :ax_call_timeout, 5_000)
@@ -378,7 +450,7 @@ defmodule Seshat.AX.ClientTest do
     # (2026-08-27 PR review).
     @tag :tmp_dir
     test "a queued call is bounded by its own budget, not the one ahead of it", context do
-      helper(context, emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1})))
+      helper(context, emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":2})))
 
       Application.put_env(:seshat, :ax_call_timeout, 400)
       on_exit(fn -> Application.delete_env(:seshat, :ax_call_timeout) end)
@@ -436,7 +508,7 @@ defmodule Seshat.AX.ClientTest do
       helper(
         context,
         "touch #{context.tmp_dir}/ran\n" <>
-          emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":1}))
+          emits(~s({"ok":true,"current":"X","devices":[],"protocol_version":2}))
       )
 
       Application.put_env(:seshat, :ax_call_timeout, 340)
@@ -460,7 +532,9 @@ defmodule Seshat.AX.ClientTest do
       release.()
 
       assert {:error, %{code: :timeout, message: message}} = Task.await(caller, 5_000)
-      assert message =~ "Another audio-settings request"
+      # Feature-neutral wording: `convert/1` shares this lock, so a message
+      # naming the audio settings would misdescribe a blocked convert.
+      assert message =~ "Another request to Ableton Live through macOS Accessibility"
 
       refute File.exists?(Path.join(context.tmp_dir, "ran")),
              "the helper was started after the lock freed with the budget already spent"

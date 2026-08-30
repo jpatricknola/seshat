@@ -87,11 +87,17 @@ defmodule Seshat.OSC.VendoredAddressesTest do
   # also the "still sent by lib/" pin below, and nothing under lib/ sends them
   # yet. The whole-file registration pin further down is what keeps an upstream
   # merge from dropping them. Move them up here when a tool starts sending them.
+  # Only the ones `lib/` actually sends: this list is asserted in both
+  # directions, so an address registered in the fork but unused here belongs in
+  # the registration list below and not in this one.
   @vendored_view_addresses [
     "/live/view/show_view",
     "/live/view/hide_view",
     "/live/view/get/is_view_visible",
-    "/live/view/set/detail_clip"
+    "/live/view/set/detail_clip",
+    "/live/view/focus_view",
+    "/live/view/get/focused_document_view",
+    "/live/view/get/highlighted_clip_slot"
   ]
 
   @browser_file "priv/AbletonOSC/abletonosc/browser.py"
@@ -525,8 +531,11 @@ defmodule Seshat.OSC.VendoredAddressesTest do
     # that way too despite the tool reading it back: without the address the
     # read-after reports the pane still visible, which is indistinguishable from
     # Live simply refusing to hide it.
-    test "the view handler registers upstream's twelve addresses plus Seshat's eleven" do
+    test "the view handler registers upstream's twelve addresses plus Seshat's seventeen" do
       assert Enum.sort(registered_addresses(@view_file)) == [
+               "/live/view/focus_view",
+               "/live/view/get/focused_document_view",
+               "/live/view/get/highlighted_clip_slot",
                "/live/view/get/is_view_visible",
                "/live/view/get/mod_mapping_device",
                "/live/view/get/mod_mapping_parameter",
@@ -539,14 +548,17 @@ defmodule Seshat.OSC.VendoredAddressesTest do
                "/live/view/get/selected_track_identity",
                "/live/view/hide_view",
                "/live/view/set/detail_clip",
+               "/live/view/set/highlighted_clip_slot",
                "/live/view/set/selected_clip",
                "/live/view/set/selected_device",
                "/live/view/set/selected_scene",
                "/live/view/set/selected_track",
                "/live/view/show_view",
+               "/live/view/start_listen/focused_document_view",
                "/live/view/start_listen/selected_scene",
                "/live/view/start_listen/selected_track",
                "/live/view/start_listen/selected_track_identity",
+               "/live/view/stop_listen/focused_document_view",
                "/live/view/stop_listen/selected_scene",
                "/live/view/stop_listen/selected_track",
                "/live/view/stop_listen/selected_track_identity"

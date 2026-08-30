@@ -88,6 +88,13 @@ inside Live with clip/track/device/MIDI access, audio-file import, undo
 transactions, `renderPreFxAudio()`, Node APIs and network. A second bridge,
 not a tool — if a capability lives here and nowhere lower, say so and route
 it to a bridge-level evaluation rather than folding it into this doc.
+**Read [extensions-sdk.md](docs/evaluating/extensions-sdk.md) before placing
+anything on this rung**: Seshat has no beta access, the trigger model is a
+user right-clicking (the extension runs once and stops — no listeners, no
+programmatic invocation), and it is Suite-only, so a capability landing here
+is *deferred*, not scheduled. That doc also records which operations are
+confirmed on the Extension Host class versus merely present in Live's Push
+document, and which of them the extension ecosystem already ships for free.
 
 **2.5 UI-only.** A feature in Live's menus or context menus with no API at
 any rung above (Stem Separation and the Convert-to-MIDI commands are the
