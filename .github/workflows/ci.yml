@@ -131,7 +131,7 @@ jobs:
           import json, os, sys
           payload = json.load(sys.stdin)
           status = int(os.environ["STATUS"])
-          assert payload["protocol_version"] == 1, payload
+          assert payload["protocol_version"] == 2, payload
           trusted = payload["trusted"]
           if trusted is True:
               # Not what a fresh runner was expected to report; see the comment

@@ -44,7 +44,7 @@ marked measured**; nothing below was run against Live today.
 | **Arrangement locators** (`Song.cue_points`, `set_or_delete_cue`, `jump_to_next_cue`, `is_cue_point_selected`) | ≤9 | all | **LOM** — fork gap | Section markers for the improv slow loop ([improv §9](live-improv-exploration.md#L511) says "not in the fork"; true, but it is in the LOM) |
 | **Link Audio** (real-time audio between Link peers, latency slider, "Sync to Incoming Audio") | 12.4 | all | Outside the LOM — a network protocol; no public SDK found for the audio half | Improv routing without BlackHole ([improv §9](live-improv-exploration.md#L512)) |
 | **Ableton Link** (tempo + beat phase to any peer; open-source SDK) | 9.5 | all | Outside the LOM | Improv phase: the generator learns beat one from Link, not from an OSC tick ([improv §9](live-improv-exploration.md#L534)) |
-| **Extensions SDK** (JS/TS inside Live: clip/track/device/MIDI access, audio import, undo transactions, `renderPreFxAudio()`, Node + network) | 12.4.5 beta | Suite | Second bridge, not a rung | Import path, bounce, and possibly the UI-only rows above — SDK docs are behind a Centercode sign-up, unread |
+| **Extensions SDK** (JS/TS on Node inside Live: clip/track/device/MIDI access, audio import, undo transactions, `renderPreFxAudio()`, modal webviews, network) | 12.4.5 beta | Suite | Second bridge, not a rung | Import path, bounce, and possibly the UI-only rows above. **Researched 2026-08-30 — [extensions-sdk.md](../extensions-sdk.md)**: not reachable without beta access, and its trigger model (user right-clicks, extension runs once, stops) rules it out as a replacement bridge. The `render_pre_fx_audio` and `import_into_project` messages are confirmed on the Extension Host class; the wider Push-document surface (`bounce`, `audio_to_midi_clip`, `separate_stems`, the warp commands, slicing, take lanes) is measured in Live's binary but unconfirmed in the JS API |
 | Drum Rack pad map (`DrumChain.in_note`, `RackDevice.insert_chain`, `Track.insert_device`) | 12.3 | all | **LOM** — fork gap | Already folded into [midi §Open work](midi-generation-options.md#L880) |
 
 Not relevant after checking: Similar Sounds search (not in the LOM; sound
@@ -208,6 +208,17 @@ audio track, which needs routing Seshat can't set. Bounce over AX is the
 only one reachable without a new bridge or a manual routing step. Note it
 as the prerequisite for any audio-conditioned arm; unspiked.
 
+**Correction 2026-08-30 — the SDK route is demonstrated, by someone else.**
+The Basic Pitch extension (`federico-pepe/ableton-live-extensions`, MIT)
+states its own audio acquisition: Session clips are read from **their source
+sample**, Arrangement clips are **rendered pre-FX from the timeline**, and
+samples in Ableton's compressed format cannot be decoded directly from
+Session. So the SDK offers both a sample-file route and a render route, and
+the prerequisite above is solved on that bridge already. It changes nothing
+today — the SDK needs beta access we don't have
+([extensions-sdk.md](../extensions-sdk.md)) — but "bounce over AX is the only
+reachable route" is now true only of the bridges Seshat can currently use.
+
 ### 2.7 Improvisation — locators, Link, Link Audio
 
 Three corrections to [live-improv-exploration.md §9](live-improv-exploration.md#L492):
@@ -257,7 +268,9 @@ name over AX; Convert Drums' lane count and velocity behaviour on SA3
 material; Stem Separation's duration on this machine and its behaviour on
 a short loop; whether a `.agr` groove can be loaded into the pool through
 `Browser.load_item`; the Simpler slicing API's behaviour when driven from a
-Remote Script; the Extensions SDK's actual capability list.
+Remote Script. The Extensions SDK's capability list is no longer wholly
+unknown — see [extensions-sdk.md](../extensions-sdk.md) for what was measured
+in Live's binary on 2026-08-30 and what remains unconfirmed in the JS API.
 
 ## Sources
 

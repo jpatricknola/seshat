@@ -240,3 +240,70 @@ device list must return, the previously selected page must be restored, and
 Settings must remain open. A disagreement means the bounded selectors or menu
 normalization drifted; lost foreground/page/window state means the helper's
 transaction cleanup is incomplete.
+
+## Monitoring in, auto, off move the right button
+
+*Why manual:* the mapping is read off Live's own track header, which no tool
+reports back.
+
+*Last run: —*
+
+Show an audio track's mixer section in Live (the **In/Auto/Off** monitoring
+buttons under the track's input choosers). Then `set_mixer monitoring: "in"`,
+`"auto"`, `"off"` in turn, watching the header after each.
+
+Each call lights the button with the same name. `auto` is where a new track
+starts.
+
+The wire values are `0 = In, 1 = Auto, 2 = Off`
+([API.md](../../../priv/AbletonOSC/API.md)) — derived from Live's own shipped
+Push 2 script and corroborated by one wire reading, **not** from a run against
+each value, which is what this test supplies. Getting it backwards is
+completely silent: every value is legal, the setter never replies, and the
+model would cheerfully report "monitoring off" while the track passed audio
+through. If the buttons don't match the names, the enum table in
+`Seshat.Tools.Handlers` is wrong, not the tool.
+
+## The input choosers move, and the channel list follows the type
+
+*Why manual:* the Input Type and Input Channel choosers are read on screen; the
+dependency between them is the thing being judged.
+
+*Last run: —*
+
+With an audio track's input section visible, `set_mixer input_type: "<name>"`
+using a type whose channel list differs from the current one (`Resampling` and
+an external input differ on any machine with an interface). Watch both
+choosers.
+
+The Input Type chooser shows the new name, and the Input Channel chooser's
+**contents** change with it — Live rebuilds the channel list per type.
+
+This is why the tool sets type first and re-reads the available channels before
+setting a channel. A channel name accepted under the old type would be silently
+dropped under the new one — the fork's setter logs a warning and changes
+nothing when a name isn't on the list.
+
+## Convert brings Live forward and gives it back
+
+*Why manual:* window focus and the frontmost application are observations no
+tool can make, and this is the only Seshat operation that takes focus.
+
+*Last run: —*
+
+With Ableton Live **behind** another application, run
+[../auto/convert.md § A converted clip lands as a new track whose notes read back](../auto/convert.md).
+Watch the screen through the whole call.
+
+Live comes to the front, the Create menu opens and closes, and the application
+that was frontmost before the call is frontmost again when the reply arrives.
+Live is left with no menu open and no dialog on screen.
+
+Focus that never returns is the 2026-08-27 helper defect in a new place: a
+fire-and-forget restore lands during the *next* call and breaks it instead. If
+a dialog is left open, the tool must not have claimed success — a mode chooser
+Seshat cannot drive is a refusal, not a result.
+
+Also note whether one `undo` after the convert leaves the set as it was, or
+whether the new track and its clip need more than one. Either answer is
+acceptable; the tool's reply has to match it.

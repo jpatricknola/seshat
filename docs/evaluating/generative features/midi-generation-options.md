@@ -57,6 +57,27 @@ constraints, not which final MIDI sounds best.
 > symbolically". §C and the C-bearing arms in the Recommendation stand as
 > evidence for that specific case, not as candidates for the first ship.
 
+> **Second reason, found 2026-08-30 — the transcription lane is already
+> filled, for free.** Ableton's Extensions SDK ecosystem ships **Basic Pitch**
+> (`federico-pepe/ableton-live-extensions`, MIT, offline, macOS + Windows):
+> right-click any audio clip, get a new MIDI track beside it with polyphonic
+> transcription and pitch bend preserved, from Spotify's network running
+> locally. An "Audio Separator" extension covers the other half. Both install
+> with one drag. That does not change the ruling above — it removes the
+> remaining argument for *building* a transcriber or a separator here: the
+> week spent hunting a redistributable drum-transcription licence (ADTOF,
+> MDX23C, cukas/drumsep) was spent on a lane the ecosystem fills without us.
+> The useful posture is cooperation, not ownership: whatever transcribes,
+> the result is an ordinary MIDI clip, and Seshat's edit / quantize / groove
+> surface is what makes it playable. Basic Pitch itself clears the licence
+> gate outright — **Apache-2.0 code and Apache-2.0 weights**, local CPU
+> inference, no account or service call, with a TypeScript port as well as the
+> Python package, so licence is no longer what blocks transcription (checked
+> 2026-08-30, [extensions-sdk.md §3.1](../extensions-sdk.md)). What blocks it
+> is unchanged: no bounce without AX, and the ruling above. The remaining
+> caveat is the delivery vehicle, not the model — Extensions are **Live 12
+> Suite only** and need beta access we don't have.
+
 > **Symbolic strategy audit 2026-08-30.** Two consultant reports added a
 > pattern-DSL/procedural route and a cleaner neural infill candidate to the
 > post-Route-C field. The resulting shortlist and branch experiment are in

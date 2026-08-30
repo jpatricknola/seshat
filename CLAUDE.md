@@ -153,8 +153,8 @@ Packs, so it is never hardcoded in a tool description.
 | [lib/seshat/music/pitch.ex](lib/seshat/music/pitch.ex) | MIDI pitch → note name, shared by the notes reader and session state |
 | [lib/seshat/library/catalog.ex](lib/seshat/library/catalog.ex) | Tag-aware sound catalog — ETS + `~/.seshat/catalog.json`, merge and search |
 | [lib/seshat/library/ableton_db.ex](lib/seshat/library/ableton_db.ex) | Read-only reader for Ableton's own browser database (preset tags) |
-| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools — one of the two modules under `lib/seshat/` allowed to start a process, pinned by a grep test |
-| [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a four-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for |
+| [lib/seshat/ax/client.ex](lib/seshat/ax/client.ex) | **The one non-OSC path into Live.** Runs the native Accessibility helper for the two audio-output tools and for `convert_audio_to_midi`'s single menu press — one of the two modules under `lib/seshat/` allowed to start a process, pinned by a grep test |
+| [native/seshat_ax/main.m](native/seshat_ax/main.m) | The helper itself: a bounded Objective-C program speaking a five-command JSON protocol over stdout. Not a generic UI remote — there is no "press this element" command to reach for, and `convert` fires only one of three compiled-in menu titles |
 | [lib/seshat/generation/audio_clip.ex](lib/seshat/generation/audio_clip.ex) | The `generate_audio` workflow: session read, duration arithmetic, target guards, the reserved take filename, the import through `/live/clip_slot/create_audio_clip`, and the read-back that decides whether any of it worked. Guards run before the render, so a failed generation leaves Live untouched |
 | [lib/seshat/generation/backend.ex](lib/seshat/generation/backend.ex) | The boundary between that workflow and whatever renders audio. `Spec` in, `{:ok, %{path:, seed:, wall_ms:}}` out; the implementation is a compile-time choice so the suite's fake cannot leak into the real adapter |
 | [lib/seshat/generation/stable_audio.ex](lib/seshat/generation/stable_audio.ex) | **The second native-process door.** Drives the local Stable Audio 3 MLX runtime one process per request — argv only, never a shell; every weight preflighted so a missing one refuses instead of starting a download; a 60s deadline that terminates the runtime's exact OS pid |
@@ -195,6 +195,19 @@ reject, defer, downgrade, or rank a feature lower because it needs a fork
 update. Account for the Python change, pin bump, install/restart, and live
 verification in the plan, then build it.
 
+**Anything that is bridge work only is filed as a GitHub issue on the fork and
+cited from wherever Seshat needed it** — a missing address, a bridge defect, a
+wrong `API.md` row, a `FORK_GAPS.md` disposition measurement contradicts.
+[.claude/docs/filing-fork-work.md](.claude/docs/filing-fork-work.md) owns the
+format and the boundary: the issue describes what the bridge should do and
+nothing else, while our pin bump, install, restart and sequencing stay in the
+plan. One issue per feature, not per address, since related members
+share a review, a merge, a pin bump and a Live restart. A request that lives
+only inside a plan doc is a request the fork's implementer never sees, which is
+how a needed address gets relabelled optional and shipped without
+([#28](https://github.com/jpatricknola/AbletonOSC/issues/28) exists because that
+happened).
+
 The fork's other docs, each the sole record of its subject:
 
 - [priv/AbletonOSC/SESHAT.md](priv/AbletonOSC/SESHAT.md) — every divergence
@@ -206,9 +219,19 @@ The fork's other docs, each the sole record of its subject:
 - [priv/AbletonOSC/FORK_GAPS.md](priv/AbletonOSC/FORK_GAPS.md) — LOM members
   the fork does not yet expose. Check it before calling anything a Live limit;
   add to it when research finds another; remove the entry in the commit that
-  lands the address.
+  lands the address. It is the fork's own record of what is missing; a fork
+  **issue** is a consumer's request against it, and a gap already carrying a
+  disposition there should be linked from the issue rather than restated.
+  Treat its dispositions as evidence, not verdicts — `focus_view` sat closed as
+  "overlaps `show_view`" until a 2026-08-30 measurement showed the two are
+  different operations and that Live's menu validation reads only the second.
 - [priv/AbletonOSC/issues.md](priv/AbletonOSC/issues.md) — fork-side defects
-  and declined items. A bridge bug goes there, not in `docs/ROADMAP.md`.
+  and declined items, as the fork's own checked-in record. **A bridge bug never
+  goes in `docs/ROADMAP.md`** — that queue is Seshat's work, and an item there
+  only the fork can fix sits unread by the one person who can act on it. Since
+  2026-08-30 Seshat raises bridge-only work as a **GitHub issue on the fork**
+  ([filing-fork-work.md](.claude/docs/filing-fork-work.md)); whether the fork
+  then also records it here is the fork's business, not ours.
 
 Any new address goes into the fork the same way (a handler module of ours, or
 an addition to an upstream file), documented in `API.md` in the same fork
@@ -288,6 +311,70 @@ services, writing the result into [docs/evaluating/](docs/evaluating/).
 That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
+
+**Sing it back as MIDI shipped 2026-08-30** on branch `sing-it-back-as-midi`,
+closing what had been the roadmap's top item: a sung or hummed take can now be
+routed, recorded, converted to a MIDI clip on Live's own `Create → Convert
+Melody/Harmony/Drums to New MIDI Track`, and handed an instrument, with no
+step where the user is sent into Live's UI by hand. Three new `set_mixer`
+properties (`input_type`, `input_channel`, `monitoring`) cover the first named
+gap — every address was already registered in the fork and unused under
+`lib/` — validating each routing name against Live's own available-list reply
+before sending (a bad name is a silent no-op on the wire, so the tool refuses
+by name and lists the machine's real inputs) and mapping `monitoring` through
+a string enum (`in`/`auto`/`off`) rather than exposing the reversed raw
+integer. `Session.State`'s per-track mirror gained the same three fields plus
+`has_audio_input` as a type discriminator, read in one `query_batch/2` per
+track without rewriting the deliberately serial `read_tracks/2` loop.
+`record_clip` now names the input verbatim before an audio take, refuses
+before recording (not after) when the type reads empty, and warns but still
+records when monitoring is `off`. The second gap — Convert is a menu command
+absent from the LOM at any spelling — is closed by a fifth command on the AX
+helper's closed protocol, `convert --command "<title>"` over three
+compiled-in titles only (no generic press, no tree dump), firing with
+`AXPick` after `AXPress` opens the `Create` menu and a ~350ms wait for
+`AXEnabled` to stop lying (AppKit validates lazily); `Seshat.AX.Client.convert/1`
+reuses the existing lock, budget and failure shape with no new process door.
+`convert_audio_to_midi` (tool 53 → 54) guards an empty slot or a MIDI-clip
+source before touching AX, drives `focus_view Session` (selection alone left
+the command disabled — measured both ways), confirms the selection landed
+through two independent reads, waits on the track count rather than polling
+AX, and resolves the new track by position after the source rather than
+assuming it is last. It stays undo-stepped, unlike the two audio-output AX
+tools — `unstepped_names/0` still pins exactly those two. `mix routing.eval`
+ran (54 tools vs. the `base-c3096d6` 67-tool surface) but is inconclusive:
+every valid trial routed correctly on both surfaces, but 21 of 40 trials were
+void on a recorder-init isolation failure in the nested environment, not a
+routing result. PR review found the implementation correct on independent
+re-derivation (all 21 addresses checked verbatim against `priv/AbletonOSC/API.md`,
+guard-before-side-effect ordering pinned by wire-order assertions) and raised
+nine non-blocking items; the nit-triage pass applied six of them before merge
+— `record_clip`'s silent-take refusal now points at `get_session_state`/
+`set_mixer` instead of Live's UI, `convert_notes_line/3` now routes through
+the shared 5-field-validating note parser instead of a bare `div/2`, a
+silent per-entry batch failure in the pre-record input check now reports the
+input as unknown instead of nothing, the AX helper's failure messages were
+generalized from audio-settings-specific wording to cover Convert too, a
+stale `report_record_started/5` doc comment was corrected to `/7`, and
+`convert_audio_to_midi`'s description now notes that `focus_view` leaves Live
+on the Session view rather than restoring it — while declining
+`monitoring_state/1`'s `String.downcase` (a defensible tension, left for a
+human PR reader) and filing the one fork-documentation gap (the measured
+silent-drop of `input_routing_type`/`_channel` on a bad name has no `API.md`
+citation to point at) as [fork issue
+#31](https://github.com/jpatricknola/AbletonOSC/issues/31) rather than a
+roadmap entry, per the fork-owns-wire-facts rule. **Live verification has not
+run at all** — the running Seshat MCP server was serving pre-change code
+during review, so every `auto/` citation (`mixer.md`'s two new checks,
+`recording.md`'s two new checks, all three of `convert.md`, and
+`mcp-surface.md`'s handshake and budget checks, the latter's last recorded
+run predating this branch's tool count) was skipped by environment rather
+than run, and the five `manual/` citations (`on-screen.md`'s monitoring
+button, input-chooser and Convert-focus-restore checks, `by-ear.md`'s "Sing a
+line, hear it back as a guitar," `conversation.md`'s routing check) all still
+read `*Last run: —*` and need a person with Live, a restarted server on this
+code, and an audio interface. Plan archived at
+[docs/archive/PLAN_sing_it_back_as_midi.md](docs/archive/PLAN_sing_it_back_as_midi.md).
 
 **Audio→MIDI transcription is rejected as the primary MIDI strategy,
 decided 2026-08-30** the same day `generate_audio` shipped, on a property of

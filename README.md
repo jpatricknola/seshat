@@ -118,23 +118,30 @@ install, and can leave AbletonOSC with no handlers at all.
 mix ax.install
 ```
 
-Two tools — `get_audio_outputs` and `set_audio_output` — do not go through
-AbletonOSC at all. Live's application-wide audio *device* preference is not in
-the Live Object Model, so there is no OSC address for it at any version of the
-bridge; the only way to reach it is Live's own Settings window, through macOS
-Accessibility. `mix ax.install` compiles a small native helper from
-`native/seshat_ax/main.m` and installs it at `~/.seshat/bin/seshat-ax`.
+Three tools — `get_audio_outputs`, `set_audio_output` and
+`convert_audio_to_midi` — do not go through AbletonOSC for the one step that
+matters. Live's application-wide audio *device* preference is not in the Live
+Object Model, and neither is `Create > Convert … to New MIDI Track`, which is a
+menu command at every spelling; the only way to reach either is Live's own UI,
+through macOS Accessibility. `mix ax.install` compiles a small native helper
+from `native/seshat_ax/main.m` and installs it at `~/.seshat/bin/seshat-ax`.
 
-Everything else Seshat does still goes through the LOM. The helper's protocol is
-four commands wide — report its own version, report its own permission status,
-list the outputs, set one — deliberately, so this stays one narrow workflow
-rather than a second control surface.
+Everything else Seshat does still goes through the LOM — including all of
+`convert_audio_to_midi` except the press itself: it selects the clip, checks
+Live's focus and reads the resulting track back over OSC, and uses the helper
+only to fire the menu item. The helper's protocol is five commands wide —
+report its own version, report its own permission status, list the outputs, set
+one, and fire one of *three compiled-in* Convert commands — deliberately, so
+this stays a couple of narrow workflows rather than a second control surface.
+There is no "press this element": a fourth menu title means editing
+`main.m` and arguing the Live-Object-Model gap for it, exactly as Convert was
+argued.
 
 macOS asks you to approve the helper once, under **System Settings → Privacy &
 Security → Accessibility**; the task prompts for it and prints the path to turn
 on. It needs **no** Automation/Apple Events permission and **no** Screen
 Recording permission, and neither Ableton Live nor Seshat needs restarting
-afterwards. Until it is granted, both tools fail immediately saying so — they
+afterwards. Until it is granted, all three tools fail immediately saying so — they
 never open System Settings on their own.
 
 The path is stable because macOS is expected to attach the permission to the
