@@ -165,7 +165,7 @@ Every address this feature needs is already registered and documented.
 
 | Need | Address | Status |
 |---|---|---|
-| Which clip is highlighted | `/live/view/get/highlighted_clip_slot` | **Registered**, and `lib/` already reads it inside `convert_audio_to_midi` — but no tool exposes it |
+| Which clip is highlighted | `/live/view/get/highlighted_clip_slot` | **Registered — unused by `lib/`.** `convert_audio_to_midi` read it while it drove Live's menu through the Accessibility helper; moving that tool onto `/live/clip/audio_to_midi` deleted the read, and no tool exposes it |
 | Selected scene | `/live/view/get/selected_scene` (+ listen pair) | **Registered**, no tool, no mirror |
 | Melody notes, five fields | `/live/clip/get/notes` | In use |
 | Melody notes, **nine fields** | `/live/clip/get/notes_extended` | **Registered and documented (Seshat extension, 2026-08-29) — and unused by `lib/`** |

@@ -157,6 +157,17 @@ New flow, in wire order (each step names what it replaces):
      two lists diverge (`before` exhausted → the appended-last case). A run
      of identical names can make that position ambiguous only among
      equally-named tracks, and step 5's read-back confirms the choice.
+
+     > **Corrected in PR review, 2026-08-30 — this claim was wrong, and the
+     > implementation inherited it.** The read-back cannot confirm the choice
+     > when the candidates are equally named: it looks the resolved index up
+     > again and gets the same string, so it agrees with a wrong answer. Taking
+     > the first disagreeing position also picks the *old* track rather than the
+     > new one when a converted track shares its name with an existing one —
+     > reachable by converting the same clip twice, which Live names
+     > identically. Shipped instead: resolve only when exactly one deletion from
+     > the after-list reproduces the before-list, and report the conversion as
+     > succeeded-but-unidentified otherwise.
    - length `> before + 1` → today's honest "more than one track appeared"
      error, unchanged in spirit.
    - never rises → "Live accepted the conversion but no track has appeared

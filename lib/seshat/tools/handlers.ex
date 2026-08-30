@@ -3609,8 +3609,8 @@ defmodule Seshat.Tools.Handlers do
         {:ok, new_track, name} ->
           {:ok, convert_reply(track, slot, mode, new_track, name)}
 
-        :unresolved ->
-          {:ok, convert_unresolved_reply(track, slot, mode)}
+        {:unresolved, reason} ->
+          {:ok, convert_unresolved_reply(track, slot, mode, reason)}
 
         {:error, message} ->
           {:error, message}
@@ -3724,30 +3724,39 @@ defmodule Seshat.Tools.Handlers do
          "converted track may well exist. Check get_session_state before converting again."}
   end
 
-  # The count rose by one; this decides *which* one. A reply whose length is
-  # readable but whose contents are not still proves a track arrived, so it is
-  # reported as an unnamed success rather than as a failure.
+  # The count rose by one; this decides *which* one. Two ways it can decline to:
+  # a reply whose length is readable but whose contents are not, and a set where
+  # more than one insertion point explains the diff. Both still prove a track
+  # arrived, so both are reported as an unnamed success rather than as a failure.
   defp resolve_new_track(before_names, names) do
     if Enum.all?(names, &is_binary/1) do
-      index = first_divergence(before_names, names)
-      {:ok, index, Enum.at(names, index)}
+      resolve_insertion(before_names, names)
     else
-      :unresolved
+      {:unresolved, :unreadable}
     end
   end
 
-  # `before` exhausted with no disagreement is the appended-last case, and its
-  # index is exactly `length(before)`. A run of identically named tracks can
-  # make the position ambiguous among equally-named tracks only, which the
-  # read-back in `convert_reply/5` is what checks.
-  defp first_divergence(before_names, names) do
-    before_names
-    |> Enum.zip(names)
-    |> Enum.find_index(fn {was, now} -> was != now end)
-    |> case do
-      nil -> length(before_names)
-      index -> index
+  # An index is a candidate when deleting it from the after-list reproduces the
+  # before-list exactly. Scanning for the first disagreeing position instead is
+  # wrong whenever the new track shares a name with an existing one: converting
+  # the same clip twice yields two tracks Live names identically, and the first
+  # disagreement then lands on the *old* one. The name read-back in
+  # `convert_reply/5` cannot catch that, because the two names are equal by
+  # construction — it would confirm a wrong index rather than refuse it. Where
+  # the insertion point is genuinely ambiguous, say so instead of steering Live
+  # to a track picked by a coin toss.
+  defp resolve_insertion(before_names, names) do
+    case candidate_indices(before_names, names) do
+      [index] -> {:ok, index, Enum.at(names, index)}
+      _ -> {:unresolved, :ambiguous}
     end
+  end
+
+  defp candidate_indices(before_names, names) do
+    names
+    |> Enum.with_index()
+    |> Enum.filter(fn {_name, index} -> List.delete_at(names, index) == before_names end)
+    |> Enum.map(fn {_name, index} -> index end)
   end
 
   # Everything in the reply is read back from the track that now exists. Its
@@ -3777,12 +3786,21 @@ defmodule Seshat.Tools.Handlers do
   # A track appeared and Live's names for the set could not be read, so the
   # index is genuinely unknown. Reported as the success it is, without a steer:
   # aiming the view at a guess is worse than not moving it.
-  defp convert_unresolved_reply(source_track, slot, mode) do
+  defp convert_unresolved_reply(source_track, slot, mode, reason) do
     "Ableton Live converted the #{mode} in slot #{slot} on track #{source_track} and one new " <>
-      "track appeared, but its reply naming the tracks could not be read — so which track is " <>
-      "the new one cannot be said here. Check get_session_state; the source audio clip is " <>
-      "untouched."
+      "track appeared, but #{unresolved_because(reason)} — so which track is the new one " <>
+      "cannot be said here. Check get_session_state; the source audio clip is untouched."
   end
+
+  defp unresolved_because(:unreadable),
+    do: "its reply naming the tracks could not be read"
+
+  # Naming one of the equally-named candidates would read exactly like a
+  # confident answer, and the read-back would agree with it.
+  defp unresolved_because(:ambiguous),
+    do:
+      "more than one track carries that name, so the new one cannot be told apart from the " <>
+        "track it matches"
 
   # Best-effort, one tick: the convert has already happened, so an unreadable
   # reply here costs a detail in the reply rather than the reply itself. Each

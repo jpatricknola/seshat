@@ -5665,6 +5665,57 @@ defmodule Seshat.Tools.HandlersTest do
       assert message =~ "Voice to MIDI"
     end
 
+    # The trap resolve-by-first-divergence falls into, and the reason the
+    # resolver asks which deletions reproduce the before-list instead. Converting
+    # the same clip twice gives two tracks Live names identically: here the new
+    # track could equally be index 1 or index 2, and the name read-back cannot
+    # tell them apart because both names are the same string. Naming either one
+    # would be a confident answer with a coin toss behind it.
+    test "equally named tracks make the insertion ambiguous rather than guessed", %{sink: sink} do
+      call = convert_call(0, 0)
+
+      trace =
+        scripted_trace(sink, [
+          {"/live/clip/get/is_convertible_to_midi", [0, 0, 1]},
+          {"/live/song/get/track_names", ["Audio", "Melody to MIDI", "Pad"]},
+          {"/live/clip/audio_to_midi", [0, 0, "ok", -1]},
+          {"/live/song/get/track_names", ["Audio", "Melody to MIDI", "Melody to MIDI", "Pad"]}
+        ])
+
+      assert {:ok, message} = Task.await(call)
+
+      assert message =~ "converted the melody"
+      assert message =~ "more than one track carries that name"
+      assert message =~ "cannot be said here"
+      assert message =~ "source audio clip is untouched"
+
+      # The whole point: no index is named, and nothing is read back from one.
+      refute message =~ "new MIDI track"
+
+      refute Enum.any?(trace, fn {address, _args} -> address == "/live/track/get/name" end),
+             "an ambiguous resolution must not read back a track it only guessed at"
+    end
+
+    # Duplicate names are not themselves the problem — an insertion that only one
+    # deletion explains still resolves, even in a set full of identical names.
+    test "a duplicate name still resolves when only one insertion explains it", %{sink: sink} do
+      call = convert_call(0, 0)
+
+      scripted_trace(
+        sink,
+        convert_reads(0, 0, 2,
+          before: ["Voice", "Voice"],
+          after: ["Voice", "Voice", "Voice to MIDI"],
+          name: "Voice to MIDI"
+        )
+      )
+
+      assert {:ok, message} = Task.await(call)
+
+      assert message =~ "new MIDI track 2"
+      assert message =~ "Voice to MIDI"
+    end
+
     # `new_track_id` is `-1` today, but even a synchronous Live answering a real
     # index must not override what the names actually say.
     test "an index in the reply is not trusted over the diff", %{sink: sink} do
