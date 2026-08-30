@@ -16,6 +16,21 @@ enough to implement as competing experiments?
 
 ## Verdict up front
 
+> **Narrowed 30 Aug 2026, same day, by
+> [symbolic-midi-first-solution.md](symbolic-midi-first-solution.md).** Three
+> measurements taken after this audit change which branch is built first: the
+> feel layer needs no model (`/live/clip/add/notes_extended` is registered,
+> unused, and **measured accepting probability and velocity deviation** on
+> Live 12.4.5); GMD's style coverage is **measured too thin** for the target
+> prompts (30 hiphop and 7 dance beats ≥ 4 bars, no lo-fi/trap/house label at
+> all) though its microtiming and velocity data are excellent; and Live's
+> Groove Pool **cannot be stocked programmatically** at any rung. Branch A
+> (DSL + procedural) with a GMD-*harvested* performance layer is the first
+> solution; Branch B becomes that offline donor; Branches C and D stay unbuilt
+> until the first solution is heard. The shared seam, slate and blind-judging
+> protocol below are unchanged and become the first solution's own shape.
+
+
 The consultants agree on the durable architecture and are right about it:
 
 > Claude should translate intent into a small musical plan; a joint symbolic
