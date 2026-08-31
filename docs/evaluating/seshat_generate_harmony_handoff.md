@@ -16,6 +16,41 @@ which reaches the same architectural verdict this brief does (deterministic
 rules in Elixir, no model for the MVP) and records what was measured live.
 **There is still no `docs/ROADMAP.md` entry for this feature.**
 
+### Evaluated 2026-08-31 — read §8 of the options doc before planning
+
+The four capabilities this brief adds beyond that doc's original scope —
+**harmonic context** (§2 here, the brief's own "biggest dependency"),
+**selection semantics** (§1), **phrase density and intent** (§§3, 8, 9) and
+**A/B/C alternatives** (§11) — are now evaluated in
+[harmony-from-a-melody-options.md](generative%20features/harmony-from-a-melody-options.md)
+**§8**, with fresh measurements against Live 12.4.5. Three results change what
+this brief says:
+
+1. **§2's "song key only" fallback is not safe, and §12's MVP cannot use it.**
+   Live reports `scale_mode = true` and `C Major` on a set nobody has touched —
+   that is the factory state of `DefaultLiveSet.als`. Nothing at runtime
+   separates a key the user set from the default. **v1 must derive the scale
+   from the melody's own pitch content** and report which frame it used;
+   Live's key is a prior, not truth.
+2. **§2's chord-progression inference has no Live-native answer at any rung**,
+   confirmed against the live LOM dump (12.4.5, 141 classes — no chord or
+   harmony member) and Live's own Remote Scripts (chord *playing* modes only,
+   no detection). It is ours to build, in pure Elixir; every symbolic-analysis
+   library that could do it costs a third native-process door for arithmetic.
+   The brief's §6 Viterbi and this chord inference are **one dynamic program
+   used twice**, not two features.
+3. **§1's selection resolution is a pure tool-layer job.**
+   `/live/clip/get/selected_notes_extended`, `/live/clip/get/selected_notes`,
+   `select_notes_by_id`, `select_all_notes`, `deselect_all_notes` and
+   `/live/view/get/highlighted_clip_slot` are all registered in the fork and
+   used by none of `lib/`. No fork work, no Live limit. The selection API also
+   runs the other way: the tool can leave the notes it wrote selected.
+
+Two of the brief's recommendations survive unchanged and are now backed by
+measurement: the deterministic-engine/AI-interpretation split (§§7–8) and the
+one-tool shape (a `harmonize_melody` call is one undo step; composing it from
+existing calls is six).
+
 ### Already built and reusable
 
 | This brief's step | What exists now | Where |

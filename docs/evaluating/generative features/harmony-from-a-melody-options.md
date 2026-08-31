@@ -30,6 +30,17 @@ acceptance bar).
 > product brief this pairs with is
 > [seshat_generate_harmony_handoff.md](../seshat_generate_harmony_handoff.md);
 > neither doc has a `ROADMAP.md` entry yet.
+>
+> **Second pass 2026-08-31 — §8, and one measurement changed the floor.** The
+> product brief's four un-evaluated capabilities (chord context, note
+> selection, phrase density, variants) are evaluated in **§8**. **K1 is
+> answered and it failed**: `scale_mode = true` / `C Major` is Live's factory
+> state, so nothing distinguishes a set key from an untouched one, and v1 must
+> derive the scale from the melody's own pitch content rather than trust the
+> mirror. Live's live LOM dump (12.4.5, 141 classes) also confirms **no chord
+> or harmony member anywhere**, and Live's own Remote Scripts contain no chord
+> *detection* — so chord inference joins pitch choice at "none at any rung",
+> on tier-1 evidence.
 
 
 **Build it deterministically, in Elixir, with no new dependency and no model.
@@ -95,6 +106,10 @@ Each row is a table row in §4.
 | **C7** | Land each voice as a clip | notes → clip in the matching slot | Same length, same slot row, distinctly named |
 | **C8** | One request, one undo step | N tool calls → 1 step | The user stories settle this. Today it is N steps |
 | **C9** | Redirect | "lower", "try sixths", "drop the top one" | Must not destroy the kept melody |
+
+Four more rows — **C10** chord context, **C11** note-selection semantics,
+**C12** phrase density and intent, **C13** A/B/C variants — come from the
+product brief and are framed and evaluated in **§8**, added 2026-08-31.
 
 **Prior evidence checked, not rediscovered.** `bridge-options.md` already
 settled Max for Live (same power as a Remote Script, Suite-only, rejected as a
@@ -364,6 +379,12 @@ more singers."
 | **MIDI-GPT** | General symbolic infill | — | **Non-commercial weights** | — | — | Disqualified at selection (already recorded in `midi-generation-options.md`) |
 | **Hosted chord/harmony APIs** | Chord suggestion from melody | — | — | **No** | — | No API key exists anywhere in Seshat. A service must beat local by a clear margin; here local is *better*, not merely cheaper |
 
+**A second, narrower external survey** — for chord inference rather than
+harmonisation — is in **§8.2**, and reaches the same answer: `music21`
+(BSD-3), `musicaiz` and `pytakt` all do symbolic harmonic analysis well and
+all cost a third native-process door for arithmetic that fits in a pure
+module. *Reported.*
+
 **Nothing was spiked.** No candidate was installed or run for this doc — every
 external row above is **reported**, from repository READMEs, papers and
 manuals. That is a deliberate call rather than an omission: the deterministic
@@ -511,7 +532,17 @@ and it must not pretend to.
 > implied-chord detection is v1 scope, not v2 — and music21 as a third door
 > becomes a real question rather than a hypothetical one.
 
-> **Measurement K1 — run this *before* H1; it can invalidate the frame.**
+> **Measurement K1 — ANSWERED 2026-08-31, and it did invalidate the frame.**
+> `scale_mode` reads `true` and `scale_name` reads `Major` on an untouched set
+> because **that is Live's factory state** — both `DefaultLiveSet.als` and this
+> machine's user template ship `<InKey Value="true"/>` with `Root 0 / Name 0`.
+> There is no runtime signal distinguishing a set key from a default one, so
+> the "harmonise silently to the song scale" design is dead: v1 derives the
+> scale from the melody's pitch content and reports which frame it used. Full
+> measurement and consequences in **§8.1 (M1)** and **§8.2**. The original
+> statement of the check is kept below.
+>
+> **Measurement K1, as originally written — run this *before* H1; it can invalidate the frame.**
 > Does Seshat know the key? `get_session_state` reports `key: C Major` on a
 > set where nothing was ever set — its own tool description admits this.
 > Read `/live/song/get/scale_mode` and check whether it distinguishes "the
@@ -541,8 +572,11 @@ and it must not pretend to.
 > § "Conversions" holds the contract; do not restate it here. None of this
 > touches the harmony feature, whose input is already MIDI.
 
-Run **K1 → H1**. K2 is **done**; its result belongs to whoever picks up
-`convert_audio_to_midi`, which is now planned.
+Run **H1** — **K1 is done** (2026-08-31, §8.1) and its answer is now part of
+the design rather than a gate, and **K2 is done**, its result belonging to
+whoever picks up `convert_audio_to_midi`, which is now planned. H1 should
+score the derived key against Live's reported key as a sixth judgement, since
+K1's failure made that the load-bearing choice.
 
 ### Roadmap shape, if this is picked up
 
@@ -572,8 +606,12 @@ Nothing below is settled; a doc that reads as complete retires the checks
 nobody wrote.
 
 **Blocking the design:**
-1. **K1** — whether `scale_mode` distinguishes a set key from Live's default,
-   and what a clip-level scale override does to the song-level reading.
+1. ~~**K1**~~ — **answered 2026-08-31 (§8.1 M1): it does not.** `scale_mode`
+   and `C Major` are the factory state, so no runtime reading separates a set
+   key from an untouched one. The clip-level half is answered too: a `MidiClip`
+   carries its own `IsInKey` + `ScaleInformation` in the `.als`, and
+   `Live.Clip.Clip` exposes none of it (§8.1 M2) — the song-level reading is
+   simply blind to the override, not wrong about it.
 1b. Whether `get_all_scales_ordered()`'s interval tuples agree with
    `scale_intervals` for the same scale, and what it does with a user-defined
    scale. Only matters if the "harmonise it in <named scale>" path is built.
@@ -644,7 +682,252 @@ real, recorded here, not yet filed:
 
 ---
 
+## 8. Second pass — 31 Aug 2026: the capabilities the product brief adds
+
+Sections 1–7 answered *"how do we harmonise a melody onto other tracks."* The
+product brief
+[seshat_generate_harmony_handoff.md](../seshat_generate_harmony_handoff.md)
+asks for four things they did not evaluate, and calls the first of them its own
+biggest dependency:
+
+| # | Capability | Input → output | Constraint from the brief |
+|---|---|---|---|
+| **C10** | Establish the *chord* under each note, not just the key | session + surrounding MIDI → a chord per bar (or per beat) | "The same melody pitch requires a different harmony depending on the current chord." Explicitly not a fixed transposition |
+| **C11** | Resolve what "this" is when notes are selected | Live's note selection → source notes | "Generate from the selected notes when note selection exists; otherwise the selected clip" |
+| **C12** | Phrase-level density and intent | free text → structured harmony constraints | v2: density < 100 %, entrances/exits, unison resolutions, "dreamy" |
+| **C13** | Alternatives side by side | one request → `Harmony A / B / C` | v3, but it shapes the tool schema now |
+
+C10 and C11 are v1 scope in the brief. C12 and C13 are v2/v3 and are evaluated
+here only far enough to check that the v1 tool shape does not block them.
+
+### 8.1 What was measured for this pass
+
+> **Measured 2026-08-31, Live 12.4.5 (build `2026-08-19_225ce5e356`), this Mac.**
+> Seshat's MCP server was running and holding OSC reply port 11001, so every
+> wire reading below came through the fork's `logs/abletonosc.log` using the
+> **no-probe variant** of the rig in
+> [`API.md` § "Measuring the Live API without building the feature first"](../../../priv/AbletonOSC/API.md)
+> — fire-and-forget UDP to 11000, answers read out of the log. Nothing was
+> mutated; no probe handler was installed; the vendored `song.py` is byte-identical
+> to the installed copy.
+
+**M1 · K1 is answered, and the answer kills the check.** *Measured.*
+`/live/song/get/scale_mode` → `True` on the open set; `scale_intervals` →
+`(0, 2, 4, 5, 7, 9, 11)`; `root_note` → `0`; `scale_name` → `Major`. Then the
+factory defaults, read out of the shipped set files: both
+`App-Resources/Builtin/Templates/DefaultLiveSet.als` and this machine's
+`~/Music/Ableton/User Library/Templates/default.als` carry
+`<ScaleInformation><Root Value="0"/><Name Value="0"/></ScaleInformation>`
+followed by `<InKey Value="true"/>`. **`scale_mode = true` and `C Major` are
+the factory state.** `scale_mode` therefore does *not* distinguish "the user
+set a key" from "the user never touched it" — the exact distinction K1 was
+written to find. §5's kill condition fires: **harmonising silently to the song
+scale is not safe**, and v1 must derive the scale from pitch content rather
+than trust the mirror.
+
+The positive half stands: `scale_intervals` answers live and correctly, so
+when a key *is* trusted, reading Live's own degree table (rather than mapping
+a name to a hardcoded table) works today.
+
+**M2 · Per-clip scale is real in the file format and absent from the API.**
+*Measured / inspected.* A `MidiClip` in the default set carries its own
+`<IsInKey Value="true"/>` and `<ScaleInformation>` block. In the fork's live
+`dump_lom` output for **Live 12.4.5** (`logs/lom_dump.json`, walked in the
+running Remote Script interpreter), `Live.Clip.Clip` has **191 members and not
+one matching `key` or `scale`**. This upgrades §2.3's clip-scale negative from
+tier-2/3 evidence (`LomTypes.pyc` + Push's `live_model`) to a **live tier-1
+negative**, and shows what is being lost: the clip override exists, Live
+persists it, and no API reaches it.
+
+**M3 · There is no chord or harmony member anywhere in the live LOM.**
+*Measured.* Across all **141 classes** in that dump, the only members matching
+`chord|harmon` are `Live.Conversions.AudioToMidiType.harmony_to_midi` (audio
+input — the wrong feature) and, on `Live.Song.Song`, the scale family:
+`scale_mode`, `scale_name`, `scale_intervals`, plus listeners for each **and a
+combined `scale_information` listener**. `Live.Song` (the module) carries
+`get_all_scales_ordered`. Nothing analyses notes. C4's "none at any rung" now
+holds for C10 too, on the strongest source available.
+
+**M4 · Live's own Remote Scripts do not detect chords either.** *Measured.*
+`grep -rli chord` over `App-Resources/MIDI Remote Scripts/` returns only
+chord-*playing* surfaces — `pushbase/instrument_component`, `Move/instrument`,
+`Launchkey_MK4/keyboard`, `Launchpad_Pro_MK3`, and device bank definitions.
+Nothing reads existing notes and names a chord. There is no tier-2 existence
+proof to find.
+
+**M5 · The note-selection API is complete at tier 1 and registered in the
+fork.** *Measured.* `Live.Clip.Clip` carries `get_selected_notes_extended`,
+`get_selected_notes`, `select_notes_by_id`, `select_all_notes`,
+`deselect_all_notes`. The fork registers all five plus
+`/live/view/get/highlighted_clip_slot`, and `lib/` uses **none** of them. C11
+is a pure tool-layer job — no fork work, no Live limit.
+
+**M6 · The installed bridge is ahead of Seshat's pin.** *Measured.* `diff -rq`
+of `priv/AbletonOSC/abletonosc` (pin `3b6b9bc`) against the installed copy:
+`song.py` and 30-odd others identical, but `application.py` and
+`introspection.py` differ — the installed copy carries the newer instance-walk
+work (it is what wrote the `lom_instances.json` beside the dump). Every LOM
+reading above therefore describes the *installed* build. Not a defect; stated
+so the measurements are reproducible.
+
+### 8.2 C10 — the chord under the note
+
+**Live-native rung: none, at the strongest evidence this project has (M3, M4).**
+Live knows a key and a scale and nothing about chords. `Default Chord
+Bank.stacks` (§2.5) is a *generation* ruleset — scale degrees to stack — not an
+analyser.
+
+So C10 is built, and the question is only where. Three shapes:
+
+| Shape | What it needs | Cost | Verdict |
+|---|---|---|---|
+| **Melody-implied chords, pure Elixir** | The source notes only. Duration- and metre-weighted pitch-class profile per bar; match against triad/seventh templates rooted on each degree of the inferred scale | ~a module the size of `NoteEdit`. No OSC, no dependency, unit-testable with no Live | **v1.** It is H1 arm (d)'s input, and it is what makes "not a fixed transposition" true |
+| **Accompaniment-derived chords** | Every other MIDI clip overlapping the source's time window: `get_clip_slots` → `get_clip_notes` per candidate track, then the same template match with the lowest sounding note weighted as the root candidate | Two shipped tools' worth of reads, batched through `Transport.query_batch/2`; the analysis is the same code as above | **v1.5.** Strictly better material when accompaniment exists, and the brief ranks it above melody-only. Adds a read fan-out and a "which tracks count" question |
+| **music21 / musicaiz / pytakt** | A resident or per-call Python process | A **third native-process door**, which [CLAUDE.md](../../../CLAUDE.md) requires be argued in the commit that adds it | **No.** Template matching over ≤ a few hundred notes is arithmetic. A door is not payable for it |
+
+**Key inference belongs to the same module, and M1 makes it mandatory.** The
+standard method is a duration-weighted pitch-class profile correlated against
+the twelve rotations of a major and a minor key profile
+(Krumhansl–Schmuckler); it is a page of arithmetic, it yields a *confidence*,
+and the confidence is exactly what the reply needs in order to be honest. The
+rule the measurement forces:
+
+> Derive the scale from the melody's own pitch content. Read Live's
+> `root_note`/`scale_name`/`scale_intervals` as a **prior**, not as truth.
+> When the two agree, say so and proceed. When they disagree, harmonise to the
+> derived scale and say which one was used and why — the user may have set the
+> Live key deliberately, and only they know.
+
+That also decides what `Seshat.Session.State` should mirror: it holds
+`root_note` and `scale_name` today and neither `scale_mode` nor
+`scale_intervals`, so the degree table has to be fetched per call until it does.
+
+**The optimiser the brief asks for is one optimiser, used twice.** The
+brief's §6 wants a Viterbi over harmony candidates for voice leading; chord
+inference over bars is the same dynamic program with a different cost
+function (chord-change penalty in place of leap penalty). Building the DP once
+and parameterising it is the difference between two features and one module.
+
+### 8.3 C11 — what "this" means
+
+**Live-native rung: 2.2, fully registered, entirely unused (M5).**
+
+The brief's own rule is right and cheap:
+
+```text
+selected notes exist  → harmonise the selection
+otherwise             → harmonise the highlighted clip
+no highlighted clip   → refuse by name, do not guess slot 0
+```
+
+That is `/live/clip/get/selected_notes_extended` on the clip named by
+`/live/view/get/highlighted_clip_slot`, with the whole-clip read
+(`/live/clip/get/notes_extended`, already in use by `MidiParts`) as the
+fallback. Nine fields either way, so the harmony inherits probability,
+velocity deviation and release velocity — measured persisting as sent on
+2026-08-30 (§0).
+
+Two riders worth taking while in there:
+
+- **The selection API is also an output.** `select_notes_by_id` /
+  `select_all_notes` let the tool leave the notes it just wrote selected — the
+  note-level equivalent of the follow cam, and the cheapest possible answer to
+  "now edit it."
+- **A partial selection means a partial harmony**, and the reply must say so
+  ("harmonised the 6 notes you had selected, not the whole 32-note clip") or
+  the user will read silence as a bug.
+
+**Unmeasured, and cheap:** nobody has called either address. Their ok-paths
+log nothing, so with Seshat holding 11001 the replies cannot be read — this
+needs either the server stopped or a temporary probe handler, both of which
+need the user's say-so. What is unmeasured is the **empty-selection reply
+shape** (`API.md` documents "just the two indices") and whether
+`highlighted_clip_slot` tracks the Session grid cursor or the Arrangement
+selection.
+
+### 8.4 C12 — density, phrase, intent
+
+**Live-native rung: none, and none needed.** This is the seam
+[CLAUDE.md](../../../CLAUDE.md) already names: *the LLM does the resolving.*
+Claude turns "sparse, dreamy, mostly sixths, enter at the phrase ends" into
+the brief's structured constraint object; the deterministic engine obeys it or
+refuses it by name.
+
+One piece is *not* Claude's, and it is the piece the brief underestimates:
+**phrase segmentation.** Deciding where a phrase ends so harmony can enter or
+resolve is note arithmetic — rest length, contour reversal, metrical position,
+long-note boundaries — and it belongs in the same pure module, tested without
+Live. Everything else in C12 is a parameter.
+
+**What v1 must not do is close the door.** The tool schema should carry
+`density` and a phrase-behaviour field from the start even if v1 only accepts
+`1.0` and `"every note"`, because widening an enum is free and adding a
+required concept later is not.
+
+### 8.5 C13 — A / B / C
+
+**Already built, as a side effect.** `Seshat.Generation.MidiParts` lands
+several named tracks and clips in one scene, in one call, under one undo step.
+Three harmony variants are three parts with the same rhythm and different
+rule parameters. The naming convention the brief wants
+(`<source> Harmony A/B/C`) is a string.
+
+The real cost is not code: three variants is three tracks the user must audition
+and delete two of. That is a product call for whoever plans it, and a reason
+v1 should ship **one** harmony with fast redirect (§4, C9) rather than three
+with none.
+
+### 8.6 What this pass changes about the verdict
+
+**The recommendation in §5 stands unchanged** — one `harmonize_melody` tool,
+deterministic scale-degree arithmetic in a pure module behind `Handlers`, no
+dependency, no fork work. M3 and M4 strengthen it: the "none at any rung"
+finding for pitch choice now extends to chord inference, on live tier-1
+evidence rather than inference from a curated registry.
+
+Three things change:
+
+1. **Key derivation is v1 scope, not a nicety.** M1 removed the only proposed
+   way to tell a set key from a default one. A harmoniser that trusts
+   `key: C Major` will confidently harmonise in the wrong key on any set where
+   the user never touched the control bar — which is most sets. The floor is:
+   derive, compare, and say which was used.
+2. **H1 can now run all five arms with no new dependency.** Arm (d) —
+   chord-tone snapping — was written as the arm that might drag music21 in.
+   With melody-implied chords being the same template match the key finder
+   already needs, (d) costs a cost function, not a door. Run H1 with (d) in it.
+3. **K1 is closed and should not be re-run.** Its successor question is
+   narrower and is listed below.
+
+### 8.7 Open work this pass adds
+
+1. **Does the `scale_information` listener fire when the user changes the
+   key?** If it does, the mirror can learn "the user touched this *this
+   session*" — the only runtime signal M1 leaves standing. It cannot report
+   the initial state, so it is a partial answer at best, and it needs a fork
+   address (`Song.scale_information` is in the LOM per M3, registered nowhere).
+2. **Do `/live/clip/get/selected_notes_extended` and
+   `/live/view/get/highlighted_clip_slot` answer as documented?** Unmeasured
+   (§8.3). Needs 11001 free or a probe handler — ask first.
+3. **How wide is the accompaniment read?** Every MIDI clip in the scene, or
+   only tracks the user names? Unmeasured, and it decides whether C10's
+   v1.5 shape is one batch or a fan-out.
+4. **Does the melody-derived key beat the Live key in practice?** H1's slate
+   should be scored on this too, since M1 made it the load-bearing decision.
+5. **`Session.State` mirrors neither `scale_mode` nor `scale_intervals`.**
+   Small, real, and load-bearing for any harmony work.
+
+---
+
 ## 7. Source index
+
+**Measured on this Mac, 2026-08-31, Live 12.4.5, installed bridge ahead of pin
+`3b6b9bc` in `application.py` / `introspection.py`, read via the fork log with
+Seshat holding 11001:** `/live/song/get/{scale_mode,scale_intervals,root_note,scale_name}`;
+`DefaultLiveSet.als` and the user template's `ScaleInformation` / `InKey` / per-`MidiClip`
+`IsInKey`; the fork's live `logs/lom_dump.json` (141 classes) searched for
+`scale|chord|harmon`, and `Live.Clip.Clip`'s 191 members; `grep -rli chord` over
+Live's shipped `MIDI Remote Scripts`.
 
 **Measured on this Mac, 2026-08-30, Live 12.4.5 (build `2026-08-19_225ce5e356`),
 fork pin `58ac7f0`, via the running Seshat MCP server:** Chord device 29-parameter
@@ -678,7 +961,9 @@ track-index shift and auto-naming on duplicate; `get_session_state` key renderin
 [Composer's Assistant for REAPER](https://github.com/m-malandro/composers-assistant-REAPER) (MIT) ·
 [Composer's Assistant 2 paper](https://arxiv.org/abs/2407.14700) ·
 [DeepBach](https://arxiv.org/pdf/1612.01010) ·
-[Coconet / Bach Doodle](https://coconets.github.io/)
+[Coconet / Bach Doodle](https://coconets.github.io/) ·
+[musicaiz](https://arxiv.org/pdf/2209.07974) ·
+[Pytakt](https://www.tandfonline.com/doi/full/10.1080/09298215.2025.2540434)
 
 **Seshat docs consulted:** [midi-generation-options.md](midi-generation-options.md) ·
 [symbolic-midi-strategy-options.md](symbolic-midi-strategy-options.md) ·

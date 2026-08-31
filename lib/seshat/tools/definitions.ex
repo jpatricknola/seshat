@@ -152,20 +152,17 @@ defmodule Seshat.Tools.Definitions do
         "Write MIDI notes into a clip on a track in Ableton Live. " <>
           "Creates a new clip in the specified slot if one doesn't exist. " <>
           "Notes are added to the clip (existing notes are preserved). " <>
-          "Track indices are 0-based. Clip slot defaults to 0 (first scene). " <>
-          "Pitch is MIDI note number (0-127): C4 (middle C) = 60, D4 = 62, E4 = 64, F4 = 65, G4 = 67, A4 = 69, B4 = 71. Each octave = 12 semitones. Sharps = +1, flats = -1. " <>
-          "start_beat is position in beats from clip start: beat 1 = 0.0, beat 2 = 1.0, 'and of 1' = 0.5, 'e of 1' = 0.25. " <>
-          "duration is length in beats: whole = 4.0, half = 2.0, quarter = 1.0, eighth = 0.5, sixteenth = 0.25, dotted quarter = 1.5. " <>
-          "velocity is 1-127: ghost note = 30, soft = 50, normal = 100, loud/accent = 120, max = 127. " <>
+          "Track indices are 0-based; clip slot N sits in scene N and defaults to 0. " <>
+          "Pitch is MIDI note number (0-127), C4 (middle C) = 60. " <>
+          "start_beat is position in beats from clip start: beat 1 = 0.0, 'and of 1' = 0.5, " <>
+          "'e of 1' = 0.25. duration is in beats: quarter = 1.0, eighth = 0.5, dotted " <>
+          "quarter = 1.5. velocity is 1-127: ghost = 30, normal = 100, accent = 120. " <>
           "For chords, add multiple notes with the same start_beat and duration. " <>
-          "Common chord intervals from root: major [0,4,7], minor [0,3,7], 7th [0,4,7,10], m7 [0,3,7,10], maj7 [0,4,7,11]. " <>
           "Use get_session_state first to resolve track names to indices and to check the current time signature. " <>
           "Use get_clip_slots first to pick an empty slot on an actually-MIDI track: writing to " <>
           "an audio track or a group track is rejected with an error and nothing is written. " <>
-          "Clip slot N sits in scene N — slot 0 is the first scene. " <>
-          "Optionally pass name to label the clip. After the write, Live's view follows " <>
-          "automatically — the clip is selected with the note editor open — so no select_track " <>
-          "call is needed to show the result.",
+          "Optionally pass name to label the clip. The view follows: the clip is selected with " <>
+          "the note editor open, so no select_track call is needed.",
       parameters: %{
         type: "object",
         properties: %{
@@ -295,8 +292,7 @@ defmodule Seshat.Tools.Definitions do
           "is the \"make it swing\" knob for played or written MIDI — but it is " <>
           "applied only when notes are quantized: set the swing, then " <>
           "quantize_clip the clip to hear it (it also shapes record " <>
-          "quantization on future takes). It does not audibly change a clip by " <>
-          "itself. Start subtle (around 0.10-0.20) and adjust by ear; 0.5 is as " <>
+          "quantization on future takes). Start subtle (around 0.10-0.20) and adjust by ear; 0.5 is as " <>
           "far as Ableton's own Push hardware will drive it, so treat the upper " <>
           "half of the range as extreme. The current value shows in " <>
           "get_session_state.",
@@ -319,11 +315,10 @@ defmodule Seshat.Tools.Definitions do
         "Set Ableton Live's global groove amount (0.0-1.3, where 1.0 is 100% " <>
           "and 1.3 is the dial's 130% maximum) — the Groove Pool's " <>
           "Amount dial, scaling how strongly every clip's assigned groove is " <>
-          "applied (0 = grooves off). It only affects clips that already have " <>
-          "a groove assigned from Live's Groove Pool, which Seshat cannot do — " <>
-          "if the user hasn't assigned grooves by hand, this changes nothing; " <>
-          "use set_swing_amount plus quantize_clip to swing plain MIDI " <>
-          "instead. The current value shows in get_session_state.",
+          "applied (0 = grooves off). It only affects clips that already have a " <>
+          "groove: assign one with set_clip_properties' groove, or use " <>
+          "set_swing_amount plus quantize_clip to swing plain MIDI. The current " <>
+          "value shows in get_session_state.",
       parameters: %{
         type: "object",
         properties: %{
@@ -395,9 +390,8 @@ defmodule Seshat.Tools.Definitions do
           "Ableton Live keeps a buffer of recent MIDI input even when nothing was armed or " <>
           "recording, so this is the \"keep that\" move when the user stumbles onto something " <>
           "good while noodling. Call it right away: the buffer is ephemeral, and re-playing an " <>
-          "idea never feels the same. Nothing about placement is yours to choose — Live itself " <>
-          "decides which track(s) the material belongs to (the tracks that received the MIDI) " <>
-          "and where the clip lands; the only parameter is an optional name for what it keeps. " <>
+          "idea never feels the same. Placement is not yours to choose: Live decides which " <>
+          "track(s) received the MIDI and where the clip lands; the only parameter is a name. " <>
           "The reply reports exactly which clip(s) appeared (track, slot, length, whether Live " <>
           "started them playing) and whether Live adjusted the song tempo to match the playing " <>
           "— it does that when the transport was stopped. MIDI only; audio can't be captured. " <>
@@ -432,7 +426,13 @@ defmodule Seshat.Tools.Definitions do
           "is already playing, recording starts at the next launch-quantization boundary " <>
           "(usually the next bar) — start playback first when the user wants a predictable " <>
           "punch-in; from a stopped transport it starts immediately, so make sure the user is " <>
-          "ready *before* calling. On an audio track the input is read first: the reply names " <>
+          "ready *before* calling. Over a loop longer than that boundary the punch-in can land " <>
+          "mid-loop — a 1-bar boundary against a 2-bar loop starts on either half — and the " <>
+          "take's timeline starts at zero either way, recording nothing about where it began. " <>
+          "To keep a take in phase with a loop, put its slot in the loop's scene row and " <>
+          "fire_scene them together; otherwise note where the transport was, or the take (and " <>
+          "anything convert_audio_to_midi extracts from it) may sit a whole bar off from where " <>
+          "it was played. On an audio track the input is read first: the reply names " <>
           "what the track is listening to, and a track with nothing routed is refused before " <>
           "any recording starts — set_mixer's input_type, input_channel and monitoring are " <>
           "what fix that. The reply says whether recording is running or queued for the " <>
@@ -525,7 +525,13 @@ defmodule Seshat.Tools.Definitions do
           "Track indices are 0-based. Clip slot N sits in scene N, also 0-based: scene 1 = slot 0. " <>
           "Use get_clip_slots first to see which slots actually hold clips: firing an empty slot " <>
           "would stop the track rather than start anything, so this tool rejects it with an " <>
-          "error. Use stop_clip if stopping was the intent.",
+          "error. Use stop_clip if stopping was the intent. " <>
+          "A fired clip starts from its own beginning at the next quantization boundary; it " <>
+          "never syncs to clips already playing. So firing clips one at a time leaves loops " <>
+          "longer than the quantization value out of phase by whole bars — a four-bar loop " <>
+          "fired on a one-bar boundary can start at any of four points in its cycle, which the " <>
+          "user hears as parts not lining up. When several clips must play as one groove, put " <>
+          "them in one scene and fire_scene it.",
       parameters: %{
         type: "object",
         properties: %{
@@ -633,18 +639,14 @@ defmodule Seshat.Tools.Definitions do
           "non-looping clip, set start_marker/end_marker. There is no direct length setter — " <>
           "length follows from the markers (or the loop while looping), and the reply echoes " <>
           "every value Live actually applied (each write is verified by re-read): check it " <>
-          "matched the intent. launch_mode: 0=Trigger, 1=Gate, 2=Toggle, 3=Repeat. " <>
-          "launch_quantization: 0=Global, 1=None, 2=8 bars, 3=4 bars, 4=2 bars, 5=1 bar, " <>
-          "6=1/2, 7=1/2T, 8=1/4, 9=1/4T, 10=1/8, 11=1/8T, 12=1/16, 13=1/16T, 14=1/32. " <>
-          "velocity_amount is 0.0–1.0. name renames the clip. groove assigns one of the Groove " <>
-          "Pool's grooves by its 0-based position (get_session_state lists the pool) — it is " <>
-          "the only way to swing a clip that is already written, and it is **one-way**: Live's " <>
-          "API cannot un-assign a groove, so removing one means the user clicking the clip's " <>
-          "Groove chooser in Live. An empty pool is refused by name, because nothing in the " <>
-          "API can stock it — grooves are dragged in from Live's browser. Audio only — gain: nonlinear 0.0–1.0, trust the dB the " <>
-          "reply echoes rather than the number; warp_mode: 0=Beats, 1=Tones, 2=Texture, " <>
-          "3=Re-Pitch, 4=Complex, 6=Complex Pro; warping: on/off. Audio-only properties on a " <>
-          "MIDI clip are rejected with an error. Use get_clip_properties first to see current " <>
+          "matched the intent. Each property's own schema entry gives its values and range. " <>
+          "groove assigns one of the Groove Pool's grooves by its 0-based position " <>
+          "(get_session_state lists the pool) — it is the only way to swing a clip that is " <>
+          "already written, and it is **one-way**: Live's API cannot un-assign a groove, so " <>
+          "removing one means the user clicking the clip's Groove chooser in Live. An empty " <>
+          "pool is refused by name, because nothing in the API can stock it — grooves are " <>
+          "dragged in from Live's browser. gain, warp_mode and warping are audio-only and are " <>
+          "rejected with an error on a MIDI clip. Use get_clip_properties first to see current " <>
           "values.",
       parameters: %{
         type: "object",
@@ -739,7 +741,12 @@ defmodule Seshat.Tools.Definitions do
         "Launch/fire an entire scene (row of clips) in Ableton Live. " <>
           "Scene indices are 0-based: scene 1 = 0. " <>
           "Use get_clip_slots first to resolve a scene name ('the chorus') to its index " <>
-          "and see what each scene would launch.",
+          "and see what each scene would launch. " <>
+          "This is the way to start several clips in phase: they launch together on one " <>
+          "boundary, each from its own beginning. Firing the same clips one at a time with " <>
+          "fire_clip leaves their loops offset from each other by whole bars. Note a scene " <>
+          "launch also stops any track whose slot in this row is empty, so check the row with " <>
+          "get_clip_slots if something playing elsewhere should keep playing.",
       parameters: %{
         type: "object",
         properties: %{
@@ -843,12 +850,11 @@ defmodule Seshat.Tools.Definitions do
           "user sees the action happen: Session = Session view / clip or scene " <>
           "grid; Arranger = Arrangement view / timeline; Detail/Clip = clip or " <>
           "note editor; Detail/DeviceChain = device chain; Browser = Live's " <>
-          "browser; Detail = the bottom detail panel. For an explicit " <>
-          "navigation request, use get_view_state first when the pane may " <>
-          "already be visible and do not re-show it if it is; for " <>
-          "time-sensitive pre-action steering, show the pane directly — " <>
-          "showing an already-open pane is harmless. get_view_state reads what " <>
-          "is visible from Live, and hide_view puts a pane away. " <>
+          "browser; Detail = the bottom detail panel. Showing an already-open " <>
+          "pane is harmless, so steer directly before an action; on a bare " <>
+          "navigation request read get_view_state first and skip the call if " <>
+          "the pane is already up. get_view_state reads what is visible from " <>
+          "Live, and hide_view puts a pane away. " <>
           "Typical sequences: " <>
           "show Session then launch/stop a clip or scene; show Arranger then " <>
           "change the song loop brace; select the target track (select_track) " <>
@@ -1399,8 +1405,7 @@ defmodule Seshat.Tools.Definitions do
           "enabled: false switches it off, enabled: true brings it back unchanged. " <>
           "Track and device indices are 0-based — call get_track_devices first to find the " <>
           "device index. " <>
-          "This toggles the device's own power switch (its parameter 0, 'Device On'), exactly " <>
-          "like clicking the device's on/off button in Live. " <>
+          "This toggles the device's own power switch (its parameter 0, 'Device On'). " <>
           "Bypassing an instrument silences its track. " <>
           @device_target_note <>
           "To remove the device from the chain entirely, use delete_device.",
@@ -1550,10 +1555,7 @@ defmodule Seshat.Tools.Definitions do
         "Quantize a MIDI clip's notes toward a rhythmic grid using Live's own " <>
           "quantize — one call replaces the read→remove→rewrite dance, and a " <>
           "single undo reverses it. Track and " <>
-          "clip_slot are 0-based; slot N sits in scene N. grid is the note value " <>
-          "to snap to — \"1/16\" is the usual choice for played parts, and the " <>
-          "T values are triplet grids for shuffled or triplet-feel playing that " <>
-          "a straight grid would flatten. Only note starts move: length " <>
+          "clip_slot are 0-based; slot N sits in scene N. Only note starts move: length " <>
           "changes only when a moved note now overlaps another of the same " <>
           "pitch — landing on the exact same point merges the two into one " <>
           "note, landing close but not exact instead trims the earlier note " <>
@@ -1612,8 +1614,7 @@ defmodule Seshat.Tools.Definitions do
           "track, omit clip_slot to use its first empty slot — an occupied explicit slot is " <>
           "refused before anything is generated. For \"again, but darker\" pass variation_of " <>
           "pointing at a previously generated clip; strength (0.01–1.0, default 0.55) sets how " <>
-          "far the variation departs and is only valid with variation_of. For exact control of " <>
-          "individual notes, write or edit MIDI notes instead of generating audio.",
+          "far the variation departs and is only valid with variation_of.",
       parameters: %{
         type: "object",
         properties: %{
