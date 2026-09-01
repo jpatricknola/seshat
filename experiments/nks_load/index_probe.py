@@ -91,15 +91,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("pattern", nargs="+",
                         help="SQL LIKE pattern(s) on the file name, e.g. 'Agonic%%'")
-    parser.add_argument("--wait", type=int, nargs="?", const=30, default=0,
-                        metavar="SECONDS",
+    parser.add_argument("--wait", action="store_true",
                         help="poll until every match has a non-empty device_id, "
-                             "or this many seconds pass (default 30 when bare)")
+                             "or --timeout seconds pass")
+    parser.add_argument("--timeout", type=int, default=30, metavar="SECONDS",
+                        help="how long --wait polls for (default 30)")
     opts = parser.parse_args(argv)
 
     db = locate_db()
     log_mark = indexer_size()
-    deadline = time.time() + opts.wait
+    deadline = time.time() + (opts.timeout if opts.wait else 0)
     while True:
         connection, directory = snapshot(db)
         try:
