@@ -263,8 +263,9 @@ working as designed.
 
 ## Spike L result — measured 2026-09-01 (Live 12.4.5, this machine)
 
-Run under [PLAN_nks_load_path.md](../PLAN_nks_load_path.md); tooling committed
-at [experiments/nks_load/](../../experiments/nks_load/); the repeatable checks
+Run under [PLAN_nks_load_path.md](../archive/PLAN_nks_load_path.md) (archived
+— the spike's verdict is inconclusive); tooling committed at
+[experiments/nks_load/](../../experiments/nks_load/); the repeatable checks
 are [smoke_tests/auto/nks-load.md](../smoke_tests/auto/nks-load.md).
 
 **Verdict: the VST3-`.adv` rung is not proven, and the blocker is now located

@@ -52,103 +52,75 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · NKS load path — prove a Collector's Edition preset can land on a track (Spike L)
+## #1 · NKS load path — get the one artefact that settles the plugin-identity gate (Spike L, continued)
 
-**Impact 3 · Lift 2 · 1.50 impact-per-effort**
+**Impact 3 · Lift 1 · 3.00 impact-per-effort**
 
-Sits at #1 by decision (2026-09-01): it is the go/no-go gate for the whole
-semantic sound-selection arc evaluated in
-[evaluating/semantic-sound-selection-options.md](evaluating/semantic-sound-selection-options.md),
-it is days-cheap, and per this file's dependency rule a gate sorts above the
-work it unblocks. Impact is scored as the plumbing it is — the arc it
-unlocks is scored when its own items are queued.
+**Blocked on a one-minute human action, not on any engineering.** The spike
+(archived plan: [archive/PLAN_nks_load_path.md](archive/PLAN_nks_load_path.md))
+ran 2026-08-31→2026-09-01 and did almost everything code can do: the
+`reindex_library` → `load_device` chain is proven end to end for a
+foreign-written `.adv` (a byte-copy, a gunzip/re-gzip round trip, and a
+254-byte root-element skeleton of a real Core Library preset all index and
+load correctly), and eleven independently-varied synthesized
+`<PluginDevice>` `.adv` files — including the plan's fixture-faithful
+"attempt D" — were all refused **identically** by Live's browser metadata
+extractor: empty `device_id`, no `metadata` rows, no exception logged. The
+class id itself is verified byte-identical to Live's own plugin registry, so
+the blocker is not the plugin identity or the state payload; it is one stage
+earlier, in whatever the extractor demands of a `<PluginDevice>` document
+before it will assign one at all. Tooling that makes re-testing a candidate
+take seconds (not a `reindex_library` + load cycle) is committed at
+[experiments/nks_load/](../experiments/nks_load/); the full measurement,
+including the crash hazard below, is in
+[evaluating/semantic-sound-selection-options.md](evaluating/semantic-sound-selection-options.md)
+§ "Spike L result" and the checks in
+[smoke_tests/auto/nks-load.md](smoke_tests/auto/nks-load.md).
 
-Plan: [PLAN_nks_load_path.md](PLAN_nks_load_path.md) — planning ran much of
-the spike against live Ableton on 2026-09-01: the reindex→load chain is
-proven end to end for a foreign-written `.adv`, rejection is a measured
-silent no-op with a false-success reply, a real Live-written VST3 reference
-framing was recovered, and one fixture-faithful candidate (attempt D) is
-built and untested. Read its "What planning measured" section before
-re-measuring anything.
+⚠️ **Never wrap a synthesized `<PluginDevice>` inside a rack `.adg` to test
+it faster.** Measured 2026-09-01: doing so produced a file Live indexed
+correctly and then segfaulted on when loaded
+(`EXC_BAD_ACCESS` in `AEditableDeviceChain`) — the only evidence so far that
+Live's deserializer reads this XML at all, but not a safe iteration route.
 
-**Goal:** answer, with Live running on this machine, whether a Native
-Instruments NKS preset that retrieval names — e.g. "Massive X / Agonic
-Drone" — can be landed on a track programmatically. The candidate
-mechanism: parse the `.nksf` file's `PLID` (plugin id) and `PCHK` (raw
-plugin state chunk, ~30 KB, already parsed successfully on this machine),
-wrap that state as a Live `.adv` device preset in the User Library, then
-load it through the existing `reindex_library` → `load_device` flow and
-verify the instrument opens carrying *that preset's* sound. Record the
-outcome — and, on failure, which named fallback is chosen — in the options
-doc. This is the single measurement the evaluation could not make without
-writing code.
+**What remains, and why it needs a person:** every blind variant is
+exhausted. The next fact only exists inside a device Live itself wrote — no
+plugin `.adv`/`.adg` or plugin-bearing `.als` exists anywhere on this
+machine yet. One person needs to load Massive X (or any VST3/AU
+instrument), drag it into the User Library to save it as a preset (or save
+a set containing one) — under a minute — then run
+`python3 experiments/nks_load/index_probe.py --wait "<that file>"` and diff
+its `device_id`-bearing fields against what `write_adv.py`'s template
+produces for the same plugin. That diff either names the missing element
+(update the template, retry the identity check in `nks-load.md`, and the
+spike's mechanism claim is settled) or reveals something no hand-written
+file can reproduce (promote to the fallback ladder: per-format
+chunk-framing surgery → AX-scripting Komplete Kontrol's search field
+([evaluating/ui-scripting-options.md](evaluating/ui-scripting-options.md))
+→ corpus restriction to what Live's browser already loads — the options
+doc has the full ladder).
 
-**Why:** the 2026-08-31 evaluation of the semantic instrument-selection
-brief found the binding gap is not retrieval but loading: Live's browser
-(measured: dev catalog, 5,796 entries) holds **zero** NKS preset entries —
-NI products appear only as 10 bare plugin devices — so even a perfect
-"cold mechanical bass" ranking currently names presets Seshat cannot load.
-Every strategy in the brief (semantic metadata, CLAP-on-previews, hybrid)
-chains through this one answer, and its outcome sizes the entire arc:
-success means the full Collector's Edition corpus (the brief's stated
-assumption) is in play; failure of every fallback shrinks NKS to metadata
-enrichment of sounds Live already loads. Cheapest possible de-risk of the
-largest open feature area.
+**Fork documentation debt, degraded not blocking:**
+[AbletonOSC#41](https://github.com/jpatricknola/AbletonOSC/issues/41) —
+`load_item`'s reply falsely claims success (naming a pre-existing device,
+or "still instantiating") when the target file was one Live's browser gave
+no device identity to at all. Nothing in this item needs the fork to act
+before the artefact diff can happen; it is filed so the next person who
+trusts a `load_item` reply at face value doesn't lose the time this spike
+did finding out it lies in this one case.
 
-**Eventual user story (not this PR's deliverable):** "give me a cold,
-slightly unstable synth like early Depeche Mode" ends with ranked real
-candidates *loaded and sounding*, not just named. This PR proves or
-disproves the last step of that chain.
+**Goal, unchanged:** answer whether a Native Instruments NKS preset that
+retrieval names — e.g. "Massive X / Agonic Drone" — can be landed on a
+track programmatically, sizing the entire semantic sound-selection arc in
+[evaluating/semantic-sound-selection-options.md](evaluating/semantic-sound-selection-options.md).
+No fallback rung is promoted yet, because the rung above it (hand-written
+`.adv`) is not refuted, only unproven pending the reference artefact.
 
-**In scope — one PR:**
-- A bounded `.nksf` reader (RIFF walk: `NISI` msgpack metadata, `PLID`,
-  `PCHK`) and a `.adv` writer for the spike only. Product-shaped code only
-  if it earns it; otherwise it lands beside
-  [../experiments/gmd_profiles/](../experiments/gmd_profiles/) as a spike
-  script with the same status.
-- Reading spike-corpus rows from the NKS SQLite (`v_sound_info` — paths
-  and schema in the options doc). Read-only, same posture as
-  `Seshat.Library.AbletonDB`; no new process door, no new tool, no
-  `Definitions` change, no fork change.
-- Synthesis + load verified for at least Massive X (local factory presets,
-  60 with previews), ideally one VST3 and one AU wrapping each.
-- Verification: preset file placed in the User Library, `reindex_library`,
-  `load_device`, then `get_track_devices` read-back plus listening — does
-  it sound like the preset's own `.previews` ogg?
-- The live check cited per `/smoke-write` (likely a new
-  `docs/smoke_tests/` entry; the whole point needs Ableton).
-- The measured outcome written into
-  [evaluating/semantic-sound-selection-options.md](evaluating/semantic-sound-selection-options.md)
-  § "What remains unmeasured", either way it goes.
-
-**Out of scope, deliberately:** embeddings of any kind, CLAP, the Python
-sidecar, the eval harness (that is "Search eval harness — numbers before
-opinions" below), new MCP tools, full-library indexing, mounting or
-re-downloading the absent external-volume content, and *building* the AX
-fallback (failure of the `.adv` route only *names* the fallback, per the
-ladder in the options doc).
-
-**Planner notes:**
-- All measured evidence (DB paths, `v_sound_info` columns, the parsed
-  `Agonic Drone.nksf` chunk layout, the DB-underscores-vs-disk-spaces
-  filename trap, the unmounted `/Volumes/Instruments` roots) is in the
-  options doc — read it first, don't re-measure.
-- The `.adv` format is the spike's actual unknown: gzipped XML carrying a
-  plugin-state blob (`VstPluginInfo`/`AuPluginInfo` framing, VST3 vs AU
-  differ). Nothing anywhere confirms Live accepts a foreign-written blob;
-  that is precisely the question. Reference-diff a `.adv` Live itself saves
-  for the same plugin+preset before writing the generator.
-- Fallback ladder on failure, in order: per-format chunk-framing surgery;
-  AX-scripting Komplete Kontrol's search field
-  ([evaluating/ui-scripting-options.md](evaluating/ui-scripting-options.md)
-  mechanism costs apply); corpus restriction to Live-loadable items. The
-  PR records which rung was reached and why it stopped there.
-- A failed spike still merges: the parser knowledge, the reference diffs
-  and the recorded verdict are the deliverable. Success is not license to
-  scope-creep into indexing — the next items in this arc get queued
-  separately once "Search eval harness" numbers exist.
-- Needs Live running for the load half; no Live restart, no
-  `mix abletonosc.install`.
+**Out of scope, unchanged:** embeddings of any kind, CLAP, the Python
+sidecar, the eval harness ("Search eval harness" below), new MCP tools or
+`Definitions` changes, full-library indexing, mounting or re-downloading the
+absent external-volume content, and building any fallback rung ahead of the
+diff that would justify it.
 
 
 ## #2 · Soften the velocity-class clamp in symbolic MIDI generation

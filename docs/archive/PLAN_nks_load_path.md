@@ -1,7 +1,27 @@
 # PLAN: NKS load path — prove a Collector's Edition preset can land on a track (Spike L)
 
-**Roadmap item:** #1 — the go/no-go gate for the semantic sound-selection arc
-([evaluating/semantic-sound-selection-options.md](evaluating/semantic-sound-selection-options.md)).
+> **Archived 2026-09-01 — spike run, verdict inconclusive.** This is the plan
+> as written *before* implementation; the code as merged may differ. The
+> spike ran in full: `experiments/nks_load/` (the `.nksf` reader, the `.adv`
+> writer, the NKS-corpus reader) is committed, the reindex→load chain is
+> proven end to end for a foreign-written `.adv`, and eleven independently
+> varied synthesized `<PluginDevice>` `.adv` files were all refused
+> identically by Live's browser metadata extractor — never reaching a
+> plugin-state question at all. The blocker is now located precisely (see
+> `docs/evaluating/semantic-sound-selection-options.md` § "Spike L result")
+> but settling it needs one artefact only a person can produce: a plugin
+> preset Live itself wrote. That remaining step, and the fork documentation
+> issue the false-success `load_item` reply produced
+> ([AbletonOSC#41](https://github.com/jpatricknola/AbletonOSC/issues/41)),
+> are carried forward as `docs/ROADMAP.md`'s "NKS load path" entry. Live
+> verification: the four `docs/smoke_tests/auto/nks-load.md` checks all ran —
+> two passed, one is recorded as a stamped failure (not a regression) pending
+> the artefact, one is not yet reachable; the one manual by-ear check is not
+> reachable either. See CLAUDE.md's "Current focus" for the full account.
+
+**Roadmap item:** "NKS load path" — the go/no-go gate for the semantic
+sound-selection arc
+([../evaluating/semantic-sound-selection-options.md](../evaluating/semantic-sound-selection-options.md)).
 **Shape:** a spike, not a feature. No new tool, no `Definitions` change, no
 fork Python, no process door, nothing under `lib/`. The deliverable is a
 measured verdict recorded in the options doc, plus the parser/writer scripts
@@ -147,7 +167,7 @@ reindexed; the installed Remote Scripts copy was never modified).
 The spike sends **no new addresses and adds none**. Everything runs through
 existing tools; the addresses behind them are cited here only where the spike
 depends on their measured behaviour
-([priv/AbletonOSC/API.md](../priv/AbletonOSC/API.md) is canonical):
+([priv/AbletonOSC/API.md](../../priv/AbletonOSC/API.md) is canonical):
 
 | Address | Used via | What the spike relies on |
 |---|---|---|
@@ -162,7 +182,7 @@ depends on their measured behaviour
 ### Part 1 — spike scripts: `.nksf` reader and `.adv` writer
 
 New directory `experiments/nks_load/` (same status as
-[experiments/gmd_profiles/](../experiments/gmd_profiles/): committed spike
+[experiments/gmd_profiles/](../../experiments/gmd_profiles/): committed spike
 tooling, stdlib-only, never imported by `lib/`, no runtime reads):
 
 - **`nksf_read.py`** — RIFF walk (`RIFF`/`NIKS`, chunk id + LE u32 size +
@@ -275,7 +295,7 @@ let it block the VST3 verdict.
 ### Part 4 — record the outcome where each fact belongs
 
 - **The verdict** — success, or the fallback rung reached and why — goes in
-  [evaluating/semantic-sound-selection-options.md](evaluating/semantic-sound-selection-options.md)
+  [../evaluating/semantic-sound-selection-options.md](../evaluating/semantic-sound-selection-options.md)
   § "What remains unmeasured", replacing the Spike L bullet, either way it
   goes. Include the working template (or final failing matrix) by reference
   to `experiments/nks_load/`.

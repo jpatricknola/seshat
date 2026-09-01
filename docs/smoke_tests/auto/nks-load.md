@@ -2,8 +2,10 @@
 
 The Spike L mechanism: a `.adv` synthesized from an NKS preset's plugin state
 chunk landing through `reindex_library` → `load_device`
-([../../PLAN_nks_load_path.md](../../PLAN_nks_load_path.md) while the spike is
-open; the archived plan after). The synthesized files come from
+([../../archive/PLAN_nks_load_path.md](../../archive/PLAN_nks_load_path.md) —
+archived; the spike's verdict is inconclusive, see
+[../../evaluating/semantic-sound-selection-options.md](../../evaluating/semantic-sound-selection-options.md)
+§ "Spike L result"). The synthesized files come from
 `experiments/nks_load/write_adv.py`; nothing under `lib/` is involved.
 
 **Machine gate:** the synthesized-preset checks need Massive X (VST3)
