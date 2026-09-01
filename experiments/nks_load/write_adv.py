@@ -179,7 +179,7 @@ def url_quote(text):
     return "".join(out)
 
 
-def build_xml(fields, state, name, plugin_name, opts):
+def build_xml(fields, state, name, plugin_name, plugin_vendor, opts):
     guid = nksf_read.vst3_guid(fields)
     device_type = "2" if opts.device_role == "audiofx" else "1"
 
@@ -187,7 +187,8 @@ def build_xml(fields, state, name, plugin_name, opts):
         source_context = ""
     else:
         browser_path = opts.browser_content_path or (
-            "query:Plugins#VST3:Native%%20Instruments:%s" % url_quote(plugin_name)
+            "query:Plugins#VST3:%s:%s" % (url_quote(plugin_vendor or "Native Instruments"),
+                                          url_quote(plugin_name))
             if plugin_name else "query:Plugins#VST3")
         source_context = (SOURCE_CONTEXT
                           .replace("@BROWSERPATH@", xml_escape(browser_path))
@@ -297,7 +298,8 @@ def main(argv=None):
     if not name:
         name = os.path.splitext(os.path.basename(opts.nksf))[0]
 
-    xml = build_xml(fields, state, name, plid.get("pluginName"), opts)
+    xml = build_xml(fields, state, name, plid.get("pluginName"),
+                    plid.get("pluginVendor"), opts)
     out = os.path.expanduser(opts.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with gzip.open(out, "wb") as f:

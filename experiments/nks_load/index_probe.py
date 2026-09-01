@@ -46,21 +46,38 @@ INDEXER_LOG_GLOB = os.path.expanduser(
     "~/Library/Preferences/Ableton/Live */Indexer.txt")
 
 
+def latest_by_mtime(paths):
+    """The most recently modified path, not the lexically last one.
+
+    A build number (`Live-files-12300.db`) or a version string (`Live 12.4.10`)
+    does not sort the way it compares, so `sorted(...)[-1]` can silently pick a
+    stale database or log — the same trap `Seshat.Library.AbletonDB.locate_db/1`
+    (lib/seshat/library/ableton_db.ex) avoids with `Enum.max_by(&file_mtime/1)`.
+    """
+    return max(paths, key=os.path.getmtime)
+
+
 def locate_db():
-    candidates = sorted(glob.glob(DB_GLOB))
+    candidates = glob.glob(DB_GLOB)
     if not candidates:
         raise SystemExit("no Live browser database under %s" % DB_GLOB)
-    return candidates[-1]
+    return latest_by_mtime(candidates)
 
 
 def snapshot(db):
-    """Copy db + -wal + -shm somewhere private and open the copy read-only."""
+    """Copy db + -wal + -shm somewhere private and open the copy read-only.
+
+    The copy is non-atomic (three separate `shutil.copy` calls) while Live may
+    be writing the live files in WAL mode — a known-racy snapshot. Fine for a
+    probe that tolerates a re-run; do not reuse this for anything that needs a
+    guaranteed-consistent read.
+    """
     directory = tempfile.mkdtemp(prefix="nks-index-probe-")
     base = os.path.join(directory, os.path.basename(db))
     for suffix in ("", "-wal", "-shm"):
         if os.path.exists(db + suffix):
             shutil.copy(db + suffix, base + suffix)
-    return sqlite3.connect(base), directory
+    return sqlite3.connect("file:%s?mode=ro" % base, uri=True), directory
 
 
 def rows_for(connection, patterns):
@@ -72,10 +89,10 @@ def rows_for(connection, patterns):
 
 def indexer_exceptions(since):
     """Lines from Live's indexer log that report a failed extraction."""
-    logs = sorted(glob.glob(INDEXER_LOG_GLOB))
+    logs = glob.glob(INDEXER_LOG_GLOB)
     if not logs:
         return []
-    with open(logs[-1], "rb") as f:
+    with open(latest_by_mtime(logs), "rb") as f:
         f.seek(max(0, since))
         tail = f.read().decode("utf-8", "replace")
     return [line for line in tail.splitlines()
@@ -83,8 +100,8 @@ def indexer_exceptions(since):
 
 
 def indexer_size():
-    logs = sorted(glob.glob(INDEXER_LOG_GLOB))
-    return os.path.getsize(logs[-1]) if logs else 0
+    logs = glob.glob(INDEXER_LOG_GLOB)
+    return os.path.getsize(latest_by_mtime(logs)) if logs else 0
 
 
 def main(argv=None):

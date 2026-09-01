@@ -345,7 +345,7 @@ what Live's browser already loads.
 - Preview coverage per product across the full Collector's Edition, and
   KK-unified vs per-product DB overlap/dedupe rules.
 - ~~Whether a `PCHK`-derived `.adv` actually loads (Spike L — the pivotal
-  unknown).~~ **Run 2026-09-01 — see "Spike L result" below.** Still open in
+  unknown).~~ **Run 2026-09-01 — see "Spike L result" above.** Still open in
   one sentence: nothing hand-written has cleared Live's browser *metadata
   extractor*, and the one artefact that would settle it (a plugin preset
   Live itself wrote) needs about a minute of a person's time.

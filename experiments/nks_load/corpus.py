@@ -97,8 +97,9 @@ def build(product, extension, require_preview, must_include):
     # Named presets first, so a slate always contains the ones the plan and
     # the smoke tests refer to by name, then the rest in DB order.
     wanted = [name.lower() for name in must_include]
-    present.sort(key=lambda r: (wanted.index(r["name"].lower())
-                                if r["name"].lower() in wanted else len(wanted)))
+    present.sort(key=lambda r: (wanted.index((r["name"] or "").lower())
+                                if (r["name"] or "").lower() in wanted
+                                else len(wanted)))
     return total, present
 
 
@@ -109,14 +110,18 @@ def main(argv=None):
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--any-preview", action="store_true",
                         help="keep rows without a preview .ogg too")
-    parser.add_argument("--include", action="append", default=["Agonic Drone"],
-                        help="preset names to sort to the front of the slate")
+    parser.add_argument("--include", action="append", default=None,
+                        help="preset names to sort to the front of the slate "
+                             "(default: Agonic Drone; repeatable, and the "
+                             "first use replaces the default rather than "
+                             "adding to it)")
     parser.add_argument("--tsv", action="store_true",
                         help="tab-separated rows instead of JSON")
     opts = parser.parse_args(argv)
 
     total, present = build(opts.product, opts.ext, not opts.any_preview,
-                           opts.include)
+                           opts.include if opts.include is not None
+                           else ["Agonic Drone"])
     slate = present[:opts.limit] if opts.limit > 0 else present
     print("%s: %d rows in the database, %d present on this disk%s, %d emitted"
           % (opts.product, total, len(present),

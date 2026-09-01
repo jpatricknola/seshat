@@ -32,7 +32,13 @@ pays for it twice.
    `reindex_library`, no track and no mutation. Live's indexer notices a User
    Library write on its own within a few seconds (`Indexer.txt` beside Live's
    `Log.txt` logs each scan, and logs `Exception while extracting metadata
-   from file "…"` for a file that fails to parse at all).
+   from file "…"` for a file that fails to parse at all). Caveat: the probe
+   marks `Indexer.txt`'s size at its own startup, which is necessarily after
+   `write_adv.py` has already run — a very fast extraction could log its
+   exception before the probe starts watching. None was observed across the
+   eleven variants below, but that absence is weaker evidence than "no
+   exception in the whole run"; start tailing `Indexer.txt` before writing
+   the file if that distinction ever matters.
 2. **Load oracle** — only worth running once the first says the file has a
    device identity. Baseline the byte size of Live's log
    (`~/Library/Preferences/Ableton/Live <version>/Log.txt`) before each load
@@ -94,6 +100,13 @@ one written uncompressed. All eleven: `device_id` empty, `device_type=0`,
 `file_devices` link, with no `Indexer.txt` extraction exception. The
 `BranchDeviceId` string itself was verified byte-identical to the plugin
 registry's, so the class id is not the defect.*
+
+*This is the recorded state, not a regression to chase — it flips only once
+§ "What would settle it" (the Spike L result in
+[semantic-sound-selection-options.md](../../evaluating/semantic-sound-selection-options.md))
+is done: a Live-written plugin `.adv` diffed against the template. A full
+`/smoke-test` sweep will report this check as failing every time until then;
+that is expected.*
 
 ## A synthesized NKS `.adv` lands Massive X carrying the preset's state
 

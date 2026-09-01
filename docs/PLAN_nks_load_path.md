@@ -317,6 +317,10 @@ Nothing in `mix test` reaches any of this. Run the automated half with
 - `smoke_tests/auto/nks-load.md § A foreign-written .adv is indexed and loadable without a Live restart`
   — the chain control (M1), green at plan time; guards the mechanism every
   other check stands on.
+- `smoke_tests/auto/nks-load.md § A synthesized plugin .adv carries a device identity Live recognises`
+  — the gate every load check below it stands on, and the cheapest to run;
+  added after plan time once the browser-index oracle turned out to answer
+  this in seconds rather than a load attempt.
 - `smoke_tests/auto/nks-load.md § A synthesized NKS .adv lands Massive X carrying the preset's state`
   — the spike's core claim: instantiation in `Log.txt`, chain read-back,
   meter fingerprint vs bare init.
