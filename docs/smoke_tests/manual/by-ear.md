@@ -1,6 +1,7 @@
 # Judged by ear
 
-Six checks where the assertion is a sound. No read-back proves any of them: a
+Checks where the assertion is a sound (the count here has drifted before —
+trust the section list, not a number). No read-back proves any of them: a
 bypassed device, a preview at the wrong cue level, and a take that recorded
 silence all look identical in every value Seshat can read.
 
@@ -150,3 +151,26 @@ plus an assigned Live groove from the pool. This is the measurement that says
 whether feel comes from composition, post-processing, or both — and it is the
 result that would overturn the symbolic-first verdict if (b) does not beat
 (a) audibly.
+
+## A synthesized NKS preset sounds like its own preview
+
+*Why manual: the assertion is a sound — Massive X exposes one readable host
+parameter, so no value Seshat can read distinguishes the preset's state from
+an init patch that instantiated cleanly*
+*Last run: — (not reachable yet: as of 2026-09-01 no synthesized `.adv` has
+cleared Live's browser metadata extractor, so nothing loads to listen to.
+The one-minute human action that would unblock the whole spike is described
+under "What would settle it" in
+[../../evaluating/semantic-sound-selection-options.md](../../evaluating/semantic-sound-selection-options.md)
+§ "Spike L result" — drag a loaded Massive X device into the User Library so
+there is a Live-written plugin preset to diff against.)*
+
+Run after (and only after)
+[../auto/nks-load.md](../auto/nks-load.md) § "A synthesized NKS `.adv` lands
+Massive X carrying the preset's state" is green. With the synthesized Agonic
+Drone loaded, hold a note for a few seconds, then play the preset's own
+preview — `/Library/Application Support/Native Instruments/Massive X/Presets/.previews/Agonic Drone.nksf.ogg`
+— and compare. The preset's character (a slow, synthetic, evolving drone)
+against a plain init saw is not a subtle difference; same character = the
+state chunk landed, and this is the spike's actual acceptance. Record the
+verdict in the options doc per the plan, not only here.
