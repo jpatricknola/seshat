@@ -52,7 +52,78 @@ proposing or re-proposing work. Add to the list when rejecting a proposed issue.
 
 ---
 
-## #1 · Soften the velocity-class clamp in symbolic MIDI generation
+## #1 · NKS load path — get the one artefact that settles the plugin-identity gate (Spike L, continued)
+
+**Impact 3 · Lift 1 · 3.00 impact-per-effort**
+
+**Blocked on a one-minute human action, not on any engineering.** The spike
+(archived plan: [archive/PLAN_nks_load_path.md](archive/PLAN_nks_load_path.md))
+ran 2026-08-31→2026-09-01 and did almost everything code can do: the
+`reindex_library` → `load_device` chain is proven end to end for a
+foreign-written `.adv` (a byte-copy, a gunzip/re-gzip round trip, and a
+254-byte root-element skeleton of a real Core Library preset all index and
+load correctly), and eleven independently-varied synthesized
+`<PluginDevice>` `.adv` files — including the plan's fixture-faithful
+"attempt D" — were all refused **identically** by Live's browser metadata
+extractor: empty `device_id`, no `metadata` rows, no exception logged. The
+class id itself is verified byte-identical to Live's own plugin registry, so
+the blocker is not the plugin identity or the state payload; it is one stage
+earlier, in whatever the extractor demands of a `<PluginDevice>` document
+before it will assign one at all. Tooling that makes re-testing a candidate
+take seconds (not a `reindex_library` + load cycle) is committed at
+[experiments/nks_load/](../experiments/nks_load/); the full measurement,
+including the crash hazard below, is in
+[evaluating/semantic-sound-selection-options.md](evaluating/semantic-sound-selection-options.md)
+§ "Spike L result" and the checks in
+[smoke_tests/auto/nks-load.md](smoke_tests/auto/nks-load.md).
+
+⚠️ **Never wrap a synthesized `<PluginDevice>` inside a rack `.adg` to test
+it faster.** Measured 2026-09-01: doing so produced a file Live indexed
+correctly and then segfaulted on when loaded
+(`EXC_BAD_ACCESS` in `AEditableDeviceChain`) — the only evidence so far that
+Live's deserializer reads this XML at all, but not a safe iteration route.
+
+**What remains, and why it needs a person:** every blind variant is
+exhausted. The next fact only exists inside a device Live itself wrote — no
+plugin `.adv`/`.adg` or plugin-bearing `.als` exists anywhere on this
+machine yet. One person needs to load Massive X (or any VST3/AU
+instrument), drag it into the User Library to save it as a preset (or save
+a set containing one) — under a minute — then run
+`python3 experiments/nks_load/index_probe.py --wait "<that file>"` and diff
+its `device_id`-bearing fields against what `write_adv.py`'s template
+produces for the same plugin. That diff either names the missing element
+(update the template, retry the identity check in `nks-load.md`, and the
+spike's mechanism claim is settled) or reveals something no hand-written
+file can reproduce (promote to the fallback ladder: per-format
+chunk-framing surgery → AX-scripting Komplete Kontrol's search field
+([evaluating/ui-scripting-options.md](evaluating/ui-scripting-options.md))
+→ corpus restriction to what Live's browser already loads — the options
+doc has the full ladder).
+
+**Fork documentation debt, degraded not blocking:**
+[AbletonOSC#41](https://github.com/jpatricknola/AbletonOSC/issues/41) —
+`load_item`'s reply falsely claims success (naming a pre-existing device,
+or "still instantiating") when the target file was one Live's browser gave
+no device identity to at all. Nothing in this item needs the fork to act
+before the artefact diff can happen; it is filed so the next person who
+trusts a `load_item` reply at face value doesn't lose the time this spike
+did finding out it lies in this one case.
+
+**Goal, unchanged:** answer whether a Native Instruments NKS preset that
+retrieval names — e.g. "Massive X / Agonic Drone" — can be landed on a
+track programmatically, sizing the entire semantic sound-selection arc in
+[evaluating/semantic-sound-selection-options.md](evaluating/semantic-sound-selection-options.md).
+No fallback rung is promoted yet, because the rung above it (hand-written
+`.adv`) is not refuted, only unproven pending the reference artefact.
+
+**Out of scope, unchanged:** embeddings of any kind, CLAP, the Python
+sidecar, the eval harness ("Search eval harness" below), new MCP tools or
+`Definitions` changes, full-library indexing, mounting or re-downloading the
+absent external-volume content, and building any fallback rung ahead of the
+diff that would justify it.
+
+
+## #2 · Soften the velocity-class clamp in symbolic MIDI generation
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -87,7 +158,7 @@ plan defers to, so that slate measures the composition, not this artifact.
   `perform/2`'s output — update those expectations alongside the fix rather
   than loosening them to pass.
 
-## #2 · `record_clip` reports where the take actually started
+## #3 · `record_clip` reports where the take actually started
 
 **Impact 7 · Lift 4 · 1.75 impact-per-effort**
 
@@ -151,7 +222,7 @@ by ear or being asked where the bar line was.
   loop playing and a take punched in deliberately off its top —
   `docs/smoke_tests/manual/engineered-state.md` is the folder that fits.
 
-## #3 · Generated-audio alignment, warping and quality polish
+## #4 · Generated-audio alignment, warping and quality polish
 
 **Impact 7 · Lift 5 · 1.40 impact-per-effort**
 
@@ -233,7 +304,7 @@ guessing at them in the initial tool contract.
 Keep any model/runtime or OSC additions in this PR proportionate to the
 specific failing measurements.
 
-## #4 · `convert_audio_to_midi` reports its own artifact notes
+## #5 · `convert_audio_to_midi` reports its own artifact notes
 
 **Impact 4 · Lift 3 · 1.33 impact-per-effort**
 
@@ -266,7 +337,7 @@ conversion the model cannot reason about honestly.
   read-back without new plumbing; `edit_notes`' delete path already exists if
   filtering is chosen.
 
-## #5 · Generated material lands one instrument per track
+## #6 · Generated material lands one instrument per track
 
 **Impact 9 · Lift 8 · 1.12 impact-per-effort**
 
@@ -392,7 +463,7 @@ promise meets an audio render.
   bass) are the same shape with a different transcriber; the plan should
   say whether v1 is drums-only.
 
-## #6 · Live-native generation spike — can AX drive the Create menu?
+## #7 · Live-native generation spike — can AX drive the Create menu?
 
 **Impact 3 · Lift 2 · 1.50 impact-per-effort**
 
@@ -505,7 +576,7 @@ that has not been asked.
 - Suite gate: Stem Separation is Suite-only. Acceptable for an optional
   arm; the result must record which edition it ran on.
 
-## #7 · `mix abletonosc.install` is not atomic and reports unverified success
+## #8 · `mix abletonosc.install` is not atomic and reports unverified success
 
 **Impact 3 · Lift 2 · 1.50 impact-per-effort**
 
@@ -579,7 +650,7 @@ eleven-entry prefix that survived, are in
   check but there is no `auto/` home for a Mix task — interrupt a run and
   confirm the previous install still starts the bridge, by hand.
 
-## #8 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #9 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Impact 8 · Lift 4 · 2.00 impact-per-effort**
 
@@ -616,7 +687,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #9 · Search eval harness — numbers before opinions
+## #10 · Search eval harness — numbers before opinions
 
 **Impact 2 · Lift 3 · 0.67 impact-per-effort**
 
@@ -645,7 +716,7 @@ benchmark informally (see
 formalize that rather than inventing a new one. Runs offline against the
 catalog — no Ableton needed.
 
-## #10 · Widen the search slate at tied score bands
+## #11 · Widen the search slate at tied score bands
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -666,7 +737,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #11 · A rejected index says which index, and what to call next
+## #12 · A rejected index says which index, and what to call next
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -727,7 +798,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #12 · Browser preview audition
+## #13 · Browser preview audition
 
 **Impact 7 · Lift 3 · 2.33 impact-per-effort**
 
@@ -755,7 +826,7 @@ what decides.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #13 · `start_new_project` — the setup wizard, and prompt budget back
+## #14 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -813,7 +884,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   want, so prefer building it before that item even though ratio separates
   them.
 
-## #14 · `write_midi_notes` must chunk large note batches
+## #15 · `write_midi_notes` must chunk large note batches
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -853,7 +924,7 @@ dense request can still hit. Land it when the first dense clip does.
 - Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
   surface needs valid dense clips to work, not become validation errors.
 
-## #15 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #16 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Impact 4 · Lift 2 · 2.00 impact-per-effort**
 
@@ -882,7 +953,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #16 · Routing evals — general corpus and client-realism lane
+## #17 · Routing evals — general corpus and client-realism lane
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -934,7 +1005,7 @@ didn't observe a difference" into "there isn't one, on this evidence."
   paraphrase case that could plausibly go to either tool, when this item's
   corpus work is picked up.
 
-## #17 · `screenshot_live` — let Seshat see the screen
+## #18 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -960,7 +1031,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #18 · Opt-in `samples` index
+## #19 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -984,7 +1055,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #19 · Accepted-search memory
+## #20 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
@@ -1008,7 +1079,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #20 · Producer personas — switchable musical taste
+## #21 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -1043,7 +1114,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #21 · Verify destructive mutations before reporting success
+## #22 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -1115,7 +1186,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #22 · User XMP tags
+## #23 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1134,7 +1205,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #23 · Small OSC breadth — grab bag
+## #24 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1150,7 +1221,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
 - **Sends on return tracks** (return→return routing, feedback sends) —
   niche, needs Live's "sends only" awareness, no named workflow yet.
 
-## #24 · Pin the wording of `edit_notes`' partial-failure message
+## #25 · Pin the wording of `edit_notes`' partial-failure message
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1191,7 +1262,7 @@ convention across the module.
 - Low lift once the mocking question is settled — the message itself is
   already correct and doesn't need to change, only get pinned.
 
-## #25 · `edit_notes`' description states a reason that is no longer true
+## #26 · `edit_notes`' description states a reason that is no longer true
 
 **Impact 3 · Lift 1 · 3.00 impact-per-effort**
 
@@ -1221,7 +1292,7 @@ harmony research and confirmed still present 2026-08-31.
   this one is only the sentence.
 - It is a `Definitions` change, so `mix routing.eval` applies.
 
-## #26 · Routing eval report should self-identify which case expectations it scored against
+## #27 · Routing eval report should self-identify which case expectations it scored against
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1253,7 +1324,7 @@ loader through the run map `mix routing.eval` assembles, through
   only a hash, since a hash alone still sends a PR reader back to the case
   JSON to see what changed.
 
-## #27 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
+## #28 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1286,7 +1357,7 @@ against real second-slice cases than speculatively.
   holds ("the model must not proceed on invented state") — this item is only
   about whether that reply should count against `no_tool_errors`.
 
-## #28 · Tighten the process-start grep so it does not shape prose in unrelated modules
+## #29 · Tighten the process-start grep so it does not shape prose in unrelated modules
 
 **Impact 1 · Lift 1 · 1.00 impact-per-effort**
 
@@ -1306,7 +1377,7 @@ non-blocking nit rather than fixed inline because it touches a shared
 invariant test outside the routing-evals change's own files, not something
 that plan's implementation owns.
 
-## #29 · LLM enrichment at reindex
+## #30 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -1333,7 +1404,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #30 · Monitored refresh worker for `Session.State`
+## #31 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -1377,7 +1448,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #31 · Device list per track in session state
+## #32 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1398,7 +1469,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #32 · Adopt MCP `2026-07-28` when Anubis supports it
+## #33 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1449,7 +1520,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #33 · Clip grid in session state — only if usage demands it
+## #34 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 

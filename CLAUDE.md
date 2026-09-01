@@ -341,6 +341,43 @@ That ordering exists because the 2026-08 generation research surveyed
 transcribers and separators for a week without noticing Live Suite ships
 both natively.
 
+**The NKS load path spike ran 2026-09-01** on branch `nks-load-path`,
+answering roadmap item #1's question with a precisely located "not yet" —
+still the top item, re-scoped rather than closed. It is the go/no-go gate
+for the semantic sound-selection arc
+([docs/evaluating/semantic-sound-selection-options.md](docs/evaluating/semantic-sound-selection-options.md)):
+can a Native Instruments NKS preset's raw plugin state be wrapped as a Live
+`.adv` device preset that `reindex_library` → `load_device` lands on a
+track? `experiments/nks_load/` (the `.nksf` reader, the `.adv` writer, the
+NKS-corpus reader — same committed-spike-script posture as
+`experiments/gmd_profiles/`) proved the `reindex_library` → `load_device`
+chain end to end for a foreign-written `.adv`, then found that eleven
+independently varied synthesized `<PluginDevice>` `.adv` files — including a
+fixture-faithful candidate built from a recovered real Live-written VST3
+device XML — are all refused **identically** by Live's browser metadata
+extractor before any plugin-state question is even reached: empty
+`device_id`, no `metadata` rows, no logged exception. The class id itself
+was verified byte-identical to Live's own plugin registry, so the blocker is
+in whatever the extractor demands of a `<PluginDevice>` document, not the
+identity or the state payload. One evidence point along the way: wrapping
+the synthesized device inside a real Instrument Rack `.adg` indexed fine and
+then **segfaulted Live** on load (`EXC_BAD_ACCESS` in
+`AEditableDeviceChain`) — proof the deserializer reads this XML at all, and
+now a documented hazard rather than a repeatable iteration route. The blind
+route is exhausted: what remains is one artefact only a person can make (a
+plugin preset Live itself wrote, via a User Library drag or a set save),
+diffed against the template with `experiments/nks_load/index_probe.py`. Also
+filed: [AbletonOSC#41](https://github.com/jpatricknola/AbletonOSC/issues/41),
+since `load_item`'s reply was measured to claim success (naming a
+pre-existing device, or "still instantiating") on exactly the files this
+spike found rejected — a fork documentation gap, not a blocker for the next
+step. Live verification: two of the four `docs/smoke_tests/auto/nks-load.md`
+checks passed (the foreign-`.adv` chain control, and the false-success-reply
+control), one is stamped as a recorded failure rather than a regression
+(the plugin-identity gate, pending the artefact), and one plus the one
+manual `by-ear.md` check are not yet reachable. Plan archived at
+[docs/archive/PLAN_nks_load_path.md](docs/archive/PLAN_nks_load_path.md).
+
 **MIDI generation — the first solution, composed symbolically, shipped
 2026-08-30** on branch `midi-generation-symbolic`, closing what had been the
 roadmap's top item. One new tool, `generate_midi` (tool 54 → 55): Claude
