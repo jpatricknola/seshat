@@ -10,6 +10,14 @@ fallback layers, migration shims, or compatibility paths for older installs
 or older data. When a change needs `mix abletonosc.install` re-run, a catalog
 rebuild, or a restart, require it and say so; design for the current setup.
 
+**The open Live set is disposable scratch — do anything to it that the work
+needs.** Mutate it, save it, discard it, crash it, dismiss its dialogs with
+scripted keystrokes, restart Live: all fine when a measurement or feature
+needs it. Never protect the set at the cost of an answer, and never leave a
+measurement for a human because taking it would touch the set — anything
+worth keeping lives in the repo, not the set. (Stated by Patrick 2026-09-03
+after the NKS spike self-limited exactly this way.)
+
 Do not stretch that rule into "nothing else matters yet." **Distribution is
 an eventual goal**, so shipping constraints apply when a dependency is
 selected, not only before release. Check the code, model weights, datasets,
