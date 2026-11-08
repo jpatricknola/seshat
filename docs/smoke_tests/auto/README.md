@@ -26,13 +26,15 @@ in full.
 | [sends.md](sends.md) | `set_track_send`'s read-back confirmation and its guard rejection |
 | [generation.md](generation.md) | `generate_audio` and `generate_midi` end to end — the runtime, managed files, clip-slot import, the composed-notes path, read-back |
 | [convert.md](convert.md) | `convert_audio_to_midi` — the OSC conversion, its guards, and the read-back |
+| [nks-load.md](nks-load.md) | the NKS Spike L load chain — a foreign-written `.adv` through `reindex_library` → `load_device`, the browser-index identity gate, the synthesized-preset load, and the silent no-op control. **Carries a crash hazard notice — read its Method section before improvising a variant** |
 
 Several subsystems have a human-judged half as well — the same feature's ear,
 eye and conversation checks live in [../manual/](../manual/), grouped by what
 the run demands rather than by subsystem. `bridge.md`, `mirror.md`,
 `devices.md`, `views.md`, `catalog.md`, `transport.md`, `recording.md`,
 `network-boundary.md`, `clips.md`, `mcp-surface.md`, `audio-output.md`,
-`generation.md` and `convert.md` all have one; `undo.md` and `sends.md` are self-contained.
+`generation.md`, `convert.md` and `nks-load.md` all have one; `undo.md` and
+`sends.md` are self-contained.
 
 ## Two habits that decide whether a run is worth anything
 

@@ -230,14 +230,18 @@ gold set for breadth, with the human set as anchor.)
 
 ## What not to do (re-examined, still no)
 
-- **Embeddings / semantic index** — the roadmap's "not planned" stance
-  holds, and now with more evidence. Text embeddings would bridge the same
-  vocabulary gap №1 closes for ~60 words of reply text, at the cost of a
-  model dependency, an index to keep in sync, and a second retrieval path to
-  debug. Audio embeddings (CLAP-style) would genuinely solve the last mile —
-  but there is no audio to embed without loading and rendering every preset,
-  which is a research project, not a feature. The ear-in-the-loop levers
-  (№3, №6) buy the same outcome with the user's own ears.
+- **Embeddings / semantic index** — ⚠️ **partly superseded 2026-08-31 by
+  [semantic-sound-selection-options.md](semantic-sound-selection-options.md).**
+  This bullet's factual premise — "there is no audio to embed without
+  loading and rendering every preset" — measured false for NKS content:
+  Native Instruments ships preview `.ogg` files beside its presets (~5,000
+  found on this machine's internal disk), so CLAP-style audio embedding
+  needs no rendering for that corpus. The cost half of this bullet stands
+  (model dependency, index sync, a second retrieval path), and the sibling
+  doc keeps №1/№2/№4 as the baseline any embedding route must beat on a
+  harness before shipping. Text-embedding scepticism unchanged. Original
+  reasoning otherwise preserved below for the Live-catalog corpus, where
+  no preview audio exists and the claim still holds.
 - **A synonym table in the tool** ("warm" → Soft). Hardcodes one library's
   vocabulary and one language's adjectives into the tool layer; №1 gives the
   model the real menu and lets it do what it's already best at.
