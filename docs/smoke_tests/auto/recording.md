@@ -10,18 +10,7 @@ the ones that must pass before anyone trusts the pair.
 
 ## Fixed-length take
 
-*Last run: 2026-08-03 — **found broken, fixed, now passes.** First run through
-the tool path since the feature shipped 2026-07-29, and `record_clip` refused
-every call: `will_record_on_start` read `False` on a MIDI track with an
-instrument, a bare MIDI track and an audio track, transport stopped and playing,
-`session_record` off and on — while `arm`, `can_be_armed` and `has_midi_input`
-all read true, monitoring was Auto, the slot was empty and the engine was
-running. Firing the same slot on the same armed track **past the guard**
-(`osc_send.py /live/clip_slot/fire 1 0`) recorded immediately, proving the
-property is not the answer to "would firing this slot record?". The guard was
-downgraded from a refusal to an advisory in the reply
-(`Handlers.check_will_record/2`), with two regression tests in
-`handlers_test.exs`.*
+*Last run: 2026-11-08 — passed. `record_clip bars: 2` on a disarmed MIDI track, transport stopped, replied "Recording now." and get_clip_properties read exactly 8.0 beats, loop on. The `will_record_on_start` advisory sentence still appears on Live 12.4.6, cosmetic as before.*
 
 *After the fix: `record_clip bars: 2` on a disarmed track fired, Live stopped the
 take itself, and `get_clip_properties` reported **exactly 8.0 beats, loop on,
@@ -39,14 +28,7 @@ property on anything beyond "armed track, empty slot", `record_clip` errors on
 
 ## Auto-arm
 
-*Last run: 2026-08-03 — passed after the guard fix above. `record_clip bars: 2`
-on a **disarmed** track armed it and the reply carried "Armed the track first."
-Live's log confirms the sequence: `arm = False`, `can_be_armed = True`,
-`arm (new value 1)`, re-read `arm = True`. `arm_track/1`'s re-read raised no
-false error. **The exclusive-arm question is still unanswered** — this set had
-no other armed track to lose, so whether Live's exclusive-arm preference
-silently disarms one elsewhere remains untested, and the disclosure still
-doesn't mention it.*
+*Last run: 2026-11-08 — passed. The same call armed the track and the reply carried "Armed the track first." The exclusive-arm question remains unmeasured: track 1 was armed beforehand, but `set_mixer arm: false` on it afterwards replies only "disarmed." without a was-value, so whether exclusive arm had already disarmed it could not be read through the tools.*
 
 *The auto-arm mechanism was never at fault for the guard failure: it ran
 correctly before the fix too, and the refusal that followed disclosed the side
@@ -62,16 +44,7 @@ lie.
 
 ## Open-ended take and the re-fire
 
-*Last run: 2026-08-03 — passed, end to end through the tool after the guard fix.
-`record_clip` with no `bars` replied "Recording into track 1, slot 3 until
-stop_recording"; `stop_recording` then replied "it ends at the next quantization
-boundary and keeps looping", and `get_clip_properties` showed **6.0 beats, loop
-on, 0.0–6.0** — an exact 2-bar boundary in 6/8. Confirmed independently earlier
-in the same session on a take started past the guard, which landed on **32.0
-beats** (8 bars of 4/4). **The load-bearing assumption at the top of this test
-holds:** firing a recording slot ends the take on the launch-quantization
-boundary and leaves it looping. The `/live/song/set/session_record 0` fallback is
-not needed.*
+*Last run: 2026-11-08 — passed. `record_clip` with no bars replied "Recording into track 2, slot 2 until stop_recording … Queued" (the previous take had left the transport running); `stop_recording` 3s later replied "it ends at the next quantization boundary and keeps looping" and get_clip_properties read 8.0 beats, loop on — an exact 2-bar boundary in 4/4.*
 
 ⚠️ `stop_recording` assumes that firing a recording slot ends the take at the next
 launch-quantization boundary and drops the clip into looped playback.
@@ -82,14 +55,7 @@ and a different reply.
 
 ## Echo wording
 
-*Last run: 2026-08-03 — **found broken, fixed, now passes both cases.** The
-feared failure never occurred: `is_triggered` read true in the window every
-time, so a healthy take was never called a hard failure. But "Recording now."
-was unreachable — five takes with the transport verified stopped all replied
-"Queued". Proved a defect rather than a wrong expectation by setting
-`/live/song/set/clip_trigger_quantization 0` (None), leaving **no boundary to be
-queued for**: the reply still said "Queued" while `get_clip_slots` showed the
-slot `[recording]`.*
+*Last run: 2026-11-08 — passed both cases. `clip_trigger_quantization 0` (None) → "Recording now.", 4.0-beat take; quantization restored to 4 (`q_bar`), transport playing → "Queued", 8.0-beat take. Caveat: the None case ran with the transport possibly still running from the previous take, so it proves the None path, not stopped-transport specifically.*
 
 *Root cause measured, and it was not where it looked. Polling straight after the
 fire, **`has_clip`** — `record_echo/2`'s *first* read — returned `False` at
@@ -109,13 +75,7 @@ the transport **stopped** → "Recording now."
 
 ## Two bars is two bars in 6/8
 
-*Last run: 2026-08-03 — passed, both halves, after the guard fix. After
-`set_time_signature 6/8` a plain `get_session_state` with no `refresh: true`
-already reported 6/8 via the listener push. `record_clip bars: 2` then echoed "2
-bars (6.0 beats)" and produced a clip of **exactly 6.0 beats** — two bars, not
-four. `record_length_beats/3` counting quarter-note song beats regardless of
-signature is now confirmed against Live 12.4.3 through the tool path, not just
-by arithmetic. 4/4 restored afterwards.*
+*Last run: 2026-11-08 — passed, both halves. After `set_time_signature 6/8` a plain get_session_state already read 6/8; `record_clip bars: 2` echoed "2 bars (6.0 beats)" and produced exactly 6.0 beats, loop on. 4/4 restored.*
 
 Set 6/8 with `set_time_signature`, then `get_session_state` **without**
 `refresh: true` should already show 6/8. Then `record_clip bars: 2` must give
@@ -125,16 +85,7 @@ regardless of signature (6/8 × 2 bars = 6.0 beats), confirmed against Live
 
 ## `stop_recording` boundaries
 
-*Last run: 2026-08-03 — two of three passed after the guard fix; the third was
-not reached. **Early stop:** an 8-bar (24.0 beat) take stopped at 6.0 beats —
-ended early, looping. **Merely playing:** `stop_recording` on a playing clip
-errored "Nothing is recording in slot 0 on track 1, so nothing was fired …  Use
-stop_clip to stop a clip that is merely playing," and `get_clip_slots` confirmed
-the clip was **still `[playing]`** — the guard runs before any fire, so the
-re-fire never restarted it. **Queued window:** not provoked; every
-`stop_recording` in this run landed after recording had already begun, so the
-misleading "slot is empty" message stayed unreached and its practical importance
-is still unmeasured.*
+*Last run: 2026-11-08 — passed, all three reached for the first time. **Early stop:** a 32.0-beat take stopped at 8.0 beats, looping. **Merely playing:** `stop_recording` on a fired clip errored "Nothing is recording in slot 1 on track 2 … Use stop_clip to stop a clip that is merely playing" and get_clip_slots still showed `[playing]`. **Queued window:** transport playing, `record_clip` (no bars) then `stop_recording` 0.9s later, inside the queued window — it did **not** hit the "slot is empty" message; the slot already had its clip (`has_clip` goes true at fire time), so the re-fire was sent and the take ran one bar, landing as a 4.0-beat clip. The misleading message looks unreachable in practice on Live 12.4.6; the window it guarded closes at fire time, not at the boundary.*
 
 On a fixed-length take it ends it early. On a slot that is merely *playing* it
 errors and the clip **keeps playing** — the guard must run before any fire, or the
@@ -146,7 +97,7 @@ to be worth a better message.
 
 ## An audio take names its input, or refuses before recording
 
-*Last run: —*
+*Last run: 2026-11-08 — passed. A fresh audio track set to `input_type: "No Input"` was refused before recording: "Track 3 is an audio track with nothing routed into its input, so nothing was recorded … Set one with set_mixer (input_type, plus input_channel …) … It offers: 'Ext. In', 'Resampling', 'A-A-Smoke Return', 'Main', 'No Input'."; slot still empty. After `input_type: "Ext. In"`, `record_clip bars: 1` recorded and replied `Listening to "Ext. In" on "1/2"`, verbatim. Live 12.4.6.*
 
 Create an audio track and route it to nothing — `set_mixer input_type:
 "No Input"`. Call `record_clip` on an empty slot with `bars: 1`. Then set a real
@@ -188,7 +139,7 @@ check exists to catch.
 
 ## Monitoring set to off warns but still records
 
-*Last run: —*
+*Last run: 2026-11-08 — passed. With `Ext. In` routed and `monitoring: "off"`, `record_clip bars: 1` ran and the reply carried "Monitoring is off, so the input won't be heard through Live while it records; that is normal … set_mixer monitoring: 'in' changes it." get_clip_slots showed the 4.0-beat clip. Also observed: the fresh audio track already read monitoring off on the first take, before this step set it. Monitoring restored to auto.*
 
 On an audio track with a real input routed, `set_mixer monitoring: "off"`, then
 `record_clip bars: 1` on an empty slot.

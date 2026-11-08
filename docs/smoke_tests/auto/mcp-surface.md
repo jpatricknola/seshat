@@ -11,7 +11,7 @@ handshake against `http://localhost:4000/mcp`.
 
 ## The tool list survives a real handshake
 
-*Last run: 2026-08-30 (PR review round 2 of "MIDI generation — the first solution, composed symbolically") — 55 tools listed over a real handshake, matching `Definitions.all()`. `generate_midi`'s `parts` is the surface's first **array of rich objects**: `items.type: object`, `items.additionalProperties: false`, `items.required: ["role"]`, and `minimum`/`maximum` preserved on nested integers *and* on the doubly-nested `roots.items` (28–43) — it survives the handshake intact. Measured against a server that was not freshly restarted (dev code reloading had already brought it to the checkout under test, corroborated by the 55-tool count and `get_view_state` answering the new selected-scene line), so re-run after a clean restart if that matters for what you're checking. Superseded run, 2026-08-30 — 53 tools, `generate_audio`'s `variation_of` object property: `type: object`, `additionalProperties: false`, `required: [track, clip_slot]`, `minimum: 0` preserved on both nested integers.*
+*Last run: 2026-11-08 — 55 tools listed over a real handshake against a server restarted this session, matching `Definitions.all()`.*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py list`. The count must
 match `Definitions.all()`.
@@ -23,7 +23,7 @@ is stale".
 
 ## The surface budget is measured, not guessed
 
-*Last run: 2026-08-30 (PR review round 2 of "MIDI generation — the first solution, composed symbolically") — **55 tools / 73,569 bytes / largest `generate_midi` at 5,470 bytes**. Up 9,447 bytes and two tools from the 53 / 64,122 / `generate_audio` 3,875 run below (one of the two added tools is `convert_audio_to_midi`, which shipped after that run). These client-visible bytes are ~1.8% above the Elixir-side estimate (72,239 / 5,446) — quote the client-visible ones. Same not-freshly-restarted caveat as the handshake check above. Superseded run, 2026-08-30 — **53 tools / 64,122 bytes / largest `generate_audio` at 3,875 bytes**. Up 3,876 bytes and one tool from the 2026-08-28 closed-schema baseline of 52 / 60,246 / `set_clip_properties` 3,614 — essentially all of it is the one new tool, which is now also the largest on the surface. `generate_audio` earns that: every field is one workflow's targeting (`track`/`clip_slot`/`track_name`), material (`description`/`negative_prompt`), or reproducibility (`seed`/`variation_of`/`strength`), not a bag of unrelated verbs. Still below the 62,784-byte 67-tool baseline? No — it is now 1,338 bytes above it, on 14 fewer tools; the consolidation headroom bought by PR #77 is where this tool was spent.*
+*Last run: 2026-11-08 — **55 tools / 73,660 bytes / largest `generate_midi` at 5,653 bytes**, against a server freshly started this session. Up 91 bytes total and 183 on the largest tool from the 2026-08-30 run (73,569 / 5,470), from the post-merge description edits; no new tool. Still the largest tool and still one workflow.*
 
 `python3 .claude/skills/smoke-test/scripts/mcp_call.py stats` against a freshly
 restarted server. Record all four values here: advertised tool count, compact
@@ -49,7 +49,7 @@ the consolidation successful.
 
 ## A changed property carries what you intended
 
-*Last run: 2026-08-28 — `schema set_mixer pan` came back as a plain `{"type": "number", "minimum": -1.0, "maximum": 1.0}` with its description; no `oneOf` wrapper on this property.*
+*Last run: 2026-11-08 — `schema set_mixer pan` came back as a plain `{"type": "number", "minimum": -1.0, "maximum": 1.0}` with its description; no `oneOf` wrapper.*
 
 `mcp_call.py schema <tool> <property>` for whatever moved. Recorded 2026-07-30,
 when bounds moved into the advertised schema: the encoded shape became
@@ -58,7 +58,7 @@ Bounds *inside* `oneOf` branches were the untested combination.
 
 ## A rejected call comes back readable, not as a protocol error
 
-*Last run: 2026-08-28 — `result` with `"isError": true`, text "Invalid parameters for set_mixer — nothing was sent to Ableton:\n- pan: must be at most 1.0 (got 2.0) — -1.0 = hard left…"; no `error` key, no `-32602`, no Peri internals.*
+*Last run: 2026-11-08 — `result` with `"isError": true`, text "Invalid parameters for set_mixer — nothing was sent to Ableton:\n- pan: must be at most 1.0 (got 2.0) — -1.0 = hard left…"; no `error` key, no `-32602`, no Peri internals.*
 
 `mcp_call.py call set_mixer '{"track": 0, "pan": 2.0}'` must return a
 `result` with `"isError": true` whose text names the bound and the value
@@ -75,7 +75,7 @@ the transcript, not as an opaque protocol error.
 
 ## An unknown tool name stays a JSON-RPC `-32602`
 
-*Last run: 2026-08-28 — `-32602`, `Tool not found: no_such_tool`*
+*Last run: 2026-11-08 — `-32602`, `Tool not found: no_such_tool`.*
 
 `mcp_call.py call no_such_tool '{}'`. That is what the MCP spec says an unknown
 tool is, and it is the discriminator keeping the rewrite from swallowing real
@@ -83,7 +83,7 @@ protocol errors.
 
 ## The rejected value never reached Live
 
-*Last run: 2026-08-28 — track 0 pan read 0.0 via `get_session_state(refresh: true)` after the rejected `pan: 2.0`; a subsequent `pan: -1.0` over the same path read back -1.0 fresh from Live, so the path itself works and the refusal did not send.*
+*Last run: 2026-11-08 — track 0 pan read 0.0 via `get_session_state(refresh: true)` after the rejected `pan: 2.0`; a subsequent `pan: -1.0` read back -1.0 (50L) over the same path. Restored to 0.0.*
 
 After the rejection above, read the target back. A refusal that silently *did*
 send is the thing worth catching, and no reply string can show it to you.
@@ -91,7 +91,7 @@ send is the thing worth catching, and no reply string can show it to you.
 
 ## A mutating tool with nothing required survives the client and rejects unknown keys
 
-*Last run: 2026-08-28 — enum and bounds as described, `required: []`, root schema closed. `pan: -1.0` reached Live (`50L`, read back -1.0). `{"track": 0}` returned the "Nothing to set" tool result. The mixed-key call returned a tool result naming `panning: unknown parameter` with the accepted keys, and track 0's volume read back unchanged at 0.85. **The first run of this check failed**: Peri's `:strict` mode silently *drops* unknown keys rather than rejecting them, so `panning` never reached `Validation` and `volume 0.6` was written to Live. Fixed the same day by running `Validation` on the raw arguments in `Seshat.MCP.Server.handle_request/2` before Anubis/Peri see them — so the path that answered is `Validation`, ahead of Peri, not the `-32602` rewrite.*
+*Last run: 2026-11-08 — enum `[track, return, master, cue]`, `required: []`, root `additionalProperties: false`, volume bounds 0–1. `pan: -1.0` reached Live (50L, read back -1.0). `{"track": 0}` returned the "Nothing to set" tool result. The mixed-key call returned a tool result naming `panning: unknown parameter` with the accepted keys; track 0 volume read back unchanged at 0.85. `Validation` answered, ahead of Peri.*
 
 `set_mixer` is the first *mutating* tool whose schema has `required: []` and
 an optional `target` enum — everything on it is optional because the handler

@@ -57,7 +57,7 @@ the reported Live properties must match independent read-back. A timeout or
 truncated file means the advertised boundary exceeds the runtime/import path
 and must be reduced rather than left as a schema promise.
 
-*Last run: 2026-08-30 — PASS. 4 bars @ 124 BPM on a new `Gen Drums` audio track: `get_clip_slots` shows track 1 audio, slot 0 holding the named clip; `get_clip_properties` reads back audio, warp off, looping off, end marker 7.7419 s — matching the reply's own report (16.0 beats, looping off, warping off) and its "no rhythmic-grid or loop-seam correction" sentence. The file is a regular non-symlink WAV under `~/.seshat/generated`; `afinfo` gives 2 ch / 44100 Hz / Int16 and 341419 frames — exactly 16 beats at 124 BPM to the sample frame. Peak level measured with `python3 -m wave` (ffmpeg is not installed on this machine; the stdlib read is the same measurement, not a skip): peak −16.00 dBFS, RMS −28.02 dBFS — real material, not silence and not clipped. The 16-bar / 60 BPM boundary also passed on a second new track: 2822400 frames = 64.000000 s exactly, per-quarter peaks −6.93/−6.07/−7.56/−7.93 dBFS so nothing is truncated or padded with silence, render 2.396 s, nowhere near the 60 s deadline. Live chose warp *on* for that clip and *off* for the 4-bar one; not asserted, per this check. Generation was 1.578 s and 2.396 s warm.*
+*Last run: 2026-11-08 — PASS, Live 12.4.6. 4 bars @ 124 BPM on new `Gen Drums`: independent reads showed an audio track with the named clip in slot 0; get_clip_properties read audio, 16.0 beats, warp off, loop off, end 7.7419 s, matching the reply. Regular non-symlink WAV, afinfo 2 ch / 44100 Hz / Int16, 341,419 frames = exactly 16 beats at 124 BPM; peak −13.35 dBFS, RMS −26.57 (python wave; ffmpeg absent). 16 bars @ 60 BPM on `Gen Long`: 2,822,400 frames = 64.000 s exactly, quarter peaks −3.57/−2.59/−2.67/−2.97 dBFS, Live chose warp on; render 2.18 s.*
 
 ## An occupied slot is refused before anything is generated
 
@@ -74,7 +74,7 @@ the call refuses it as non-audio before rendering and the folder remains
 unchanged. A generated file in either refusal case means the guard ran after
 the expensive side effect and the workflow ordering is wrong.
 
-*Last run: 2026-08-30 — PASS. With `Gen Drums` slot 0 occupied, an explicit `clip_slot: 0` was refused with "Slot 0 on track 1 already holds a clip, and generated audio never overwrites one. Slot 1 on that track is empty. Nothing was generated." — the folder listing was byte-identical before and after, and slot 0's independently read name and markers were unchanged. Omitting `clip_slot` on the same track then produced exactly one new file and landed "another breakbeat" in slot 1, slot 0 untouched. A new MIDI track targeted explicitly was refused with "Track 3 is a MIDI track, so an audio clip cannot be imported onto it… Nothing was generated.", folder again identical before and after. Both guards ran before the render.*
+*Last run: 2026-11-08 — PASS. Explicit `clip_slot: 0` on the occupied `Gen Drums` slot refused with "Slot 0 on track 4 already holds a clip … Slot 1 on that track is empty. Nothing was generated."; folder listing identical before and after, slot 0 name unchanged. Omitting `clip_slot` created exactly one file and landed in slot 1. A MIDI track targeted explicitly was refused "Track 1 is a MIDI track … Nothing was generated.", folder identical.*
 
 ## A composed beat lands as per-part tracks and one undo removes it
 
@@ -106,7 +106,7 @@ Repeat once at the boundary: 16 bars, hats at 1/16 resolution (a dense lane —
 past one datagram's worth of notes), same independent reads. Every note lands;
 a truncated lane means the chunked write dropped a datagram.
 
-*Last run: —*
+*Last run: 2026-11-08 — **FAIL on the one-undo promise; everything else passed.** 4 bars funk, seed 42, kick/snare/hats + lock bass: four new MIDI tracks named by role, each clip in slot 0 (16.0 beats), each clip only its own pitch, velocities varied (accents 127, ghosts 18–48), starts off the 16th grid, bass onsets on the kick pattern's onsets with roots E1 E1 G1 A1 per bar; one undo removed all four cleanly. 16-bar boundary: Hats16 at 1/16 landed all 256 notes, window 60–64 read 16 notes on exact 0.25 steps (humanize 0). **But one undo of that request left an empty track `7-MIDI` behind (its rename undone, its creation not); a second undo removed it. Reproduced four times** (16-bar two-part ×2, 1-bar single-part ×2), while the 4-part request and one 1-bar two-part request undid cleanly and a plain create_track + undo is clean. Pattern not isolated. ROADMAP: "generate_midi leaves an empty track behind after one undo".*
 
 ## Extended note fields survive the wire
 
@@ -129,7 +129,7 @@ a finding against the feature's Live-side feel claim, and the fork's ⚠️ stay
 Cross-check placement independently with `get_clip_notes`: the same notes, at
 the same starts and velocities, in the five-field view.
 
-*Last run: —*
+*Last run: 2026-11-08 — PASS. One-bar funk beat (kick + hats with ghosts): reply's read-back said "Per-note chance and velocity spread came back as sent, so Live re-rolls the ghost notes on every pass" — not defaults. get_clip_notes cross-check showed the same five notes at the same starts and velocities (0.0027/122.1, 1.5939/85.3, 1.9387/127.0, 3.0241/33.8, 3.4097/50.2). Live 12.4.6.*
 
 ## An occupied MIDI target slot is refused before anything is created
 
@@ -143,4 +143,4 @@ call refuses it as non-MIDI before creating anything. New tracks appearing in
 either refusal case means a guard ran after a side effect and the workflow
 ordering is wrong.
 
-*Last run: —*
+*Last run: 2026-11-08 — PASS. `clip_slot: 0` with a part targeting the track holding `KickX` refused "Slot 0 on track 6 (part \"Clash\") already holds a clip … Nothing was written and no track was created."; track count and slot name unchanged. A drum part targeting the audio track refused "Part \"OnAudio\" targets track 3, which is not a MIDI track … Nothing was written and no track was created." Note: `clip_slot` is top-level on generate_midi, not per part — a per-part `clip_slot` is a Validation error.*

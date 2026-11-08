@@ -11,9 +11,7 @@ matter what Live does with it.
 
 ## Groove and swing read as numbers, not unknowns
 
-*Last run: 2026-08-03 — passed. `get_session_state`'s song line read "120.0 BPM,
-4/4, stopped, key: C Major, **groove 0.0, swing 0.0**" — both numeric, neither
-"unknown", so the fork's `swing_amount` line is live in the installed copy.*
+*Last run: 2026-11-08 — passed. Song line read "120.0 BPM, 4/4, stopped, key: C Major, groove 0.0, swing 0.0" — both numeric. Fork 9bd8095, Live 12.4.6.*
 
 `get_session_state` shows numeric groove *and* swing values, not "unknown". Live
 12 Suite has `Song.swing_amount`, so "swing unknown" means the wire, not the
@@ -22,21 +20,14 @@ Fix that before anything else here; every test below depends on it.
 
 ## Swing reaches the mirror by push
 
-*Last run: 2026-08-03 — passed. After `set_swing_amount 0.25`, a plain
-`get_session_state` with no `refresh: true` reported "swing 0.25" — the listener
-echo, not a fresh query. Restored to 0.0.*
+*Last run: 2026-11-08 — passed. After set_swing_amount 0.25, a plain get_session_state reported "swing 0.25". Restored to 0.0.*
 
 `set_swing_amount 0.25`, then `get_session_state` **without** `refresh: true` —
 the mirror shows 0.25 via the listener echo, not a fresh query.
 
 ## The time signature lands and pushes
 
-*Last run: 2026-08-03 — passed, both halves. `set_time_signature 6/8` then a
-plain `get_session_state` reported "120.0 BPM, **6/8**" with no round trip. The
-schema enum refused both bad shapes before the wire, each reply opening "Invalid
-parameters for set_time_signature — nothing was sent to Ableton": denominator 3 →
-"must be one of 1, 2, 4, 8, 16 (got 3)", numerator 100 → "must be at most 99 (got
-100)". 4/4 restored afterwards.*
+*Last run: 2026-11-08 — passed, both halves. set_time_signature 6/8 then a plain get_session_state read "120.0 BPM, 6/8"; denominator 3 → "must be one of 1, 2, 4, 8, 16 (got 3)", numerator 100 → "must be at most 99 (got 100)", both "nothing was sent to Ableton". 4/4 restored and read back.*
 
 `set_time_signature` to 6/8, then `get_session_state` **without** `refresh: true`
 already shows 6/8 — the property listener pushes the change without a round trip.

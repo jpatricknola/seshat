@@ -15,12 +15,7 @@ tests when they differ, so the reinstall belongs to whoever drives the change.
 
 ## The extension is answering at all
 
-*Last run: 2026-08-05 (second run of the day, against the merged bridge) —
-passed. `get_session_state` printed `Return 0 "A-Smoke Return" (send A):
-volume=0.85, pan=0.0` and `Master (shown as Main in Live 12): volume=0.85,
-pan=0.0, cue volume=0.7`; no "Return/master state unavailable". With no returns in the set it prints "No return tracks in this
-set" instead, which is also a pass — that line still requires
-`/live/return_track/get/count` to have answered.*
+*Last run: 2026-11-08 — passed. With no returns, get_session_state printed "No return tracks in this set"; after create_track (return) it printed `Return 0 "A-A-Smoke Return" (send A): volume=0.85, pan=0.0` and the Master line. Fork 9bd8095 on Live 12.4.6.*
 
 `get_session_state` prints return tracks and master volume when `return_track.py`
 is loaded, and a single "Return/master state unavailable" line when it isn't. A
@@ -29,16 +24,7 @@ and Live restart — check this before diagnosing anything else.
 
 ## A bad index errors immediately, not after ~2s
 
-*Last run: 2026-08-05 (second run of the day, against the merged bridge) —
-passed at all three depths, every reply naming the real count, all ≤0.27s
-(whole `mcp_call.py` round trip, Python startup included): `get_track_devices`
-return 99 → "this set has 1 return track(s)" (266ms); `set_device_parameter`
-device 99 on a valid return → "the chain holds 1 device(s)" (245ms);
-`bypass_device` device 99 likewise (243ms); `get_device_parameters` device 5 on
-the master → "the chain holds 0 device(s)" (249ms). The historical `-1`
-parameter echo is still gone — `set_device_parameter` parameter 999 replied
-"there is no parameter 999 — 'Reverb' has 33 parameter(s)" (258ms), echoing the
-value actually asked for.*
+*Last run: 2026-11-08 — passed at all depths, every reply naming the real count, all ≤0.17s whole round trip: get_track_devices return 99 → "this set has 1 return track(s)" (147ms); set_device_parameter device 99 on a valid return → "the chain holds 1 device(s)" (169ms); bypass_device device 99 likewise (161ms); get_device_parameters device 5 on the master → "the chain holds 0 device(s)" (165ms); set_device_parameter parameter 999 → "'Reverb' has 33 parameter(s)" (166ms).*
 
 These handlers always reply, including on an out-of-range index, and the reply
 names the real count. A ~2s timeout instead means the installed copy is stale.
@@ -52,15 +38,7 @@ parameter index was echoed as `-1` instead of the value actually asked for.
 
 ## Live's `Log.txt` stays clean during ordinary work
 
-*Last run: 2026-08-05 (second run of the day, against the merged bridge) —
-passed as scoped below, after the first version of this check failed on it. The
-clip operations were clean. `delete_track` was followed by 7 `IndexError`s on
-track index 1 — `/live/track/get/mute`, `get/solo` and the five
-`start_listen/*` — all correlated `["request", …]`, all resolved inside 210ms,
-after which the mirror's degraded-rebuild brake logged that it was refusing to
-merge a half-read list. Expected, and now explicitly scoped out; see below. The
-same create-then-delete in isolation produced zero ERROR lines across two
-consecutive attempts, so provoking it needs the full sequence.*
+*Last run: 2026-11-08 — passed as scoped. write_midi_notes, get_clip_slots, duplicate_clip and delete_clip on a fresh scratch track produced zero error or traceback lines past the baseline offset. The following delete_track produced no IndexError burst at all this time — the rebuild race was not provoked, so that half is unobserved, not clean.*
 
 Baseline its byte size before the run and read only the tail. Upstream raised a
 `RemoteScriptError` on every clip-slot operation, so a traceback during
@@ -89,13 +67,7 @@ regression it exists to catch shows up in exactly this file.
 
 ## A rejected query fails fast, and says rejected
 
-*Last run: 2026-08-05 (second run of the day, against the merged bridge) —
-passed. The wording criterion was corrected as stale earlier the same day (see
-below). `get_track_devices` track 99 answered in 198ms
-(whole `mcp_call.py` round trip, Python startup and HTTP handshake included)
-with "Index out of range. Nothing further was sent — check get_session_state
-for the indices that actually exist." The float-tail step was found unreachable
-on 2026-08-03 and removed — see below.*
+*Last run: 2026-11-08 — passed. get_track_devices track 99 answered in 192ms (whole mcp_call.py round trip) with "Index out of range. Nothing further was sent — check get_session_state for the indices that actually exist." No timeout wording.*
 
 The reinstall-and-restart precondition at the top of this file applies — the
 structured `/live/error` payload exists only in the fork commit this test
@@ -142,16 +114,7 @@ send, the payload shape, or the Transport matcher.
 
 ## One rejection, one error datagram
 
-*Last run: 2026-08-05 (second run of the day, against the merged bridge) —
-passed, confirmed by reading the log rather than asking for it; the "exactly
-one" count was corrected as stale earlier the same day (see below). One
-`get_track_devices` on track 99 produced exactly **three** `"request"`-tagged
-datagrams past the baseline offset — one per entry of its batch, on
-`/live/track/get/devices/name`, `/live/track/get/devices/type` and
-`/live/track/get/devices/class_name`, each carrying `"Index out of range", 1,
-99` — and **zero** `"log"`-tagged copies. This is the first live confirmation
-of the per-entry `/live/error` correlation shipped 2026-08-04, which until now
-had never touched a real wire.*
+*Last run: 2026-11-08 — passed. The same track-99 call produced exactly three `"request"`-tagged /live/error datagrams in log/dev.log (devices/name, /type, /class_name, each carrying "Index out of range", 1, 99) within 1ms, and zero `"log"`-tagged copies.*
 
 *This is readable because `config :seshat, :logger` mirrors the dev log to
 `log/dev.log` — see [mirror.md](mirror.md)'s preamble. Baseline its byte size
@@ -180,15 +143,7 @@ check in `manager.py`'s relay, not at Live's logging and not at the matcher.
 
 ## Only the offender fails
 
-*Last run: 2026-08-05 (second run of the day, against the merged bridge) —
-passed. `get_track_devices` 99 and 0, fired concurrently, landed 99ms apart on
-the wire (15:42:00.926 → 15:42:01.025) — one AbletonOSC tick, so the error
-batch really did resolve and release the FIFO for the next one. An earlier run
-the same day needed a second attempt after issuing them too far apart to
-provoke anything; see the adjacency warning below. The bad call was rejected fast, the valid one
-returned track 0's real (empty) chain. Both batches queried the **same three
-addresses** with different arguments, which is the strongest form of this
-check: correlating on address alone would have failed the valid call.*
+*Last run: 2026-11-08 — passed. get_track_devices 99 and 0 fired concurrently (backgrounded, then wait) landed 201ms apart on the wire (13:53:01.000 → .201), one tick; the valid call returned track 0's empty chain, the bad one its rejection, both batches on the same three addresses.*
 
 Issue the bad-index call and a valid read of the same kind
 (`get_track_devices` on a track that exists) so the two queries sit adjacent in
@@ -209,12 +164,7 @@ seconds apart, the condition was not provoked — rerun rather than tick it.
 
 ## A wildcard matches complete addresses only
 
-*Last run: 2026-08-05 — passed. `/live/*/get/tempo` with no arguments produced
-exactly one reply, `OSC in: /live/song/get/tempo [120.0]`, and no `/live/error`
-of any shape. The same request against the pre-merge bridge earlier the same
-day produced that reply **plus** `/live/error ["log", "Error handling OSC
-message: list index out of range"]`, which is what makes this a decisive probe
-rather than a formality.*
+*Last run: 2026-11-08 — passed. `/live/*/get/tempo` with no arguments produced exactly one reply, `OSC in: /live/song/get/tempo [120.0]`, and no /live/error of any shape behind it.*
 
 The fork compiles a `*` pattern as
 `"[^/]+".join(re.escape(part) for part in address.split("*"))` and matches it
@@ -248,11 +198,7 @@ reach for it first whenever a fork-dependent result looks wrong.
 
 ## A wildcard fan-out answers every applicable match
 
-*Last run: 2026-08-05 — passed, after the first version of this check was
-written on a wrong premise and corrected on the spot. `/live/clip/get/* 0 0`
-against a MIDI clip returned **36** replies in one burst (15:57:55.534-.537),
-every registered clip getter answering on its own concrete address, and zero
-`/live/error` of either shape.*
+*Last run: 2026-11-08 — passed. `/live/clip/get/* 1 0` against a 2-note MIDI clip returned 42 replies in one burst (13:54:09.97x) with zero /live/error — up from 36 on 2026-08-05 as clip.py gained getters; gain, gain_display_string, warp_mode and warping all present with nil.*
 
 A wildcard is a fan-out: every matching endpoint runs and replies on its own
 concrete address, and the whole set arrives in one AbletonOSC tick.
@@ -292,15 +238,7 @@ the user's set. Don't. That half lives in the fork's own
 
 ## A failing generic method names the request that failed
 
-*Last run: 2026-08-05 — passed, and this is the first live evidence that a
-generic `_call_method` failure reaches the correlated envelope at all.
-`/live/song/delete_scene` with no arguments produced exactly one datagram,
-`/live/error ["request", "/live/song/delete_scene", "Python argument types in
-Song.delete_scene(Song) did not match C++ signature: delete_scene(TPyHandle…"]`,
-and zero `"log"`-tagged copies. `get_clip_slots` reported 8 scenes before and 8
-after, so nothing was deleted. Note the exception is Boost.Python's
-`ArgumentError` rather than a plain `TypeError` — the point is that it
-propagated out of `_call_method` instead of being swallowed.*
+*Last run: 2026-11-08 — passed. `/live/song/delete_scene` with no arguments produced exactly one datagram, `/live/error ["request", "/live/song/delete_scene", "Python argument types in Song.delete_scene(Song) did not match C++ signature…", 0]`, zero log-tagged copies; get_clip_slots reported 8 scenes before and after.*
 
 `AbletonOSCHandler._call_method` and `_set_property` used to catch every
 exception and log it, so a failing generic method reached the client only as an

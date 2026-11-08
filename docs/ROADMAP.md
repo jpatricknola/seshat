@@ -123,7 +123,46 @@ absent external-volume content, and building any fallback rung ahead of the
 diff that would justify it.
 
 
-## #2 · Soften the velocity-class clamp in symbolic MIDI generation
+## #2 · `generate_midi` leaves an empty track behind after one undo
+
+**Impact 6 · Lift 2 · 3.00 impact-per-effort**
+
+**Goal:** make one `undo` after `generate_midi` remove everything the call
+created, every time — the promise the tool's own reply makes ("One undo
+removes the whole request — every track and clip this call created, in one
+step").
+
+**Why:** measured 2026-11-08 by `/smoke-test generation` against Live 12.4.6
+on fork `9bd8095`: after one `undo`, an empty MIDI track with Live's default
+name (`7-MIDI`) stayed behind — the request's first created track with its
+rename undone but its creation not — and a second `undo` removed it.
+Reproduced four times (a 16-bar two-part request twice, a 1-bar single-part
+request twice), while a 4-part request and one 1-bar two-part request undid
+cleanly, and a plain `create_track` followed by `undo` is clean (undo.md).
+So the step bracket (`begin_undo_step`/`end_undo_step` around
+`Handlers.call/2`) is not reliably enclosing the first track creation on this
+path, and the pattern is not yet isolated: not the part count, not the note
+count, not the time between the call and the undo (an immediate undo
+reproduced it). The 2026-08-30 ship recorded "two undos removing both
+requests whole" on Live 12.4.5 — this may be a Live 12.4.6 change or a
+workflow-ordering difference in `Seshat.Generation.MidiParts`.
+
+**Planner notes:**
+- First isolate: a request with explicit `track` (no create), a request
+  whose first step is a create with no rename, and `create_track` +
+  `write_midi_notes` in one Registry command. Whichever leaves a residue
+  names the step boundary.
+- Live's undo grouping is activity-sensitive (see the undo-granularity plan
+  in `docs/archive/`); a rename issued in the same tick as a create may be
+  what splits the step. If so, the fix is sequencing inside `MidiParts`, not
+  the bracket.
+- Record the measured grouping in the fork's `API.md` beside the undo-step
+  rows once understood; it is a wire fact.
+- Re-run `docs/smoke_tests/auto/generation.md` § "A composed beat lands as
+  per-part tracks and one undo removes it" to close; its 2026-11-08 stamp
+  records the failure.
+
+## #3 · Soften the velocity-class clamp in symbolic MIDI generation
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -158,7 +197,7 @@ plan defers to, so that slate measures the composition, not this artifact.
   `perform/2`'s output — update those expectations alongside the fix rather
   than loosening them to pass.
 
-## #3 · `record_clip` reports where the take actually started
+## #4 · `record_clip` reports where the take actually started
 
 **Impact 7 · Lift 4 · 1.75 impact-per-effort**
 
@@ -222,7 +261,7 @@ by ear or being asked where the bar line was.
   loop playing and a take punched in deliberately off its top —
   `docs/smoke_tests/manual/engineered-state.md` is the folder that fits.
 
-## #4 · Generated-audio alignment, warping and quality polish
+## #5 · Generated-audio alignment, warping and quality polish
 
 **Impact 7 · Lift 5 · 1.40 impact-per-effort**
 
@@ -304,7 +343,7 @@ guessing at them in the initial tool contract.
 Keep any model/runtime or OSC additions in this PR proportionate to the
 specific failing measurements.
 
-## #5 · `convert_audio_to_midi` reports its own artifact notes
+## #6 · `convert_audio_to_midi` reports its own artifact notes
 
 **Impact 4 · Lift 3 · 1.33 impact-per-effort**
 
@@ -337,7 +376,7 @@ conversion the model cannot reason about honestly.
   read-back without new plumbing; `edit_notes`' delete path already exists if
   filtering is chosen.
 
-## #6 · Generated material lands one instrument per track
+## #7 · Generated material lands one instrument per track
 
 **Impact 9 · Lift 8 · 1.12 impact-per-effort**
 
@@ -463,7 +502,7 @@ promise meets an audio render.
   bass) are the same shape with a different transcriber; the plan should
   say whether v1 is drums-only.
 
-## #7 · Live-native generation spike — can AX drive the Create menu?
+## #8 · Live-native generation spike — can AX drive the Create menu?
 
 **Impact 3 · Lift 2 · 1.50 impact-per-effort**
 
@@ -576,7 +615,7 @@ that has not been asked.
 - Suite gate: Stem Separation is Suite-only. Acceptable for an optional
   arm; the result must record which edition it ran on.
 
-## #8 · `mix abletonosc.install` is not atomic and reports unverified success
+## #9 · `mix abletonosc.install` is not atomic and reports unverified success
 
 **Impact 3 · Lift 2 · 1.50 impact-per-effort**
 
@@ -650,7 +689,7 @@ eleven-entry prefix that survived, are in
   check but there is no `auto/` home for a Mix task — interrupt a run and
   confirm the previous install still starts the bridge, by hand.
 
-## #9 · Catalog vocabulary — read tag axes, teach the menu proactively
+## #10 · Catalog vocabulary — read tag axes, teach the menu proactively
 
 **Impact 8 · Lift 4 · 2.00 impact-per-effort**
 
@@ -687,7 +726,7 @@ is why they ship together.
 - Requires a catalog rebuild (`reindex_library`) — fine, just say so; no
   migration shims (see CLAUDE.md).
 
-## #10 · Search eval harness — numbers before opinions
+## #11 · Search eval harness — numbers before opinions
 
 **Impact 2 · Lift 3 · 0.67 impact-per-effort**
 
@@ -716,7 +755,7 @@ benchmark informally (see
 formalize that rather than inventing a new one. Runs offline against the
 catalog — no Ableton needed.
 
-## #11 · Widen the search slate at tied score bands
+## #12 · Widen the search slate at tied score bands
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -737,7 +776,7 @@ queries and was rejected). Hours of work, honest fix.
   identically, I see the honest breadth of the tie — not an arbitrary top
   five pretending rank means something inside it.
 
-## #12 · A rejected index says which index, and what to call next
+## #13 · A rejected index says which index, and what to call next
 
 **Impact 5 · Lift 2 · 2.50 impact-per-effort**
 
@@ -798,7 +837,7 @@ exactly the path a model is most likely to hit by guessing an index.
 - Small effort. The pure layer can cover it: `transport_test.exs` already
   constructs `/live/error` payloads, so the rendering is testable without Live.
 
-## #13 · Browser preview audition
+## #14 · Browser preview audition
 
 **Impact 7 · Lift 3 · 2.33 impact-per-effort**
 
@@ -826,7 +865,7 @@ what decides.
 preview plays through Live's cue channel — the tool description must
 surface that audibility depends on cue routing.
 
-## #14 · `start_new_project` — the setup wizard, and prompt budget back
+## #15 · `start_new_project` — the setup wizard, and prompt budget back
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -884,7 +923,7 @@ asserting a cleanup unconditionally and hoping the model checks.
   want, so prefer building it before that item even though ratio separates
   them.
 
-## #15 · `write_midi_notes` must chunk large note batches
+## #16 · `write_midi_notes` must chunk large note batches
 
 **Impact 6 · Lift 3 · 2.00 impact-per-effort**
 
@@ -924,7 +963,7 @@ dense request can still hit. Land it when the first dense clip does.
 - Do not “fix” this only with schema `maxItems`: the public 1–16 bar feature
   surface needs valid dense clips to work, not become validation errors.
 
-## #16 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
+## #17 · `set_clip_properties` reads the loop pair before the `looping` toggle lands
 
 **Impact 4 · Lift 2 · 2.00 impact-per-effort**
 
@@ -953,7 +992,7 @@ values, and the resulting brace is not the one asked for.
   currently the *expected* result. Cite it from the plan, and when this ships,
   rewrite that test so a failure means a regression again.
 
-## #17 · Routing evals — general corpus and client-realism lane
+## #18 · Routing evals — general corpus and client-realism lane
 
 **Impact 5 · Lift 3 · 1.67 impact-per-effort**
 
@@ -1005,7 +1044,7 @@ didn't observe a difference" into "there isn't one, on this evidence."
   paraphrase case that could plausibly go to either tool, when this item's
   corpus work is picked up.
 
-## #18 · `screenshot_live` — let Seshat see the screen
+## #19 · `screenshot_live` — let Seshat see the screen
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -1031,7 +1070,7 @@ the follow cam (shipped 2026-07-29) covers that.
 - One-time macOS Screen Recording permission for the BEAM process; capture
   works occluded but not minimized.
 
-## #19 · Opt-in `samples` index
+## #20 · Opt-in `samples` index
 
 **Impact 6 · Lift 4 · 1.50 impact-per-effort**
 
@@ -1055,7 +1094,7 @@ carry FileIds, so tag-awareness comes free.
 20k-node scan cap exists — measure the walk cost first. Keeping samples out
 of default results is a hard requirement so the preset slate stays clean.
 
-## #20 · Accepted-search memory
+## #21 · Accepted-search memory
 
 **Impact 6 · Lift 5 · 1.20 impact-per-effort**
 
@@ -1079,7 +1118,7 @@ personal tool can afford a personal memory.
 store. Keep it out of the read-only catalog file — a separate small file
 under `~/.seshat/` — and it is still not a database (see CLAUDE.md).
 
-## #21 · Producer personas — switchable musical taste
+## #22 · Producer personas — switchable musical taste
 
 **Impact 7 · Lift 6 · 1.17 impact-per-effort**
 
@@ -1114,7 +1153,7 @@ Also different songs might benefit from a different producer. Personas should ca
 - The stubbed out personas are placeholders and need to be edited manually,
   continuous iteration is expected as we can only guess and check while using.
 
-## #22 · Verify destructive mutations before reporting success
+## #23 · Verify destructive mutations before reporting success
 
 **Impact 8 · Lift 7 · 1.14 impact-per-effort**
 
@@ -1186,7 +1225,7 @@ did.)
   separately, with a read-back rather than a wording hedge — see
   [CLAUDE.md](../CLAUDE.md)'s Current focus.)
 
-## #23 · User XMP tags
+## #24 · User XMP tags
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1205,7 +1244,7 @@ actually tags things — hence the low rank.
 - As a producer who has tagged parts of my own library, those tags count in
   search — they're the most precise signal about my sounds that exists.
 
-## #24 · Small OSC breadth — grab bag
+## #25 · Small OSC breadth — grab bag
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1221,7 +1260,7 @@ Individually tiny, none blocking a workflow; pick up opportunistically:
 - **Sends on return tracks** (return→return routing, feedback sends) —
   niche, needs Live's "sends only" awareness, no named workflow yet.
 
-## #25 · Pin the wording of `edit_notes`' partial-failure message
+## #26 · Pin the wording of `edit_notes`' partial-failure message
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1262,7 +1301,7 @@ convention across the module.
 - Low lift once the mocking question is settled — the message itself is
   already correct and doesn't need to change, only get pinned.
 
-## #26 · `edit_notes`' description states a reason that is no longer true
+## #27 · `edit_notes`' description states a reason that is no longer true
 
 **Impact 3 · Lift 1 · 3.00 impact-per-effort**
 
@@ -1292,7 +1331,7 @@ harmony research and confirmed still present 2026-08-31.
   this one is only the sentence.
 - It is a `Definitions` change, so `mix routing.eval` applies.
 
-## #27 · Routing eval report should self-identify which case expectations it scored against
+## #28 · Routing eval report should self-identify which case expectations it scored against
 
 **Impact 2 · Lift 2 · 1.00 impact-per-effort**
 
@@ -1324,7 +1363,7 @@ loader through the run map `mix routing.eval` assembles, through
   only a hash, since a hash alone still sends a PR reader back to the case
   JSON to see what changed.
 
-## #28 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
+## #29 · Routing eval: an exploratory read on a fixture with no data for it should not fail `no_tool_errors`
 
 **Impact 3 · Lift 3 · 1.00 impact-per-effort**
 
@@ -1357,7 +1396,7 @@ against real second-slice cases than speculatively.
   holds ("the model must not proceed on invented state") — this item is only
   about whether that reply should count against `no_tool_errors`.
 
-## #29 · Tighten the process-start grep so it does not shape prose in unrelated modules
+## #30 · Tighten the process-start grep so it does not shape prose in unrelated modules
 
 **Impact 1 · Lift 1 · 1.00 impact-per-effort**
 
@@ -1377,7 +1416,7 @@ non-blocking nit rather than fixed inline because it touches a shared
 invariant test outside the routing-evals change's own files, not something
 that plan's implementation owns.
 
-## #30 · LLM enrichment at reindex
+## #31 · LLM enrichment at reindex
 
 **Impact 7 · Lift 9 · 0.78 impact-per-effort**
 
@@ -1404,7 +1443,7 @@ detuned vocabulary exists to carry them.
   the presets whose character lives only in their names — E-Piano Rusty,
   MKII Old — finally rank on their sound instead of their tag luck.
 
-## #31 · Monitored refresh worker for `Session.State`
+## #32 · Monitored refresh worker for `Session.State`
 
 **Impact 3 · Lift 6 · 0.50 impact-per-effort**
 
@@ -1448,7 +1487,7 @@ the shipped fix may retire it outright.
   this item without a worker. Re-measure against a batched rebuild before
   designing the worker.
 
-## #32 · Device list per track in session state
+## #33 · Device list per track in session state
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1469,7 +1508,7 @@ plausibly does; confirm before building. These listeners are index-keyed —
 the fork already fixes the wrong-object unbind in the handler base class, so
 any listener work here is an ordinary fork commit, no override gymnastics.
 
-## #33 · Adopt MCP `2026-07-28` when Anubis supports it
+## #34 · Adopt MCP `2026-07-28` when Anubis supports it
 
 **Impact 2 · Lift 5 · 0.40 impact-per-effort**
 
@@ -1520,7 +1559,7 @@ flow, so this is not an active break.
   and
   [version compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning).
 
-## #34 · Clip grid in session state — only if usage demands it
+## #35 · Clip grid in session state — only if usage demands it
 
 **Impact 2 · Lift 6 · 0.33 impact-per-effort**
 

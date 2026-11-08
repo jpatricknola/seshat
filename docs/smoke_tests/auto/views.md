@@ -10,13 +10,7 @@ fork, so [bridge.md](bridge.md)'s reinstall precondition still applies.
 
 ## `hide_view` hides exactly two panes
 
-*Last run: 2026-08-03 — passed, both names. From "Main view: Session. Live's
-browser: open. Detail panel: open, showing the clip editor":
-`hide_view(Browser)` → "Live's browser: **closed**", detail panel untouched; then
-`hide_view(Detail)` → "Detail panel: **closed**". Each pane went present →
-absent, and `hide_view`'s own read-back reported success rather than a stuck-pane
-error, so Live's hide set has not moved on 12.4.3. Both panes restored
-afterwards.*
+*Last run: 2026-11-08 — passed, both names, Live 12.4.6 (screen locked throughout, so this is the LOM's own visibility reading). From "Main view: Session. Live's browser: open. Detail panel: open, showing the clip editor": hide_view(Browser) → "Live's browser: closed", detail untouched; hide_view(Detail) → "Detail panel: closed". Each hide's own read-back reported success. Both restored with show_view and read back open.*
 
 For each name in `hide_view`'s enum (`Browser`, `Detail`): `get_view_state`,
 `hide_view(name)`, `get_view_state` again. The pane must go from present to
@@ -41,4 +35,4 @@ scene 0. `select_scene` to the set's **last** scene index (from
 disagreeing with what was just selected means the getter is reading a
 different notion of selection than the setter writes, which is the finding.
 
-*Last run: —*
+*Last run: 2026-11-08 — passed, first run. get_view_state initially read "Selected scene: 2"; select_scene 0 → "Selected scene: 0"; select_scene 7 (the last of 8) → "Selected scene: 7". Restored to 0.*

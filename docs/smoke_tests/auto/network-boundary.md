@@ -13,19 +13,14 @@ applies before anything below means anything.
 
 ## The bind is loopback-only
 
-*Last run: 2026-08-03 — passed. `lsof -nP -iUDP:11000` returned exactly one
-line, `Live … UDP 127.0.0.1:11000`. No wildcard bind.*
+*Last run: 2026-11-08 — passed. `lsof -nP -iUDP:11000` returned exactly one line, `Live … UDP 127.0.0.1:11000`. Live 12.4.6, fork 9bd8095.*
 
 `lsof -nP -iUDP:11000`. The only AbletonOSC line must read `127.0.0.1:11000`;
 `*:11000` or `0.0.0.0:11000` is exactly the regression this exists to close.
 
 ## The obsolete path-taking export form is rejected
 
-*Last run: 2026-08-03 — passed. The file was never created, and `Log.txt` past
-the baseline offset carried exactly one line: `ERROR:abletonosc:777 - Browser:
-export takes no arguments (got 1) — this handler chooses the destination.
-Nothing was written. Re-run mix abletonosc.install and restart Live.` No
-traceback.*
+*Last run: 2026-11-08 — passed. The file was never created; Log.txt past the baseline carried exactly one line, `Python: ERROR:abletonosc:711 - Browser: export takes no arguments (got 1) — this handler chooses the destination. Nothing was written. …`, no traceback.*
 
 `/live/browser/export` takes no argument. Send the old form with
 
@@ -42,12 +37,7 @@ observable outcome — by design, since nothing else confirms the obsolete form 
 
 ## Stale-export cleanup, with real fixtures
 
-*Last run: 2026-08-03 — passed. `~/.seshat/browser-exports/` did not exist and
-was created for the run. With `seshat-browser-export-STALE.json` backdated 70
-minutes (`touch -A -011000`) and `…-FRESH.json` at now, `reindex_library`
-succeeded (5,796 items, 5,760 tagged, 174 tags); afterwards the directory held
-`…-FRESH.json` alone — the stale fixture gone and reindex's own export cleaned
-up. Fresh fixture removed by hand afterwards, leaving the directory empty.*
+*Last run: 2026-11-08 — passed. `~/.seshat/browser-exports/` was empty; with STALE backdated 70 minutes and FRESH at now, reindex_library succeeded in 0.75s (5,798 items, 5,760 tagged, 178 tags) and the directory afterwards held FRESH alone. Fresh fixture removed by hand.*
 
 Before running `reindex_library`, plant two files in `~/.seshat/browser-exports/`
 matching `seshat-browser-export-*.json`: one with a modification time more than

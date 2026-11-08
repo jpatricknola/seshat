@@ -32,13 +32,7 @@ reports success while doing it.
 
 ## The settling marker appears and clears
 
-*Last run: 2026-08-03 — passed, all three clauses. Two `create_track` calls plus
-a plain read in one model response: the read carried "A structural change is
-still settling…" and showed the pre-create layout (track 0 alone). A plain read
-one model round later carried no such sentence and listed both new tracks. A
-third create plus `refresh: true` in one model response rebuilt immediately —
-the just-created track present, no settling sentence — confirming
-`refresh_sync/0` cancels the timer.*
+*Last run: 2026-11-08 — passed, all three clauses. Two create_track calls plus a plain read ~0.4s apart: the read carried "A structural change is still settling…" and showed track 0 alone. A plain read 4s later listed both. A third create plus refresh: true rebuilt immediately — the new track present, no settling sentence.*
 
 Creates plus a plain read **in one model response** → the reply carries "A
 structural change is still settling…". A later plain read, after the window, does
@@ -47,15 +41,7 @@ rebuilding).
 
 ## The scalar mixer setters no longer trigger a refresh
 
-*Last run: 2026-08-03 — passed, **both halves, for the first time.** All seven
-setters issued in one model response against a scratch return, then a plain
-`get_session_state`: it carried every pushed value — return volume 0.7, pan
-−0.3, muted, soloed; master volume 0.8, pan 0.2, cue 0.6. **The four return
-listener pushes this test flags as "inferred from the master ones, never
-measured" are hereby measured: all four arrive.** And past a byte offset taken
-after the return's own create had settled, the log showed **zero** `Song:`
-lines, **zero** `Loaded N tracks` lines and no refresh scheduling at all — so
-the setters triggered no full rebuild. Values restored immediately afterwards.*
+*Last run: 2026-11-08 — passed, both halves. Seven set_mixer calls (return volume 0.7, pan −0.3, mute, solo; master 0.8, pan 0.2; cue 0.6) ~0.17s apart, then a plain get_session_state carrying every pushed value; all four return listener pushes arrived. Past the offset: zero Song:, zero Loaded, zero scheduling lines. Restored afterwards.*
 
 Issue the four return properties (`set_mixer target: "return"` with volume,
 pan, mute, solo) and the three master/cue ones (`target: "master"` with volume
@@ -74,15 +60,7 @@ were inferred from the master ones, never measured.
 
 ## A burst of creates collapses into one refresh
 
-*Last run: 2026-08-03 — passed, the refresh **count** included. Three
-`create_track` calls plus a plain read in one model response. The log shows the
-three structural pushes at 02:20:30.740, :31.144 and :31.850, each logging
-"Track list changed in Live — scheduling a session refresh", followed by
-**exactly one** rebuild — one `Song:` at :33.617 and one
-`Loaded 4 tracks: 1-MIDI, Burst A, Burst B, Burst Final` at :35.718. Three
-pushes, one refresh, no chain left queued. The in-window read carried the
-settling sentence and the pre-create layout, as intended; a later plain read
-listed all four tracks. Scratch tracks deleted afterwards.*
+*Last run: 2026-11-08 — passed, count included. Three structural pushes at 13:56:48.416, .832, 49.239, then exactly one rebuild — Song: at 51.132, `Loaded 7 tracks` at 55.544 (a 4.4s rebuild on 7 tracks). In-window read carried the settling sentence; a later plain read listed all seven. The stale-push `did not reproduce` brake fired once afterwards with no further refresh.*
 
 *A `did not reproduce it` warning followed at :36.617 — a stale push carrying
 `"4-MIDI"` for the track the rebuild had already recorded as `"Burst Final"`,
@@ -105,13 +83,7 @@ afterwards.
 
 ## `refresh: true` absorbs the pending timer
 
-*Last run: 2026-08-03 — passed, the duplicate-refresh half included.
-`create_track` and `get_session_state(refresh: true)` issued in one model
-response. The log shows the structural push scheduling a refresh at 02:21:19.023
-and the refreshing read rebuilding at :19.787 — **one** `Song:` line in the whole
-window, with `Loaded 5 tracks` at :22.398 naming the just-created track. No
-second rebuild followed, so the pending timer was absorbed rather than left to
-fire. The reply itself carried the new track and no settling sentence.*
+*Last run: 2026-11-08 — passed. create_track then get_session_state(refresh: true) ~0.4s apart: one scheduling line at 13:56:57.111, one Song: at 58.191, one `Loaded 8 tracks` at 57:03.213 naming the new track; no second rebuild. The reply carried the new track and no settling sentence.*
 
 While an asynchronous refresh is pending, call `get_session_state(refresh: true)`
 — issue the mutation and the refreshing read **in one model response**, or the
@@ -121,13 +93,7 @@ later**.
 
 ## The last request is never dropped
 
-*Last run: 2026-08-03 — passed, mid-rebuild condition genuinely provoked on the
-third attempt. A rebuild ran 02:23:08.218 → :12.819; the `delete_track` issued
-during it landed inside that window, proved by the rebuild's own read returning
-**9 tracks with the deleted one already absent** while a push arriving at
-:13.729 still listed it. Exactly one trailing refresh followed (:15.538 →
-:20.170) and converged on the correct list. Final state verified: the deleted
-track gone, the created one present.*
+*Last run: 2026-11-08 — passed, mid-rebuild condition provoked on the first attempt (8-track set, ~5s rebuild). Debounce fired ~13:57:35.8; six search_library fillers; delete_track replied at 36.34, before the rebuild's Song: line at 36.501 — and that rebuild's own `Loaded 8 tracks` at 41.554 already lacked the deleted track. The delete's push then hit the `did not reproduce` path at 42.473 and exactly one trailing refresh followed (44.321 → 49.333), converging on the correct list.*
 
 **Use a send-only mutation, and do not use `create_track`.** The first two
 attempts were the near-miss this test warns about — the mutation scheduled its
